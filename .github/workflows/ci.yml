@@ -20,12 +20,7 @@ jobs:
         run: pip install --require-hashes -r requirements-dev.txt
 
       - name: Run pre-commit hooks
-        # The local mypy hook (entry: .venv/bin/mypy) requires a virtualenv that
-        # does not exist in CI — mypy is run as a dedicated step below instead.
-        run: SKIP=mypy pre-commit run --all-files
-
-      - name: Run mypy
-        run: mypy app/ scheduler/
+        run: pre-commit run --all-files
 
   test:
     runs-on: ubuntu-latest

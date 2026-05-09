@@ -32,7 +32,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: .venv/bin/mypy app/ scheduler/
+        entry: mypy app/ scheduler/
         language: system
         pass_filenames: false
         always_run: true
