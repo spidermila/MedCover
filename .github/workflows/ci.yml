@@ -16,11 +16,16 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install pre-commit
-        run: pip install pre-commit
+      - name: Install dependencies
+        run: pip install --require-hashes -r requirements-dev.txt
 
       - name: Run pre-commit hooks
-        run: SKIP=mypy,pytest pre-commit run --all-files
+        # The local mypy hook (entry: .venv/bin/mypy) requires a virtualenv that
+        # does not exist in CI — mypy is run as a dedicated step below instead.
+        run: SKIP=mypy pre-commit run --all-files
+
+      - name: Run mypy
+        run: mypy app/ scheduler/
 
   test:
     runs-on: ubuntu-latest
@@ -55,9 +60,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install --require-hashes -r requirements-dev.txt
-
-      - name: Run mypy
-        run: mypy app/ scheduler/
 
       - name: Run tests with coverage
         run: pytest --cov=app --cov-report=term-missing --cov-report=xml
