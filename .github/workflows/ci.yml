@@ -16,8 +16,8 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install dependencies
-        run: pip install --require-hashes -r requirements-dev.txt
+      - name: Install pre-commit
+        run: pip install pre-commit
 
       - name: Run pre-commit hooks
         run: pre-commit run --all-files

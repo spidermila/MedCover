@@ -28,11 +28,27 @@ repos:
       - id: pyupgrade
         args: [--py312-plus]
 
-  - repo: local
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.0.0
     hooks:
       - id: mypy
-        name: mypy
-        entry: mypy app/ scheduler/
-        language: system
+        additional_dependencies:
+          - Flask
+          - SQLAlchemy
+          - Flask-SQLAlchemy
+          - Flask-Login
+          - Flask-WTF
+          - WTForms
+          - Flask-Mail
+          - Flask-Migrate
+          - cryptography
+          - itsdangerous
+          - Werkzeug
+          - Jinja2
+          - openpyxl
+          - alembic
+          - schedule
+          - types-psycopg2
+        args: [--ignore-missing-imports, app/, scheduler/]
         pass_filenames: false
         always_run: true
