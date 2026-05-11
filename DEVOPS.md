@@ -733,6 +733,29 @@ Migrations run automatically on Render deploy via the deploy hook (or add `flask
 
 ---
 
+## Security Notes
+
+### Content Security Policy (CSP)
+
+The app sets a CSP header in all non-dev environments via `@app.after_request` in `app/__init__.py`:
+
+```
+default-src 'self';
+script-src  'self' https://cdn.jsdelivr.net;
+style-src   'self' https://cdn.jsdelivr.net 'unsafe-inline';
+font-src    'self' https://cdn.jsdelivr.net;
+img-src     'self' data:;
+connect-src 'self' https://cdn.jsdelivr.net;
+```
+
+**Why `style-src` includes `'unsafe-inline'`:** FullCalendar v6 injects inline styles at runtime to render its calendar grid. There is no practical workaround without abandoning FullCalendar or adding per-request nonces. CSS `'unsafe-inline'` does not enable script execution, so the security impact is limited.
+
+**Why `script-src` does NOT include `'unsafe-inline'`:** All JS is in external files. There are no `onclick`/`onchange` attributes in any template — the inline handlers were removed in PR #93. This is the more important constraint to maintain.
+
+**Why `https://` is explicit:** The scheme-free `cdn.jsdelivr.net` form is interpreted as the current page's scheme. Over HTTP it works, but the app is served over HTTPS in production, and an HTTP CDN resource would be blocked as mixed content. Always use `https://cdn.jsdelivr.net` in the CSP.
+
+---
+
 ## Known Issues & Mitigations
 
 ### WSL2 + Docker PostgreSQL schema loss

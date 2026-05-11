@@ -140,10 +140,11 @@ def create_app(
         if not app.config.get("TESTING") and not app.config.get("DEBUG"):
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "script-src 'self' cdn.jsdelivr.net; "
-                "style-src 'self' cdn.jsdelivr.net; "
-                "font-src 'self' cdn.jsdelivr.net; "
-                "img-src 'self' data:;"
+                "script-src 'self' https://cdn.jsdelivr.net; "
+                "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+                "font-src 'self' https://cdn.jsdelivr.net; "
+                "img-src 'self' data:; "
+                "connect-src 'self' https://cdn.jsdelivr.net;"
             )
             response.headers.setdefault(
                 "Strict-Transport-Security",
