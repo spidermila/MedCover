@@ -40,8 +40,7 @@
           <label for="event_type" class="form-label">Typ akce <span class="text-danger">*</span>
             {{ help_icon("Určuje typ akce a ovlivňuje dostupná pole i formulář výjezdové zprávy.") }}
           </label>
-          <select class="form-select" id="event_type" name="event_type" required
-                  onchange="toggleEventTypeFields(this.value)">
+          <select class="form-select" id="event_type" name="event_type" required>
             {% for et in EventType %}
               <option value="{{ et.name }}"
                 {{ 'selected' if request.form.get('event_type', (template.event_type.name if template else 'MEDICAL_COVER')) == et.name }}>
@@ -93,7 +92,7 @@
           <div class="input-group">
             <input type="text" class="form-control flatpickr-dt" id="start_datetime" name="start_datetime"
                    value="{{ request.form.get('start_datetime', '') }}" required>
-            <button class="btn btn-outline-secondary" type="button" onclick="fpNow(this)">Teď</button>
+            <button class="btn btn-outline-secondary" type="button" class="btn-fpnow">Teď</button>
           </div>
         </div>
         <div class="col-12 col-md-6">
@@ -103,7 +102,7 @@
           <div class="input-group">
             <input type="text" class="form-control flatpickr-dt" id="end_datetime" name="end_datetime"
                    value="{{ request.form.get('end_datetime', '') }}" required>
-            <button class="btn btn-outline-secondary" type="button" onclick="fpNow(this)">Teď</button>
+            <button class="btn btn-outline-secondary" type="button" class="btn-fpnow">Teď</button>
           </div>
         </div>
         <div class="col-12 col-md-6">
@@ -113,7 +112,7 @@
           <div class="input-group">
             <input type="text" class="form-control flatpickr-dt" id="assignments_open_datetime" name="assignments_open_datetime"
                    value="{{ request.form.get('assignments_open_datetime', '') }}">
-            <button class="btn btn-outline-secondary" type="button" onclick="fpNow(this)">Teď</button>
+            <button class="btn btn-outline-secondary" type="button" class="btn-fpnow">Teď</button>
           </div>
           <div class="form-text">Prázdné = okamžitě po zveřejnění</div>
         </div>
@@ -205,11 +204,4 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/event-form.js') }}?v={{ static_ver }}"></script>
-<script>
-function toggleEventTypeFields(type) {
-  document.getElementById('planned_participants_row').style.display = (type === 'TRAINING') ? '' : 'none';
-}
-// Run on page load to handle back-navigation / validation re-render
-toggleEventTypeFields(document.getElementById('event_type').value);
-</script>
 {% endblock %}

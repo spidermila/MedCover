@@ -97,7 +97,7 @@
                     data-invite-url="{{ reg_url }}"
                     data-bs-toggle="tooltip"
                     title="{{ reg_url }}"
-                    onclick="copyInviteUrl(this)">📋 Odkaz</button>
+                    >📋 Odkaz</button>
             {% if inv.link_clicked_at %}
             <br><span class="badge bg-success mt-1" title="{{ inv.link_clicked_at | localdt }}">Otevřen</span>
             {% endif %}
@@ -131,7 +131,7 @@
           {% endif %}
           {% if not inv.is_used and not inv.is_cancelled %}
           <form method="POST" action="{{ url_for('users.cancel_invite', invite_id=inv.id) }}" class="d-inline"
-                onsubmit="return confirm('Opravdu chcete zrušit tuto pozvánku?')">
+                data-confirm="Opravdu chcete zrušit tuto pozvánku?">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-sm btn-outline-danger">Zrušit</button>
           </form>

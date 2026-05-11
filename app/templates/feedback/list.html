@@ -61,7 +61,7 @@
           {% else %}
             <form method="POST"
                   action="{{ url_for('feedback.feedback_delete', entry_id=entry.id) }}"
-                  onsubmit="return confirm('Smazat tuto zpětnou vazbu?');">
+                  data-confirm="Smazat tuto zpětnou vazbu?"
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-outline-danger btn-sm">Smazat</button>
             </form>

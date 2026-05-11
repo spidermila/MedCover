@@ -29,7 +29,7 @@
       <tr data-sv='{"name":{{ tmpl.name | lower | tojson }},"paid":{{ (1 if tmpl.paid else 0) }},"spots":{{ tmpl.spot_templates | length }}}'
           {% if current_user.has_permission('event_template.edit') %}
           class="cursor-pointer"
-          onclick="window.location='{{ url_for('templates.edit', template_id=tmpl.id) }}'"
+          data-href="{{ url_for('templates.edit', template_id=tmpl.id) }}"
           {% endif %}>
         <td class="fw-semibold">{{ tmpl.name }}</td>
         <td class="text-muted small">{{ tmpl.description or '—' }}</td>
@@ -45,13 +45,13 @@
         <td class="text-end">
           {% if current_user.has_permission('event.create') %}
           <a href="{{ url_for('events.create_from_template', template_id=tmpl.id) }}"
-             class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation()">Použít</a>
+             class="btn btn-outline-danger btn-sm" >Použít</a>
           {% endif %}
           {% if current_user.has_permission('event_template.delete') %}
           <form method="POST" action="{{ url_for('templates.delete', template_id=tmpl.id) }}"
                 class="d-inline"
-                onsubmit="return confirm('Opravdu smazat šablonu „{{ tmpl.name }}"?')"
-                onclick="event.stopPropagation()">
+                data-confirm="Opravdu smazat šablonu „{{ tmpl.name }}"?"
+                >
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-outline-warning btn-sm">Smazat</button>
           </form>

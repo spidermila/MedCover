@@ -21,14 +21,14 @@
       <form method="POST" action="{{ url_for('users.deactivate', user_id=user.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-sm btn-warning"
-                onclick="return confirm('Deaktivovat účet {{ user.name }}?')">Deaktivovat</button>
+                data-confirm="Deaktivovat účet {{ user.name }}?">Deaktivovat</button>
       </form>
       {% endif %}
       {% if current_user.has_permission('user.archive') and user.id != current_user.id %}
       <form method="POST" action="{{ url_for('users.archive', user_id=user.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-sm btn-outline-danger"
-                onclick="return confirm('Archivovat účet {{ user.name }}? Uživatel bude deaktivován a skryt ze všech seznamů.')">Archivovat</button>
+                data-confirm="Archivovat účet {{ user.name }}? Uživatel bude deaktivován a skryt ze všech seznamů.">Archivovat</button>
       </form>
       {% endif %}
     {% else %}
@@ -36,7 +36,7 @@
       <form method="POST" action="{{ url_for('users.unarchive', user_id=user.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-sm btn-outline-secondary"
-                onclick="return confirm('Obnovit účet {{ user.name }} z archivu?')">Obnovit z archivu</button>
+                data-confirm="Obnovit účet {{ user.name }} z archivu?">Obnovit z archivu</button>
       </form>
       {% endif %}
     {% endif %}

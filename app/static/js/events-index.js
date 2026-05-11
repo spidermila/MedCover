@@ -272,9 +272,28 @@
     });
 
     initSpotPickModal();
+
+    // View toggle buttons (replaces inline onclick in template)
+    var btnTable = document.getElementById("btn-table-view");
+    var btnCal   = document.getElementById("btn-calendar-view");
+    if (btnTable) btnTable.addEventListener("click", function () { setView("table"); });
+    if (btnCal)   btnCal.addEventListener("click",   function () { setView("calendar"); });
+
+    // ME filter select (replaces inline onchange in template)
+    var meSelect = document.getElementById("me-filter-select");
+    if (meSelect) meSelect.addEventListener("change", function () { navigateToMe(meSelect.value); });
+
+    // Bulk action buttons (replaces inline onclick in template)
+    document.querySelectorAll("[data-bulk-action]").forEach(function (btn) {
+      btn.addEventListener("click", function () { submitBulk(btn.dataset.bulkAction); });
+    });
+
+    // Clear selection button
+    var clearBtn = document.getElementById("btn-clear-selection");
+    if (clearBtn) clearBtn.addEventListener("click", clearSelection);
   });
 
-  // Expose globals used by inline HTML onclick attributes in the template
+  // No longer needed as window globals — kept for backwards compat during any cached page loads
   window.setView = setView;
   window.navigateToMe = navigateToMe;
   window.clearSelection = clearSelection;

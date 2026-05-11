@@ -30,7 +30,7 @@
       {% for et in types %}
       <tr {% if current_user.has_permission('equipment_type.edit') %}
           class="cursor-pointer"
-          onclick="window.location='{{ url_for('equipment.type_edit', type_id=et.id) }}'"
+          data-href="{{ url_for('equipment.type_edit', type_id=et.id) }}"
           {% endif %}>
         <td class="fw-semibold">{{ et.name }}</td>
         <td>
@@ -46,8 +46,8 @@
           {% if current_user.has_permission('equipment_type.delete') %}
             <form method="POST" action="{{ url_for('equipment.type_delete', type_id=et.id) }}"
                   class="d-inline"
-                  onsubmit="return confirm('Smazat typ „{{ et.name }}"?')"
-                  onclick="event.stopPropagation()">
+                  data-confirm="Smazat typ „{{ et.name }}"?"
+                  >
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-outline-danger btn-sm">Smazat</button>
             </form>

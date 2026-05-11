@@ -119,7 +119,7 @@
             </button>
             <form method="POST"
                   action="{{ url_for('admin_digest.delete_block', block_id=block.id) }}"
-                  onsubmit="return confirm('Opravdu odstranit tento blok?')">
+                  data-confirm="Opravdu odstranit tento blok?"
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-outline-danger btn-sm"
                       data-bs-toggle="tooltip" title="Trvale odstranit tento blok. Tato akce je nevratná.">🗑</button>
@@ -374,7 +374,7 @@
 
   {# ── Send now ────────────────────────────────────────────────────────── #}
   <form method="POST" action="{{ url_for('admin_digest.send_now') }}"
-        onsubmit="return confirm('Opravdu odeslat přehledový e-mail všem administrátorům?')">
+        data-confirm="Opravdu odeslat přehledový e-mail všem administrátorům?"
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="btn btn-danger"
             data-bs-toggle="tooltip"

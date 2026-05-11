@@ -14,3 +14,8 @@ function toggleOpenAll() {
   if (openLabel)    openLabel.textContent       = showingAll ? "(všechny)" : "(jen vaše kvalifikace)";
   if (btn) btn.textContent = showingAll ? "Jen moje kvalifikace" : "Zobrazit vše (" + count + ")";
 }
+
+document.addEventListener("DOMContentLoaded", function () {
+  var btn = document.getElementById("btn-show-all");
+  if (btn) btn.addEventListener("click", toggleOpenAll);
+});

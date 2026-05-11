@@ -25,6 +25,19 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
 
+/* Show/hide planned_participants_row based on event type.
+ * Replaces the inline <script> that previously lived in create.html / edit.html. */
+function toggleEventTypeFields(type) {
+  var row = document.getElementById('planned_participants_row');
+  if (row) row.style.display = (type === 'TRAINING') ? '' : 'none';
+}
+document.addEventListener("DOMContentLoaded", function () {
+  var sel = document.getElementById('event_type');
+  if (!sel) return;
+  toggleEventTypeFields(sel.value);
+  sel.addEventListener('change', function () { toggleEventTypeFields(sel.value); });
+});
+
 /* Dynamic spot rows — event create form only. */
 (function () {
   var addBtn    = document.getElementById('addSpotBtn');

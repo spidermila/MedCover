@@ -18,6 +18,37 @@ document.addEventListener("DOMContentLoaded", function () {
     locale: "cs",
     allowInput: true,
   });
+
+  // data-confirm on forms (submit) and buttons (click)
+  document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      if (!confirm(form.dataset.confirm)) e.preventDefault();
+    });
+  });
+  document.querySelectorAll("button[data-confirm]").forEach(function (btn) {
+    btn.addEventListener("click", function (e) {
+      if (!confirm(btn.dataset.confirm)) e.preventDefault();
+    });
+  });
+
+  // Clickable table rows: tr[data-href]
+  document.querySelectorAll("tr[data-href]").forEach(function (tr) {
+    tr.style.cursor = "pointer";
+    tr.addEventListener("click", function (e) {
+      if (e.target.closest("a, button, input, select, textarea, form")) return;
+      window.location.href = tr.dataset.href;
+    });
+  });
+
+  // Flatpickr "Teď" buttons
+  document.querySelectorAll(".btn-fpnow").forEach(function (btn) {
+    btn.addEventListener("click", function () { fpNow(btn); });
+  });
+
+  // History back buttons
+  document.querySelectorAll(".btn-history-back").forEach(function (btn) {
+    btn.addEventListener("click", function () { history.back(); });
+  });
 });
 
 /* Set a flatpickr field to the current date/time.

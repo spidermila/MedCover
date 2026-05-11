@@ -10,3 +10,9 @@ function copyInviteUrl(btn) {
     }, 2000);
   });
 }
+
+document.addEventListener("DOMContentLoaded", function () {
+  document.querySelectorAll(".copy-invite-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () { copyInviteUrl(btn); });
+  });
+});

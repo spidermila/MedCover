@@ -55,7 +55,7 @@
       <tr data-sv='{"name":{{ item.name | lower | tojson }},"type":{{ item.equipment_type.name | lower | tojson }},"issued":{{ (item.issued_to.name | lower if item.issued_to else "") | tojson }}}'
           {% if current_user.has_permission('equipment_item.edit') %}
           class="cursor-pointer"
-          onclick="window.location='{{ url_for('equipment.item_edit', item_id=item.id) }}'"
+          data-href="{{ url_for('equipment.item_edit', item_id=item.id) }}"
           {% endif %}>
         <td class="fw-semibold">{{ item.name }}</td>
         <td>{{ item.equipment_type.name }}</td>
@@ -68,11 +68,11 @@
             <span class="text-muted">—</span>
           {% endif %}
         </td>
-        <td class="text-end" onclick="event.stopPropagation()">
+        <td class="text-end">
           <div class="d-flex gap-1 justify-content-end flex-wrap">
             {% if current_user.has_permission('equipment_item.issue_personal') and not item.issued_to %}
               <form method="POST" action="{{ url_for('equipment.item_take', item_id=item.id) }}"
-                    onsubmit="return confirm('Vzít položku „{{ item.name }}" s sebou?')">
+                    data-confirm="Vzít položku „{{ item.name }}" s sebou?"
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-primary btn-sm">Vzít s sebou</button>
               </form>
@@ -83,7 +83,7 @@
             {% endif %}
             {% if current_user.has_permission('equipment_item.issue_personal') and item.issued_to %}
               <form method="POST" action="{{ url_for('equipment.item_return', item_id=item.id) }}"
-                    onsubmit="return confirm('Vrátit položku „{{ item.name }}"?')">
+                    data-confirm="Vrátit položku „{{ item.name }}"?"
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-warning btn-sm">Vrátit</button>
               </form>
@@ -91,7 +91,7 @@
             {% if current_user.has_permission('equipment_item.delete') %}
               <form method="POST" action="{{ url_for('equipment.item_delete', item_id=item.id) }}"
                     class="d-inline"
-                    onsubmit="return confirm('Smazat položku „{{ item.name }}"?')">
+                    data-confirm="Smazat položku „{{ item.name }}"?"
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-danger btn-sm">Smazat</button>
               </form>

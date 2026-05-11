@@ -9,15 +9,13 @@
   <div class="d-flex gap-2 flex-wrap align-items-center">
     {# View toggle #}
     <div class="btn-group btn-group-sm" role="group" aria-label="Zobrazení">
-      <button type="button" class="btn btn-outline-secondary" id="btn-table-view"
-              onclick="setView('table')">
+      <button type="button" class="btn btn-outline-secondary" id="btn-table-view">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
           <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm8.5 9.5v-3h3v3zm-4 0v-3h3v3zm-1 0H1v-3h2.5zm8.5-4v-3h3v3zm-4 0v-3h3v3zm-1 0H1v-3h2.5zm8.5-4V1H15v2.5zm-4 0V1h3v2.5zm-1 0H1V1h5.5z"/>
         </svg>
         Tabulka
       </button>
-      <button type="button" class="btn btn-outline-secondary" id="btn-calendar-view"
-              onclick="setView('calendar')">
+      <button type="button" class="btn btn-outline-secondary" id="btn-calendar-view">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
           <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
         </svg>
@@ -100,7 +98,7 @@
   <button type="button" class="btn btn-sm btn-outline-info filter-btn ms-2" id="btn-elig-filter">Pro mě</button>
   {% endif %}
   <select id="me-filter-select" class="form-select form-select-sm ms-2 maxw-250 {{ 'd-none' if not active_named_mes }}"
-          title="Filtrovat podle nadřazené akce" onchange="navigateToMe(this.value)">
+          title="Filtrovat podle nadřazené akce" id="me-filter-select">
     <option value="">Všechny nadřazené akce</option>
     {% for me in active_named_mes %}
     <option value="{{ me.id }}" {% if active_me and active_me.id == me.id %}selected{% endif %}>{{ me.name }}</option>
@@ -137,21 +135,21 @@
     <div class="d-flex gap-2 align-items-center flex-wrap p-2 rounded border border-secondary-subtle bg-body-secondary">
       <span class="text-muted small me-1" id="bulk-count-label">0 vybráno</span>
       {% if current_user.has_permission('event.publish') %}
-      <button type="button" class="btn btn-sm btn-outline-primary" onclick="submitBulk('publish')">
+      <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-action="publish">
         Zveřejnit
       </button>
       {% endif %}
       {% if current_user.has_permission('event.assignments.open') %}
-      <button type="button" class="btn btn-sm btn-outline-success" onclick="submitBulk('open_assignments')">
+      <button type="button" class="btn btn-sm btn-outline-success" data-bulk-action="open_assignments">
         Otevřít přihlášky
       </button>
       {% endif %}
       {% if current_user.has_permission('event.cancel') %}
-      <button type="button" class="btn btn-sm btn-outline-danger" onclick="submitBulk('cancel')">
+      <button type="button" class="btn btn-sm btn-outline-danger" data-bulk-action="cancel">
         Zrušit vybrané
       </button>
       {% endif %}
-      <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-auto" onclick="clearSelection()">
+      <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-auto" id="btn-clear-selection">
         Zrušit výběr
       </button>
     </div>

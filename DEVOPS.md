@@ -750,7 +750,7 @@ connect-src 'self' https://cdn.jsdelivr.net;
 
 **Why `style-src` includes `'unsafe-inline'`:** FullCalendar v6 injects inline styles at runtime to render its calendar grid. There is no practical workaround without abandoning FullCalendar or adding per-request nonces. CSS `'unsafe-inline'` does not enable script execution, so the security impact is limited.
 
-**Why `script-src` does NOT include `'unsafe-inline'`:** All JS is in external files. There are no `onclick`/`onchange` attributes in any template — the inline handlers were removed in PR #93. This is the more important constraint to maintain.
+**Why `script-src` does NOT include `'unsafe-inline'`:** All JS is in external files. There are no `onclick`/`onchange`/`onsubmit` attributes in any template — inline handlers were removed in PR #93 and kept clean thereafter. This is the more important constraint to maintain.
 
 **Why `https://` is explicit:** The scheme-free `cdn.jsdelivr.net` form is interpreted as the current page's scheme. Over HTTP it works, but the app is served over HTTPS in production, and an HTTP CDN resource would be blocked as mixed content. Always use `https://cdn.jsdelivr.net` in the CSP.
 
