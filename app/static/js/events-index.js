@@ -106,7 +106,11 @@
       headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listMonth" },
       buttonText: { today: "Dnes", month: "Měsíc", week: "Týden", list: "Seznam" },
       datesSet: function (info) {
-        currentCalDate = _localYMD(info.view.currentStart);
+        // info.start is the first visible grid day (e.g. Mon 27 Apr for May view).
+        // Using the midpoint of the visible range always lands in the correct
+        // displayed month, regardless of which weekday the grid starts on.
+        var mid = new Date((info.start.getTime() + info.end.getTime()) / 2);
+        currentCalDate = _localYMD(new Date(mid.getFullYear(), mid.getMonth(), 1));
       },
       events: async function (fetchInfo, successCallback, failureCallback) {
         try {
