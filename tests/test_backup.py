@@ -135,6 +135,39 @@ class TestRestoreFromZip:
             settings_after = get_settings()
             assert settings_after.org_name == "Changed after backup"
 
+    def test_restore_handles_json_columns(self, app, tmp_path):
+        """Rows with dict/list JSON columns (e.g. reminder_sent_json) must restore without error."""
+        from datetime import timedelta
+
+        from app.backup import export_to_zip, restore_from_zip
+        from app.models.event import Event
+        from app.models.master_event import MasterEvent
+
+        with app.app_context():
+            me = MasterEvent(name="JSON Test ME")
+            _db.session.add(me)
+            _db.session.flush()
+            now = datetime.now(timezone.utc)
+            event = Event(
+                name="JSON Test Event",
+                master_event_id=me.id,
+                start_datetime=now,
+                end_datetime=now + timedelta(hours=2),
+                reminder_sent_json={"24": now.isoformat()},
+            )
+            _db.session.add(event)
+            _db.session.commit()
+            event_id = event.id
+
+            zip_path = export_to_zip(tmp_path)
+            restore_from_zip(zip_path)
+
+            _db.session.expire_all()
+            restored = _db.session.get(Event, event_id)
+            assert restored is not None
+            assert isinstance(restored.reminder_sent_json, dict)
+            assert "24" in restored.reminder_sent_json
+
 
 class TestPruneOldBackups:
     def test_prune_keeps_n_files(self, app, tmp_path):

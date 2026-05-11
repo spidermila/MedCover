@@ -242,6 +242,12 @@ def restore_from_zip(zip_path: str | Path) -> None:
                 continue
             for row in rows:
                 filtered = {k: v for k, v in row.items() if k in current_columns}
+                # sa.text() bypasses SQLAlchemy type coercion, so dict/list
+                # values (JSON columns) must be serialized manually.
+                filtered = {
+                    k: json.dumps(v) if isinstance(v, (dict, list)) else v
+                    for k, v in filtered.items()
+                }
                 if filtered:
                     col_list = ", ".join(f'"{c}"' for c in filtered)
                     val_list = ", ".join(f":{c}" for c in filtered)
