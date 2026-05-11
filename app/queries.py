@@ -32,6 +32,23 @@ def active_users_list() -> Sequence[UserAccount]:
     return db.session.scalars(active_users_query()).all()
 
 
+def rp_eligible_users_list() -> Sequence[UserAccount]:
+    """Return active users who hold at least one qualification with can_be_rp=True."""
+    from app.models.qualification import Qualification, user_qualifications as uq_table
+    return db.session.scalars(
+        db.select(UserAccount)
+        .join(uq_table, UserAccount.id == uq_table.c.user_id)
+        .join(Qualification, Qualification.id == uq_table.c.qualification_id)
+        .where(
+            UserAccount.is_active.is_(True),
+            UserAccount.is_archived.is_(False),
+            Qualification.can_be_rp.is_(True),
+        )
+        .distinct()
+        .order_by(UserAccount.name)
+    ).all()
+
+
 def active_master_events_list() -> Sequence[MasterEvent]:
     """Return non-archived master events ordered (general first, then by name)."""
     return db.session.scalars(

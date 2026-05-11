@@ -39,7 +39,7 @@ from app.models.qualification import Qualification
 from app.models.assignment import Assignment
 from app.constants import RECORD_MODIFIED_MSG
 from app.utils import audit, check_version_conflict, diff_changes, get_or_404, require_permission
-from app.queries import active_master_events_list, active_users_list, user_fillable_qual_ids
+from app.queries import active_master_events_list, active_users_list, rp_eligible_users_list, user_fillable_qual_ids
 import app.mail as mailer
 from zoneinfo import ZoneInfo
 
@@ -316,7 +316,7 @@ def create() -> str | Response:
     require_permission("event.create")
 
     master_events = active_master_events_list()
-    users = active_users_list()
+    users = rp_eligible_users_list()
     all_qualifications = db.session.scalars(db.select(Qualification).order_by(Qualification.name)).all()
 
     if request.method == "POST":
@@ -369,7 +369,7 @@ def create_from_template(template_id: int) -> str | Response:
     tmpl = get_or_404(EventTemplate, template_id)
 
     master_events = active_master_events_list()
-    users = active_users_list()
+    users = rp_eligible_users_list()
     all_qualifications = db.session.scalars(db.select(Qualification).order_by(Qualification.name)).all()
 
     return render_template(
@@ -467,7 +467,7 @@ def edit(event_id: int) -> str | Response:
         return redirect(url_for("events.detail", event_id=event_id))
 
     master_events = active_master_events_list()
-    users = active_users_list()
+    users = rp_eligible_users_list()
 
     if request.method == "POST":
         if check_version_conflict(event, request.form.get("version")):
