@@ -45,6 +45,7 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+fail_under = 83
 
 [tool.flake8]
 max-line-length = 120
