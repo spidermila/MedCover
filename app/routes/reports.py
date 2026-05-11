@@ -168,18 +168,12 @@ def user_report(user_id: uuid.UUID) -> str | Response:
 
     # Build per-event rows for the detail table
     rows = []
-    total_patients = 0
     for _, ev in pairs:
-        planned_h = ev.scheduled_hours
-        patients = ev.post_event_count if ev.actual_hours is not None else None
         rows.append({
             "event": ev,
-            "planned_hours": planned_h,
+            "planned_hours": ev.scheduled_hours,
             "actual_hours": ev.actual_hours,
-            "patients": patients,
         })
-        if ev.status == EventStatus.COMPLETED and patients is not None:
-            total_patients += patients
 
     if request.args.get("format") == "csv":
         csv_rows: list[list[str]] = [
@@ -194,7 +188,7 @@ def user_report(user_id: uuid.UUID) -> str | Response:
             ["Poslední směna", stats.last_shift.strftime("%Y-%m-%d") if stats.last_shift else ""],
             ["Příští směna", stats.next_shift.strftime("%Y-%m-%d") if stats.next_shift else ""],
             [],
-            ["Akce", "Začátek", "Konec", "Stav", "Plán (h)", "Skutečnost (h)", "Ošetřených"],
+            ["Akce", "Začátek", "Konec", "Stav", "Plán (h)", "Skutečnost (h)"],
         ]
         for r in rows:
             ev = r["event"]
@@ -205,7 +199,6 @@ def user_report(user_id: uuid.UUID) -> str | Response:
                 ev.status.value,
                 f"{r['planned_hours']:.1f}",
                 f"{r['actual_hours']:.1f}" if r["actual_hours"] is not None else "",
-                r["patients"] if r["patients"] is not None else "",
             ])
         safe_name = user.name.replace(" ", "_")
         return _csv_response(csv_rows, f"prehled_{safe_name}.csv")
@@ -215,7 +208,6 @@ def user_report(user_id: uuid.UUID) -> str | Response:
         report_user=user,
         rows=rows,
         stats=stats,
-        total_patients=total_patients,
         is_own=is_own,
     )
 

@@ -100,7 +100,7 @@
   </div>
 </div>
 
-{# Summary stats — dates + patients #}
+{# Summary stats — dates #}
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
     <div class="card text-center">
@@ -122,14 +122,6 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="card text-center">
-      <div class="card-body py-3">
-        <div class="fs-5 fw-bold text-danger">{{ total_patients }}</div>
-        <div class="text-muted small">Ošetřených / účastníků</div>
-      </div>
-    </div>
-  </div>
 </div>
 
 {# Events table #}
@@ -143,7 +135,6 @@
         <th>Stav</th>
         <th class="text-end">Naplán. hodiny</th>
         <th class="text-end">Odprac. hodiny</th>
-        <th class="text-end">Ošetřených / účastníků</th>
       </tr>
     </thead>
     <tbody>
@@ -166,9 +157,6 @@
         <td class="text-end">
           {% if row.actual_hours is not none %}{{ row.actual_hours | cznum }}{% else %}<span class="text-muted">—</span>{% endif %}
         </td>
-        <td class="text-end">
-          {% if row.patients is not none %}{{ row.patients }}{% else %}<span class="text-muted">—</span>{% endif %}
-        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -177,7 +165,6 @@
         <td colspan="3">Celkem (dokončené akce)</td>
         <td class="text-end text-muted">—</td>
         <td class="text-end">{{ stats.hours_served | cznum }}</td>
-        <td class="text-end">{{ total_patients }}</td>
       </tr>
     </tfoot>
   </table>
