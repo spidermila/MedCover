@@ -35,6 +35,11 @@
   function saveCalendarDate(dateStr) {
     try { localStorage.setItem(STORAGE_DATE, dateStr); } catch(e) {}
   }
+  function _localYMD(d) {
+    var m = d.getMonth() + 1;
+    var day = d.getDate();
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
 
   // ── Table row visibility (elig only — status + ME are server-side) ──
 
@@ -100,7 +105,7 @@
       headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listMonth" },
       buttonText: { today: "Dnes", month: "Měsíc", week: "Týden", list: "Seznam" },
       datesSet: function (info) {
-        saveCalendarDate(info.view.currentStart.toISOString().slice(0, 10));
+        saveCalendarDate(_localYMD(info.view.currentStart));
       },
       events: async function (fetchInfo, successCallback, failureCallback) {
         try {
