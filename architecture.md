@@ -956,7 +956,7 @@ Both containers connect to the same PostgreSQL database. See AD10 for the schedu
 | Environment | Purpose | Data | Infrastructure |
 |---|---|---|---|
 | **Local dev** | Developer playground; rapid iteration | Generated mock/seed data (`scripts/seed_dev.py`) | Docker Compose on developer laptop |
-| **Zerver (home lab)** | Integration testing; mirrors production config | Seeded dev data | Self-hosted server (192.168.111.5 LAN); synced via `zerver_scp.sh` after each commit |
+| **Zerver (home lab)** | Integration testing; mirrors production config | Seeded dev data | Self-hosted server (LAN); synced via `zerver_scp.sh` after each commit |
 | **Production** | Live system serving real users | Real data | Render.com free tier (MVP); hyperscaler with NGO credits long-term — see AD09 |
 
 No permanent staging environment for MVP. The zerver home-lab server fulfils this role during active development.

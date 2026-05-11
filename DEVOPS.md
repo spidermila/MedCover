@@ -831,9 +831,9 @@ docker compose exec web python scripts/seed_dev.py
 docker compose exec web python scripts/seed_dev.py
 ```
 
-Or on zerver:
+Or on the test server:
 ```bash
-ssh milan@192.168.111.5 "cd /home/milan/MedCover && docker compose exec web python scripts/seed_dev.py"
+ssh <user>@<host> "cd /path/to/MedCover && docker compose exec web python scripts/seed_dev.py"
 ```
 
 ---
