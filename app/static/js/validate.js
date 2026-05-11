@@ -2,7 +2,9 @@
  * MedCover — client-side form validation
  *
  * UX enhancement only — all rules are also enforced server-side.
- * Hooks into Bootstrap 5 validation classes (was-validated / is-invalid).
+ * Uses Bootstrap 5 is-invalid / is-valid classes directly.
+ * NOTE: we do NOT add the Bootstrap "was-validated" class because that triggers
+ * the CSS :valid selector which turns ALL filled fields green unconditionally.
  */
 (function () {
   "use strict";
@@ -30,6 +32,21 @@
 
   function clearValidity(el) {
     el.classList.remove("is-invalid", "is-valid");
+  }
+
+  /**
+   * Returns true if the element has at least one validation rule we can check.
+   * Fields with no rules stay neutral — they should never turn green or red.
+   */
+  function hasValidationRules(el) {
+    return (
+      el.hasAttribute("required") ||
+      el.hasAttribute("minlength") ||
+      el.hasAttribute("maxlength") ||
+      el.hasAttribute("pattern") ||
+      el.type === "email" ||
+      (el.type === "number" && (el.hasAttribute("min") || el.hasAttribute("max")))
+    );
   }
 
   // ── Rules ─────────────────────────────────────────────────────────────────
@@ -83,7 +100,6 @@
     var startEl = form.querySelector("[name='start_datetime']");
     var endEl = form.querySelector("[name='end_datetime']");
     if (!startEl || !endEl) return true;
-    // Read from flatpickr hidden input or raw value
     var startVal = startEl._flatpickr ? startEl._flatpickr.selectedDates[0] : new Date(startEl.value);
     var endVal = endEl._flatpickr ? endEl._flatpickr.selectedDates[0] : new Date(endEl.value);
     if (!startVal || !endVal) return true;
@@ -91,8 +107,9 @@
       setInvalid(endEl, "Konec akce musí být po jejím začátku.");
       return false;
     }
-    setValid(endEl);
     return true;
+    // Note: setValid is NOT called here — handled centrally in validateForm
+    // after all cross-field checks pass.
   }
 
   // ── Password confirmation ─────────────────────────────────────────────────
@@ -105,32 +122,59 @@
       setInvalid(conf, "Hesla se neshodují.");
       return false;
     }
-    if (conf.value) setValid(conf);
     return true;
+    // Note: setValid is NOT called here — handled centrally in validateForm.
   }
 
   // ── Validate a single form ────────────────────────────────────────────────
 
   function validateForm(form) {
     var ok = true;
+    // Fields that have rules and passed — candidates for green if overall ok.
+    var passedFields = [];
+    // Track cross-field fields so they can also get green when overall ok.
+    var startEl = form.querySelector("[name='start_datetime']");
+    var endEl   = form.querySelector("[name='end_datetime']");
+    var pwEl    = form.querySelector("[name='new_password']");
+    var confEl  = form.querySelector("[name='confirm_password']");
+
     form.querySelectorAll("input, textarea, select").forEach(function (el) {
       if (el.disabled || el.type === "hidden") return;
       clearValidity(el);
+      if (!hasValidationRules(el)) return; // no rules → stays neutral, no color
+
       var fieldOk = true;
       fieldOk = validateRequired(el) && fieldOk;
       fieldOk = validateMinLength(el) && fieldOk;
       fieldOk = validateMaxLength(el) && fieldOk;
       fieldOk = validateNumericRange(el) && fieldOk;
-      // Also check native HTML validity (type=email, pattern, etc.)
+      // Native HTML validity (type=email, pattern, etc.)
       if (fieldOk && el.value.trim() && !el.checkValidity()) {
         setInvalid(el, el.validationMessage || "Neplatná hodnota.");
         fieldOk = false;
       }
-      if (fieldOk && el.value.trim()) setValid(el);
-      ok = fieldOk && ok;
+      if (!fieldOk) {
+        ok = false;
+      } else if (el.value.trim()) {
+        passedFields.push(el);
+      }
     });
+
     ok = validateDateRange(form) && ok;
     ok = validatePasswordConfirm(form) && ok;
+
+    // Only mark fields green when the ENTIRE form passes all checks.
+    // This prevents the confusing state where some fields are green while
+    // others are red (e.g. start_datetime green while end_datetime is red).
+    if (ok) {
+      passedFields.forEach(function (el) { setValid(el); });
+      // Cross-field fields: green only if they have values and overall ok.
+      if (startEl && startEl.value.trim()) setValid(startEl);
+      if (endEl   && endEl.value.trim())   setValid(endEl);
+      if (pwEl    && pwEl.value)           setValid(pwEl);
+      if (confEl  && confEl.value)         setValid(confEl);
+    }
+
     return ok;
   }
 
@@ -143,7 +187,10 @@
           e.preventDefault();
           e.stopPropagation();
         }
-        form.classList.add("was-validated");
+        // NOTE: do NOT add "was-validated" class here.
+        // Bootstrap's was-validated triggers .was-validated :valid CSS which
+        // turns ALL fields with any value green unconditionally via the native
+        // :valid pseudo-class, regardless of our custom validation outcome.
       });
     });
   });
