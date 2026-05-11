@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - User archiving: admins can archive departed users, hiding them from all lists and dropdowns while preserving their historical data (closes #123)
 - Minimum test coverage enforced at 83%; CI and local test runs now fail if coverage drops below this threshold (closes #47)
+- pytest now exits immediately with a clear error message when the test database is unreachable, instead of failing all tests one by one (closes #52)
 - Archived users cannot log in and are excluded from all live assignment/notification queries
 - Archived users are blocked from requesting a password reset (UI shows same message to prevent enumeration)
 - New permissions: `user.archive` (archive/unarchive) and `user.view_archived` (see archived list) — Admin role only
