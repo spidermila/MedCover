@@ -169,9 +169,14 @@ def upload_restore() -> Response:
 def _do_restore(zip_path: Path, actor_id: int | None) -> None:
     """Run restore_from_zip and flash success/error."""
     from app.backup import restore_from_zip
+    from app.models.user import UserAccount
     try:
         restore_from_zip(zip_path)
         # AuditLogEntry written *after* restore — session was wiped and reloaded.
+        # The actor's UUID may not exist in the restored DB (e.g. cross-instance
+        # restore where dev and prod have different user IDs), so check first.
+        if actor_id is not None and db.session.get(UserAccount, actor_id) is None:
+            actor_id = None
         db.session.add(AuditLogEntry(
             actor_id=actor_id,
             action_type="restore",
