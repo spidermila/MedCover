@@ -1,10 +1,11 @@
 # Production / staging Docker Compose
 #
 # Usage:
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 #
-# Container names are pinned (medcover-prod-web / -scheduler / -db) so this
-# stack does not conflict with a dev stack running on the same host.
+# The project name is hardcoded to "medcover-prod" so this stack never
+# conflicts with the dev stack ("medcover") even if deployed from a
+# directory whose name resolves to the same project name.
 #
 # Differences from docker-compose.yml (dev):
 #   - Gunicorn (4 workers) instead of flask run --debug
@@ -14,6 +15,8 @@
 #   - restart: unless-stopped on every service
 #   - Reads secrets from .env.prod (never .env)
 #   - Separate postgres_data_prod volume so prod data is isolated from dev
+
+name: medcover-prod
 
 services:
   web:
