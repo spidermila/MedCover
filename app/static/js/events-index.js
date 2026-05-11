@@ -21,6 +21,7 @@
   var calendar = null;
   var allCalendarEvents = null;
   var eligFilter = false;
+  var currentCalDate = null;
 
   // ── Per-page JS filter (elig only — status + ME are server-side) ──
 
@@ -104,6 +105,9 @@
       firstDay: 1,
       headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listMonth" },
       buttonText: { today: "Dnes", month: "Měsíc", week: "Týden", list: "Seznam" },
+      datesSet: function (info) {
+        currentCalDate = _localYMD(info.view.currentStart);
+      },
       events: async function (fetchInfo, successCallback, failureCallback) {
         try {
           if (!allCalendarEvents) {
@@ -140,9 +144,7 @@
     });
     calendar.render();
     window.addEventListener("pagehide", function () {
-      if (calendar && calendar.view) {
-        saveCalendarDate(_localYMD(calendar.view.currentStart));
-      }
+      if (currentCalDate) saveCalendarDate(currentCalDate);
     });
   }
 
