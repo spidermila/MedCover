@@ -23,6 +23,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
@@ -187,6 +188,17 @@ def _do_restore(zip_path: Path, actor_id: int | None) -> None:
         ))
         db.session.commit()
         flash(f"Databáze byla úspěšně obnovena ze zálohy {zip_path.name}.", "success")
+        flash(Markup(
+            "Následující nastavení <strong>nebyla obnovena</strong> ze zálohy "
+            "a je třeba je zkontrolovat a případně nakonfigurovat ručně:"
+            "<ul class='mb-0 mt-2'>"
+            f"<li><a href='{url_for('app_settings.index')}'>Nastavení aplikace</a>"
+            " — název organizace, časová zóna, URL aplikace, SMTP&nbsp;/&nbsp;e-mail</li>"
+            f"<li><a href='{url_for('notifications.index')}'>Oznámení</a>"
+            " — zapnutí/vypnutí e-mailových upozornění</li>"
+            "<li>Nastavení zálohování — adresář, počet uchovávaných záloh, plánování</li>"
+            "</ul>"
+        ), "info")
     except Exception as exc:
         log.error("Restore from %s failed: %s", zip_path.name, exc, exc_info=True)
         flash(f"Obnovení selhalo: {exc}", "danger")
