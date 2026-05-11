@@ -74,8 +74,8 @@ _RESTORE_ORDER: list[str] = [
     "event_template_equipment_plan",
     # Leaf tables
     "assignment",
-    "registration_invite",
     "outbox_email",
+    "registration_invite",
     "audit_log_entry",
     "user_feedback",
     "debriefing_record",
