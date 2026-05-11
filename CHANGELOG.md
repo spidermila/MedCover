@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-05-11
+
+### Fixed
+- CSP: replace generic `https:` scheme-only allowlist with specific host directives for cdnjs, fonts.googleapis.com, fonts.gstatic.com, and cdn.jsdelivr.net; add `connect-src` for FullCalendar API calls (closes #159)
+- CSP: remove all remaining inline event handlers (`onclick`, `onchange`, `oninput`, etc.) from templates so `script-src` no longer needs `unsafe-inline`; add `font-src data:` for FullCalendar's embedded icon font (closes #160)
+- Bundle FullCalendar 6.1.15 JS locally; eliminates Firefox `NS_ERROR_CORRUPTED_CONTENT` caused by jsDelivr returning a text/plain error page for a non-existent CSS file (closes #161)
+- Soft-deleted qualifications no longer appear in user profile pages, event spot assignment views, or event template forms (closes #158)
+- User report: removed treated-patient / participant count column; this per-event metric is not meaningful in per-user reports (closes #157)
+- Form validation: fields no longer turn green prematurely before the whole form is validated; fields without any validation rule stay neutral; green is applied only when the entire form passes (closes #141)
+- Fixed "Teď" button in datetime pickers being non-functional due to duplicate `class=` attributes left from a prior inline-handler refactor (closes #166)
+
+## [0.11.1] - 2026-05-11
+
 ### Added
 - User archiving: admins can archive departed users, hiding them from all lists and dropdowns while preserving their historical data (closes #123)
 - Minimum test coverage enforced at 83%; CI and local test runs now fail if coverage drops below this threshold (closes #47)
@@ -30,13 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Navbar title "MedCover" hidden on mobile screens; logo remains visible at all sizes (closes #138)
 - Zodpovědný zdravotník picker in event create/edit now shows only users with an RP-eligible qualification (closes #138)
 - Debriefing form: actual start/end datetime pickers now use the same flatpickr component (Czech locale, dd.mm.yyyy HH:MM format, "Teď" button) as the event edit form; also fixed the displayed default times to use local (Europe/Prague) time instead of UTC (closes #111)
-- CSP: replace generic `https:` scheme-only allowlist with specific host directives for cdnjs, fonts.googleapis.com, fonts.gstatic.com, and cdn.jsdelivr.net; add `connect-src` for FullCalendar API calls (closes #159)
-- CSP: remove all remaining inline event handlers (`onclick`, `onchange`, `oninput`, etc.) from templates so `script-src` no longer needs `unsafe-inline`; add `font-src data:` for FullCalendar's embedded icon font (closes #160)
-- Bundle FullCalendar 6.1.15 JS locally; eliminates Firefox `NS_ERROR_CORRUPTED_CONTENT` caused by jsDelivr returning a text/plain error page for a non-existent CSS file (closes #161)
-- Soft-deleted qualifications no longer appear in user profile pages, event spot assignment views, or event template forms (closes #158)
-- User report: removed treated-patient / participant count column; this per-event metric is not meaningful in per-user reports (closes #157)
-- Form validation: fields no longer turn green prematurely before the whole form is validated; fields without any validation rule stay neutral; green is applied only when the entire form passes (closes #141)
-- Fixed "Teď" button in datetime pickers being non-functional due to duplicate `class=` attributes left from a prior inline-handler refactor (closes #166)
 
 ## [0.11.0] - 2026-05-11
 
@@ -116,7 +122,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/spidermila/MedCover/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/spidermila/MedCover/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/spidermila/MedCover/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/spidermila/MedCover/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/spidermila/MedCover/releases/tag/v0.9.0
