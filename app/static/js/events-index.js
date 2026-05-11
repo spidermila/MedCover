@@ -15,6 +15,7 @@
 
   var STORAGE_VIEW  = "medcover_events_view";
   var STORAGE_ELIG  = "medcover_events_elig";
+  var STORAGE_DATE  = "medcover_events_cal_date";
 
   var calendarInitialized = false;
   var calendar = null;
@@ -27,6 +28,13 @@
     try { return localStorage.getItem(STORAGE_ELIG) === "1"; } catch(e) { return false; }
   }
   function saveEligFilter(v) { localStorage.setItem(STORAGE_ELIG, v ? "1" : "0"); }
+
+  function loadCalendarDate() {
+    try { return localStorage.getItem(STORAGE_DATE) || null; } catch(e) { return null; }
+  }
+  function saveCalendarDate(dateStr) {
+    try { localStorage.setItem(STORAGE_DATE, dateStr); } catch(e) {}
+  }
 
   // ── Table row visibility (elig only — status + ME are server-side) ──
 
@@ -86,10 +94,14 @@
     var el = document.getElementById("fullcalendar");
     calendar = new FullCalendar.Calendar(el, {
       initialView: "dayGridMonth",
+      initialDate: loadCalendarDate() || undefined,
       locale: "cs",
       firstDay: 1,
       headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listMonth" },
       buttonText: { today: "Dnes", month: "Měsíc", week: "Týden", list: "Seznam" },
+      datesSet: function (info) {
+        saveCalendarDate(info.view.currentStart.toISOString().slice(0, 10));
+      },
       events: async function (fetchInfo, successCallback, failureCallback) {
         try {
           if (!allCalendarEvents) {
