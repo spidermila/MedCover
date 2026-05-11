@@ -66,6 +66,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # We are the controller (or a plain single-process run).
     if os.environ.get("TEST_DATABASE_URL"):
         # User or CI already provided a DB — respect it, skip the container.
+        _check_db_reachable(os.environ["TEST_DATABASE_URL"])
         return
 
     from testcontainers.postgres import PostgresContainer  # type: ignore[import-untyped]
@@ -82,6 +83,27 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ["TEST_DATABASE_URL"] = url
     _tc_postgres = container
     config._testcontainer_url = url  # type: ignore[attr-defined]
+
+
+def _check_db_reachable(url: str) -> None:
+    """Exit immediately with a clear message if the DB is not reachable."""
+    from sqlalchemy.exc import OperationalError
+
+    try:
+        engine = create_engine(url, connect_args={"connect_timeout": 5})
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        engine.dispose()
+    except OperationalError as exc:
+        pytest.exit(
+            f"\n\nERROR: Cannot connect to the test database.\n"
+            f"  URL: {url}\n"
+            f"  Reason: {exc.orig}\n\n"
+            "Make sure the database container is running before running tests.\n"
+            "  Local:  docker compose up -d db\n"
+            "  Then:   pytest tests/\n",
+            returncode=3,
+        )
 
 
 def pytest_configure_node(node: object) -> None:  # type: ignore[type-arg]
