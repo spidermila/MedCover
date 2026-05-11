@@ -104,9 +104,6 @@
       firstDay: 1,
       headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,listMonth" },
       buttonText: { today: "Dnes", month: "Měsíc", week: "Týden", list: "Seznam" },
-      datesSet: function (info) {
-        saveCalendarDate(_localYMD(info.view.currentStart));
-      },
       events: async function (fetchInfo, successCallback, failureCallback) {
         try {
           if (!allCalendarEvents) {
@@ -142,6 +139,11 @@
       height: "auto"
     });
     calendar.render();
+    window.addEventListener("pagehide", function () {
+      if (calendar && calendar.view) {
+        saveCalendarDate(_localYMD(calendar.view.currentStart));
+      }
+    });
   }
 
   // ── Spot pick modal ───────────────────────────────────────────────────────
