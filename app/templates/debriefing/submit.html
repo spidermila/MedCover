@@ -100,7 +100,7 @@
                        id="actual_start_datetime" name="actual_start_datetime"
                        value="{{ request.form.get('actual_start_datetime', event.start_datetime | localdt(fmt='%Y-%m-%dT%H:%M')) }}"
                        {% if event.event_type != EventType.TRAINING %}required{% endif %}>
-                <button class="btn btn-outline-secondary" type="button" class="btn-fpnow">Teď</button>
+                <button class="btn btn-outline-secondary btn-fpnow" type="button">Teď</button>
               </div>
             </div>
             <div class="col-12 col-md-6">
@@ -113,7 +113,7 @@
                        id="actual_end_datetime" name="actual_end_datetime"
                        value="{{ request.form.get('actual_end_datetime', event.end_datetime | localdt(fmt='%Y-%m-%dT%H:%M')) }}"
                        {% if event.event_type != EventType.TRAINING %}required{% endif %}>
-                <button class="btn btn-outline-secondary" type="button" class="btn-fpnow">Teď</button>
+                <button class="btn btn-outline-secondary btn-fpnow" type="button">Teď</button>
               </div>
             </div>
           </div>
