@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Import: archived users are assignable to imported event spots (historical events may reference people who have since left)
 - Report link on user detail page: users with `report.view` permission now have a direct "Přehled akcí" button linking to the user's event report (closes #117)
 - Events table: scheduled duration now shown in the Začátek column, e.g. "pá 10:00 (2 h)"; Nadřazená akce column moved to the end (closes #121)
+- Calendar view: current month/week is now remembered across filter changes and page reloads; applying a status, ME, or event-type filter no longer resets the calendar to today (closes #111)
 
 ### Fixed
 - User report: planned hours sum cell in the "Celkem (dokončené akce)" footer row now shows "—" instead of a meaningless scheduled-hours total (closes #108)
