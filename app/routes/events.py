@@ -317,7 +317,7 @@ def create() -> str | Response:
 
     master_events = active_master_events_list()
     users = rp_eligible_users_list()
-    all_qualifications = db.session.scalars(db.select(Qualification).order_by(Qualification.name)).all()
+    all_qualifications = db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(Qualification.name)).all()
 
     if request.method == "POST":
         event, error = _parse_event_form(request.form)
@@ -370,7 +370,7 @@ def create_from_template(template_id: int) -> str | Response:
 
     master_events = active_master_events_list()
     users = rp_eligible_users_list()
-    all_qualifications = db.session.scalars(db.select(Qualification).order_by(Qualification.name)).all()
+    all_qualifications = db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(Qualification.name)).all()
 
     return render_template(
         "events/create.html",
@@ -416,7 +416,7 @@ def detail(event_id: int) -> str | Response:
         ).all()
 
     all_qualifications = db.session.scalars(
-        db.select(Qualification).order_by(Qualification.name)
+        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(Qualification.name)
     ).all()
 
     # Precompute for JS eligibility check: for each qualification R, which qualification IDs can fill it?
@@ -729,7 +729,7 @@ def add_spot(event_id: int) -> Response:
         quantity = 1
     qual_ids = [int(c) for c in request.form.getlist("qualification_ids") if c.isdigit()]
     qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.id.in_(qual_ids))
+        db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
     ).all() if qual_ids else []
 
     for _ in range(quantity):
@@ -759,7 +759,7 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
     description = request.form.get("description", "").strip() or None
     qual_ids = [int(c) for c in request.form.getlist("qualification_ids") if c.isdigit()]
     qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.id.in_(qual_ids))
+        db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
     ).all() if qual_ids else []
     confirm_unassign = request.form.get("confirm_unassign") == "1"
 
@@ -953,7 +953,7 @@ def _build_spots(event: Event, form: dict) -> None:
         is_optional = form.get(f"spot_optional_{i}") == "1"
         qual_ids = [int(c) for c in form.getlist(f"spot_cred_{i}") if str(c).isdigit()]
         qualifications = db.session.scalars(
-            db.select(Qualification).where(Qualification.id.in_(qual_ids))
+            db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
         ).all() if qual_ids else []
         spot = EventSpot(event_id=event.id, description=description, is_optional=is_optional)
         spot.required_qualifications = list(qualifications)

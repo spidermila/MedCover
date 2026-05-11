@@ -75,7 +75,7 @@ def _rebuild_spot_templates(
         st = EventSpotTemplate(template_id=template.id, description=desc, is_optional=is_optional)
         if qual_ids:
             creds = db.session.scalars(
-                db.select(Qualification).where(Qualification.id.in_(qual_ids))
+                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
             ).all()
             st.required_qualifications = list(creds)
         db.session.add(st)
@@ -102,7 +102,7 @@ def create() -> str | Response:
     require_permission("event_template.create")
 
     qualifications = db.session.scalars(
-        db.select(Qualification).order_by(Qualification.name)
+        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(Qualification.name)
     ).all()
     equipment_types = db.session.scalars(
         db.select(EquipmentType)
@@ -159,7 +159,7 @@ def edit(template_id: int) -> str | Response:
     tmpl = get_or_404(EventTemplate, template_id)
 
     qualifications = db.session.scalars(
-        db.select(Qualification).order_by(Qualification.name)
+        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(Qualification.name)
     ).all()
     equipment_types = db.session.scalars(
         db.select(EquipmentType)

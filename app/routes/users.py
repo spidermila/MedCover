@@ -234,7 +234,7 @@ def detail(user_id: uuid.UUID) -> str:
     roles = db.session.scalars(db.select(Role).order_by(Role.name)).all()
     from app.models.qualification import Qualification
     qualifications = db.session.scalars(
-        db.select(Qualification).order_by(Qualification.name)
+        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(Qualification.name)
     ).all()
     return render_template("users/detail.html", user=user, all_roles=roles, all_qualifications=qualifications)
 
@@ -256,7 +256,10 @@ def _apply_qualification_update(user: UserAccount, qual_ids: list[int]) -> None:
     from app.models.qualification import Qualification
     before_quals = sorted(c.name for c in user.qualifications)
     new_creds = db.session.scalars(
-        db.select(Qualification).where(Qualification.id.in_(qual_ids))
+        db.select(Qualification).where(
+            Qualification.id.in_(qual_ids),
+            Qualification.is_deleted.is_(False),
+        )
     ).all() if qual_ids else []
     user.qualifications = list(new_creds)
     after_quals = sorted(c.name for c in user.qualifications)

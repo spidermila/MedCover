@@ -405,6 +405,20 @@ class TestQualificationDelete:
         resp = member_client.post(f"/qualifications/{qid}/delete")
         assert resp.status_code == 403
 
+    def test_deleted_qualification_not_shown_on_user_page(self, app, admin_client):
+        """Soft-deleted qualifications must not appear in the user detail qualification list."""
+        with app.app_context():
+            q = _make_qual("SoftDeletedQual")
+            qid = q.id
+            user = _make_user_with_qual(app, q)
+            uid = user.id
+        # Delete the qualification
+        admin_client.post(f"/qualifications/{qid}/delete", follow_redirects=True)
+        # The user detail page must not show the deleted qualification
+        resp = admin_client.get(f"/users/{uid}")
+        assert resp.status_code == 200
+        assert b"SoftDeletedQual" not in resp.data
+
 
 # ── Model: can_be_filled_by ───────────────────────────────────────────────────
 
