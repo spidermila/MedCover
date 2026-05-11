@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Creating or editing an event with a responsible person selected caused a server error (ValueError); fixed (closes #137)
 - Navbar title "MedCover" hidden on mobile screens; logo remains visible at all sizes (closes #138)
 - Zodpovědný zdravotník picker in event create/edit now shows only users with an RP-eligible qualification (closes #138)
+- Debriefing form: actual start/end datetime pickers now use the same flatpickr component (Czech locale, dd.mm.yyyy HH:MM format, "Teď" button) as the event edit form; also fixed the displayed default times to use local (Europe/Prague) time instead of UTC (closes #111)
 
 ## [0.11.0] - 2026-05-11
 

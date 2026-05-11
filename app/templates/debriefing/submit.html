@@ -95,20 +95,26 @@
                 Skutečný začátek akce {% if event.event_type != EventType.TRAINING %}<span class="text-danger">*</span>{% endif %}
                 {{ help_icon("Skutečný čas zahájení akce — může se lišit od plánovaného.") }}
               </label>
-              <input type="datetime-local" class="form-control"
-                     id="actual_start_datetime" name="actual_start_datetime"
-                     value="{{ request.form.get('actual_start_datetime', event.start_datetime.strftime('%Y-%m-%dT%H:%M')) }}"
-                     {% if event.event_type != EventType.TRAINING %}required{% endif %}>
+              <div class="input-group">
+                <input type="text" class="form-control flatpickr-dt"
+                       id="actual_start_datetime" name="actual_start_datetime"
+                       value="{{ request.form.get('actual_start_datetime', event.start_datetime | localdt(fmt='%Y-%m-%dT%H:%M')) }}"
+                       {% if event.event_type != EventType.TRAINING %}required{% endif %}>
+                <button class="btn btn-outline-secondary" type="button" onclick="fpNow(this)">Teď</button>
+              </div>
             </div>
             <div class="col-12 col-md-6">
               <label for="actual_end_datetime" class="form-label {% if event.event_type != EventType.TRAINING %}fw-semibold{% endif %}">
                 Skutečný konec akce {% if event.event_type != EventType.TRAINING %}<span class="text-danger">*</span>{% endif %}
                 {{ help_icon("Skutečný čas ukončení akce — může se lišit od plánovaného.") }}
               </label>
-              <input type="datetime-local" class="form-control"
-                     id="actual_end_datetime" name="actual_end_datetime"
-                     value="{{ request.form.get('actual_end_datetime', event.end_datetime.strftime('%Y-%m-%dT%H:%M')) }}"
-                     {% if event.event_type != EventType.TRAINING %}required{% endif %}>
+              <div class="input-group">
+                <input type="text" class="form-control flatpickr-dt"
+                       id="actual_end_datetime" name="actual_end_datetime"
+                       value="{{ request.form.get('actual_end_datetime', event.end_datetime | localdt(fmt='%Y-%m-%dT%H:%M')) }}"
+                       {% if event.event_type != EventType.TRAINING %}required{% endif %}>
+                <button class="btn btn-outline-secondary" type="button" onclick="fpNow(this)">Teď</button>
+              </div>
             </div>
           </div>
 
