@@ -469,6 +469,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
         - **Mobile default view**: on small screens (phones) the list view shall be the primary default; month/week/day remain accessible but secondary. On desktop the user's preferred view is stored as a personal setting (user preference in the database).
         - Only the free open-source distribution is used; the paid "Scheduler" add-on (drag-and-drop resource scheduling) is not required.
         - FullCalendar fetches events from a lightweight JSON endpoint served by the Flask backend.
+        - **Bundled locally (not CDN)**: FullCalendar v6 global build ships no separate CSS file — styles are injected at runtime by the JS bundle. jsDelivr returns a `text/plain` error page for the non-existent `/index.global.min.css` path; Firefox rejects this with `NS_ERROR_CORRUPTED_CONTENT` / MIME type mismatch because `X-Content-Type-Options: nosniff` is set on the CDN response. Serving the JS from `app/static/js/fullcalendar.min.js` (downloaded from the npm tarball) eliminates the spurious CDN error and avoids the CDN availability dependency for calendar functionality. Bootstrap and Flatpickr continue to load from `cdn.jsdelivr.net`.
 
 - AD09 Deployment Platform and Containerisation Strategy
     - Problem statement - Where should the application be hosted, and how should it be packaged for deployment? The choice must balance simplicity, cost (non-profit context), portability, and reproducibility.
