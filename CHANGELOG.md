@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard "Moje akce" events now reliably sorted by start date; previously they could appear in creation order (closes #113)
 - Pending-activation user names on dashboard are now hyperlinks to the user profile page (closes #105)
 - Creating or editing an event with a responsible person selected caused a server error (ValueError); fixed (closes #137)
+- Navbar title "MedCover" hidden on mobile screens; logo remains visible at all sizes
+- Zodpovědný zdravotník picker in event create/edit now shows only users with an RP-eligible qualification
 
 ## [0.11.0] - 2026-05-11
 
