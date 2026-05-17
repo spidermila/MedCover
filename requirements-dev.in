@@ -9,7 +9,7 @@ pytest-cov==7.1.0
 pytest-env==1.6.0
 pytest-xdist==3.8.0
 testcontainers[postgres]>=4.14
-Faker==40.15.0
+Faker==40.18.0
 flake8==7.3.0
 pre-commit==4.2.0
 mypy==2.0.0
