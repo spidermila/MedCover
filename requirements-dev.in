@@ -13,4 +13,4 @@ Faker==40.15.0
 flake8==7.3.0
 pre-commit==4.2.0
 mypy==2.0.0
-tox>=4
+tox>=4.54.0
