@@ -4,7 +4,7 @@
 {% block extra_head %}
 <style>
   /* Fixed cols (~900px) + 160px per spot column, clamped between Bootstrap default and 95vw */
-  main.container { max-width: clamp(1140px, {{ 900 + max_spot_cols * 160 }}px, 95vw); }
+  main.container { max-width: clamp(1140px, {{ 900 + max_spot_cols * 180 }}px, 95vw); }
   .tm-color-swatch:hover { border-color: #333 !important; transform: scale(1.15); }
   .tm-color-swatch.active { border-color: #0d6efd !important; }
 </style>

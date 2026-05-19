@@ -297,7 +297,7 @@
 
 /* ── Table Manager — layout & sizing ──────────────────────────────────────── */
 .tm-action-col  { width: 1px; }
-.tm-event-col   { min-width: 300px; }
+.tm-event-col   { width: 280px; } /* max-width: 300px; } */
 .tm-action-cell { white-space: nowrap; padding: 2px 4px; }
 .tm-icon-btn    { font-size: 1rem; line-height: 1; }
 .tm-sm-btn      { font-size: 0.75rem; }
