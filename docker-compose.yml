@@ -1,5 +1,6 @@
 services:
   web:
+    platform: linux/amd64
     build:
       context: .
       args:
@@ -31,6 +32,7 @@ services:
       start_period: 15s
 
   scheduler:
+    platform: linux/amd64
     build:
       context: .
       args:
@@ -61,6 +63,7 @@ services:
       start_period: 15s
 
   db:
+    platform: linux/amd64
     image: postgres:17-alpine
     restart: unless-stopped
     # Give PostgreSQL up to 60 s to finish its final checkpoint before Docker
