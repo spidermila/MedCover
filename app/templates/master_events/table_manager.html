@@ -5,8 +5,8 @@
 <style>
   /* Fixed cols (~900px) + 160px per spot column, clamped between Bootstrap default and 95vw */
   main.container { max-width: clamp(1140px, {{ 900 + max_spot_cols * 180 }}px, 95vw); }
-  .tm-color-swatch:hover { border-color: #333 !important; transform: scale(1.15); }
-  .tm-color-swatch.active { border-color: #0d6efd !important; }
+  .tm-color-swatch:hover { border-color: var(--color-tm-swatch-border) !important; transform: scale(1.15); }
+  .tm-color-swatch.active { border-color: var(--color-primary) !important; }
 </style>
 {% endblock %}
 
@@ -303,10 +303,10 @@
 
 <style>
 .tm-table th, .tm-table td { vertical-align: middle; }
-.tm-time-cell .tm-time-display:hover { color: #0d6efd !important; }
+.tm-time-cell .tm-time-display:hover { color: var(--color-primary) !important; }
 .tm-time-cell { cursor: default; }
-.tm-sep-event td { border-top: 2px solid #adb5bd !important; }
-.tm-sep-day td { border-top: 3px solid #495057 !important; }
+.tm-sep-event td { border-top: 2px solid var(--color-tm-event-separator) !important; }
+.tm-sep-day td { border-top: 3px solid var(--color-tm-day-separator) !important; }
 
 /* Theme-aware "dark/completed" filter button — matches events/index */
 .filter-btn-neutral {
@@ -321,8 +321,8 @@
 }
 
 @keyframes tm-flash-kf {
-  0%   { outline: 3px solid #ffc107; outline-offset: -2px; }
-  60%  { outline: 3px solid #ffc107; outline-offset: -2px; }
+  0%   { outline: 3px solid var(--color-column-flash); outline-offset: -2px; }
+  60%  { outline: 3px solid var(--color-column-flash); outline-offset: -2px; }
   100% { outline: 3px solid transparent; outline-offset: -2px; }
 }
 .tm-row-flash { animation: tm-flash-kf 1.4s ease-out forwards; }

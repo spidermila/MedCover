@@ -35,9 +35,9 @@
   padding: 0;
   font-size: 0.7rem;
   line-height: 1;
-  color: #6c757d;
+  color: var(--color-help-button);
   background: transparent;
-  border: 1px solid #adb5bd;
+  border: 1px solid var(--color-help-button-border);
   border-radius: 50%;
   cursor: pointer;
   vertical-align: middle;
@@ -52,10 +52,10 @@
 }
 .btn-help:hover,
 .btn-help:focus {
-  color: #0d6efd;
-  border-color: #0d6efd;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
   outline: none;
-  box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.25);
+  box-shadow: 0 0 0 0.15rem var(--color-primary-shadow);
 }
 
 /* ── Mobile: compact tables ── */
@@ -133,11 +133,11 @@
 /* Navbar link contrast on red background */
 .navbar-dark .nav-link,
 .navbar-dark .navbar-brand {
-  color: rgba(255, 255, 255, 0.90);
+  color: var(--color-navbar-text);
 }
 .navbar-dark .nav-link:hover,
 .navbar-dark .nav-link:focus {
-  color: #ffffff;
+  color: var(--color-navbar-text-hover);
 }
 
 /* Dark mode: table-light / table-foot overrides */
@@ -175,7 +175,7 @@
 
 /* Restore today highlight in dark mode */
 [data-bs-theme="dark"] .fc .fc-day-today {
-  background-color: rgba(255, 200, 40, 0.12) !important;
+  background-color: var(--color-darkmode-day-today-highlight) !important;
 }
 
 /* Month view: "other month" faded day cells */
@@ -284,15 +284,15 @@
    content stays readable regardless of the active Bootstrap theme.            */
 [data-bs-theme="dark"] .tm-spot-cell,
 [data-bs-theme="dark"] .tm-row-cell[style*="background"] {
-  color: #212529 !important;
+  color: var(--color-tm-darkmode-colored-parent-element) !important;
 }
 /* Also ensure child links / buttons are readable on coloured cells */
 [data-bs-theme="dark"] .tm-row-cell[style*="background"] a,
 [data-bs-theme="dark"] .tm-row-cell[style*="background"] .btn-link {
-  color: #212529 !important;
+  color: var(--color-tm-darkmode-colored-parent-element) !important;
 }
 [data-bs-theme="dark"] .tm-row-cell[style*="background"] .tm-edit-icon {
-  color: #495057 !important;
+  color: var(--color-tm-darkmode-colored-parent-edit-icon) !important;
 }
 
 /* ── Table Manager — layout & sizing ──────────────────────────────────────── */
@@ -310,8 +310,8 @@
 /* Popups (shared base — positioning only; display is toggled by JS inline) */
 .tm-popup       { position: absolute; }
 .tm-popup-time  { z-index: 1050; min-width: 280px; }
-.tm-popup-color { z-index: 1060; background: #fff; border: 1px solid #dee2e6;
-                  border-radius: 6px; padding: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.tm-popup-color { z-index: 1060; background: var(--color-tm-popup-background); border: 1px solid var(--color-tm-popup-border);
+                  border-radius: 6px; padding: 8px; box-shadow: 0 4px 12px var(--color-tm-popup-box-shadow); }
 .tm-popup-advance { z-index: 1070; min-width: 200px; }
 .tm-popup-name  { z-index: 1050; min-width: 320px; }
 
@@ -344,6 +344,22 @@
 :root {
   --color-paid: #198754;
   --color-dark-mode: #6f42c1;
+  --color-primary: #0d6efd;
+  --color-primary-shadow: rgba(13, 110, 253, 0.25);
+  --color-column-flash: #ffc107;
+  --color-tm-day-separator: #495057;
+  --color-tm-event-separator: #adb5bd;
+  --color-tm-popup-background: #fff;
+  --color-tm-popup-border: #dee2e6;
+  --color-tm-popup-box-shadow: rgba(0,0,0,.15);
+  --color-tm-darkmode-colored-parent-element: #212529;
+  --color-tm-darkmode-colored-parent-edit-icon: #495057;
+  --color-help-button-border: #adb5bd;
+  --color-help-button: #6c757d;
+  --color-darkmode-day-today-highlight: rgba(255, 200, 40, 0.12);
+  --color-navbar-text: rgba(255, 255, 255, 0.90);
+  --color-navbar-text-hover: #ffffff;
+  --color-tm-swatch-border: #333333;
 }
 
 .paid-toggle  { width: 3em; height: 1.5em; cursor: pointer; }
