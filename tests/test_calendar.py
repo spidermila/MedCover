@@ -188,10 +188,14 @@ class TestICalRegenerate:
             follow_redirects=False,
         )
         with app.app_context():
+            user = db.session.scalar(
+                db.select(UserAccount).where(UserAccount.email == "member@test.com")
+            )
             entry = db.session.scalar(
                 db.select(AuditLogEntry).where(
                     AuditLogEntry.entity_type == "UserAccount",
                     AuditLogEntry.action_type == "update",
+                    AuditLogEntry.entity_id == str(user.id),
                 )
             )
             assert entry is not None
