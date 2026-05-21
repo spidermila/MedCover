@@ -4,13 +4,13 @@
 
 -r requirements.in   # include all production deps
 
-pytest==9.0.3
-pytest-cov==7.1.0
-pytest-env==1.6.0
-pytest-xdist==3.8.0
-testcontainers[postgres]>=4.14
-Faker==40.18.0
-flake8==7.3.0
-pre-commit==4.6.0
-mypy==2.0.0
-tox>=4.54.0
+pytest
+pytest-cov
+pytest-env
+pytest-xdist
+testcontainers[postgres]
+Faker
+flake8
+pre-commit
+mypy
+tox

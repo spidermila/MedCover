@@ -2,15 +2,15 @@
 # Edit this file, then run: pip-compile requirements.in --generate-hashes
 # to regenerate requirements.txt
 
-Flask==3.1.3
-Flask-SQLAlchemy==3.1.1
-Flask-Migrate==4.1.0
-Flask-Login==0.6.3
-Flask-Mail==0.10.0
-Flask-WTF==1.3.0
-gunicorn==26.0.0
-psycopg2-binary==2.9.12
-schedule==1.2.2
+Flask
+Flask-SQLAlchemy
+Flask-Migrate
+Flask-Login
+Flask-Mail
+Flask-WTF
+gunicorn
+psycopg2-binary
+schedule
 cryptography
 itsdangerous
 pytz
