@@ -47,3 +47,6 @@ Dozory*.xlsx
 vykaz.xlsx
 *.xlsx
 import_events.json
+
+# Copilot instructions (may contain personal/infra details)
+.github/copilot-instructions.md
