@@ -145,15 +145,16 @@ def split_event(event_id: int) -> Response:
         flash("Dokončené nebo zrušené akce nelze rozdělit.", "danger")
         return redirect(url_for("events.detail", event_id=event_id))
 
-    raw_dt = request.form.get("split_datetime", "").strip()
-    if not raw_dt:
+    raw_date = request.form.get("split_date", "").strip()
+    raw_time = request.form.get("split_time", "").strip()
+    if not raw_date or not raw_time:
         flash("Zadejte datum a čas rozdělení.", "danger")
         return redirect(url_for("events.detail", event_id=event_id))
 
     try:
         from app.utils import get_app_tz  # noqa: PLC0415
         tz = get_app_tz()
-        split_dt = datetime.fromisoformat(raw_dt).replace(tzinfo=tz)
+        split_dt = datetime.fromisoformat(f"{raw_date}T{raw_time}").replace(tzinfo=tz)
     except ValueError:
         flash("Neplatný formát data nebo času rozdělení.", "danger")
         return redirect(url_for("events.detail", event_id=event_id))

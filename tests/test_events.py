@@ -1225,7 +1225,7 @@ class TestEventSplit:
         event_id = self._create_open_event(app)
         resp = admin_client.post(
             f"/events/{event_id}/split",
-            data={"split_datetime": "2030-07-01T14:00"},
+            data={"split_date": "2030-07-01", "split_time": "14:00"},
             follow_redirects=False,
         )
         # Should redirect to the new event
@@ -1249,7 +1249,7 @@ class TestEventSplit:
         event_id = self._create_open_event(app)
         resp = admin_client.post(
             f"/events/{event_id}/split",
-            data={"split_datetime": "2030-07-02T10:00"},
+            data={"split_date": "2030-07-02", "split_time": "10:00"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -1276,7 +1276,7 @@ class TestEventSplit:
             event_id = event.id
         resp = admin_client.post(
             f"/events/{event_id}/split",
-            data={"split_datetime": "2030-08-01T14:00"},
+            data={"split_date": "2030-08-01", "split_time": "14:00"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -1286,7 +1286,7 @@ class TestEventSplit:
         event_id = self._create_open_event(app)
         resp = member_client.post(
             f"/events/{event_id}/split",
-            data={"split_datetime": "2030-07-01T14:00"},
+            data={"split_date": "2030-07-01", "split_time": "14:00"},
         )
         assert resp.status_code == 403
 
@@ -1323,7 +1323,7 @@ class TestEventSplit:
 
         admin_client.post(
             f"/events/{event_id}/split",
-            data={"split_datetime": "2030-09-01T14:00"},
+            data={"split_date": "2030-09-01", "split_time": "14:00"},
             follow_redirects=False,
         )
 
