@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
+from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
@@ -179,6 +180,22 @@ class TestICalRegenerate:
 
         resp = member_client.get(f"/calendar/{old_token}.ics")
         assert resp.status_code == 404
+
+    def test_regenerate_writes_audit_log(self, app, member_client):
+        member_client.post(
+            "/calendar/regenerate",
+            data={"csrf_token": "ignored"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            entry = db.session.scalar(
+                db.select(AuditLogEntry).where(
+                    AuditLogEntry.entity_type == "UserAccount",
+                    AuditLogEntry.action_type == "update",
+                )
+            )
+            assert entry is not None
+            assert "iCal" in entry.summary
 
     def test_regenerate_requires_login(self, client):
         resp = client.post(

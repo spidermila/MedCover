@@ -114,7 +114,6 @@ def regenerate() -> Response:
     require_permission("user.edit_own")
     old_token = current_user.ical_token
     current_user.regenerate_ical_token()
-    db.session.commit()
     audit(
         "update",
         "UserAccount",
@@ -122,5 +121,6 @@ def regenerate() -> Response:
         f"Uživatel {current_user.email} vygeneroval nový iCal token.",
         changes={"ical_token": {"before": bool(old_token), "after": True}},
     )
+    db.session.commit()
     log.info("iCal token regenerated for user %s", current_user.email)
     return redirect(url_for("users.profile", _anchor="ical"))
