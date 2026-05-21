@@ -128,18 +128,9 @@
             přihlášky, vybavení i popis ze zdrojové akce.
           </p>
           <div class="mb-3">
-            <label class="form-label">Čas rozdělení</label>
-            {% set mid = event | midpoint_iso %}
-            <div class="row g-2">
-              <div class="col-7">
-                <input class="form-control flatpickr-date" type="text" id="split_date" name="split_date"
-                       value="{{ mid[:10] }}" required>
-              </div>
-              <div class="col-5">
-                <input class="form-control" type="time" id="split_time" name="split_time"
-                       value="{{ mid[11:16] }}" required>
-              </div>
-            </div>
+            <label class="form-label" for="split_datetime">Čas rozdělení</label>
+            <input type="text" class="form-control flatpickr-dt" id="split_datetime" name="split_datetime"
+                   value="{{ event | midpoint_iso }}" required>
             <div class="form-text">
               Začátek: {{ event.start_datetime | localdt }} &nbsp;·&nbsp;
               Konec: {{ event.end_datetime | localdt }}
