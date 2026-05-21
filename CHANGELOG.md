@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Date inputs on debriefing manage and date-range report now use Flatpickr with Czech date format (dd.mm.YYYY)
 
 ### Fixed
-- Table Manager: "Reset barvy" button now correctly removes the colour from the server; previously the empty value was rejected by the generic validation guard before reaching the colour handler
+- Split event modal: date/time input now uses the standard Flatpickr datetime picker (same as event create/edit), replacing the broken `type="date"` + `type="text"` combination that showed dates in US format (closes #239)
 - Reports: "Příští směna" column now shows the user's true next future assignment globally; previously it was empty when the report date range didn't include future events
 - CSV exports now include UTF-8 BOM so Excel on Windows auto-detects Czech characters correctly
 
