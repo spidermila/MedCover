@@ -12,7 +12,7 @@ import pytz
 from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_user
 from flask_mail import Message
-
+from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db, mail
 from app.models.settings import AppSettings, get_settings
 from app.models.user import UserAccount
@@ -126,8 +126,8 @@ def step3() -> str | Response:
             error = "Zadejte celé jméno."
         elif not email:
             error = "Zadejte e-mail."
-        elif len(password) < 8:
-            error = "Heslo musí mít alespoň 8 znaků."
+        elif len(password) < MIN_PASSWORD_LENGTH:
+            error = f"Heslo musí mít alespoň {MIN_PASSWORD_LENGTH} znaků."
         elif password != password2:
             error = "Hesla se neshodují."
         elif db.session.scalar(db.select(UserAccount).where(UserAccount.email == email)):
@@ -135,7 +135,7 @@ def step3() -> str | Response:
 
         if error:
             flash(error, "warning")
-            return render_template("setup/step3_admin.html")
+            return render_template("setup/step3_admin.html", min_password_length=MIN_PASSWORD_LENGTH)
 
         # Ensure Admin role and its permissions exist, plus General ME
         _ensure_roles()
@@ -155,7 +155,7 @@ def step3() -> str | Response:
         flash("Nastavení dokončeno. Vítejte v MedCover!", "success")
         return redirect(url_for("setup.done"))
 
-    return render_template("setup/step3_admin.html")
+    return render_template("setup/step3_admin.html", min_password_length=MIN_PASSWORD_LENGTH)
 
 
 @setup_bp.route("/done")

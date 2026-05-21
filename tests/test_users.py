@@ -6,9 +6,10 @@ from app.models.user import UserAccount
 from app.models.role import Role
 from app.models.invite import RegistrationInvite
 from app.models.audit import AuditLogEntry
-
+from app.constants import MIN_PASSWORD_LENGTH
 
 # ── Profile ───────────────────────────────────────────────────────────────────
+
 
 class TestUserProfile:
     def test_profile_page_loads(self, member_client: object) -> None:
@@ -82,7 +83,7 @@ class TestUserProfile:
             data={"action": "password", "current_password": "testpass123", "new_password": "short", "confirm_password": "short"},
             follow_redirects=True,
         )
-        assert "alespoň 8 znaků".encode() in resp.data
+        assert f"{MIN_PASSWORD_LENGTH} znaků".encode() in resp.data
 
     def test_change_password_success(self, app: object, member_client: object) -> None:
         resp = member_client.post(

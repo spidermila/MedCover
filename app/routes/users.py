@@ -88,6 +88,7 @@ def profile() -> str | Response:
         upcoming=upcoming,
         ical_url=ical_url,
         token_created=token_created,
+        min_password_length=MIN_PASSWORD_LENGTH
     )
 
 
@@ -148,7 +149,7 @@ def _change_password(user: UserAccount) -> Response:
         flash("Současné heslo je nesprávné.", "danger")
         return redirect(url_for("users.profile"))
     if len(new_pw) < MIN_PASSWORD_LENGTH:
-        flash("Nové heslo musí mít alespoň 8 znaků.", "danger")
+        flash(f"Heslo musí mít alespoň {MIN_PASSWORD_LENGTH} znaků.", "warning")
         return redirect(url_for("users.profile"))
     if new_pw != confirm:
         flash("Hesla se neshodují.", "danger")
@@ -299,7 +300,7 @@ def create_user() -> str | Response:
     audit("create", "UserAccount", user.id, f"Manuálně vytvořen účet {user.name} ({user.email})", {})
     db.session.commit()
     flash(f"Uživatel {user.name} byl vytvořen. Uživatel si může nastavit heslo přes 'Zapomenuté heslo'.", "success")
-    return redirect(url_for("users.detail", user_id=user.id))
+    return redirect(url_for("users.detail", user_id=user.id, min_password_length=MIN_PASSWORD_LENGTH))
 
 
 @users_bp.route("/<uuid:user_id>")
@@ -312,7 +313,7 @@ def detail(user_id: uuid.UUID) -> str:
     qualifications = db.session.scalars(
         db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
-    return render_template("users/detail.html", user=user, all_roles=roles, all_qualifications=qualifications)
+    return render_template("users/detail.html", user=user, all_roles=roles, all_qualifications=qualifications, min_password_length=MIN_PASSWORD_LENGTH)
 
 
 def _apply_role_update(user: UserAccount, role_ids: list[int]) -> None:
@@ -394,7 +395,7 @@ def save_user(user_id: uuid.UUID) -> Response:
     new_password = request.form.get("new_password", "").strip()
     if new_password:
         if len(new_password) < MIN_PASSWORD_LENGTH:
-            flash("Heslo musí mít alespoň 8 znaků.", "danger")
+            flash(f"Heslo musí mít alespoň {MIN_PASSWORD_LENGTH} znaků.", "warning")
             return redirect(url_for("users.detail", user_id=user_id))
         user.set_password(new_password)
         audit("edit", "UserAccount", user.id, f"Admin nastavil heslo pro uživatele {user.name}", {})

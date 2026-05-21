@@ -24,12 +24,12 @@
           </div>
           <div class="mb-3">
             <label for="password" class="form-label">Heslo <span class="text-danger">*</span></label>
-            <input type="password" class="form-control" id="password" name="password" required minlength="8">
-            <div class="form-text">Minimálně 8 znaků.</div>
+            <input type="password" class="form-control" id="password" name="password" required minlength="{{ min_password_length }}">
+            <div class="form-text">Minimálně {{ min_password_length }} znaků.</div>
           </div>
-          <div class="mb-3">
+          <div class="mb-3">{% for %}
             <label for="password2" class="form-label">Zopakujte heslo <span class="text-danger">*</span></label>
-            <input type="password" class="form-control" id="password2" name="password2" required minlength="8">
+            <input type="password" class="form-control" id="password2" name="password2" required minlength="{{ min_password_length }}">
           </div>
           <div class="d-flex justify-content-between mt-4">
             <a href="{{ url_for('setup.step2') }}" class="btn btn-outline-secondary">← Zpět</a>

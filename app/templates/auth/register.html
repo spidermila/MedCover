@@ -15,11 +15,11 @@
           </div>
           <div class="mb-3">
             <label for="password" class="form-label">Heslo</label>
-            <input type="password" class="form-control" id="password" name="password" required minlength="8">
+            <input type="password" class="form-control" id="password" name="password" required minlength="{{ min_password_length }}">
           </div>
           <div class="mb-3">
             <label for="password2" class="form-label">Zopakujte heslo</label>
-            <input type="password" class="form-control" id="password2" name="password2" required minlength="8">
+            <input type="password" class="form-control" id="password2" name="password2" required minlength="{{ min_password_length }}">
           </div>
           <div class="d-grid mt-4">
             <button type="submit" class="btn btn-danger">Dokončit registraci</button>

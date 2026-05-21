@@ -3,6 +3,7 @@ from app.extensions import db as _db
 from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _make_user, _login
+from app.constants import MIN_PASSWORD_LENGTH
 
 
 class TestLoginPage:
@@ -289,7 +290,7 @@ class TestRegisterFlow:
             follow_redirects=True,
         )
         assert response.status_code == 200
-        assert "8 znaků".encode() in response.data
+        assert f"{MIN_PASSWORD_LENGTH} znaků".encode() in response.data
         with app.app_context():
             user = _db.session.scalar(_db.select(UserAccount).where(UserAccount.email == "newuser@example.com"))
             assert user is None
@@ -378,7 +379,7 @@ class TestResetPassword:
             follow_redirects=True,
         )
         assert response.status_code == 200
-        assert "8 znaků".encode() in response.data
+        assert f"{MIN_PASSWORD_LENGTH} znaků".encode() in response.data
 
     def test_reset_mismatched_passwords_rejected(self, app, client):
         token = self._make_reset_token(app)

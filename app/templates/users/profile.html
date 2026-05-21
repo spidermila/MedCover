@@ -84,8 +84,8 @@
             <div class="col-12 col-md-4">
               <label for="new_password" class="form-label">Nové heslo</label>
               <input type="password" class="form-control" id="new_password" name="new_password"
-                     minlength="8" required>
-              <div class="form-text">Minimálně 8 znaků.</div>
+                     minlength="{{ min_password_length }}" required>
+              <div class="form-text">Minimálně {{ min_password_length }} znaků.</div>
             </div>
             <div class="col-12 col-md-4">
               <label for="confirm_password" class="form-label">Potvrzení nového hesla</label>

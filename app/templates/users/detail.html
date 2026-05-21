@@ -102,11 +102,11 @@
         <div class="card-body">
           <div class="mb-2">
             <label class="form-label" for="new_password">Nové heslo
-              {{ help_icon("Ponechte prázdné, pokud heslo neměníte. Heslo musí mít alespoň 8 znaků.") }}
+              {{ help_icon("Ponechte prázdné, pokud heslo neměníte. Heslo musí mít alespoň {{ min_password_length }} znaků.") }}
             </label>
             <input class="form-control" type="password" id="new_password" name="new_password"
-                   autocomplete="new-password" placeholder="Nové heslo (min. 8 znaků)">
-            <div class="invalid-feedback">Heslo musí mít alespoň 8 znaků.</div>
+                   autocomplete="new-password" placeholder="Nové heslo (min. {{ min_password_length }} znaků)">
+            <div class="invalid-feedback">Heslo musí mít alespoň {{ min_password_length }} znaků.</div>
           </div>
         </div>
       </div>

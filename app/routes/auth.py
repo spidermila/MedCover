@@ -141,7 +141,7 @@ def forgot_password() -> str | Response:
             db.session.commit()
         return redirect(url_for("auth.login"))
 
-    return render_template("auth/forgot_password.html")
+    return render_template("auth/forgot_password.html", min_password_length=MIN_PASSWORD_LENGTH)
 
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
@@ -164,7 +164,7 @@ def reset_password(token: str) -> str | Response:
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
         if len(password) < MIN_PASSWORD_LENGTH:
-            flash("Heslo musí mít alespoň 8 znaků.", "warning")
+            flash(f"Heslo musí mít alespoň {MIN_PASSWORD_LENGTH} znaků.", "warning")
         elif password != password2:
             flash("Hesla se neshodují.", "warning")
         else:
@@ -212,7 +212,8 @@ def register(token: str) -> str | Response:
         if not full_name:
             flash("Zadejte celé jméno.", "warning")
         elif len(password) < MIN_PASSWORD_LENGTH:
-            flash("Heslo musí mít alespoň 8 znaků.", "warning")
+            flash(f"Heslo musí mít alespoň {MIN_PASSWORD_LENGTH} znaků.", "warning")
+
         elif password != password2:
             flash("Hesla se neshodují.", "warning")
         elif db.session.scalar(db.select(UserAccount).where(UserAccount.email == invite.email)):
@@ -240,4 +241,4 @@ def register(token: str) -> str | Response:
             flash("Registrace dokončena. Nyní se můžete přihlásit.", "success")
             return redirect(url_for("auth.login"))
 
-    return render_template("auth/register.html", invite=invite)
+    return render_template("auth/register.html", invite=invite, min_password_length=MIN_PASSWORD_LENGTH)
