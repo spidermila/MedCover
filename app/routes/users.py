@@ -415,17 +415,19 @@ def save_user(user_id: uuid.UUID) -> Response:
         cred_ids = [int(c) for c in request.form.getlist("qualification_ids")]
         quals_changed = _apply_qualification_update(user, cred_ids)
 
-    if info_changed or roles_changed or quals_changed:
-        user.version += 1
-
     # ── Admin password set (optional) ───────────────────────────────────────
+    password_changed = False
     new_password = request.form.get("new_password", "").strip()
     if new_password:
         if len(new_password) < MIN_PASSWORD_LENGTH:
             flash("Heslo musí mít alespoň 8 znaků.", "danger")
             return redirect(url_for("users.detail", user_id=user_id))
         user.set_password(new_password)
+        password_changed = True
         audit("edit", "UserAccount", user.id, f"Admin nastavil heslo pro uživatele {user.name}", {})
+
+    if info_changed or roles_changed or quals_changed or password_changed:
+        user.version += 1
 
     db.session.commit()
     flash("Uživatel byl uložen.", "success")
