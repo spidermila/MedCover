@@ -187,7 +187,7 @@ class TestAutoClearRpOnRelease:
         non_rp_qual_id = _make_non_rp_qual(app)
         rp_user_id = _make_user_with_qual(app, "rp_stays@test.com", rp_qual_id)
         _make_user_with_qual(app, "nonrp_leaves@test.com", non_rp_qual_id)
-        event_id, spot_id = _make_open_event(app)
+        event_id, _spot_id = _make_open_event(app)
 
         with app.app_context():
             # Add second spot for non-rp user
@@ -380,7 +380,7 @@ class TestRpElevatedPermissions:
 
     def test_rp_user_can_assign_other_on_attended_event(self, app):
         """RP-eligible user assigned to event can assign another user."""
-        event_id, spot1_id, spot2_id, rp_user_id = self._setup_event_with_rp_user(app)
+        _event_id, _spot1_id, spot2_id, _rp_user_id = self._setup_event_with_rp_user(app)
         # Create a target user to be assigned
         non_rp_qual_id = _make_non_rp_qual(app)
         target_id = _make_user_with_qual(app, "target_user@test.com", non_rp_qual_id)
@@ -400,7 +400,7 @@ class TestRpElevatedPermissions:
 
     def test_rp_user_can_unassign_other_on_attended_event(self, app):
         """RP-eligible user assigned to event can unassign another user."""
-        event_id, spot1_id, spot2_id, rp_user_id = self._setup_event_with_rp_user(app)
+        _event_id, _spot1_id, spot2_id, rp_user_id = self._setup_event_with_rp_user(app)
         non_rp_qual_id = _make_non_rp_qual(app)
         target_id = _make_user_with_qual(app, "target_unassign@test.com", non_rp_qual_id)
 
