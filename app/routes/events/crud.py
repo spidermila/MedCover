@@ -387,6 +387,13 @@ def detail(event_id: int) -> str | Response:
     if can_assign:
         eligible_users = list(active_users_list())
 
+    # When ME has a coordinator, self-claim/release is blocked for regular members
+    me_coordinated = (
+        event.master_event is not None
+        and event.master_event.coordinator_id is not None
+        and not current_user.has_permission("event.assign_other")
+    )
+
     all_equipment_types = db.session.scalars(
         db.select(EquipmentType)
         .where(EquipmentType.category != EquipmentCategory.PERSONAL)
@@ -439,6 +446,7 @@ def detail(event_id: int) -> str | Response:
         EquipmentItemStatus=EquipmentItemStatus,
         eligible_users=eligible_users,
         can_assign=can_assign,
+        me_coordinated=me_coordinated,
         all_equipment_types=all_equipment_types,
         available_equipment_items=available_equipment_items,
         all_qualifications=all_qualifications,

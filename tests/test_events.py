@@ -680,14 +680,14 @@ class TestCalendarFeedExtended:
         assert isinstance(data, list)
         assert len(data) >= 1
 
-    def test_feed_member_cannot_see_drafts(self, app, member_client):
-        """Member does not have event.view_draft so draft events are excluded."""
+    def test_feed_member_can_see_drafts(self, app, member_client):
+        """Member has event.view_draft so draft events are included in the feed."""
         _make_event_in_status(app, EventStatus.DRAFT)
         response = member_client.get("/events/feed")
         assert response.status_code == 200
         data = response.get_json()
         statuses = [item["extendedProps"]["status_key"] for item in data]
-        assert "DRAFT" not in statuses
+        assert "DRAFT" in statuses
 
 
 # ── Edit spot ─────────────────────────────────────────────────────────────────

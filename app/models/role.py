@@ -181,7 +181,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "user.view", "user.edit_own",
         "qualification.view",
         "master_event.view",
-        "event.view", "event.assign_own",
+        "event.view", "event.view_draft", "event.assign_own",
         "event_template.view",
         "equipment.view", "equipment_item.issue_personal", "equipment_item.report_own",
         "debriefing.submit_own", "debriefing.view_own",
