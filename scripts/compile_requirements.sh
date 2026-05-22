@@ -28,6 +28,7 @@ echo "==> Pulling ${IMAGE} ..."
 
 echo "==> Compiling all requirements files ..."
 "$DOCKER" run --rm \
+  --platform linux/amd64 \
   -v "${REPO_ROOT}:/app" \
   -w /app \
   "$IMAGE" \
