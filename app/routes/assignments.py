@@ -125,12 +125,13 @@ def claim(spot_id: int) -> Response:
 def release(assignment_id: int) -> Response:
     assignment = get_or_404(Assignment, assignment_id)
 
-    # Only own assignment unless assigning-other permission
+    # Only own assignment unless elevated permission on this event
     if assignment.user_id != current_user.id:
-        if not current_user.has_permission("event.assign_other"):
+        event = get_or_404(Event, assignment.spot.event_id)
+        if not event.user_can_manage_assignments(current_user):
             abort(403)
-
-    event = get_or_404(Event, assignment.spot.event_id)
+    else:
+        event = get_or_404(Event, assignment.spot.event_id)
 
     # Cannot release after event is completed
     if event.status == EventStatus.COMPLETED:
@@ -160,8 +161,6 @@ def release(assignment_id: int) -> Response:
 @assignments_bp.post("/assign/<int:spot_id>")
 @login_required
 def assign_other(spot_id: int) -> Response:
-    require_permission("event.assign_other")
-
     user_id = request.form.get("user_id", "").strip()
     if not user_id:
         flash("Vyberte uživatele.", "warning")
@@ -180,6 +179,10 @@ def assign_other(spot_id: int) -> Response:
         abort(404)
 
     event = get_or_404(Event, spot.event_id)
+
+    # Permission: either event.assign_other or RP-elevated on this event
+    if not event.user_can_manage_assignments(current_user):
+        abort(403)
 
     if event.status not in (EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED):
         flash("Přiřazení není možné v aktuálním stavu akce.", "warning")
@@ -225,11 +228,13 @@ def assign_other(spot_id: int) -> Response:
 @assignments_bp.post("/unassign/<int:assignment_id>")
 @login_required
 def unassign_other(assignment_id: int) -> Response:
-    require_permission("event.assign_other")
-
     assignment = get_or_404(Assignment, assignment_id)
 
     event = get_or_404(Event, assignment.spot.event_id)
+
+    # Permission: either event.assign_other or RP-elevated on this event
+    if not event.user_can_manage_assignments(current_user):
+        abort(403)
     if event.status == EventStatus.COMPLETED:
         flash("Nelze odhlásit uživatele z dokončené akce.", "warning")
         return redirect(url_for("events.detail", event_id=event.id))

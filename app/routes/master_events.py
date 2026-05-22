@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 
-from flask import Blueprint, Response, jsonify, render_template, redirect, url_for, flash, request
+from flask import Blueprint, Response, abort, jsonify, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
 
@@ -344,14 +344,45 @@ def table_manager(me_id: int) -> str:
     event_row_spans: dict[int, int] = dict(_Counter(r["event"].id for r in rows))
 
     can_assign = current_user.has_permission("event.assign_other")
+    # RP-elevated: user can manage assignments on events they're assigned to
+    # (only when ME has no coordinator — issue #255 exception rule)
+    rp_elevated = (
+        not can_assign
+        and me.coordinator_id is None
+        and current_user.is_rp_eligible()
+    )
+    can_assign_any = can_assign  # True if user can manage ALL events
+
+    if rp_elevated:
+        # Determine which events the user is assigned to
+        from app.models.assignment import Assignment as _Asn
+        from app.models.event import EventSpot as _ES
+        user_event_ids = set(db.session.scalars(
+            db.select(Event.id)
+            .join(_ES, _ES.event_id == Event.id)
+            .join(_Asn, _Asn.spot_id == _ES.id)
+            .where(Event.master_event_id == me_id, _Asn.user_id == current_user.id)
+        ).all())
+        if user_event_ids:
+            can_assign_any = True
+
+    if can_assign_any:
+        _compute_eligible_users(rows, list(active_users_list()))
+
+    # Annotate each row with can_manage flag
+    for row in rows:
+        if can_assign:
+            row["can_manage"] = True
+        elif rp_elevated:
+            row["can_manage"] = row["event"].id in user_event_ids
+        else:
+            row["can_manage"] = False
+
     can_edit_event = current_user.has_permission("event.edit")
     can_create_event = current_user.has_permission("event.create")
     can_delete_draft = current_user.has_permission("event.delete_draft")
     can_publish = current_user.has_permission("event.publish")
     can_open_assignments = current_user.has_permission("event.assignments.open")
-
-    if can_assign:
-        _compute_eligible_users(rows, list(active_users_list()))
 
     return render_template(
         "master_events/table_manager.html",
@@ -359,7 +390,7 @@ def table_manager(me_id: int) -> str:
         rows=rows,
         max_spot_cols=max_spot_cols,
         event_row_spans=event_row_spans,
-        can_assign=can_assign,
+        can_assign=can_assign_any,
         can_edit_event=can_edit_event,
         can_create_event=can_create_event,
         can_delete_draft=can_delete_draft,
@@ -371,20 +402,10 @@ def table_manager(me_id: int) -> str:
 @master_events_bp.post("/<int:me_id>/table/assign/<int:spot_id>")
 @login_required
 def table_assign(me_id: int, spot_id: int) -> Response:
-    require_permission("event.assign_other")
-
     from app.models.event import Event, EventSpot, EventStatus
     from app.models.assignment import Assignment
     from app.models.user import UserAccount
     from app.routes.assignments import _auto_assign_rp, _auto_close_if_full
-
-    user_id = request.form.get("user_id", "").strip()
-    if not user_id:
-        return jsonify({"ok": False, "error": "Vyberte uživatele."}), 400
-
-    user = db.session.get(UserAccount, user_id)
-    if user is None or not user.is_active or user.is_archived:
-        return jsonify({"ok": False, "error": "Uživatel nenalezen nebo není aktivní."}), 400
 
     spot = db.session.scalar(
         db.select(EventSpot).where(EventSpot.id == spot_id).with_for_update()
@@ -395,6 +416,18 @@ def table_assign(me_id: int, spot_id: int) -> Response:
     event = db.session.get(Event, spot.event_id)
     if event is None or event.master_event_id != me_id:
         return jsonify({"ok": False, "error": "Akce nenalezena."}), 404
+
+    # Permission: either event.assign_other or RP-elevated on this event
+    if not event.user_can_manage_assignments(current_user):
+        abort(403)
+
+    user_id = request.form.get("user_id", "").strip()
+    if not user_id:
+        return jsonify({"ok": False, "error": "Vyberte uživatele."}), 400
+
+    user = db.session.get(UserAccount, user_id)
+    if user is None or not user.is_active or user.is_archived:
+        return jsonify({"ok": False, "error": "Uživatel nenalezen nebo není aktivní."}), 400
 
     if event.status == EventStatus.COMPLETED or event.archived:
         return jsonify({"ok": False, "error": "Přiřazení není možné — akce je dokončena nebo archivována."}), 409
@@ -433,8 +466,6 @@ def table_assign(me_id: int, spot_id: int) -> Response:
 @master_events_bp.post("/<int:me_id>/table/unassign/<int:assignment_id>")
 @login_required
 def table_unassign(me_id: int, assignment_id: int) -> Response:
-    require_permission("event.assign_other")
-
     from app.models.event import Event, EventStatus
     from app.models.assignment import Assignment
     from app.routes.assignments import _auto_clear_rp
@@ -446,6 +477,10 @@ def table_unassign(me_id: int, assignment_id: int) -> Response:
     event = db.session.get(Event, assignment.spot.event_id)
     if event is None or event.master_event_id != me_id:
         return jsonify({"ok": False, "error": "Akce nenalezena."}), 404
+
+    # Permission: either event.assign_other or RP-elevated on this event
+    if not event.user_can_manage_assignments(current_user):
+        abort(403)
 
     if event.status == EventStatus.COMPLETED or event.archived:
         return jsonify({"ok": False, "error": "Nelze odhlásit uživatele z dokončené nebo archivované akce."}), 409
