@@ -270,6 +270,82 @@ class TestAdminEditUser:
             assert entry is not None
             assert entry.action_type == "edit"
 
+    def test_no_audit_entry_when_nothing_changes(self, app: object, admin_client: object) -> None:
+        """Saving with identical data must not produce any audit log entries (closes #249)."""
+        uid = self._create_user(app, "nochange@test.com")
+        # Get current data so the form truly submits unchanged values
+        with app.app_context():
+            user = db.session.get(UserAccount, uid)
+            assert user is not None
+            current_name = user.name
+            current_email = user.email
+            role_ids = [str(r.id) for r in user.roles]
+        admin_client.post(f"/users/{uid}/save", data={
+            "name": current_name,
+            "email": current_email,
+            "phone": "",
+            "role_ids": role_ids,
+        })
+        with app.app_context():
+            count = db.session.scalar(
+                db.select(db.func.count(AuditLogEntry.id))
+                .where(AuditLogEntry.entity_type == "UserAccount", AuditLogEntry.entity_id == uid)
+            )
+            assert count == 0
+
+    def test_only_qualification_audit_when_only_qualifications_change(
+        self, app: object, admin_client: object
+    ) -> None:
+        """Changing only qualifications must produce exactly one audit entry (closes #249)."""
+        from app.models.qualification import Qualification
+        uid = self._create_user(app, "qualonly@test.com")
+        with app.app_context():
+            qual = Qualification(name="Test Qual", description="")
+            db.session.add(qual)
+            db.session.commit()
+            qual_id = qual.id
+            user = db.session.get(UserAccount, uid)
+            assert user is not None
+            current_name = user.name
+            current_email = user.email
+            role_ids = [str(r.id) for r in user.roles]
+
+        admin_client.post(f"/users/{uid}/save", data={
+            "name": current_name,
+            "email": current_email,
+            "phone": "",
+            "role_ids": role_ids,
+            "qualification_ids": [str(qual_id)],
+        })
+        with app.app_context():
+            entries = db.session.scalars(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.entity_type == "UserAccount", AuditLogEntry.entity_id == uid)
+            ).all()
+            assert len(entries) == 1
+            assert "Kvalifikace" in entries[0].summary
+
+    def test_only_info_audit_when_only_info_changes(self, app: object, admin_client: object) -> None:
+        """Changing only profile info must produce exactly one audit entry (closes #249)."""
+        uid = self._create_user(app, "infoonly@test.com")
+        with app.app_context():
+            user = db.session.get(UserAccount, uid)
+            assert user is not None
+            role_ids = [str(r.id) for r in user.roles]
+        admin_client.post(f"/users/{uid}/save", data={
+            "name": "Changed Name",
+            "email": "infoonly@test.com",
+            "phone": "",
+            "role_ids": role_ids,
+        })
+        with app.app_context():
+            entries = db.session.scalars(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.entity_type == "UserAccount", AuditLogEntry.entity_id == uid)
+            ).all()
+            assert len(entries) == 1
+            assert "údaje" in entries[0].summary
+
 
 # ── Invites ───────────────────────────────────────────────────────────────────
 

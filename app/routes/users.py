@@ -323,20 +323,31 @@ def detail(user_id: uuid.UUID) -> str:
     return render_template("users/detail.html", user=user, all_roles=roles, all_qualifications=qualifications)
 
 
-def _apply_role_update(user: UserAccount, role_ids: list[int]) -> None:
-    """Assign *role_ids* to *user* and audit the change. Caller is responsible for version bump."""
+def _apply_role_update(user: UserAccount, role_ids: list[int]) -> bool:
+    """Assign *role_ids* to *user* and audit only when the set actually changes.
+
+    Returns True if the roles were modified, False if they were identical.
+    Caller is responsible for version bump.
+    """
     before_roles = sorted(r.name for r in user.roles)
     new_roles = db.session.scalars(
         db.select(Role).where(Role.id.in_(role_ids))
     ).all() if role_ids else []
     user.roles = list(new_roles)
     after_roles = sorted(r.name for r in user.roles)
+    if before_roles == after_roles:
+        return False
     audit("edit", "UserAccount", user.id, f"Role uživatele {user.name} aktualizovány",
           diff_changes({"roles": before_roles}, {"roles": after_roles}))
+    return True
 
 
-def _apply_qualification_update(user: UserAccount, qual_ids: list[int]) -> None:
-    """Assign *qual_ids* to *user* and audit the change. Caller is responsible for version bump."""
+def _apply_qualification_update(user: UserAccount, qual_ids: list[int]) -> bool:
+    """Assign *qual_ids* to *user* and audit only when the set actually changes.
+
+    Returns True if the qualifications were modified, False if they were identical.
+    Caller is responsible for version bump.
+    """
     from app.models.qualification import Qualification
     before_quals = sorted((c.name for c in user.qualifications), key=czech_sort_key)
     new_creds = db.session.scalars(
@@ -347,8 +358,11 @@ def _apply_qualification_update(user: UserAccount, qual_ids: list[int]) -> None:
     ).all() if qual_ids else []
     user.qualifications = list(new_creds)
     after_quals = sorted((c.name for c in user.qualifications), key=czech_sort_key)
+    if before_quals == after_quals:
+        return False
     audit("edit", "UserAccount", user.id, f"Kvalifikace uživatele {user.name} aktualizovány",
           diff_changes({"qualifications": before_quals}, {"qualifications": after_quals}))
+    return True
 
 
 @users_bp.route("/<uuid:user_id>/save", methods=["POST"])
@@ -385,18 +399,24 @@ def save_user(user_id: uuid.UUID) -> Response:
     user.email = email
     user.phone = phone_raw or None
     info_after: dict[str, Any] = {"name": user.name, "email": user.email, "phone": user.phone}
-    user.version += 1
-    audit("edit", "UserAccount", user.id, f"Admin upravil údaje uživatele {user.name}", diff_changes(info_before, info_after))
+    info_changed = info_before != info_after
+    if info_changed:
+        audit("edit", "UserAccount", user.id, f"Admin upravil údaje uživatele {user.name}", diff_changes(info_before, info_after))
 
     # ── Roles ───────────────────────────────────────────────────────────────
+    roles_changed = False
     if current_user.has_permission("user.assign_role"):
         role_ids = [int(r) for r in request.form.getlist("role_ids")]
-        _apply_role_update(user, role_ids)
+        roles_changed = _apply_role_update(user, role_ids)
 
     # ── Qualifications ──────────────────────────────────────────────────────
+    quals_changed = False
     if current_user.has_permission("user.assign_qualification"):
         cred_ids = [int(c) for c in request.form.getlist("qualification_ids")]
-        _apply_qualification_update(user, cred_ids)
+        quals_changed = _apply_qualification_update(user, cred_ids)
+
+    if info_changed or roles_changed or quals_changed:
+        user.version += 1
 
     # ── Admin password set (optional) ───────────────────────────────────────
     new_password = request.form.get("new_password", "").strip()
