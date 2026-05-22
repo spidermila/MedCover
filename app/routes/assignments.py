@@ -71,6 +71,12 @@ def claim(spot_id: int) -> Response:
 
     event = get_or_404(Event, spot.event_id)
 
+    # Block self-assignment when ME is centrally coordinated (issue #255)
+    if event.master_event and event.master_event.coordinator_id is not None:
+        if not current_user.has_permission("event.assign_other"):
+            flash("Tuto akci řídí koordinátor — přihlašování není povoleno.", "warning")
+            return redirect(url_for("events.detail", event_id=event.id))
+
     # Validate event state
     if event.status != EventStatus.ASSIGNMENTS_OPEN:
         flash("Přihlašování na tuto akci není otevřeno.", "warning")
@@ -133,6 +139,11 @@ def release(assignment_id: int) -> Response:
             abort(403)
     else:
         event = get_or_404(Event, assignment.spot.event_id)
+        # Block self-release when ME is centrally coordinated (issue #255)
+        if event.master_event and event.master_event.coordinator_id is not None:
+            if not current_user.has_permission("event.assign_other"):
+                flash("Tuto akci řídí koordinátor — odhlášení není povoleno.", "warning")
+                return redirect(url_for("events.detail", event_id=event.id))
 
     # Cannot release after event is completed
     if event.status == EventStatus.COMPLETED:

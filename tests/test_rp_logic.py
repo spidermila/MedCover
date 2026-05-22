@@ -508,3 +508,78 @@ class TestRpElevatedPermissions:
             assert event.user_can_manage_assignments(rp_user) is True
             # Non-RP user still should not
             assert event.user_can_manage_assignments(non_rp_user) is False
+
+
+# ── Self-claim blocked when ME is coordinated ─────────────────────────────────
+
+class TestCoordinatedMeBlocksSelfClaim:
+    """When an ME has a coordinator, members cannot claim/release spots themselves."""
+
+    def test_member_cannot_claim_on_coordinated_me(self, app):
+        """Self-claim is blocked when ME has a coordinator."""
+        rp_qual_id = _make_rp_qual(app)
+        _make_user_with_qual(app, "claim_blocked@test.com", rp_qual_id)
+        with app.app_context():
+            coordinator = _make_user("coord_block@test.com", "Block Coord", Role.COORDINATOR)
+            me = MasterEvent(name="Block Claim ME", coordinator_id=coordinator.id)
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Block Claim Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+            spot_id = spot.id
+
+        client = app.test_client()
+        _login(client, "claim_blocked@test.com")
+        response = client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
+        assert response.status_code == 200
+        assert "koordinátor" in response.data.decode()
+        # Spot should still be empty
+        with app.app_context():
+            spot = db.session.get(EventSpot, spot_id)
+            assert spot.assignment is None
+
+    def test_member_cannot_release_on_coordinated_me(self, app):
+        """Self-release is blocked when ME has a coordinator."""
+        rp_qual_id = _make_rp_qual(app)
+        release_user_id = _make_user_with_qual(app, "release_blocked@test.com", rp_qual_id)
+        with app.app_context():
+            coordinator = _make_user("coord_block2@test.com", "Block Coord2", Role.COORDINATOR)
+            me = MasterEvent(name="Block Release ME", coordinator_id=coordinator.id)
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Block Release Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            assignment = Assignment(spot_id=spot.id, user_id=release_user_id, assigned_by_id=release_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            assignment_id = assignment.id
+
+        client = app.test_client()
+        _login(client, "release_blocked@test.com")
+        response = client.post(f"/assignments/release/{assignment_id}", follow_redirects=True)
+        assert response.status_code == 200
+        assert "koordinátor" in response.data.decode()
+        # Assignment should still exist
+        with app.app_context():
+            a = db.session.get(Assignment, assignment_id)
+            assert a is not None

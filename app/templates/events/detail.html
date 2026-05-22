@@ -322,7 +322,7 @@
         </td>
         <td class="text-end">
           {# Show ineligible message as plain text outside the button group #}
-          {% if not spot.assignment and event.status == EventStatus.ASSIGNMENTS_OPEN and current_user.has_permission('event.assign_own') %}
+          {% if not me_coordinated and not spot.assignment and event.status == EventStatus.ASSIGNMENTS_OPEN and current_user.has_permission('event.assign_own') %}
             {% set already_assigned = namespace(val=false) %}
             {% for s in event.spots %}{% if s.assignment and s.assignment.user_id == current_user.id %}{% set already_assigned.val = true %}{% endif %}{% endfor %}
             {% if not already_assigned.val and not spot.is_eligible(current_user) %}
@@ -330,8 +330,8 @@
             {% endif %}
           {% endif %}
           <div class="d-flex gap-1 justify-content-end flex-wrap">
-            {# Claim own spot #}
-            {% if not spot.assignment and event.status == EventStatus.ASSIGNMENTS_OPEN and current_user.has_permission('event.assign_own') %}
+            {# Claim own spot — blocked when ME is centrally coordinated #}
+            {% if not me_coordinated and not spot.assignment and event.status == EventStatus.ASSIGNMENTS_OPEN and current_user.has_permission('event.assign_own') %}
               {% set already_assigned = namespace(val=false) %}
               {% for s in event.spots %}{% if s.assignment and s.assignment.user_id == current_user.id %}{% set already_assigned.val = true %}{% endif %}{% endfor %}
               {% if not already_assigned.val %}
@@ -344,8 +344,8 @@
               {% endif %}
             {% endif %}
 
-            {# Release own assignment #}
-            {% if spot.assignment and spot.assignment.user_id == current_user.id and event.status != EventStatus.COMPLETED %}
+            {# Release own assignment — blocked when ME is centrally coordinated #}
+            {% if not me_coordinated and spot.assignment and spot.assignment.user_id == current_user.id and event.status != EventStatus.COMPLETED %}
               <form method="POST" action="{{ url_for('assignments.release', assignment_id=spot.assignment.id) }}"
                     data-confirm="Odhlásit se z této pozice?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
