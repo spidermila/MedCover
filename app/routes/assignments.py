@@ -48,11 +48,22 @@ def _auto_assign_rp(event: Event, user: UserAccount) -> None:
 
 
 def _auto_clear_rp(event: Event, user: UserAccount) -> None:
-    """If the leaving user is the current RP, clear the RP field."""
+    """If the leaving user is the current RP, reassign to next eligible or clear."""
     if event.responsible_person_id == user.id:
-        event.responsible_person_id = None
-        event.version += 1
-        audit("edit", "Event", event.id, f"Zodpovědná osoba odstraněna — '{user.name}' opustil/a akci")
+        # Find another RP-eligible person still assigned to this event
+        for spot in event.spots:
+            if (spot.assignment is not None
+                    and spot.assignment.user_id != user.id
+                    and spot.assignment.user.is_rp_eligible()):
+                event.responsible_person_id = spot.assignment.user.id
+                event.version += 1
+                audit("edit", "Event", event.id,
+                      f"Zodpovědná osoba automaticky přeřazena na '{spot.assignment.user.name}' (předchozí '{user.name}' opustil/a akci)")
+                break
+        else:
+            event.responsible_person_id = None
+            event.version += 1
+            audit("edit", "Event", event.id, f"Zodpovědná osoba odstraněna — '{user.name}' opustil/a akci")
 
 
 # ── Claim (own) ───────────────────────────────────────────────────────────────
