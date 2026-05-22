@@ -6,8 +6,9 @@ document.addEventListener("DOMContentLoaded", function () {
   var countSpan = document.getElementById("selectedCount");
 
   function userCount() {
-    // Every user row has exactly one _db_id hidden field (new or existing).
-    return document.querySelectorAll('input[name$="_db_id"]').length;
+    // Read the server-rendered user_count hidden field (always present).
+    var el = document.querySelector('input[name="user_count"]');
+    return el ? (parseInt(el.value, 10) || 0) : 0;
   }
 
   function updateCount() {
