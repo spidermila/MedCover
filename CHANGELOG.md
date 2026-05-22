@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Elevated RP permissions: RP-eligible users assigned to an event can now assign/unassign other users on that event, unless the master event has a coordinator (centrally managed from SPOT) (closes #255 Phase 2)
+- `event.view_draft` permission added to Member role — members can now see draft events
+- Auto-reassign RP: when the current responsible person leaves an event, the role is automatically transferred to the next RP-eligible attendee (previously it was simply cleared)
 - iCal profile page: step-by-step guide for adding the MedCover calendar feed to Google Calendar, linked from the profile iCal card
 - Playwright E2E browser tests in Docker: 111 tests across Chromium, Firefox and WebKit covering login, navigation, event CRUD, form validation, CSRF, label accessibility, profile, and JS interactions; run via `make e2e`
 - HTML test report with per-test screenshots (`make e2e-report` to view)
@@ -17,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Audit log no longer creates spurious entries when saving a user with no actual changes; version counter also skipped when data is identical (closes #249)
+- Table Manager: color picker button now only visible to users with `event.edit` permission (previously visible to all)
+- Coordinated master events: self-claim and self-release are now blocked when an ME has a coordinator assigned (UI buttons hidden + server-side guard)
 - Split event modal: date/time input now uses the standard Flatpickr datetime picker (same as event create/edit), replacing the broken `type="date"` + `type="text"` combination that showed dates in US format (closes #239)
 - Reports: "Příští směna" column now shows the user's true next future assignment globally; previously it was empty when the report date range didn't include future events
 - CSV exports now include UTF-8 BOM so Excel on Windows auto-detects Czech characters correctly
