@@ -84,7 +84,7 @@
               <li><a class="dropdown-item" href="{{ url_for('users.invites') }}">Pozvánky</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin.audit_log_list') }}">Audit log</a></li>
               {% if current_user.has_permission('admin.manage_settings') %}
-              <li><a class="dropdown-item" href="{{ url_for('import_events.events_paste') }}">Import akcí</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('import_events.events_paste') }}">Import</a></li>
               {% endif %}
               <li><a class="dropdown-item" href="{{ url_for('admin.permissions') }}">Přehled oprávnění</a></li>
               {% if current_user.has_permission('admin.manage_digest') %}

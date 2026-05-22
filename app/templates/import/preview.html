@@ -20,6 +20,7 @@
   {{ help_icon(
     "Zkontrolujte každý řádek. Upravte název, místo, zodpovědnou osobu nebo nadřazenou akci "
     "přímo v tabulce. Zrušením zaškrtnutí v prvním sloupci akci z importu vyjmete. "
+    "Sekce uživatelů zobrazuje, kdo bude vytvořen nebo aktualizován. "
     "Varování upozorňují na potenciální problémy, ale nebrání importu.",
     title="Jak pracovat s náhledem"
   ) }}
@@ -398,7 +399,7 @@
   {# ── Action buttons ─────────────────────────────────────────────────── #}
   <div class="d-flex gap-3 align-items-center">
     <button type="submit" class="btn btn-success btn-lg" id="btnImport">
-      Importovat akce
+      Importovat
     </button>
     <a href="{{ url_for('import_events.events_paste') }}" class="btn btn-outline-secondary">
       Zpět — upravit data
