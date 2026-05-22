@@ -56,9 +56,13 @@
       {% if users_existing %}
       {{ badge_secondary(users_existing ~ ' existujících') }}
       {% endif %}
+      {% if users_qual_updates %}
+      <span class="badge bg-warning text-dark">{{ users_qual_updates }} aktualizace kvalifikací</span>
+      {% endif %}
       {{ help_icon(
         "Noví uživatelé budou vytvořeni s rolí Člen a odpovídající kvalifikací. "
-        "Existující uživatelé jsou zobrazeni pro informaci — nebudou znovu vytvořeni. "
+        "Existující uživatelé nebudou znovu vytvořeni, ale jejich import-spravované kvalifikace "
+        "(Zdravotník, Řidič sanitky, Zelenáč) budou aktualizovány, pokud se liší od importovaných dat. "
         "Zrušením zaškrtnutí vyřadíte nového uživatele z importu (nebude vytvořen). "
         "Bez e-mailu nelze uživatele vytvořit — doplňte ho ručně.",
         title="Import uživatelů"
@@ -88,6 +92,8 @@
                 <input type="hidden" name="user_{{ j }}_gs_name" value="{{ urow.gs_name }}">
                 <input type="hidden" name="user_{{ j }}_is_zdravotnik"
                        value="{{ '1' if urow.is_zdravotnik else '0' }}">
+                <input type="hidden" name="user_{{ j }}_is_ridic"
+                       value="{{ '1' if urow.is_ridic else '0' }}">
                 {% if not urow.existing %}
                 <input type="checkbox" class="form-check-input user-include"
                        name="user_{{ j }}_include" value="1" checked>
@@ -124,20 +130,35 @@
               <td>
                 {% if urow.is_zdravotnik %}
                 <span class="badge bg-danger">Zdravotník</span>
-                {% else %}
+                {% endif %}
+                {% if urow.is_ridic %}
+                <span class="badge bg-primary">Řidič sanitky</span>
+                {% endif %}
+                {% if not urow.is_zdravotnik and not urow.is_ridic %}
                 <span class="badge bg-success">Zelenáč</span>
                 {% endif %}
               </td>
               <td>
                 {% if urow.existing %}
-                  {% if urow.is_archived %}
-                  <span class="badge bg-secondary">Archivován</span>
-                  {% else %}
-                  <span class="badge bg-secondary">
-                    Existuje
-                    {% if urow.match_reason == 'name' %}(jméno){% else %}(e-mail){% endif %}
-                  </span>
-                  {% endif %}
+                  <div class="d-flex flex-column gap-1">
+                    {% if urow.is_archived %}
+                    <span class="badge bg-secondary">Archivován</span>
+                    {% else %}
+                    <span class="badge bg-secondary">
+                      Existuje
+                      {% if urow.match_reason == 'name' %}(jméno){% else %}(e-mail){% endif %}
+                    </span>
+                    {% endif %}
+                    {% if urow.qual_changes %}
+                    <span class="badge bg-warning text-dark">Aktualizace kvalifikací</span>
+                    {% for q in urow.qual_changes.add %}
+                    <span class="small text-success">+ {{ q }}</span>
+                    {% endfor %}
+                    {% for q in urow.qual_changes.remove %}
+                    <span class="small text-danger">− {{ q }}</span>
+                    {% endfor %}
+                    {% endif %}
+                  </div>
                 {% elif not urow.email %}
                 {{ badge_warning('⚠ Chybí e-mail') }}
                 {% else %}

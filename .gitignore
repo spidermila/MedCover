@@ -46,6 +46,7 @@ zerver_scp.sh
 Dozory*.xlsx
 vykaz.xlsx
 *.xlsx
+!tests/fixtures/test_import.xlsx
 import_events.json
 
 # Copilot instructions (may contain personal/infra details)
