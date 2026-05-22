@@ -86,7 +86,7 @@
   <div class="card-header bg-danger bg-opacity-10 d-flex justify-content-between align-items-center py-2">
     <span class="fw-semibold text-danger">
       <i class="bi bi-exclamation-triangle-fill me-1"></i>
-      Akce bez vedoucího v příštích 7 dnech ({{ missing_rp_events|length }})
+      Akce bez zodpovědné osoby v příštích 7 dnech ({{ missing_rp_events|length }})
     </span>
     <a href="{{ url_for('events.index') }}" class="text-decoration-none small">Všechny akce →</a>
   </div>
@@ -97,7 +97,7 @@
         <a href="{{ url_for('events.detail', event_id=e.id) }}" class="fw-semibold text-decoration-none">{{ e.name }}</a>
         <small class="text-muted ms-2">{{ e.start_datetime.strftime('%d.%m.%Y %H:%M') }}</small>
       </div>
-      <span class="badge bg-danger">Chybí vedoucí</span>
+      <span class="badge bg-danger">Chybí zodp. osoba</span>
     </li>
     {% endfor %}
   </ul>
@@ -182,9 +182,9 @@
           {% endif %}
           {% if event.status not in [EventStatus.DRAFT, EventStatus.CANCELLED] %}
             {% if event.responsible_person %}
-            <span class="badge bg-success">ZZ: {{ event.responsible_person.name }}</span>
+            <span class="badge bg-success">ZO: {{ event.responsible_person.name }}</span>
             {% else %}
-            <span class="badge bg-danger">Chybí vedoucí</span>
+            <span class="badge bg-danger">Chybí zodp. osoba</span>
             {% endif %}
           {% endif %}
         </div>

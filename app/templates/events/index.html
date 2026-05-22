@@ -177,7 +177,7 @@
           <th class="text-nowrap">
             <a href="{{ sort_url('total') }}" class="text-decoration-none text-reset">Obsazení {{ sort_icon('total') }}</a></th>
           <th class="text-wrap minw-7r maxw-9r">
-            <a href="{{ sort_url('rp') }}" class="text-decoration-none text-reset">Zodpovědný<br>zdravotník {{ sort_icon('rp') }}</a></th>
+            <a href="{{ sort_url('rp') }}" class="text-decoration-none text-reset">Zodpovědná<br>osoba {{ sort_icon('rp') }}</a></th>
           <th class="text-wrap minw-7r maxw-9r">
             <a href="{{ sort_url('me_name') }}" class="text-decoration-none text-reset">Nadřazená<br>akce {{ sort_icon('me_name') }}</a></th>
           <th></th>
@@ -226,7 +226,7 @@
             {% if event.responsible_person %}
               {{ event.responsible_person.name }}
             {% elif event.status.name not in ('DRAFT', 'CANCELLED') %}
-              <span class="badge bg-danger" title="Akce nemá přiřazeného vedoucího">
+              <span class="badge bg-danger" title="Akce nemá přiřazenou zodpovědnou osobu">
                 <i class="bi bi-exclamation-triangle-fill"></i> Chybí
               </span>
             {% else %}

@@ -80,11 +80,11 @@
         <div class="card-header bg-primary bg-opacity-10 d-flex align-items-center gap-2">
           <i class="bi bi-clipboard2-pulse-fill text-primary"></i>
           {% if event.event_type == EventType.TRAINING %}
-            <strong>Část lektora</strong>
-            {{ help_icon("Tuto část vyplňuje lektor školení. Skutečné časy a počet účastníků jsou viditelné pro koordinátory a slouží pro výkazy. Všechna pole jsou nepovinná.") }}
+            <strong>Část zodpovědné osoby (lektor)</strong>
+            {{ help_icon("Tuto část vyplňuje zodpovědná osoba (lektor školení). Skutečné časy a počet účastníků jsou viditelné pro koordinátory a slouží pro výkazy. Všechna pole jsou nepovinná.") }}
           {% else %}
-            <strong>Část vedoucího zdravotníka (ZZ)</strong>
-            {{ help_icon("Tuto část vyplňuje pouze zodpovědný zdravotník (ZZ). Skutečné časy a počet ošetřených pacientů jsou veřejné informace viditelné pro všechny uživatele na detailu akce a použijí se pro fakturaci.") }}
+            <strong>Část zodpovědné osoby</strong>
+            {{ help_icon("Tuto část vyplňuje pouze zodpovědná osoba. Skutečné časy a počet ošetřených pacientů jsou veřejné informace viditelné pro všechny uživatele na detailu akce a použijí se pro fakturaci.") }}
           {% endif %}
         </div>
         <div class="card-body">

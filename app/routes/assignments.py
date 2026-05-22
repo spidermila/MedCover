@@ -44,7 +44,7 @@ def _auto_assign_rp(event: Event, user: UserAccount) -> None:
     if event.responsible_person_id is None and user.is_rp_eligible():
         event.responsible_person_id = user.id
         event.version += 1
-        audit("edit", "Event", event.id, f"Vedoucí automaticky nastaven na '{user.name}'")
+        audit("edit", "Event", event.id, f"Zodpovědná osoba automaticky nastavena na '{user.name}'")
 
 
 def _auto_clear_rp(event: Event, user: UserAccount) -> None:
@@ -52,7 +52,7 @@ def _auto_clear_rp(event: Event, user: UserAccount) -> None:
     if event.responsible_person_id == user.id:
         event.responsible_person_id = None
         event.version += 1
-        audit("edit", "Event", event.id, f"Vedoucí odstraněn — '{user.name}' opustil akci")
+        audit("edit", "Event", event.id, f"Zodpovědná osoba odstraněna — '{user.name}' opustil/a akci")
 
 
 # ── Claim (own) ───────────────────────────────────────────────────────────────

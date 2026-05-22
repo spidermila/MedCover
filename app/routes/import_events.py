@@ -474,12 +474,12 @@ def events_preview() -> str | Response:
         if cleaned["responsible_person"] and rp_confidence == "none":
             rp_name = cleaned["responsible_person"]
             warnings.append(
-                f'Zodpovědný zdravotník "{rp_name}" nebyl nalezen v databázi. Přiřaďte ručně.'
+                f'Zodpovědná osoba "{rp_name}" nebyla nalezena v databázi. Přiřaďte ručně.'
             )
         elif rp_confidence in ("iexact", "reversed"):
             rp_name_found = rp_user.name if rp_user else ""
             warnings.append(
-                f'Zodpovědný zdravotník spárován přibližně: "{rp_name_found}". Zkontrolujte.'
+                f'Zodpovědná osoba spárována přibližně: "{rp_name_found}". Zkontrolujte.'
             )
 
         is_duplicate = (cleaned["name"], cleaned["date"]) in existing_events

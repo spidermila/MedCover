@@ -306,10 +306,10 @@ class TestDashboardRpWarning:
         self._make_event_soon_no_rp(app)
         response = admin_client.get("/dashboard")
         assert response.status_code == 200
-        assert "bez vedoucího" in response.data.decode()
+        assert "bez zodpovědné osoby" in response.data.decode()
 
     def test_member_does_not_see_rp_warning(self, app, member_client):
         self._make_event_soon_no_rp(app)
         response = member_client.get("/dashboard")
         assert response.status_code == 200
-        assert "bez vedoucího" not in response.data.decode()
+        assert "bez zodpovědné osoby" not in response.data.decode()

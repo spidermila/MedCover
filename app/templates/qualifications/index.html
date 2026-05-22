@@ -17,7 +17,7 @@
       <tr>
         <th>Název</th>
         <th>Popis</th>
-        <th>Vedoucí</th>
+        <th>Zodp. osoba</th>
         <th>Nadřazené (mohou zastoupit)</th>
         <th></th>
       </tr>
@@ -29,7 +29,7 @@
         <td class="text-muted">{{ cred.description or '—' }}</td>
         <td>
           {% if cred.can_be_rp %}
-            <span class="badge bg-success" title="Držitel může být vedoucím akce">✓</span>
+            <span class="badge bg-success" title="Držitel může být zodpovědnou osobou na akci">✓</span>
           {% else %}
             <span class="text-muted">—</span>
           {% endif %}

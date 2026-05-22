@@ -183,12 +183,12 @@
           <strong>{{ event.filled_spots }}/{{ event.total_spots }}</strong> pozic obsazeno
         </p>
         <p class="mb-0">
-          <strong>{% if event.event_type == EventType.TRAINING %}Lektor{% else %}Zodpovědný zdravotník{% endif %}:</strong>
+          <strong>Zodpovědná osoba:</strong>
           {% if event.responsible_person %}
             <span class="badge bg-success ms-1">{{ event.responsible_person.name }}</span>
           {% else %}
             <span class="badge bg-danger ms-1">
-              <i class="bi bi-exclamation-triangle-fill me-1"></i>Chybí vedoucí
+              <i class="bi bi-exclamation-triangle-fill me-1"></i>Chybí zodpovědná osoba
             </span>
           {% endif %}
         </p>
@@ -201,7 +201,7 @@
                   <option value="{{ u.id }}" {% if u.id == event.responsible_person_id %}selected{% endif %}>{{ u.name }}</option>
                 {% endfor %}
               </select>
-              <button type="submit" class="btn btn-sm btn-outline-primary">Nastavit vedoucího</button>
+              <button type="submit" class="btn btn-sm btn-outline-primary">Nastavit zodpovědnou osobu</button>
             </form>
           {% endif %}
         {% endif %}

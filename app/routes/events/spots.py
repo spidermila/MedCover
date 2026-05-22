@@ -201,7 +201,7 @@ def set_rp(event_id: int) -> Response:
 
     user_id_str = request.form.get("user_id", "").strip()
     if not user_id_str:
-        flash("Vyberte vedoucího.", "warning")
+        flash("Vyberte zodpovědnou osobu.", "warning")
         return redirect(url_for("events.detail", event_id=event_id))
 
     import uuid as _uuid
@@ -216,7 +216,7 @@ def set_rp(event_id: int) -> Response:
         return redirect(url_for("events.detail", event_id=event_id))
 
     if not user.is_rp_eligible():
-        flash("Tento uživatel nemá potřebnou kvalifikaci pro roli vedoucího.", "warning")
+        flash("Tento uživatel nemá potřebnou kvalifikaci pro roli zodpovědné osoby.", "warning")
         return redirect(url_for("events.detail", event_id=event_id))
 
     # User must currently occupy a spot on this event
@@ -232,8 +232,8 @@ def set_rp(event_id: int) -> Response:
     old_rp = event.responsible_person_id
     event.responsible_person_id = user_id
     event.version += 1
-    audit("edit", "Event", event_id, f"Vedoucí akce nastaven na '{user.name}'", {"responsible_person_id": {"before": str(old_rp), "after": str(user_id)}})
+    audit("edit", "Event", event_id, f"Zodpovědná osoba nastavena na '{user.name}'", {"responsible_person_id": {"before": str(old_rp), "after": str(user_id)}})
     db.session.commit()
 
-    flash(f"{user.name} byl nastaven jako vedoucí akce.", "success")
+    flash(f"{user.name} — zodpovědná osoba nastavena.", "success")
     return redirect(url_for("events.detail", event_id=event_id))

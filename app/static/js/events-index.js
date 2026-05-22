@@ -153,7 +153,7 @@
         var cancelled = p.status === "Zrušena";
         var spotsLine = cancelled ? "" : "\nObsazení: " + p.filled + "/" + p.total;
         var title = p.me_name ? info.event.title + " (" + p.me_name + ")" : info.event.title;
-        var rpLine = p.rp ? "\nZodpovědný zdravotník: " + p.rp : "";
+        var rpLine = p.rp ? "\nZodpovědná osoba: " + p.rp : "";
         info.el.setAttribute("title",
           title + "\n" + p.start_local + " – " + p.end_local + spotsLine + rpLine + "\nStav: " + p.status);
         if (cancelled) {

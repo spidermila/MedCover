@@ -69,7 +69,7 @@ def _my_events_section(now: datetime, horizon: datetime) -> tuple[list[tuple[Eve
         if e.id in assigned_event_id_set:
             tags.append("Přihlášen")
         if e.responsible_person_id == current_user.id:
-            tags.append("Zodpovědný zdravotník")
+            tags.append("Zodpovědná osoba")
         if e.created_by_id == current_user.id:
             tags.append("Koordinátor")
         tagged.append((e, tags))
