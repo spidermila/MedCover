@@ -26,33 +26,15 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 echo "==> Pulling ${IMAGE} ..."
 "$DOCKER" pull "$IMAGE"
 
-echo "==> Compiling requirements.txt ..."
+echo "==> Compiling all requirements files ..."
 "$DOCKER" run --rm \
   -v "${REPO_ROOT}:/app" \
   -w /app \
   "$IMAGE" \
   bash -c "
     pip install --quiet pip-tools &&
-    pip-compile --upgrade --generate-hashes --output-file=requirements.txt requirements.in
-  "
-
-echo "==> Compiling requirements-dev.txt ..."
-"$DOCKER" run --rm \
-  -v "${REPO_ROOT}:/app" \
-  -w /app \
-  "$IMAGE" \
-  bash -c "
-    pip install --quiet pip-tools &&
-    pip-compile --upgrade --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
-  "
-
-echo "==> Compiling requirements-e2e.txt ..."
-"$DOCKER" run --rm \
-  -v "${REPO_ROOT}:/app" \
-  -w /app \
-  "$IMAGE" \
-  bash -c "
-    pip install --quiet pip-tools &&
+    pip-compile --upgrade --generate-hashes --output-file=requirements.txt requirements.in &&
+    pip-compile --upgrade --generate-hashes --output-file=requirements-dev.txt requirements-dev.in &&
     pip-compile --upgrade --generate-hashes --output-file=requirements-e2e.txt requirements-e2e.in
   "
 
