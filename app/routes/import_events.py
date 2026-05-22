@@ -387,10 +387,10 @@ def _build_users_preview(payload_users: list[Any], all_users: list[UserAccount])
 def _import_managed_quals(
     is_zdravotnik: bool,
     is_ridic: bool,
-    user_zdravotnik_qual: "Qualification | None",
-    user_ridic_qual: "Qualification | None",
-    user_zelenac_qual: "Qualification | None",
-) -> list["Qualification"]:
+    user_zdravotnik_qual: Qualification | None,
+    user_ridic_qual: Qualification | None,
+    user_zelenac_qual: Qualification | None,
+) -> list[Qualification]:
     """Return the list of import-managed qualifications for given flags.
 
     Import-managed qualifications are: Zdravotník, Řidič sanitky, Zelenáč.
@@ -410,7 +410,6 @@ def _import_managed_quals(
 _IMPORT_MANAGED_QUAL_NAMES: frozenset[str] = frozenset(
     {"zdravotník", "řidič sanitky", "zelenáč"}
 )
-
 
 
 def _existing_event_pairs() -> set[tuple[str, str]]:
