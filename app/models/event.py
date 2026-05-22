@@ -241,6 +241,30 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
             return "Částečně obsazeno"
         return "Plně obsazeno"
 
+    def user_can_manage_assignments(self, user: UserAccount) -> bool:
+        """Return True if the user may assign/unassign other users on this event.
+
+        Grants this ability when:
+        1. The user holds the ``event.assign_other`` permission (admins/coordinators), OR
+        2. ALL of the following:
+           a) the user is RP-eligible (holds a qualification with can_be_rp),
+           b) the user is currently assigned to a spot on this event,
+           c) the event's master event has NO coordinator assigned
+              (coordinated master events are managed centrally from SPOT).
+        """
+        if user.has_permission("event.assign_other"):
+            return True
+        if not user.is_rp_eligible():
+            return False
+        # Check: ME has no coordinator (exception rule from issue #255)
+        if self.master_event and self.master_event.coordinator_id is not None:
+            return False
+        # Check: user is assigned to this event
+        return any(
+            s.assignment is not None and s.assignment.user_id == user.id
+            for s in self.spots
+        )
+
     def eligible_unfilled_spots_for(
         self, user: UserAccount, excluded_spot_ids: set[int] | None = None,
     ) -> list[EventSpot]:

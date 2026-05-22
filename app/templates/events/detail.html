@@ -353,16 +353,16 @@
               </form>
             {% endif %}
 
-            {# Coordinator: assign another user #}
-            {% if not spot.assignment and current_user.has_permission('event.assign_other') and event.status in [EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED] %}
+            {# Coordinator/elevated RP: assign another user #}
+            {% if not spot.assignment and can_assign and event.status in [EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED] %}
               <button class="btn btn-outline-primary btn-sm py-0" type="button"
                       data-bs-toggle="collapse" data-bs-target="#assign-form-{{ spot.id }}">
                 Přiřadit
               </button>
             {% endif %}
 
-            {# Coordinator: unassign another user #}
-            {% if spot.assignment and current_user.has_permission('event.assign_other') and event.status != EventStatus.COMPLETED %}
+            {# Coordinator/elevated RP: unassign another user #}
+            {% if spot.assignment and can_assign and event.status != EventStatus.COMPLETED %}
               <form method="POST" action="{{ url_for('assignments.unassign_other', assignment_id=spot.assignment.id) }}"
                     data-confirm="Odhlásit tohoto uživatele?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -387,7 +387,7 @@
           </div>
 
           {# Collapse: assign another user form #}
-          {% if current_user.has_permission('event.assign_other') and not spot.assignment %}
+          {% if can_assign and not spot.assignment %}
           <div class="collapse mt-1" id="assign-form-{{ spot.id }}">
             <form method="POST" action="{{ url_for('assignments.assign_other', spot_id=spot.id) }}" class="d-flex gap-1">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

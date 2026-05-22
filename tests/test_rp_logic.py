@@ -312,4 +312,199 @@ class TestDashboardRpWarning:
         self._make_event_soon_no_rp(app)
         response = member_client.get("/dashboard")
         assert response.status_code == 200
-        assert "bez zodpovědné osoby" not in response.data.decode()
+        assert "bez vedoucího" not in response.data.decode()
+
+
+# ── Elevated RP permissions (user_can_manage_assignments) ─────────────────────
+
+class TestRpElevatedPermissions:
+    """Tests for issue #255 — RP-eligible users can manage assignments on events they attend."""
+    def _setup_event_with_rp_user(self, app) -> tuple[int, int, int, str]:
+        """Create event with 2 spots, assign RP-eligible user to spot 1.
+
+        Returns (event_id, spot1_id, spot2_id, rp_user_id).
+        """
+        rp_qual_id = _make_rp_qual(app)
+        rp_user_id = _make_user_with_qual(app, "elevated_rp@test.com", rp_qual_id)
+        with app.app_context():
+            me = MasterEvent(name="Elevated RP Test ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Elevated RP Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot1 = EventSpot(event_id=event.id)
+            spot2 = EventSpot(event_id=event.id)
+            db.session.add_all([spot1, spot2])
+            db.session.flush()
+            # Assign RP user to spot 1
+            assignment = Assignment(spot_id=spot1.id, user_id=rp_user_id, assigned_by_id=rp_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            return event.id, spot1.id, spot2.id, rp_user_id
+
+    def test_rp_user_can_assign_other_on_attended_event(self, app):
+        """RP-eligible user assigned to event can assign another user."""
+        event_id, spot1_id, spot2_id, rp_user_id = self._setup_event_with_rp_user(app)
+        # Create a target user to be assigned
+        non_rp_qual_id = _make_non_rp_qual(app)
+        target_id = _make_user_with_qual(app, "target_user@test.com", non_rp_qual_id)
+
+        client = app.test_client()
+        _login(client, "elevated_rp@test.com")
+        response = client.post(
+            f"/assignments/assign/{spot2_id}",
+            data={"user_id": target_id},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        with app.app_context():
+            spot2 = db.session.get(EventSpot, spot2_id)
+            assert spot2.assignment is not None
+            assert str(spot2.assignment.user_id) == target_id
+
+    def test_rp_user_can_unassign_other_on_attended_event(self, app):
+        """RP-eligible user assigned to event can unassign another user."""
+        event_id, spot1_id, spot2_id, rp_user_id = self._setup_event_with_rp_user(app)
+        non_rp_qual_id = _make_non_rp_qual(app)
+        target_id = _make_user_with_qual(app, "target_unassign@test.com", non_rp_qual_id)
+
+        with app.app_context():
+            assignment = Assignment(spot_id=spot2_id, user_id=target_id, assigned_by_id=rp_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            assignment_id = assignment.id
+
+        client = app.test_client()
+        _login(client, "elevated_rp@test.com")
+        response = client.post(
+            f"/assignments/unassign/{assignment_id}",
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        with app.app_context():
+            spot2 = db.session.get(EventSpot, spot2_id)
+            assert spot2.assignment is None
+
+    def test_rp_user_cannot_assign_on_unattended_event(self, app):
+        """RP-eligible user NOT assigned to event cannot manage assignments."""
+        rp_qual_id = _make_rp_qual(app)
+        _make_user_with_qual(app, "rp_outsider@test.com", rp_qual_id)
+        with app.app_context():
+            me = MasterEvent(name="Outsider ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Outsider Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+            spot_id = spot.id
+
+        non_rp_qual_id = _make_non_rp_qual(app)
+        target_id = _make_user_with_qual(app, "target_outsider@test.com", non_rp_qual_id)
+
+        client = app.test_client()
+        _login(client, "rp_outsider@test.com")
+        response = client.post(
+            f"/assignments/assign/{spot_id}",
+            data={"user_id": target_id},
+        )
+        assert response.status_code == 403
+
+    def test_rp_user_blocked_when_me_has_coordinator(self, app):
+        """RP-eligible user cannot manage assignments when ME has a coordinator (issue #255 exception)."""
+        rp_qual_id = _make_rp_qual(app)
+        rp_user_id = _make_user_with_qual(app, "rp_coordinated@test.com", rp_qual_id)
+        with app.app_context():
+            # Create a coordinator user
+            coordinator = _make_user("me_coord@test.com", "ME Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Coordinated ME", coordinator_id=coordinator.id)
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Coordinated Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 3, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 3, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot1 = EventSpot(event_id=event.id)
+            spot2 = EventSpot(event_id=event.id)
+            db.session.add_all([spot1, spot2])
+            db.session.flush()
+            # Assign RP user
+            assignment = Assignment(spot_id=spot1.id, user_id=rp_user_id, assigned_by_id=rp_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            spot2_id = spot2.id
+
+        non_rp_qual_id = _make_non_rp_qual(app)
+        target_id = _make_user_with_qual(app, "target_coordinated@test.com", non_rp_qual_id)
+
+        client = app.test_client()
+        _login(client, "rp_coordinated@test.com")
+        response = client.post(
+            f"/assignments/assign/{spot2_id}",
+            data={"user_id": target_id},
+        )
+        assert response.status_code == 403
+
+    def test_model_method_directly(self, app):
+        """Direct test of Event.user_can_manage_assignments()."""
+        rp_qual_id = _make_rp_qual(app)
+        rp_user_id = _make_user_with_qual(app, "model_test_rp@test.com", rp_qual_id)
+        non_rp_qual_id = _make_non_rp_qual(app)
+        non_rp_user_id = _make_user_with_qual(app, "model_test_nonrp@test.com", non_rp_qual_id)
+        with app.app_context():
+            me = MasterEvent(name="Model Test ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Model Test Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 8, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 8, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+
+            rp_user = db.session.get(UserAccount, rp_user_id)
+            non_rp_user = db.session.get(UserAccount, non_rp_user_id)
+
+            # Not assigned — should not have elevated access
+            assert event.user_can_manage_assignments(rp_user) is False
+            assert event.user_can_manage_assignments(non_rp_user) is False
+
+            # Assign RP user
+            assignment = Assignment(spot_id=spot.id, user_id=rp_user_id, assigned_by_id=rp_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            # Re-fetch event to pick up relationship changes
+            event = db.session.get(Event, event.id)
+            rp_user = db.session.get(UserAccount, rp_user_id)
+            non_rp_user = db.session.get(UserAccount, non_rp_user_id)
+
+            # Now RP user should have elevated access
+            assert event.user_can_manage_assignments(rp_user) is True
+            # Non-RP user still should not
+            assert event.user_can_manage_assignments(non_rp_user) is False

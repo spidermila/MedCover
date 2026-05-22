@@ -383,7 +383,8 @@ def detail(event_id: int) -> str | Response:
         abort(403)
 
     eligible_users: list[UserAccount] = []
-    if current_user.has_permission("event.assign_other"):
+    can_assign = event.user_can_manage_assignments(current_user)
+    if can_assign:
         eligible_users = list(active_users_list())
 
     all_equipment_types = db.session.scalars(
@@ -437,6 +438,7 @@ def detail(event_id: int) -> str | Response:
         EventType=EventType,
         EquipmentItemStatus=EquipmentItemStatus,
         eligible_users=eligible_users,
+        can_assign=can_assign,
         all_equipment_types=all_equipment_types,
         available_equipment_items=available_equipment_items,
         all_qualifications=all_qualifications,
