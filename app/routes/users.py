@@ -513,8 +513,8 @@ def update_roles(user_id: uuid.UUID) -> Response:
     require_permission("user.assign_role")
     user = get_or_404(UserAccount, user_id)
     role_ids = [int(r) for r in request.form.getlist("role_ids")]
-    _apply_role_update(user, role_ids)
-    user.version += 1
+    if _apply_role_update(user, role_ids):
+        user.version += 1
     db.session.commit()
     flash("Role byly aktualizovány.", "success")
     return redirect(url_for("users.detail", user_id=user_id))
@@ -526,8 +526,8 @@ def update_qualifications(user_id: uuid.UUID) -> Response:
     require_permission("user.assign_qualification")
     user = get_or_404(UserAccount, user_id)
     cred_ids = [int(c) for c in request.form.getlist("qualification_ids")]
-    _apply_qualification_update(user, cred_ids)
-    user.version += 1
+    if _apply_qualification_update(user, cred_ids):
+        user.version += 1
     db.session.commit()
     flash("Kvalifikace byly aktualizovány.", "success")
     return redirect(url_for("users.detail", user_id=user_id))
