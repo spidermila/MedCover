@@ -1,5 +1,5 @@
 # MedCover e2e test dependencies
-# Edit this file, then run: pip-compile --generate-hashes --output-file=requirements-e2e.txt requirements-e2e.in
+# Edit this file, then run: scripts/compile_requirements.sh
 pytest>=8.0
 playwright
 pytest-playwright>=0.7.2

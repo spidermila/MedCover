@@ -1,5 +1,5 @@
 # MedCover production dependencies
-# Edit this file, then run: pip-compile requirements.in --generate-hashes
+# Edit this file, then run: scripts/compile_requirements.sh
 # to regenerate requirements.txt
 
 Flask

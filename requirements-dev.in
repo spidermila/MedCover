@@ -1,5 +1,5 @@
 # MedCover dev/test dependencies
-# Edit this file, then run: pip-compile requirements-dev.in --generate-hashes
+# Edit this file, then run: scripts/compile_requirements.sh
 # to regenerate requirements-dev.txt
 
 -r requirements.in   # include all production deps
