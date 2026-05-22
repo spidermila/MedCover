@@ -938,4 +938,3 @@ class TestImportPreviewRidic:
         )
         assert resp.status_code == 200
         assert "Aktualizace kvalifikací".encode() in resp.data
-
