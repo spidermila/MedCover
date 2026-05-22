@@ -5,10 +5,22 @@ document.addEventListener("DOMContentLoaded", function () {
   var btnImport = document.getElementById("btnImport");
   var countSpan = document.getElementById("selectedCount");
 
+  function userCount() {
+    // Every user row has exactly one _db_id hidden field (new or existing).
+    return document.querySelectorAll('input[name$="_db_id"]').length;
+  }
+
   function updateCount() {
-    var selected = Array.from(rowChecks).filter(function (c) { return c.checked; }).length;
-    if (countSpan) countSpan.textContent = "Vybráno: " + selected + " z " + rowChecks.length;
-    if (btnImport) btnImport.disabled = selected === 0;
+    var selectedEvents = Array.from(rowChecks).filter(function (c) { return c.checked; }).length;
+    var totalUsers = userCount();
+    if (countSpan) {
+      var parts = [];
+      if (rowChecks.length > 0) parts.push(selectedEvents + " z " + rowChecks.length + " akcí");
+      if (totalUsers > 0) parts.push(totalUsers + " uživatelů");
+      countSpan.textContent = parts.length > 0 ? "Vybráno: " + parts.join(", ") : "";
+    }
+    // Disable only when there is literally nothing to import.
+    if (btnImport) btnImport.disabled = selectedEvents === 0 && totalUsers === 0;
     rowChecks.forEach(function (c) {
       c.closest("tr").classList.toggle("row-excluded", !c.checked);
     });
@@ -31,8 +43,13 @@ document.addEventListener("DOMContentLoaded", function () {
   var confirmForm = document.getElementById("confirmForm");
   if (confirmForm) {
     confirmForm.addEventListener("submit", function (e) {
-      var selected = Array.from(rowChecks).filter(function (c) { return c.checked; }).length;
-      if (!confirm("Opravdu chcete importovat " + selected + " akcí? Tato operace vytvoří nové záznamy v databázi.")) {
+      var selectedEvents = Array.from(rowChecks).filter(function (c) { return c.checked; }).length;
+      var totalUsers = userCount();
+      var parts = [];
+      if (selectedEvents > 0) parts.push(selectedEvents + " akcí");
+      if (totalUsers > 0) parts.push(totalUsers + " uživatelů");
+      var detail = parts.length > 0 ? "\n(" + parts.join(", ") + ")" : "";
+      if (!confirm("Opravdu chcete spustit import?" + detail + "\n\nTato operace vytvoří nebo aktualizuje záznamy v databázi.")) {
         e.preventDefault();
       }
     });

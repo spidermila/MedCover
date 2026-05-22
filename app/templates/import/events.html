@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% from 'macros/help.html' import help_icon %}
-{% block title %}Import akcí — MedCover{% endblock %}
+{% block title %}Import — MedCover{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-12 col-lg-9">
 
     <div class="d-flex align-items-center gap-3 mb-4">
-      <h2 class="mb-0">Import akcí z Google Sheets</h2>
+      <h2 class="mb-0">Import z Google Sheets</h2>
       {{ help_icon(
-        "Import umožňuje hromadné vytvoření akcí z exportu Google Sheets. "
+        "Import umožňuje hromadné vytvoření akcí a uživatelů z exportu Google Sheets. "
         "Data nejprve převeďte skriptem scripts/import_events.py do formátu JSON "
         "a celý obsah výsledného souboru vložte do pole níže.",
         title="O importu"
@@ -18,7 +18,7 @@
 
     {# ── How-to steps ──────────────────────────────────────────────────── #}
     <div class="card mb-4">
-      <div class="card-header fw-semibold">Jak importovat akce</div>
+      <div class="card-header fw-semibold">Jak importovat data</div>
       <div class="card-body">
         <ol class="mb-0">
           <li class="mb-1">
@@ -36,7 +36,7 @@
           </li>
           <li>
             Klikněte na <strong>Zkontrolovat a zobrazit náhled</strong>.
-            Před potvrzením importu budete moci upravit všechny akce v přehledné tabulce.
+            Před potvrzením importu budete moci upravit data v přehledné tabulce.
           </li>
         </ol>
       </div>
