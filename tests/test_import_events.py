@@ -134,6 +134,7 @@ def _post_confirm(
         data[f"{p}email"] = u.get("email") or ""
         data[f"{p}phone"] = u.get("phone") or ""
         data[f"{p}is_zdravotnik"] = "1" if u.get("is_zdravotnik") else "0"
+        data[f"{p}is_ridic"] = "1" if u.get("is_ridic") else "0"
 
     return admin_client.post("/import/events/confirm", data=data, follow_redirects=False)
 
@@ -678,3 +679,263 @@ class TestImportIdempotency:
                 db.select(db.func.count()).select_from(UserAccount).where(UserAccount.email == "petra@test.com")
             )
             assert count == 1  # not duplicated despite different name in payload
+
+
+# ── is_ridic (Řidič sanitky) import tests ─────────────────────────────────────
+
+
+def _ensure_ridic_qual(app) -> None:
+    """Ensure the 'Řidič sanitky' qualification exists in the test DB."""
+    with app.app_context():
+        exists = db.session.scalar(
+            db.select(Qualification).where(Qualification.name == "Řidič sanitky")
+        )
+        if not exists:
+            db.session.add(Qualification(name="Řidič sanitky"))
+            db.session.commit()
+
+
+def _ensure_zelenac_qual(app) -> None:
+    """Ensure the 'Zelenáč' qualification exists in the test DB."""
+    with app.app_context():
+        exists = db.session.scalar(
+            db.select(Qualification).where(Qualification.name == "Zelenáč")
+        )
+        if not exists:
+            db.session.add(Qualification(name="Zelenáč"))
+            db.session.commit()
+
+
+class TestImportScriptIsRidic:
+    """Unit tests for is_ridic extraction in scripts/import_events.py."""
+
+    def test_extract_users_includes_is_ridic(self):
+        """extract_users() returns is_ridic from Lidi column F."""
+        import openpyxl
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        users = _script.extract_users(wb)
+        by_name = {u["name"]: u for u in users}
+        # Kratochvíl Tomáš: zdravotník=True, ridic=True
+        assert by_name["Kratochvíl Tomáš"]["is_zdravotnik"] is True
+        assert by_name["Kratochvíl Tomáš"]["is_ridic"] is True
+        # Svoboda Petr: zdravotník=False, ridic=False
+        assert by_name["Svoboda Petr"]["is_zdravotnik"] is False
+        assert by_name["Svoboda Petr"]["is_ridic"] is False
+        # Horáková Marie: zdravotník=False, ridic=True
+        assert by_name["Horáková Marie"]["is_zdravotnik"] is False
+        assert by_name["Horáková Marie"]["is_ridic"] is True
+
+    def test_extract_users_ridic_false_by_default_when_not_in_lidi(self):
+        """Person not in Lidi gets is_ridic=False."""
+        import openpyxl
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        users = _script.extract_users(wb)
+        by_name = {u["name"]: u for u in users}
+        # Pokorný Zdeněk is only in Dozory, not in Lidi
+        assert by_name["Pokorný Zdeněk"]["is_ridic"] is False
+
+
+class TestImportConfirmRidic:
+    """Integration tests for is_ridic support in the import confirm route."""
+
+    def test_creates_ridic_only_user_with_ridic_qual(self, app, admin_client):
+        """User with is_ridic=True, is_zdravotnik=False gets Řidič sanitky."""
+        _ensure_ridic_qual(app)
+        me_id = _make_master_event(app)
+        resp = _post_confirm(
+            app, admin_client,
+            events=[_minimal_event()],
+            users=[{"gs_name": "Horáková Marie", "name": "Marie Horáková",
+                    "email": "marie@test.com", "phone": "", "is_zdravotnik": False, "is_ridic": True}],
+            master_event_id=me_id,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "marie@test.com"))
+            assert user is not None
+            qual_names = {q.name for q in user.qualifications}
+            assert "Řidič sanitky" in qual_names
+            assert "Zelenáč" not in qual_names
+
+    def test_creates_user_with_both_quals(self, app, admin_client):
+        """User with is_zdravotnik=True, is_ridic=True gets both Zdravotník and Řidič sanitky."""
+        _ensure_ridic_qual(app)
+        me_id = _make_master_event(app)
+        with app.app_context():
+            if not db.session.scalar(db.select(Qualification).where(Qualification.name == "Zdravotník")):
+                db.session.add(Qualification(name="Zdravotník"))
+                db.session.commit()
+        resp = _post_confirm(
+            app, admin_client,
+            events=[_minimal_event()],
+            users=[{"gs_name": "Kratochvíl Tomáš", "name": "Tomáš Kratochvíl",
+                    "email": "tomas@test.com", "phone": "", "is_zdravotnik": True, "is_ridic": True}],
+            master_event_id=me_id,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "tomas@test.com"))
+            assert user is not None
+            qual_names = {q.name for q in user.qualifications}
+            assert "Zdravotník" in qual_names
+            assert "Řidič sanitky" in qual_names
+
+    def test_creates_neither_gets_zelenac(self, app, admin_client):
+        """User with is_zdravotnik=False, is_ridic=False gets Zelenáč."""
+        _ensure_zelenac_qual(app)
+        me_id = _make_master_event(app)
+        resp = _post_confirm(
+            app, admin_client,
+            events=[_minimal_event()],
+            users=[{"gs_name": "Svoboda Petr", "name": "Petr Svoboda",
+                    "email": "petr@test.com", "phone": "", "is_zdravotnik": False, "is_ridic": False}],
+            master_event_id=me_id,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "petr@test.com"))
+            assert user is not None
+            qual_names = {q.name for q in user.qualifications}
+            assert "Zelenáč" in qual_names
+            assert "Řidič sanitky" not in qual_names
+
+    def test_updates_existing_user_adds_ridic_qual(self, app, admin_client):
+        """Existing user without Řidič sanitky gets it added when import says is_ridic=True."""
+        _ensure_ridic_qual(app)
+        _ensure_zelenac_qual(app)
+        # Create user with only Zelenáč
+        with app.app_context():
+            zelenac = db.session.scalar(db.select(Qualification).where(Qualification.name == "Zelenáč"))
+            from tests.conftest import _make_user as _conftest_make_user
+            u = _conftest_make_user("existing_ridic@test.com", "Jan Řidič", Role.MEMBER)
+            if zelenac:
+                u.qualifications = [zelenac]
+            db.session.commit()
+            user_id = str(u.id)
+        me_id = _make_master_event(app)
+        resp = _post_confirm(
+            app, admin_client,
+            events=[_minimal_event()],
+            users=[{"db_id": user_id, "gs_name": "Řidič Jan", "name": "Jan Řidič",
+                    "email": "existing_ridic@test.com", "phone": "", "is_zdravotnik": False, "is_ridic": True}],
+            master_event_id=me_id,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "existing_ridic@test.com"))
+            qual_names = {q.name for q in user.qualifications}
+            assert "Řidič sanitky" in qual_names
+            assert "Zelenáč" not in qual_names
+
+    def test_updates_existing_user_removes_zelenac_adds_zdravotnik(self, app, admin_client):
+        """Existing Zelenáč gets Zdravotník when import says is_zdravotnik=True."""
+        _ensure_zelenac_qual(app)
+        with app.app_context():
+            zelenac = db.session.scalar(db.select(Qualification).where(Qualification.name == "Zelenáč"))
+            if not db.session.scalar(db.select(Qualification).where(Qualification.name == "Zdravotník")):
+                db.session.add(Qualification(name="Zdravotník"))
+                db.session.commit()
+            from tests.conftest import _make_user as _conftest_make_user
+            u = _conftest_make_user("was_zelenac@test.com", "Jana Zelenáčová", Role.MEMBER)
+            if zelenac:
+                u.qualifications = [zelenac]
+            db.session.commit()
+            user_id = str(u.id)
+        me_id = _make_master_event(app)
+        resp = _post_confirm(
+            app, admin_client,
+            events=[_minimal_event()],
+            users=[{"db_id": user_id, "gs_name": "Zelenáčová Jana", "name": "Jana Zelenáčová",
+                    "email": "was_zelenac@test.com", "phone": "", "is_zdravotnik": True, "is_ridic": False}],
+            master_event_id=me_id,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "was_zelenac@test.com"))
+            qual_names = {q.name for q in user.qualifications}
+            assert "Zdravotník" in qual_names
+            assert "Zelenáč" not in qual_names
+
+    def test_no_update_when_quals_already_match(self, app, admin_client):
+        """Existing user with correct quals is not modified (no audit entry added)."""
+        _ensure_ridic_qual(app)
+        with app.app_context():
+            ridic = db.session.scalar(db.select(Qualification).where(Qualification.name == "Řidič sanitky"))
+            from tests.conftest import _make_user as _conftest_make_user
+            u = _conftest_make_user("already_ridic@test.com", "Already Driver", Role.MEMBER)
+            if ridic:
+                u.qualifications = [ridic]
+            db.session.commit()
+            user_id = str(u.id)
+            from app.models.audit import AuditLogEntry
+            initial_audit_count = db.session.scalar(
+                db.select(db.func.count()).select_from(AuditLogEntry).where(
+                    AuditLogEntry.entity_id == str(u.id)
+                )
+            )
+        me_id = _make_master_event(app)
+        _post_confirm(
+            app, admin_client,
+            events=[_minimal_event()],
+            users=[{"db_id": user_id, "gs_name": "Driver Already", "name": "Already Driver",
+                    "email": "already_ridic@test.com", "phone": "", "is_zdravotnik": False, "is_ridic": True}],
+            master_event_id=me_id,
+        )
+        with app.app_context():
+            from app.models.audit import AuditLogEntry
+            final_audit_count = db.session.scalar(
+                db.select(db.func.count()).select_from(AuditLogEntry).where(
+                    AuditLogEntry.entity_id == user_id
+                )
+            )
+            assert final_audit_count == initial_audit_count  # no new audit entry
+
+
+class TestImportPreviewRidic:
+    """Tests for is_ridic display in the preview route."""
+
+    def test_preview_shows_ridic_badge_for_ridic_user(self, app, admin_client):
+        """Preview shows 'Řidič sanitky' badge when is_ridic=True."""
+        csrf = _get_csrf(admin_client)
+        payload = {
+            "version": 2,
+            "users": [{"gs_name": "Horáková Marie", "name": "Marie Horáková",
+                       "email": "marie@test.com", "phone": None,
+                       "is_zdravotnik": False, "is_ridic": True}],
+            "events": [],
+        }
+        resp = admin_client.post(
+            "/import/events/preview",
+            data={"json_data": json.dumps(payload), "csrf_token": csrf},
+        )
+        assert resp.status_code == 200
+        assert "Řidič sanitky".encode() in resp.data
+
+    def test_preview_shows_qual_update_badge_for_existing_user(self, app, admin_client):
+        """Preview shows 'Aktualizace kvalifikací' when existing user's quals differ."""
+        _ensure_zelenac_qual(app)
+        with app.app_context():
+            zelenac = db.session.scalar(db.select(Qualification).where(Qualification.name == "Zelenáč"))
+            from tests.conftest import _make_user as _conftest_make_user
+            u = _conftest_make_user("preview_qual@test.com", "Preview User", Role.MEMBER)
+            if zelenac:
+                u.qualifications = [zelenac]
+            db.session.commit()
+        _ensure_ridic_qual(app)
+        csrf = _get_csrf(admin_client)
+        payload = {
+            "version": 2,
+            "users": [{"gs_name": "User Preview", "name": "Preview User",
+                       "email": "preview_qual@test.com", "phone": None,
+                       "is_zdravotnik": False, "is_ridic": True}],
+            "events": [],
+        }
+        resp = admin_client.post(
+            "/import/events/preview",
+            data={"json_data": json.dumps(payload), "csrf_token": csrf},
+        )
+        assert resp.status_code == 200
+        assert "Aktualizace kvalifikací".encode() in resp.data
+

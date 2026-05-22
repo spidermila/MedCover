@@ -80,10 +80,10 @@ def _match_responsible_person(
 def _process_import_users(
     form: dict,
     user_count: int,
-) -> tuple[int, int, dict[str, UserAccount], dict[str, UserAccount]]:
-    """Create new users from the import form.
+) -> tuple[int, int, int, dict[str, UserAccount], dict[str, UserAccount]]:
+    """Create new users and update qualifications of existing users from the import form.
 
-    Returns (created_count, skipped_count, by_name_map, by_email_map).
+    Returns (created_count, updated_quals_count, skipped_count, by_name_map, by_email_map).
     The maps include both pre-existing and newly created users for idempotency.
     """
 
@@ -97,6 +97,7 @@ def _process_import_users(
         ).first()
 
     user_zdravotnik_qual = _qual_by_substr("zdravotník") or _qual_by_substr("zdravotnik")
+    user_ridic_qual = _qual_by_substr("řidič") or _qual_by_substr("ridic")
     user_zelenac_qual = _qual_by_substr("zelenáč") or _qual_by_substr("zelenac")
     member_role = db.session.scalars(db.select(Role).where(Role.name == "Member")).first()
 
@@ -105,13 +106,41 @@ def _process_import_users(
     existing_by_email: dict[str, UserAccount] = {u.email.lower(): u for u in pre_existing if u.email}
 
     created = 0
+    updated_quals = 0
     skipped = 0
 
     for i in range(user_count):
         uprefix = f"user_{i}_"
         db_id = form.get(f"{uprefix}db_id", "").strip()
+        is_zdravotnik = form.get(f"{uprefix}is_zdravotnik") == "1"
+        is_ridic = form.get(f"{uprefix}is_ridic") == "1"
+
+        target_quals = _import_managed_quals(
+            is_zdravotnik, is_ridic,
+            user_zdravotnik_qual, user_ridic_qual, user_zelenac_qual,
+        )
 
         if db_id:
+            # Existing user — update import-managed qualifications if they differ.
+            existing = db.session.get(UserAccount, db_id)
+            if existing:
+                current_managed = {
+                    q.name for q in existing.qualifications
+                    if q.name.lower() in _IMPORT_MANAGED_QUAL_NAMES
+                }
+                target_names = {q.name for q in target_quals}
+                if current_managed != target_names:
+                    non_managed = [
+                        q for q in existing.qualifications
+                        if q.name.lower() not in _IMPORT_MANAGED_QUAL_NAMES
+                    ]
+                    existing.qualifications = non_managed + target_quals
+                    audit(
+                        "import", "UserAccount", existing.id,
+                        f"Kvalifikace aktualizovány při importu: {', '.join(sorted(target_names))}",
+                        None,
+                    )
+                    updated_quals += 1
             skipped += 1
             continue
 
@@ -123,7 +152,6 @@ def _process_import_users(
         name = form.get(f"{uprefix}name", "").strip()
         email = form.get(f"{uprefix}email", "").strip().lower()
         phone = form.get(f"{uprefix}phone", "").strip() or None
-        is_zdravotnik = form.get(f"{uprefix}is_zdravotnik") == "1"
 
         if not name or not email:
             skipped += 1
@@ -141,9 +169,7 @@ def _process_import_users(
         new_user.set_password(secrets.token_urlsafe(32))
         if member_role:
             new_user.roles = [member_role]
-        u_qual = user_zdravotnik_qual if is_zdravotnik else user_zelenac_qual
-        if u_qual:
-            new_user.qualifications = [u_qual]
+        new_user.qualifications = [q for q in target_quals if q]
 
         db.session.add(new_user)
         db.session.flush()
@@ -155,7 +181,7 @@ def _process_import_users(
         audit("import", "UserAccount", new_user.id, f"Uživatel importován z Google Sheets: {name}", None)
         created += 1
 
-    return created, skipped, existing_by_name, existing_by_email
+    return created, updated_quals, skipped, existing_by_name, existing_by_email
 
 
 def _create_spots_and_assignments(
@@ -311,6 +337,7 @@ def _build_users_preview(payload_users: list[Any], all_users: list[UserAccount])
         email = str(pu.get("email") or "").strip().lower() or None
         phone = str(pu.get("phone") or "").strip() or None
         is_zdravotnik = bool(pu.get("is_zdravotnik", False))
+        is_ridic = bool(pu.get("is_ridic", False))
 
         existing_user: UserAccount | None = None
         match_reason = "none"
@@ -321,19 +348,69 @@ def _build_users_preview(payload_users: list[Any], all_users: list[UserAccount])
             existing_user = db_by_email[email.lower()]
             match_reason = "email"
 
-        rows.append(
-            {
-                "gs_name": gs_name,
-                "name": name,
-                "email": email,
-                "phone": phone,
-                "is_zdravotnik": is_zdravotnik,
-                "existing": existing_user,
-                "match_reason": match_reason,
-                "is_archived": existing_user.is_archived if existing_user else False,
+        # Determine which import-managed qualifications the user *should* have.
+        import_qual_names: set[str] = set()
+        if is_zdravotnik:
+            import_qual_names.add("Zdravotník")
+        if is_ridic:
+            import_qual_names.add("Řidič sanitky")
+        if not is_zdravotnik and not is_ridic:
+            import_qual_names.add("Zelenáč")
+
+        # For existing users, detect qualification changes.
+        qual_changes: dict[str, list[str]] | None = None
+        if existing_user:
+            current_managed = {
+                q.name for q in existing_user.qualifications
+                if q.name.lower() in _IMPORT_MANAGED_QUAL_NAMES
             }
-        )
+            to_add = sorted(import_qual_names - current_managed)
+            to_remove = sorted(current_managed - import_qual_names)
+            if to_add or to_remove:
+                qual_changes = {"add": to_add, "remove": to_remove}
+
+        rows.append({
+            "gs_name": gs_name,
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "is_zdravotnik": is_zdravotnik,
+            "is_ridic": is_ridic,
+            "existing": existing_user,
+            "match_reason": match_reason,
+            "is_archived": existing_user.is_archived if existing_user else False,
+            "qual_changes": qual_changes,
+        })
     return rows
+
+
+def _import_managed_quals(
+    is_zdravotnik: bool,
+    is_ridic: bool,
+    user_zdravotnik_qual: "Qualification | None",
+    user_ridic_qual: "Qualification | None",
+    user_zelenac_qual: "Qualification | None",
+) -> list["Qualification"]:
+    """Return the list of import-managed qualifications for given flags.
+
+    Import-managed qualifications are: Zdravotník, Řidič sanitky, Zelenáč.
+    If neither health-worker nor driver flag is set, the user is a Zelenáč.
+    """
+    quals: list[Qualification] = []
+    if is_zdravotnik and user_zdravotnik_qual:
+        quals.append(user_zdravotnik_qual)
+    if is_ridic and user_ridic_qual:
+        quals.append(user_ridic_qual)
+    if not is_zdravotnik and not is_ridic and user_zelenac_qual:
+        quals.append(user_zelenac_qual)
+    return quals
+
+
+# Names of qualifications managed (i.e. potentially modified) by the import pipeline.
+_IMPORT_MANAGED_QUAL_NAMES: frozenset[str] = frozenset(
+    {"zdravotník", "řidič sanitky", "zelenáč"}
+)
+
 
 
 def _existing_event_pairs() -> set[tuple[str, str]]:
@@ -523,6 +600,7 @@ def events_preview() -> str | Response:
         total=len(preview_rows),
         users_new=sum(1 for u in users_preview_rows if u["existing"] is None),
         users_existing=sum(1 for u in users_preview_rows if u["existing"] is not None),
+        users_qual_updates=sum(1 for u in users_preview_rows if u.get("qual_changes")),
         warnings_count=sum(1 for r in preview_rows if r["warnings"]),
         duplicates_count=sum(1 for r in preview_rows if r["is_duplicate"]),
     )
@@ -575,7 +653,7 @@ def events_confirm() -> Response:
     user_count = int(user_count_str) if user_count_str.isdigit() else 0
 
     try:
-        created_users, skipped_users, _, _ = _process_import_users(form, user_count)
+        created_users, qual_updates, skipped_users, _, _ = _process_import_users(form, user_count)
 
         # Build comprehensive name→user map (all DB users incl. newly created).
         all_users_now = list(db.session.scalars(db.select(UserAccount)).all())
@@ -683,6 +761,8 @@ def events_confirm() -> Response:
         parts.append(f"přeskočeno {skipped}")
     if created_users:
         parts.append(f"vytvořeno {created_users} uživatelů")
+    if qual_updates:
+        parts.append(f"aktualizovány kvalifikace u {qual_updates} uživatelů")
     if skipped_users:
         parts.append(f"přeskočeno {skipped_users} uživatelů (existovali)")
     if auto_debriefings:

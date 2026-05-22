@@ -315,6 +315,7 @@ def _load_lidi_lookup(wb: Any) -> dict[str, dict[str, Any]]:
         zdravotnik_raw = row[3]
         phone = str(phone_raw).strip() if phone_raw is not None else ""
         email = str(email_raw).strip() if email_raw is not None else ""
+        ridic_raw = row[5] if len(row) > 5 else None
 
         if isinstance(zdravotnik_raw, bool):
             is_zdravotnik = zdravotnik_raw
@@ -323,10 +324,18 @@ def _load_lidi_lookup(wb: Any) -> dict[str, dict[str, Any]]:
         else:
             is_zdravotnik = bool(zdravotnik_raw) if zdravotnik_raw is not None else False
 
+        if isinstance(ridic_raw, bool):
+            is_ridic = ridic_raw
+        elif isinstance(ridic_raw, str):
+            is_ridic = ridic_raw.strip().lower() in ("true", "ano", "1", "yes")
+        else:
+            is_ridic = bool(ridic_raw) if ridic_raw is not None else False
+
         lookup[gs_name] = {
             "phone": phone or None,
             "email": email or None,
             "is_zdravotnik": is_zdravotnik,
+            "is_ridic": is_ridic,
         }
     return lookup
 
@@ -375,15 +384,14 @@ def extract_users(wb: Any, cutoff: date | None = None) -> list[dict[str, Any]]:
             seen.add(gs_name)
 
             lidi_info = lidi.get(gs_name)
-            users.append(
-                {
-                    "gs_name": gs_name,
-                    "name": gs_name,  # GS stores Lastname Firstname — keep that convention
-                    "email": lidi_info["email"] if lidi_info else None,
-                    "phone": lidi_info["phone"] if lidi_info else None,
-                    "is_zdravotnik": lidi_info["is_zdravotnik"] if lidi_info else False,
-                }
-            )
+            users.append({
+                "gs_name": gs_name,
+                "name": gs_name,  # GS stores Lastname Firstname — keep that convention
+                "email": lidi_info["email"] if lidi_info else None,
+                "phone": lidi_info["phone"] if lidi_info else None,
+                "is_zdravotnik": lidi_info["is_zdravotnik"] if lidi_info else False,
+                "is_ridic": lidi_info["is_ridic"] if lidi_info else False,
+            })
 
     users.sort(key=lambda u: u["name"])
     return users
