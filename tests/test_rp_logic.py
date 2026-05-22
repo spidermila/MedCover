@@ -212,6 +212,35 @@ class TestAutoClearRpOnRelease:
             event = db.session.get(Event, event_id)
             assert str(event.responsible_person_id) == rp_user_id
 
+    def test_rp_reassigned_to_next_eligible_on_release(self, app):
+        """When RP leaves, another RP-eligible attendee becomes RP automatically."""
+        qual_id = _make_rp_qual(app)
+        rp1_id = _make_user_with_qual(app, "rp_leaving@test.com", qual_id)
+        rp2_id = _make_user_with_qual(app, "rp_staying@test.com", qual_id)
+        event_id, spot_id = _make_open_event(app)
+
+        with app.app_context():
+            # Add second spot and assign both RP-eligible users
+            spot2 = EventSpot(event_id=event_id)
+            db.session.add(spot2)
+            db.session.flush()
+            a1 = Assignment(spot_id=spot_id, user_id=rp1_id, assigned_by_id=rp1_id)
+            a2 = Assignment(spot_id=spot2.id, user_id=rp2_id, assigned_by_id=rp2_id)
+            db.session.add_all([a1, a2])
+            event = db.session.get(Event, event_id)
+            event.responsible_person_id = rp1_id  # RP1 is the current RP
+            db.session.commit()
+            a1_id = a1.id
+
+        client = app.test_client()
+        _login(client, "rp_leaving@test.com")
+        client.post(f"/assignments/release/{a1_id}", follow_redirects=True)
+
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            # RP should have been reassigned to the remaining eligible user
+            assert str(event.responsible_person_id) == rp2_id
+
 
 # ── set_rp route ──────────────────────────────────────────────────────────────
 
