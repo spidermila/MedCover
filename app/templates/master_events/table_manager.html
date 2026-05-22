@@ -105,9 +105,11 @@
                   data-event-name="{{ event.name | e }}"
                   title="Smazat akci" class="tm-icon-btn">🗑</button>
           {% endif %}
+          {% if can_edit_event %}
           <button class="btn btn-link btn-sm p-0 ms-1 tm-color-btn"
                   data-event-id="{{ event.id }}"
                   title="Barva akce" class="tm-icon-btn">🌈</button>
+          {% endif %}
           <span class="ms-1">{{ badge_status(event.status.value, status_colors) }}</span>
           {% if (event.status.name == 'DRAFT' and can_publish) or (event.status.name == 'PUBLISHED' and can_open_assignments) %}
           <button class="btn btn-link btn-sm p-0 ms-1 tm-advance-btn text-success"
