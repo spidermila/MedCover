@@ -34,19 +34,21 @@ jobs:
 
       - name: Determine image tag
         id: meta
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
             echo "push_latest=true" >> "$GITHUB_OUTPUT"
           else
             # Manual run: sanitise branch name to valid Docker tag
-            BRANCH="${{ github.ref_name }}"
-            TAG="$(echo "$BRANCH" \
+            TAG="$(echo "$REF_NAME" \
               | tr '[:upper:]' '[:lower:]' \
               | sed -E 's/[^a-z0-9_.-]/-/g; s/^[.-]+//; s/-+/-/g' \
               | cut -c1-128)"
             if [[ -z "$TAG" ]]; then
-              echo "Invalid derived image tag from ref: $BRANCH" >&2
+              echo "Invalid derived image tag from ref: $REF_NAME" >&2
               exit 1
             fi
             echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
