@@ -80,10 +80,10 @@ def _match_responsible_person(
 def _process_import_users(
     form: dict,
     user_count: int,
-) -> tuple[int, int, int, dict[str, UserAccount], dict[str, UserAccount]]:
+) -> tuple[int, int, dict[str, UserAccount], dict[str, UserAccount]]:
     """Create new users and update qualifications of existing users from the import form.
 
-    Returns (created_count, updated_quals_count, skipped_count, by_name_map, by_email_map).
+    Returns (created_count, updated_quals_count, by_name_map, by_email_map).
     The maps include both pre-existing and newly created users for idempotency.
     """
 
@@ -107,7 +107,6 @@ def _process_import_users(
 
     created = 0
     updated_quals = 0
-    skipped = 0
 
     for i in range(user_count):
         uprefix = f"user_{i}_"
@@ -141,12 +140,10 @@ def _process_import_users(
                         None,
                     )
                     updated_quals += 1
-            skipped += 1
             continue
 
         include = form.get(f"{uprefix}include") == "1"
         if not include:
-            skipped += 1
             continue
 
         name = form.get(f"{uprefix}name", "").strip()
@@ -154,11 +151,9 @@ def _process_import_users(
         phone = form.get(f"{uprefix}phone", "").strip() or None
 
         if not name or not email:
-            skipped += 1
             continue
 
         if name.lower() in existing_by_name or email.lower() in existing_by_email:
-            skipped += 1
             continue
 
         new_user = UserAccount(name=name, email=email, phone=phone, is_active=True)
@@ -181,7 +176,7 @@ def _process_import_users(
         audit("import", "UserAccount", new_user.id, f"Uživatel importován z Google Sheets: {name}", None)
         created += 1
 
-    return created, updated_quals, skipped, existing_by_name, existing_by_email
+    return created, updated_quals, existing_by_name, existing_by_email
 
 
 def _create_spots_and_assignments(
@@ -652,7 +647,7 @@ def events_confirm() -> Response:
     user_count = int(user_count_str) if user_count_str.isdigit() else 0
 
     try:
-        created_users, qual_updates, skipped_users, _, _ = _process_import_users(form, user_count)
+        created_users, qual_updates, _, _ = _process_import_users(form, user_count)
 
         # Build comprehensive name→user map (all DB users incl. newly created).
         all_users_now = list(db.session.scalars(db.select(UserAccount)).all())
@@ -762,8 +757,6 @@ def events_confirm() -> Response:
         parts.append(f"vytvořeno {created_users} uživatelů")
     if qual_updates:
         parts.append(f"aktualizovány kvalifikace u {qual_updates} uživatelů")
-    if skipped_users:
-        parts.append(f"přeskočeno {skipped_users} uživatelů (existovali)")
     if auto_debriefings:
         parts.append(f"automaticky vytvořeno {auto_debriefings} debriefingů pro historické akce")
     flash(f"Import dokončen: {', '.join(parts)}.", "success")
