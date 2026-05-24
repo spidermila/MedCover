@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 from app.extensions import db
 from app.models.assignment import DebriefingRecord
 from app.models.event import Event, EventStatus
@@ -60,7 +62,6 @@ class TestIsValidNameHelper:
 
 def _make_user(app, name: str, email: str, is_zdravotnik: bool = False) -> str:
     """Create an active Member user and return its UUID string."""
-
     with app.app_context():
         u = _conftest_make_user(email, name, Role.MEMBER)
         return str(u.id)
@@ -684,7 +685,8 @@ class TestImportIdempotency:
 # ── is_ridic (Řidič sanitky) import tests ─────────────────────────────────────
 
 
-def _ensure_ridic_qual(app) -> None:
+@pytest.fixture()
+def ensure_ridic_qual(app):
     """Ensure the 'Řidič sanitky' qualification exists in the test DB."""
     with app.app_context():
         exists = db.session.scalar(
@@ -695,7 +697,8 @@ def _ensure_ridic_qual(app) -> None:
             db.session.commit()
 
 
-def _ensure_zelenac_qual(app) -> None:
+@pytest.fixture()
+def ensure_zelenac_qual(app):
     """Ensure the 'Zelenáč' qualification exists in the test DB."""
     with app.app_context():
         exists = db.session.scalar(
@@ -740,9 +743,8 @@ class TestImportScriptIsRidic:
 class TestImportConfirmRidic:
     """Integration tests for is_ridic support in the import confirm route."""
 
-    def test_creates_ridic_only_user_with_ridic_qual(self, app, admin_client):
+    def test_creates_ridic_only_user_with_ridic_qual(self, app, admin_client, ensure_ridic_qual):
         """User with is_ridic=True, is_zdravotnik=False gets Řidič sanitky."""
-        _ensure_ridic_qual(app)
         me_id = _make_master_event(app)
         resp = _post_confirm(
             app, admin_client,
@@ -759,9 +761,8 @@ class TestImportConfirmRidic:
             assert "Řidič sanitky" in qual_names
             assert "Zelenáč" not in qual_names
 
-    def test_creates_user_with_both_quals(self, app, admin_client):
+    def test_creates_user_with_both_quals(self, app, admin_client, ensure_ridic_qual):
         """User with is_zdravotnik=True, is_ridic=True gets both Zdravotník and Řidič sanitky."""
-        _ensure_ridic_qual(app)
         me_id = _make_master_event(app)
         with app.app_context():
             if not db.session.scalar(db.select(Qualification).where(Qualification.name == "Zdravotník")):
@@ -782,9 +783,8 @@ class TestImportConfirmRidic:
             assert "Zdravotník" in qual_names
             assert "Řidič sanitky" in qual_names
 
-    def test_creates_neither_gets_zelenac(self, app, admin_client):
+    def test_creates_neither_gets_zelenac(self, app, admin_client, ensure_zelenac_qual):
         """User with is_zdravotnik=False, is_ridic=False gets Zelenáč."""
-        _ensure_zelenac_qual(app)
         me_id = _make_master_event(app)
         resp = _post_confirm(
             app, admin_client,
@@ -801,14 +801,11 @@ class TestImportConfirmRidic:
             assert "Zelenáč" in qual_names
             assert "Řidič sanitky" not in qual_names
 
-    def test_updates_existing_user_adds_ridic_qual(self, app, admin_client):
+    def test_updates_existing_user_adds_ridic_qual(self, app, admin_client, ensure_ridic_qual, ensure_zelenac_qual):
         """Existing user without Řidič sanitky gets it added when import says is_ridic=True."""
-        _ensure_ridic_qual(app)
-        _ensure_zelenac_qual(app)
         # Create user with only Zelenáč
         with app.app_context():
             zelenac = db.session.scalar(db.select(Qualification).where(Qualification.name == "Zelenáč"))
-            from tests.conftest import _make_user as _conftest_make_user
             u = _conftest_make_user("existing_ridic@test.com", "Jan Řidič", Role.MEMBER)
             if zelenac:
                 u.qualifications = [zelenac]
@@ -829,15 +826,13 @@ class TestImportConfirmRidic:
             assert "Řidič sanitky" in qual_names
             assert "Zelenáč" not in qual_names
 
-    def test_updates_existing_user_removes_zelenac_adds_zdravotnik(self, app, admin_client):
+    def test_updates_existing_user_removes_zelenac_adds_zdravotnik(self, app, admin_client, ensure_zelenac_qual):
         """Existing Zelenáč gets Zdravotník when import says is_zdravotnik=True."""
-        _ensure_zelenac_qual(app)
         with app.app_context():
             zelenac = db.session.scalar(db.select(Qualification).where(Qualification.name == "Zelenáč"))
             if not db.session.scalar(db.select(Qualification).where(Qualification.name == "Zdravotník")):
                 db.session.add(Qualification(name="Zdravotník"))
                 db.session.commit()
-            from tests.conftest import _make_user as _conftest_make_user
             u = _conftest_make_user("was_zelenac@test.com", "Jana Zelenáčová", Role.MEMBER)
             if zelenac:
                 u.qualifications = [zelenac]
@@ -858,12 +853,10 @@ class TestImportConfirmRidic:
             assert "Zdravotník" in qual_names
             assert "Zelenáč" not in qual_names
 
-    def test_no_update_when_quals_already_match(self, app, admin_client):
+    def test_no_update_when_quals_already_match(self, app, admin_client, ensure_ridic_qual):
         """Existing user with correct quals is not modified (no audit entry added)."""
-        _ensure_ridic_qual(app)
         with app.app_context():
             ridic = db.session.scalar(db.select(Qualification).where(Qualification.name == "Řidič sanitky"))
-            from tests.conftest import _make_user as _conftest_make_user
             u = _conftest_make_user("already_ridic@test.com", "Already Driver", Role.MEMBER)
             if ridic:
                 u.qualifications = [ridic]
@@ -913,17 +906,14 @@ class TestImportPreviewRidic:
         assert resp.status_code == 200
         assert "Řidič sanitky".encode() in resp.data
 
-    def test_preview_shows_qual_update_badge_for_existing_user(self, app, admin_client):
+    def test_preview_shows_qual_update_badge_for_existing_user(self, app, admin_client, ensure_zelenac_qual, ensure_ridic_qual):
         """Preview shows 'Aktualizace kvalifikací' when existing user's quals differ."""
-        _ensure_zelenac_qual(app)
         with app.app_context():
             zelenac = db.session.scalar(db.select(Qualification).where(Qualification.name == "Zelenáč"))
-            from tests.conftest import _make_user as _conftest_make_user
             u = _conftest_make_user("preview_qual@test.com", "Preview User", Role.MEMBER)
             if zelenac:
                 u.qualifications = [zelenac]
             db.session.commit()
-        _ensure_ridic_qual(app)
         csrf = _get_csrf(admin_client)
         payload = {
             "version": 2,
