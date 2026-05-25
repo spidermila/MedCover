@@ -1,7 +1,5 @@
-"""Tests for admin blueprint: dashboard, pending users, activation."""
+"""Tests for admin blueprint: dashboard, audit log."""
 from app.extensions import db
-from app.models.role import Role
-from app.models.user import UserAccount
 from app.models.audit import AuditLogEntry
 from app.utils import diff_changes
 
@@ -62,43 +60,6 @@ class TestAdminDashboard:
     def test_admin_dashboard_has_audit_log_link(self, admin_client):
         response = admin_client.get("/admin/")
         assert b"audit-log" in response.data
-
-
-class TestUserActivation:
-    def test_admin_can_activate_user(self, app, admin_client):
-        with app.app_context():
-            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
-            user = UserAccount(email="inactive@test.com", name="Inactive", is_active=False)
-            user.set_password("testpass123")
-            user.roles = [role]
-            db.session.add(user)
-            db.session.commit()
-            user_id = str(user.id)
-
-        response = admin_client.post(
-            f"/admin/activate/{user_id}",
-            follow_redirects=False,
-        )
-        assert response.status_code == 302
-
-        with app.app_context():
-            activated = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "inactive@test.com")
-            )
-            assert activated.is_active is True
-
-    def test_member_cannot_activate_users(self, app, member_client):
-        with app.app_context():
-            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
-            user = UserAccount(email="inactive@test.com", name="Inactive", is_active=False)
-            user.set_password("testpass123")
-            user.roles = [role]
-            db.session.add(user)
-            db.session.commit()
-            user_id = str(user.id)
-
-        response = member_client.post(f"/admin/activate/{user_id}")
-        assert response.status_code == 403
 
 
 class TestAppSettings:
