@@ -12,6 +12,7 @@ from flask import (
 from flask_login import current_user, login_required
 from sqlalchemy.orm import selectinload
 
+from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
 from app.models.user import UserAccount, CalendarView
 from app.models.role import Role
@@ -21,7 +22,7 @@ from app.models.audit import AuditLogEntry
 from sqlalchemy import collate
 from app.utils import CS_COLLATION, czech_sort_key, audit, diff_changes, external_url_for, get_or_404, require_permission
 from app.config import INVITE_TOKEN_HOURS
-from app.constants import MIN_PASSWORD_LENGTH
+
 
 users_bp = Blueprint("users", __name__, url_prefix="/users")
 
@@ -300,7 +301,7 @@ def create_user() -> str | Response:
     audit("create", "UserAccount", user.id, f"Manuálně vytvořen účet {user.name} ({user.email})", {})
     db.session.commit()
     flash(f"Uživatel {user.name} byl vytvořen. Uživatel si může nastavit heslo přes 'Zapomenuté heslo'.", "success")
-    return redirect(url_for("users.detail", user_id=user.id, min_password_length=MIN_PASSWORD_LENGTH))
+    return redirect(url_for("users.detail", user_id=user.id))
 
 
 @users_bp.route("/<uuid:user_id>")

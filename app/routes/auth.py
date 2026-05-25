@@ -6,6 +6,7 @@ from typing import Any
 from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
+from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
 from app.models.invite import RegistrationInvite
 from app.models.role import Role
@@ -13,7 +14,6 @@ from app.models.user import UserAccount
 from app.models.audit import AuditLogEntry
 from app.utils import external_url_for, safe_next
 from app.config import LOGIN_MAX_ATTEMPTS, LOGIN_LOCKOUT_MINUTES
-from app.constants import MIN_PASSWORD_LENGTH
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -141,7 +141,7 @@ def forgot_password() -> str | Response:
             db.session.commit()
         return redirect(url_for("auth.login"))
 
-    return render_template("auth/forgot_password.html", min_password_length=MIN_PASSWORD_LENGTH)
+    return render_template("auth/forgot_password.html")
 
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
@@ -182,7 +182,7 @@ def reset_password(token: str) -> str | Response:
             flash("Heslo bylo změněno. Přihlaste se.", "success")
             return redirect(url_for("auth.login"))
 
-    return render_template("auth/reset_password.html")
+    return render_template("auth/reset_password.html", min_password_length=MIN_PASSWORD_LENGTH)
 
 
 @auth_bp.route("/register/<token>", methods=["GET", "POST"])

@@ -101,8 +101,8 @@
         <div class="card-header fw-semibold">Nastavit heslo <span class="text-muted fw-normal fs-6">(volitelné)</span></div>
         <div class="card-body">
           <div class="mb-2">
-            <label class="form-label" for="new_password">Nové heslo
-              {{ help_icon("Ponechte prázdné, pokud heslo neměníte. Heslo musí mít alespoň {{ min_password_length }} znaků.") }}
+            <label class="form-label" for="new_password">
+              Nové heslo {{ help_icon("Ponechte prázdné, pokud heslo neměníte. Heslo musí mít alespoň "~ min_password_length ~" znaků.") }}
             </label>
             <input class="form-control" type="password" id="new_password" name="new_password"
                    autocomplete="new-password" placeholder="Nové heslo (min. {{ min_password_length }} znaků)">
