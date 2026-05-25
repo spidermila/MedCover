@@ -8,7 +8,9 @@ import pytest
 
 from app.extensions import db
 from app.models.assignment import DebriefingRecord
+from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventStatus
+from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
@@ -687,7 +689,10 @@ class TestImportIdempotency:
 
 @pytest.fixture()
 def ensure_ridic_qual(app):
-    """Ensure the 'Řidič sanitky' qualification exists in the test DB."""
+    """Ensure the 'Řidič sanitky' qualification exists in the test DB.
+
+    Function-scoped because clean_db truncates the qualification table after each test.
+    """
     with app.app_context():
         exists = db.session.scalar(
             db.select(Qualification).where(Qualification.name == "Řidič sanitky")
@@ -699,7 +704,10 @@ def ensure_ridic_qual(app):
 
 @pytest.fixture()
 def ensure_zelenac_qual(app):
-    """Ensure the 'Zelenáč' qualification exists in the test DB."""
+    """Ensure the 'Zelenáč' qualification exists in the test DB.
+
+    Function-scoped because clean_db truncates the qualification table after each test.
+    """
     with app.app_context():
         exists = db.session.scalar(
             db.select(Qualification).where(Qualification.name == "Zelenáč")
@@ -862,7 +870,6 @@ class TestImportConfirmRidic:
                 u.qualifications = [ridic]
             db.session.commit()
             user_id = str(u.id)
-            from app.models.audit import AuditLogEntry
             initial_audit_count = db.session.scalar(
                 db.select(db.func.count()).select_from(AuditLogEntry).where(
                     AuditLogEntry.entity_id == str(u.id)
@@ -877,7 +884,6 @@ class TestImportConfirmRidic:
             master_event_id=me_id,
         )
         with app.app_context():
-            from app.models.audit import AuditLogEntry
             final_audit_count = db.session.scalar(
                 db.select(db.func.count()).select_from(AuditLogEntry).where(
                     AuditLogEntry.entity_id == user_id
