@@ -103,6 +103,7 @@ MedCover/
 │
 ├── scripts/
 │   ├── seed_dev.py             # Populates DB with realistic mock data for local dev
+│   ├── compile_requirements.sh # Recompiles .in → .txt in a Linux container (deterministic hashes)
 │   └── e2e-entrypoint.sh       # Docker entrypoint for E2E web container
 │
 ├── e2e_tests/                  # Playwright browser tests (NOT run by default pytest)
@@ -117,8 +118,8 @@ MedCover/
 ├── .env.example                # Template for required env vars — COMMIT THIS
 ├── .env                        # Actual secrets — NEVER COMMIT (in .gitignore)
 ├── .dockerignore
-├── requirements.txt            # Production dependencies
-├── requirements-dev.txt        # Dev/test extras: pytest, faker, pytest-cov
+├── requirements.txt            # Production dependencies (compiled from .in files)
+├── requirements-dev.txt        # Dev/test extras (compiled from .in files)
 ├── requirements-e2e.txt        # E2E test deps: pytest-playwright
 ├── Makefile                    # Shortcuts: make e2e, make test
 ├── tox.ini                     # tox envs: py314 (unit), e2e (playwright)
@@ -354,6 +355,40 @@ CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} \"app:create_app()\""]
 ```
 
 `docker-entrypoint.sh` runs `flask db upgrade` then `flask verify-schema` on every container start before handing off to the CMD process. If `verify-schema` detects missing tables/columns the container exits immediately rather than serving broken traffic.
+
+---
+
+## Dependency Management
+
+Dependencies are managed with **pip-tools** (`.in` → `.txt` compilation with hashes).
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `requirements.in` | Top-level production dependencies |
+| `requirements-dev.in` | Dev/test extras (extends production) |
+| `requirements-e2e.in` | Playwright E2E test deps |
+| `requirements.txt` | Compiled lock file with hashes (committed) |
+| `requirements-dev.txt` | Compiled dev lock file with hashes (committed) |
+| `requirements-e2e.txt` | Compiled E2E lock file with hashes (committed) |
+
+### Adding or upgrading a dependency
+
+1. Edit the relevant `.in` file (add/bump the package).
+2. Run the compile script:
+   ```bash
+   ./scripts/compile_requirements.sh
+   ```
+   This uses Podman (or Docker) to compile inside a `python:3.14-slim` Linux/amd64 container — ensuring the generated hashes match CI and production.
+3. Review the diff: `git diff requirements*.txt`
+4. Commit both the `.in` and `.txt` files together.
+
+> **Why a container?** pip-compile on macOS ARM produces hashes for macOS-only wheels. Some packages ship different wheels for Linux, causing hash mismatches in CI. The container guarantees Linux-compatible hashes.
+
+### Dependabot
+
+Dependabot submits weekly PRs for `pip` and `github-actions` dependency updates (configured in `.github/dependabot.yml`). Review and merge these regularly.
 
 ---
 

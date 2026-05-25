@@ -110,6 +110,7 @@ Legend: ✅ Done · 🔲 To do · ⏳ In progress
 - ✅ Preferred calendar view stored per user (month / week / day / list)
 - ✅ Change own password
 - ✅ Dark mode toggle in user settings
+- ✅ iCal feed: per-user token-authenticated `.ics` endpoint for Google Calendar / Outlook subscription
 
 ### Admin Panel Improvements
 - ✅ Credential management UI (create, edit, delete credentials and hierarchy)
