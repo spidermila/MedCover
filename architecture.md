@@ -39,7 +39,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 | Člen | Member | Regular member; can join events and submit debriefings |
 | Divák | Viewer | Read-only access |
 | Vedoucí debriefingu | Debriefing Manager | Exclusive access to confidential debriefing records |
-| Zodpovědný zdravotník (ZZ) | Responsible Person (RP) / `responsible_person` | The qualified medic leading an event on site; field: `Event.responsible_person_id` |
+| Zodpovědná osoba (ZO) | Responsible Person (RP) / `responsible_person` | The person leading an event on site; field: `Event.responsible_person_id` |
 | Zelenáč | Trainee | Informal Czech term for a junior/trainee-level qualification used in the event import logic |
 
 ### Event Status (`EventStatus` enum)
@@ -69,7 +69,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 | Povinná pozice | Mandatory spot — `is_optional = False` | Affects staffing status calculations |
 | Volitelná pozice | Optional spot — `is_optional = True` | Does not affect staffing status |
 | Požadovaná kvalifikace | Required qualification — `EventSpot.required_qualifications` | M2M: qualifications a spot holder must have |
-| Může být vedoucí akce | Can be RP — `Qualification.can_be_rp` | Holder is eligible to be set as `responsible_person` |
+| Může být zodpovědná osoba | Can be RP — `Qualification.can_be_rp` | Holder is eligible to be set as `responsible_person` |
 | Nadřazená kvalifikace | Parent qualification — `Qualification.parents` | Higher-tier qualification that can substitute for lower ones |
 | Může zastoupit | Can substitute / `can_be_filled_by()` | A parent qualification holder can fill spots requiring a child |
 | Smazáno (soft) | Soft-deleted — `is_deleted = True` | Qualifications are never hard-deleted; is_deleted hides them |
@@ -96,7 +96,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 | Hodnocení objednatele / organizátora | Customer feedback — `feedback_customer` | Confidential evaluation of the customer/organizer |
 | Hodnocení kolegů | Colleagues feedback — `feedback_colleagues` | Confidential evaluation of teamwork |
 | Nevyplněný debriefing | Pending debriefing | Assignment where `DebriefingRecord` does not yet exist |
-| Část vedoucího zdravotníka (ZZ) | RP section | The non-confidential part of the debriefing form filled only by the responsible person |
+| Část zodpovědné osoby | RP section | The non-confidential part of the debriefing form filled only by the responsible person |
 
 ### Equipment Concepts
 
@@ -136,7 +136,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 | Popis | `description` |
 | Adresa / Místo konání | `address` |
 | Kontaktní osoba | `contact_person` |
-| Zodpovědný zdravotník | `responsible_person_id` |
+| Zodpovědná osoba | `responsible_person_id` |
 | Placená akce | `paid` (boolean) |
 | Archivovaná | `archived` (boolean) |
 | Popis pozice | `EventSpot.description` |
@@ -149,7 +149,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 
 | Situation | Rule |
 |---|---|
-| "Vedoucí" vs "Zodpovědný zdravotník (ZZ)" | Both refer to the on-site lead. Use **"Zodpovědný zdravotník"** (full form) in form labels and tables. "ZZ" is the accepted abbreviation. "Vedoucí" alone is acceptable in error badges/alerts for brevity (e.g. "Chybí vedoucí"). |
+| "Zodpovědná osoba (ZO)" | The unified Czech term for the on-site lead (RP). Previously "Zodpovědný zdravotník (ZZ)", "Lektor", or "Vedoucí" depending on event type — now always **"Zodpovědná osoba"**. "ZO" is the standard abbreviation. |
 | "Pozice" vs "Místo" | **"Pozice"** is the standard term for an EventSpot in all headings and tables. "Místo" is used only in the fixed phrase **"Místo konání"** (venue/location of the event). |
 | "Akce" (ambiguity) | Means both "event" (domain noun) and "action" (generic Czech word). In nav and UI always means Event. In button labels "Akce" with dropdown caret means actions menu. The context disambiguates. |
 | "Přihlášení" vs "Přihláška" | Both are valid Czech for Assignment. "Přihlášení" is used as a verb noun (the act of joining); "Přihláška" as a noun (the registration). Both map to the `Assignment` model. |
@@ -656,8 +656,8 @@ When in doubt about the correct Czech UI label or English code name for a concep
         - Column rename: `patients_count` → `post_event_count` — shared post-event metric; its UI label is driven by event type (patients for medical cover, actual participants for training; not displayed for presentations).
         - `EventTemplate` also carries `event_type` so creating an event from a template inherits the correct type.
     - **Debriefing differences by type:**
-        - `MEDICAL_COVER`: actual start/end required, `post_event_count` required, RP section titled "ZZ".
-        - `TRAINING`: actual start/end optional, `post_event_count` optional, RP section titled "Lektor".
+        - `MEDICAL_COVER`: actual start/end required, `post_event_count` required, RP section titled "Zodpovědná osoba".
+        - `TRAINING`: actual start/end optional, `post_event_count` optional, RP section titled "Zodpovědná osoba (lektor)".
         - `PRESENTATION`: no RP section at all.
     - **Consequences:**
         - Adding a new event type in the future requires only: a new `EventType` enum member, any new nullable columns, and template/route adjustments — no schema redesign.

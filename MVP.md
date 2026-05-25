@@ -40,7 +40,7 @@ Legend: ✅ Done · 🔲 To do · ⏳ In progress
 - ✅ Credential hierarchy (`can_be_filled_by()` logic)
 - ✅ Member self-assignment (claim / release spot)
 - ✅ Admin/coordinator assign-other
-- ✅ Responsible person (`Zodpovědný zdravotník`) tag on event
+- ✅ Responsible person (`Zodpovědná osoba`) tag on event
 - ✅ Pessimistic locking for spot assignment (row-level `WITH FOR UPDATE`)
 - ✅ Optimistic locking for general entity edits (`version` column)
 
