@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import socket
 import time
 
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask import Blueprint, render_template, request
 from flask_login import login_required
 
 from app.extensions import db
@@ -160,32 +160,6 @@ def index() -> str:
         now=now,
         **stats,
     )
-
-
-@admin_bp.route("/activate/<uuid:user_id>", methods=["POST"])
-@login_required
-def activate_user(user_id: str) -> Response:
-    require_permission("user.activate")
-    user = db.session.get(UserAccount, user_id)
-    if not user:
-        flash("Uživatel nenalezen.", "danger")
-        return redirect(url_for("users.index"))
-    if user.is_active:
-        flash(f"{user.name} je již aktivní.", "info")
-        return redirect(url_for("users.index"))
-
-    user.is_active = True
-    db.session.commit()
-
-    _send_activation_email(user)
-    flash(f"Účet {user.name} ({user.email}) byl aktivován.", "success")
-    return redirect(url_for("users.index"))
-
-
-def _send_activation_email(user: UserAccount) -> None:
-    from app.mail import send_account_activated  # noqa: PLC0415
-    send_account_activated(user)
-    db.session.commit()
 
 
 # ── Permission matrix ─────────────────────────────────────────────────────────
