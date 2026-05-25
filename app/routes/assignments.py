@@ -143,12 +143,11 @@ def release(assignment_id: int) -> Response:
     assignment = get_or_404(Assignment, assignment_id)
 
     # Only own assignment unless elevated permission on this event
+    event = get_or_404(Event, assignment.spot.event_id)
     if assignment.user_id != current_user.id:
-        event = get_or_404(Event, assignment.spot.event_id)
         if not event.user_can_manage_assignments(current_user):
             abort(403)
     else:
-        event = get_or_404(Event, assignment.spot.event_id)
         # Block self-release when ME is centrally coordinated (issue #255)
         if event.master_event and event.master_event.coordinator_id is not None:
             if not current_user.has_permission("event.assign_other"):
