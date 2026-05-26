@@ -612,3 +612,221 @@ class TestCoordinatedMeBlocksSelfClaim:
         with app.app_context():
             a = db.session.get(Assignment, assignment_id)
             assert a is not None
+
+
+# ── Table Manager assign/unassign ────────────────────────────────────────────
+
+class TestTableAssign:
+    """Tests for master_events.table_assign route (JSON API)."""
+
+    def test_table_assign_success(self, app):
+        """Coordinator can assign a user via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_target@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_coord@test.com", "Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Table Assign ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Assign Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+            me_id = me.id
+            spot_id = spot.id
+
+        client = app.test_client()
+        _login(client, "table_coord@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/assign/{spot_id}",
+            data={"user_id": target_id},
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert "assignment_id" in data
+
+    def test_table_assign_no_permission(self, app):
+        """Member without permission cannot assign via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_target2@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_member@test.com", "Member", Role.MEMBER)
+            me = MasterEvent(name="Table NoPerms ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table NoPerms Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+            me_id = me.id
+            spot_id = spot.id
+
+        client = app.test_client()
+        _login(client, "table_member@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/assign/{spot_id}",
+            data={"user_id": target_id},
+        )
+        assert response.status_code == 403
+
+    def test_table_assign_spot_already_taken(self, app):
+        """Cannot assign via table manager if spot is occupied."""
+        rp_qual_id = _make_rp_qual(app)
+        user1_id = _make_user_with_qual(app, "table_occ1@test.com", rp_qual_id)
+        user2_id = _make_user_with_qual(app, "table_occ2@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_coord2@test.com", "Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Table Occupied ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Occupied Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 3, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 3, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            # Pre-assign user1
+            a = Assignment(spot_id=spot.id, user_id=user1_id, assigned_by_id=user1_id)
+            db.session.add(a)
+            db.session.commit()
+            me_id = me.id
+            spot_id = spot.id
+
+        client = app.test_client()
+        _login(client, "table_coord2@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/assign/{spot_id}",
+            data={"user_id": user2_id},
+        )
+        assert response.status_code == 409
+
+
+class TestTableUnassign:
+    """Tests for master_events.table_unassign route (JSON API)."""
+
+    def test_table_unassign_success(self, app):
+        """Coordinator can unassign a user via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_unsn@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_unsn_coord@test.com", "Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Table Unassign ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Unassign Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 4, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 4, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            a = Assignment(spot_id=spot.id, user_id=target_id, assigned_by_id=target_id)
+            db.session.add(a)
+            db.session.commit()
+            me_id = me.id
+            assignment_id = a.id
+
+        client = app.test_client()
+        _login(client, "table_unsn_coord@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/unassign/{assignment_id}",
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+
+    def test_table_unassign_no_permission(self, app):
+        """Member cannot unassign via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_unsn2@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_unsn_mem@test.com", "Member", Role.MEMBER)
+            me = MasterEvent(name="Table Unassign NoPerm ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Unassign NoPerm Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 5, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 5, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            a = Assignment(spot_id=spot.id, user_id=target_id, assigned_by_id=target_id)
+            db.session.add(a)
+            db.session.commit()
+            me_id = me.id
+            assignment_id = a.id
+
+        client = app.test_client()
+        _login(client, "table_unsn_mem@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/unassign/{assignment_id}",
+        )
+        assert response.status_code == 403
+
+    def test_table_unassign_completed_event(self, app):
+        """Cannot unassign from completed event via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_unsn_done@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_done_coord@test.com", "Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Table Done ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Done Event",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                start_datetime=datetime(2030, 9, 6, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 6, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            a = Assignment(spot_id=spot.id, user_id=target_id, assigned_by_id=target_id)
+            db.session.add(a)
+            db.session.commit()
+            me_id = me.id
+            assignment_id = a.id
+
+        client = app.test_client()
+        _login(client, "table_done_coord@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/unassign/{assignment_id}",
+        )
+        assert response.status_code == 409

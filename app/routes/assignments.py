@@ -83,7 +83,7 @@ def claim(spot_id: int) -> Response:
     event = get_or_404(Event, spot.event_id)
 
     # Block self-assignment when ME is centrally coordinated (issue #255)
-    if event.master_event and event.master_event.coordinator_id is not None:
+    if event.is_centrally_coordinated:
         if not current_user.has_permission("event.assign_other"):
             flash("Tuto akci řídí koordinátor — přihlašování není povoleno.", "warning")
             return redirect(url_for("events.detail", event_id=event.id))
@@ -142,15 +142,15 @@ def claim(spot_id: int) -> Response:
 @login_required
 def release(assignment_id: int) -> Response:
     assignment = get_or_404(Assignment, assignment_id)
+    event = get_or_404(Event, assignment.spot.event_id)
 
     # Only own assignment unless elevated permission on this event
-    event = get_or_404(Event, assignment.spot.event_id)
     if assignment.user_id != current_user.id:
         if not event.user_can_manage_assignments(current_user):
             abort(403)
     else:
         # Block self-release when ME is centrally coordinated (issue #255)
-        if event.master_event and event.master_event.coordinator_id is not None:
+        if event.is_centrally_coordinated:
             if not current_user.has_permission("event.assign_other"):
                 flash("Tuto akci řídí koordinátor — odhlášení není povoleno.", "warning")
                 return redirect(url_for("events.detail", event_id=event.id))
@@ -183,16 +183,6 @@ def release(assignment_id: int) -> Response:
 @assignments_bp.post("/assign/<int:spot_id>")
 @login_required
 def assign_other(spot_id: int) -> Response:
-    user_id = request.form.get("user_id", "").strip()
-    if not user_id:
-        flash("Vyberte uživatele.", "warning")
-        return redirect(request.referrer or url_for("events.index"))
-
-    user = db.session.get(UserAccount, user_id)
-    if user is None or not user.is_active or user.is_archived:
-        flash("Uživatel nenalezen nebo není aktivní.", "danger")
-        return redirect(request.referrer or url_for("events.index"))
-
     # ── Pessimistic lock ────────────────────────────────────────────────────
     spot = db.session.scalar(
         db.select(EventSpot).where(EventSpot.id == spot_id).with_for_update()
@@ -205,6 +195,16 @@ def assign_other(spot_id: int) -> Response:
     # Permission: either event.assign_other or RP-elevated on this event
     if not event.user_can_manage_assignments(current_user):
         abort(403)
+
+    user_id = request.form.get("user_id", "").strip()
+    if not user_id:
+        flash("Vyberte uživatele.", "warning")
+        return redirect(url_for("events.detail", event_id=event.id))
+
+    user = db.session.get(UserAccount, user_id)
+    if user is None or not user.is_active or user.is_archived:
+        flash("Uživatel nenalezen nebo není aktivní.", "danger")
+        return redirect(url_for("events.detail", event_id=event.id))
 
     if event.status not in (EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED):
         flash("Přiřazení není možné v aktuálním stavu akce.", "warning")
