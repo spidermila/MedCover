@@ -18,7 +18,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, github-runner-medcover]
     permissions:
       contents: read
       packages: write
@@ -71,7 +71,7 @@ jobs:
           fi
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, github-runner-medcover]
     needs: build
     permissions:
       id-token: write
