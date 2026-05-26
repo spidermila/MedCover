@@ -18,7 +18,7 @@ env:
 
 jobs:
   build:
-    runs-on: [self-hosted, github-runner-medcover]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
