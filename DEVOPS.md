@@ -388,7 +388,7 @@ Dependencies are managed with **pip-tools** (`.in` → `.txt` compilation with h
 
 ### Dependabot
 
-Dependabot submits weekly PRs for `pip` and `github-actions` dependency updates (configured in `.github/dependabot.yml`). Review and merge these regularly.
+Dependabot submits weekly PRs for `pip` and `GitHub Actions` dependency updates (configured in `.github/dependabot.yml`). Review and merge these regularly.
 
 ---
 
