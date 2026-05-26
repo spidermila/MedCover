@@ -80,11 +80,10 @@ def _match_responsible_person(
 def _process_import_users(
     form: dict,
     user_count: int,
-) -> tuple[int, int, dict[str, UserAccount], dict[str, UserAccount]]:
+) -> tuple[int, int]:
     """Create new users and update qualifications of existing users from the import form.
 
-    Returns (created_count, updated_quals_count, by_name_map, by_email_map).
-    The maps include both pre-existing and newly created users for idempotency.
+    Returns (created_count, updated_quals_count).
     """
 
     def _qual_by_substr(keyword: str) -> Qualification | None:
@@ -176,7 +175,7 @@ def _process_import_users(
         audit("import", "UserAccount", new_user.id, f"Uživatel importován z Google Sheets: {name}", None)
         created += 1
 
-    return created, updated_quals, existing_by_name, existing_by_email
+    return created, updated_quals
 
 
 def _create_spots_and_assignments(
@@ -347,10 +346,10 @@ def _build_users_preview(payload_users: list[Any], all_users: list[UserAccount])
         import_qual_names: set[str] = set()
         if is_zdravotnik:
             import_qual_names.add("Zdravotník")
+        else:
+            import_qual_names.add("Zelenáč")
         if is_ridic:
             import_qual_names.add("Řidič sanitky")
-        if not is_zdravotnik and not is_ridic:
-            import_qual_names.add("Zelenáč")
 
         # For existing users, detect qualification changes.
         qual_changes: dict[str, list[str]] | None = None
@@ -389,15 +388,16 @@ def _import_managed_quals(
     """Return the list of import-managed qualifications for given flags.
 
     Import-managed qualifications are: Zdravotník, Řidič sanitky, Zelenáč.
-    If neither health-worker nor driver flag is set, the user is a Zelenáč.
+    Zdravotník and Zelenáč are mutually exclusive (Zelenáč = not Zdravotník).
+    Řidič sanitky is independent — a driver may or may not be a medic.
     """
     quals: list[Qualification] = []
     if is_zdravotnik and user_zdravotnik_qual:
         quals.append(user_zdravotnik_qual)
+    elif user_zelenac_qual:
+        quals.append(user_zelenac_qual)
     if is_ridic and user_ridic_qual:
         quals.append(user_ridic_qual)
-    if not is_zdravotnik and not is_ridic and user_zelenac_qual:
-        quals.append(user_zelenac_qual)
     return quals
 
 
@@ -647,7 +647,7 @@ def events_confirm() -> Response:
     user_count = int(user_count_str) if user_count_str.isdigit() else 0
 
     try:
-        created_users, qual_updates, _, _ = _process_import_users(form, user_count)
+        created_users, qual_updates = _process_import_users(form, user_count)
 
         # Build comprehensive name→user map (all DB users incl. newly created).
         all_users_now = list(db.session.scalars(db.select(UserAccount)).all())
