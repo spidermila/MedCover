@@ -71,7 +71,7 @@ jobs:
           fi
 
   deploy:
-    runs-on: [self-hosted, github-runner-medcover]
+    runs-on: ubuntu-latest
     needs: build
     permissions:
       id-token: write
