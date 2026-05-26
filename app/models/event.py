@@ -241,6 +241,11 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
             return "Částečně obsazeno"
         return "Plně obsazeno"
 
+    @property
+    def is_centrally_coordinated(self) -> bool:
+        """True if this event belongs to a master event with an assigned coordinator."""
+        return self.master_event is not None and self.master_event.coordinator_id is not None
+
     def user_can_manage_assignments(self, user: UserAccount) -> bool:
         """Return True if the user may assign/unassign other users on this event.
 
@@ -257,7 +262,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         if not user.is_rp_eligible():
             return False
         # Check: ME has no coordinator (exception rule from issue #255)
-        if self.master_event and self.master_event.coordinator_id is not None:
+        if self.is_centrally_coordinated:
             return False
         # Check: user is assigned to this event
         return any(
