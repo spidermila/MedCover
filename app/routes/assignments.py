@@ -96,14 +96,13 @@ def claim(spot_id: int) -> Response:
         flash("Nemáte požadovanou kvalifikaci pro tuto pozici.", "warning")
         return redirect(url_for("events.detail", event_id=event.id))
 
-    assignment = Assignment(
-        spot_id=spot_id,
+    spot.assignment = Assignment(
         user_id=current_user.id,
         assigned_by_id=current_user.id,
     )
-    db.session.add(assignment)
+    db.session.add(spot.assignment)
     db.session.flush()
-    audit("create", "Assignment", assignment.id, f"Uživatel '{current_user.name}' se přihlásil na akci '{event.name}'")
+    audit("create", "Assignment", spot.assignment.id, f"Uživatel '{current_user.name}' se přihlásil na akci '{event.name}'")
     _auto_assign_rp(event, current_user)
     _auto_close_if_full(event)
 
@@ -199,14 +198,13 @@ def assign_other(spot_id: int) -> Response:
         flash(f"Uživatel {user.name} je již přihlášen na tuto akci.", "warning")
         return redirect(url_for("events.detail", event_id=event.id))
 
-    assignment = Assignment(
-        spot_id=spot_id,
+    spot.assignment = Assignment(
         user_id=user.id,
         assigned_by_id=current_user.id,
     )
-    db.session.add(assignment)
+    db.session.add(spot.assignment)
     db.session.flush()
-    audit("create", "Assignment", assignment.id, f"Koordinátor přiřadil '{user.name}' na akci '{event.name}'")
+    audit("create", "Assignment", spot.assignment.id, f"Koordinátor přiřadil '{user.name}' na akci '{event.name}'")
     _auto_assign_rp(event, user)
     _auto_close_if_full(event)
 

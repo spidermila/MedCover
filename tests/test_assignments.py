@@ -341,14 +341,15 @@ class TestClaimEdgeCases:
     def test_claim_when_already_assigned_to_event_flashes(self, app, member_client):
         """User already has a spot on this event — second claim rejected."""
         event_id, spot_id = _setup_open_event(app)
-        # Claim the first spot
-        member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
         # Add a second spot to the same event
         with app.app_context():
             spot2 = EventSpot(event_id=event_id)
             db.session.add(spot2)
             db.session.commit()
             spot2_id = spot2.id
+
+        # Claim the first spot
+        member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
 
         response = member_client.post(f"/assignments/claim/{spot2_id}", follow_redirects=True)
         assert response.status_code == 200

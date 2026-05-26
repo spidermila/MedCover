@@ -410,10 +410,10 @@ def table_assign(me_id: int, spot_id: int) -> Response:
     if existing:
         return jsonify({"ok": False, "error": f"Uživatel {user.name} je již přihlášen na tuto akci."}), 409
 
-    assignment = Assignment(spot_id=spot_id, user_id=user.id, assigned_by_id=current_user.id)
-    db.session.add(assignment)
+    spot.assignment = Assignment(user_id=user.id, assigned_by_id=current_user.id)
+    db.session.add(spot.assignment)
     db.session.flush()
-    audit("create", "Assignment", assignment.id,
+    audit("create", "Assignment", spot.assignment.id,
           f"Koordinátor přiřadil '{user.name}' na akci '{event.name}' (tabulkový manažer)")
     _auto_assign_rp(event, user)
     _auto_close_if_full(event)
@@ -427,7 +427,7 @@ def table_assign(me_id: int, spot_id: int) -> Response:
     import app.mail as mailer
     mailer.send_assignment_confirmed(user, event)
 
-    return jsonify({"ok": True, "user_name": user.name, "assignment_id": assignment.id})
+    return jsonify({"ok": True, "user_name": user.name, "assignment_id": spot.assignment.id})
 
 
 @master_events_bp.post("/<int:me_id>/table/unassign/<int:assignment_id>")
