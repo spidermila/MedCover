@@ -751,8 +751,8 @@ class TestImportScriptIsRidic:
 class TestImportConfirmRidic:
     """Integration tests for is_ridic support in the import confirm route."""
 
-    def test_creates_ridic_only_user_with_ridic_qual(self, app, admin_client, ensure_ridic_qual):
-        """User with is_ridic=True, is_zdravotnik=False gets Řidič sanitky."""
+    def test_creates_ridic_only_user_with_ridic_and_zelenac(self, app, admin_client, ensure_ridic_qual, ensure_zelenac_qual):
+        """User with is_ridic=True, is_zdravotnik=False gets Řidič sanitky + Zelenáč."""
         me_id = _make_master_event(app)
         resp = _post_confirm(
             app, admin_client,
@@ -767,7 +767,8 @@ class TestImportConfirmRidic:
             assert user is not None
             qual_names = {q.name for q in user.qualifications}
             assert "Řidič sanitky" in qual_names
-            assert "Zelenáč" not in qual_names
+            assert "Zelenáč" in qual_names
+            assert "Zdravotník" not in qual_names
 
     def test_creates_user_with_both_quals(self, app, admin_client, ensure_ridic_qual):
         """User with is_zdravotnik=True, is_ridic=True gets both Zdravotník and Řidič sanitky."""
@@ -832,7 +833,7 @@ class TestImportConfirmRidic:
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "existing_ridic@test.com"))
             qual_names = {q.name for q in user.qualifications}
             assert "Řidič sanitky" in qual_names
-            assert "Zelenáč" not in qual_names
+            assert "Zelenáč" in qual_names
 
     def test_updates_existing_user_removes_zelenac_adds_zdravotnik(self, app, admin_client, ensure_zelenac_qual):
         """Existing Zelenáč gets Zdravotník when import says is_zdravotnik=True."""
