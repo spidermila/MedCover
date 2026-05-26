@@ -12,6 +12,7 @@ import pytz
 from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_user
 from flask_mail import Message
+
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db, mail
 from app.models.settings import AppSettings, get_settings
