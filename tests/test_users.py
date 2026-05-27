@@ -858,6 +858,10 @@ class TestUserListFiltersAndSort:
         pos_chladek = html.find("Chládek Petr")
         pos_ivanek = html.find("Ivánek Tomáš")
         pos_stastny = html.find("Šťastný Jan")
+        assert pos_hora != -1
+        assert pos_chladek != -1
+        assert pos_ivanek != -1
+        assert pos_stastny != -1
         assert pos_hora < pos_chladek < pos_ivanek < pos_stastny
 
 
