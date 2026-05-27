@@ -31,7 +31,6 @@ from flask import url_for
 from flask_login import current_user
 from flask_login import login_required
 from sqlalchemy import collate
-from sqlalchemy.exc import IntegrityError
 
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
@@ -413,11 +412,10 @@ def table_manager(me_id: int) -> str:
 @login_required
 def table_assign(me_id: int, spot_id: int) -> Response:
     from app.models.user import UserAccount
-    from app.routes.assignments import _auto_assign_rp, _auto_close_if_full
+    from app.routes.assignments import do_assign_user
 
-    spot = db.session.scalar(
-        db.select(EventSpot).where(EventSpot.id == spot_id).with_for_update()
-    )
+    # Pre-check: load spot & event for ME ownership and permission check
+    spot = db.session.get(EventSpot, spot_id)
     if spot is None:
         return jsonify({"ok": False, "error": "Pozice nenalezena."}), 404
 
@@ -437,44 +435,19 @@ def table_assign(me_id: int, spot_id: int) -> Response:
     if user is None or not user.is_active or user.is_archived:
         return jsonify({"ok": False, "error": "Uživatel nenalezen nebo není aktivní."}), 400
 
-    if event.status == EventStatus.COMPLETED or event.archived:
-        return jsonify({"ok": False, "error": "Přiřazení není možné — akce je dokončena nebo archivována."}), 409
+    result = do_assign_user(spot_id, user, current_user)
 
-    if spot.assignment is not None:
-        return jsonify({"ok": False, "error": "Tato pozice je již obsazena."}), 409
+    if not result.ok:
+        code = 409 if result.event else 404
+        return jsonify({"ok": False, "error": result.error}), code
 
-    existing = db.session.scalar(
-        db.select(Assignment)
-        .join(EventSpot, Assignment.spot_id == EventSpot.id)
-        .where(EventSpot.event_id == event.id, Assignment.user_id == user.id)
-    )
-    if existing:
-        return jsonify({"ok": False, "error": f"Uživatel {user.name} je již přihlášen na tuto akci."}), 409
-
-    spot.assignment = Assignment(user_id=user.id, assigned_by_id=current_user.id)
-    db.session.add(spot.assignment)
-    db.session.flush()
-    audit("create", "Assignment", spot.assignment.id,
-          f"Koordinátor přiřadil '{user.name}' na akci '{event.name}' (tabulkový manažer)")
-    _auto_assign_rp(event, user)
-    _auto_close_if_full(event)
-
-    try:
-        db.session.commit()
-    except IntegrityError:
-        db.session.rollback()
-        return jsonify({"ok": False, "error": "Tato pozice byla právě obsazena někým jiným."}), 409
-
-    import app.mail as mailer
-    mailer.send_assignment_confirmed(user, event)
-
-    return jsonify({"ok": True, "user_name": user.name, "assignment_id": spot.assignment.id})
+    return jsonify({"ok": True, "user_name": user.name, "assignment_id": result.assignment.id})
 
 
 @master_events_bp.post("/<int:me_id>/table/unassign/<int:assignment_id>")
 @login_required
 def table_unassign(me_id: int, assignment_id: int) -> Response:
-    from app.routes.assignments import _auto_clear_rp
+    from app.routes.assignments import do_unassign_user
 
     assignment = db.session.get(Assignment, assignment_id)
     if assignment is None:
@@ -488,23 +461,11 @@ def table_unassign(me_id: int, assignment_id: int) -> Response:
     if not event.user_can_manage_assignments(current_user):
         abort(403)
 
-    if event.status == EventStatus.COMPLETED or event.archived:
-        return jsonify({"ok": False, "error": "Nelze odhlásit uživatele z dokončené nebo archivované akce."}), 409
+    result = do_unassign_user(assignment, unassigned_by=current_user)
 
-    user_name = assignment.user.name
-    audit("delete", "Assignment", assignment.id,
-          f"Koordinátor odhlásil '{user_name}' z akce '{event.name}' (tabulkový manažer)")
-    _auto_clear_rp(event, assignment.user)
-    db.session.delete(assignment)
-
-    if event.status == EventStatus.ASSIGNMENTS_CLOSED:
-        event.status = EventStatus.ASSIGNMENTS_OPEN
-        event.version += 1
-
-    db.session.commit()
-
-    import app.mail as mailer
-    mailer.send_assignment_released(assignment.user, event)
+    if not result.ok:
+        code = 409 if result.event else 404
+        return jsonify({"ok": False, "error": result.error}), code
 
     return jsonify({"ok": True})
 
