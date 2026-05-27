@@ -5,18 +5,6 @@
 <div class="container py-4 maxw-640">
   <h2 class="mb-4">Výkaz práce</h2>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      <div class="mb-3">
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-          </div>
-        {% endfor %}
-      </div>
-    {% endif %}
-  {% endwith %}
 
   {# ── Generator form ──────────────────────────────────────────────────────── #}
   <div class="card mb-4">
