@@ -832,6 +832,34 @@ class TestUserListFiltersAndSort:
         resp = admin_client.get("/users/?sort=created&dir=desc")
         assert resp.status_code == 200
 
+    def test_sort_by_name_uses_czech_collation(self, app, admin_client):
+        """GET /users/?sort=name sorts using Czech locale (ch after h, š after s)."""
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
+            # Names that differ between Czech and ASCII sort:
+            # Czech order: Hora < Chládek < Ivánek < Šťastný
+            # ASCII order: Chládek < Hora < Ivánek < Šťastný (C < H)
+            for name, email in [
+                ("Šťastný Jan", "stastny@test.cz"),
+                ("Chládek Petr", "chladek@test.cz"),
+                ("Hora David", "hora@test.cz"),
+                ("Ivánek Tomáš", "ivanek@test.cz"),
+            ]:
+                u = UserAccount(email=email, name=name, is_active=True)
+                u.set_password("pass")
+                u.roles = [role]
+                db.session.add(u)
+            db.session.commit()
+
+        resp = admin_client.get("/users/?sort=name&dir=asc")
+        html = resp.data.decode()
+        # In Czech: H < Ch < I < Š
+        pos_hora = html.find("Hora David")
+        pos_chladek = html.find("Chládek Petr")
+        pos_ivanek = html.find("Ivánek Tomáš")
+        pos_stastny = html.find("Šťastný Jan")
+        assert pos_hora < pos_chladek < pos_ivanek < pos_stastny
+
 
 # ── Archive / Unarchive ───────────────────────────────────────────────────────
 

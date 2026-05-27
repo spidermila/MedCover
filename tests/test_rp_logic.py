@@ -347,6 +347,7 @@ class TestDashboardRpWarning:
         assert "bez zodpovědné osoby" not in response.data.decode()
 
 
+<<<<<<< HEAD
 # ── Elevated RP permissions (user_can_manage_assignments) ─────────────────────
 
 class TestRpElevatedPermissions:
@@ -833,3 +834,44 @@ class TestTableUnassign:
             f"/master-events/{me_id}/table/unassign/{assignment_id}",
         )
         assert response.status_code == 409
+
+
+# ── rp_eligible_users_list Czech sorting ──────────────────────────────────────
+
+
+class TestRpEligibleUsersSorting:
+    """Verify rp_eligible_users_list returns results in Czech alphabetical order."""
+
+    def test_rp_eligible_users_sorted_czech(self, app):
+        """Users with RP qualification are returned sorted by Czech collation."""
+        from app.queries import rp_eligible_users_list
+
+        with app.app_context():
+            qual = db.session.scalar(
+                db.select(Qualification).where(Qualification.can_be_rp.is_(True))
+            )
+            if not qual:
+                qual = Qualification(name="RPQual", can_be_rp=True)
+                db.session.add(qual)
+                db.session.commit()
+
+            role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
+            # Czech order: Hora < Chládek < Ivánek
+            # ASCII order: Chládek < Hora < Ivánek
+            names = ["Ivánek Anna", "Chládek Pavel", "Hora Zdeněk"]
+            for name in names:
+                u = UserAccount(
+                    email=f"{name.split()[0].lower()}@rp.cz",
+                    name=name, is_active=True,
+                )
+                u.set_password("pass")
+                u.roles = [role]
+                u.qualifications = [qual]
+                db.session.add(u)
+            db.session.commit()
+
+            result = rp_eligible_users_list()
+            rp_names = [u.name for u in result]
+            # Verify Czech order: H < Ch < I
+            assert rp_names.index("Hora Zdeněk") < rp_names.index("Chládek Pavel")
+            assert rp_names.index("Chládek Pavel") < rp_names.index("Ivánek Anna")
