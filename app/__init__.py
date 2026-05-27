@@ -144,6 +144,19 @@ def create_app(
             formatted = formatted.rstrip("0").rstrip(".")
         return formatted.replace(".", ",")
 
+    @app.template_filter("groupby_safe")
+    def groupby_safe_filter(value: list, attribute: str) -> list:
+        """Like Jinja2 groupby but handles None attribute values without crashing."""
+        from itertools import groupby as itertools_groupby
+        from operator import attrgetter
+
+        def key_func(item: object) -> str:
+            val = attrgetter(attribute)(item)
+            return val if val is not None else ""
+
+        sorted_items = sorted(value, key=key_func)
+        return [(k, list(g)) for k, g in itertools_groupby(sorted_items, key=key_func)]
+
     @app.template_global()
     def audit_entity_url(entity_type: str, entity_id: str) -> str | None:
         """Return a URL to view the given entity, or None if no page exists."""

@@ -231,7 +231,7 @@
           <div class="text-muted small text-end flex-shrink-0">
             {% set free_spots = e.spots | selectattr('assignment', 'none') | list %}
             {% if free_spots %}
-              {% for desc, grp in free_spots | groupby('description') %}
+              {% for desc, grp in free_spots | groupby_safe('description') %}
               <div>{{ desc or 'Pozice' }}&nbsp;({{ grp | list | length }}×)</div>
               {% endfor %}
             {% else %}
@@ -265,7 +265,7 @@
         <div class="text-muted small text-end flex-shrink-0 ms-2">
           {% set free_spots = e.spots | selectattr('assignment', 'none') | list %}
           {% if free_spots %}
-            {% for desc, grp in free_spots | groupby('description') %}
+            {% for desc, grp in free_spots | groupby_safe('description') %}
             <div>{{ desc or 'Pozice' }}&nbsp;({{ grp | list | length }}×)</div>
             {% endfor %}
           {% else %}
