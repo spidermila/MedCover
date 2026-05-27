@@ -213,7 +213,7 @@ def index() -> str:
         sort_dir = "asc"
 
     sort_col = {
-        "name":       UserAccount.name,
+        "name":       collate(UserAccount.name, CS_COLLATION),
         "email":      UserAccount.email,
         "status":     UserAccount.is_active,
         "created":    UserAccount.created_at,

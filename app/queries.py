@@ -38,9 +38,9 @@ def active_users_list() -> Sequence[UserAccount]:
 def rp_eligible_users_list() -> list[UserAccount]:
     """Return active users who hold at least one qualification with can_be_rp=True."""
     from app.models.qualification import Qualification, user_qualifications as uq_table
-    from app.utils import czech_sort_key
-    rows = db.session.scalars(
-        db.select(UserAccount)
+    # Subquery to get distinct user IDs (avoids PG DISTINCT + ORDER BY conflict)
+    eligible_ids = (
+        db.select(UserAccount.id)
         .join(uq_table, UserAccount.id == uq_table.c.user_id)
         .join(Qualification, Qualification.id == uq_table.c.qualification_id)
         .where(
@@ -49,8 +49,14 @@ def rp_eligible_users_list() -> list[UserAccount]:
             Qualification.can_be_rp.is_(True),
         )
         .distinct()
+        .subquery()
+    )
+    rows = db.session.scalars(
+        db.select(UserAccount)
+        .where(UserAccount.id.in_(db.select(eligible_ids.c.id)))
+        .order_by(collate(UserAccount.name, CS_COLLATION))
     ).all()
-    return sorted(rows, key=lambda u: czech_sort_key(u.name))
+    return list(rows)
 
 
 def active_master_events_list() -> Sequence[MasterEvent]:
