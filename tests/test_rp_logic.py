@@ -341,7 +341,7 @@ class TestDashboardRpWarning:
         self._make_event_soon_no_rp(app)
         response = member_client.get("/dashboard")
         assert response.status_code == 200
-        assert "bez vedoucího" not in response.data.decode()
+        assert "bez zodpovědné osoby" not in response.data.decode()
 
 
 # ── Elevated RP permissions (user_can_manage_assignments) ─────────────────────
