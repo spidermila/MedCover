@@ -322,14 +322,14 @@ def _load_lidi_lookup(wb: Any) -> dict[str, dict[str, Any]]:
         elif isinstance(zdravotnik_raw, str):
             is_zdravotnik = zdravotnik_raw.strip().lower() in ("true", "ano", "1", "yes")
         else:
-            is_zdravotnik = bool(zdravotnik_raw) if zdravotnik_raw is not None else False
+            is_zdravotnik = bool(zdravotnik_raw)
 
         if isinstance(ridic_raw, bool):
             is_ridic = ridic_raw
         elif isinstance(ridic_raw, str):
             is_ridic = ridic_raw.strip().lower() in ("true", "ano", "1", "yes")
         else:
-            is_ridic = bool(ridic_raw) if ridic_raw is not None else False
+            is_ridic = bool(ridic_raw)
 
         lookup[gs_name] = {
             "phone": phone or None,
