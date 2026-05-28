@@ -1,19 +1,34 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from typing import Any
 
-from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, session, url_for
-from flask_login import current_user, login_required, login_user, logout_user
+from flask import Blueprint
+from flask import current_app
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import session
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
+from flask_login import login_user
+from flask_login import logout_user
 
+from app.config import LOGIN_LOCKOUT_MINUTES
+from app.config import LOGIN_MAX_ATTEMPTS
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
+from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.models.audit import AuditLogEntry
-from app.utils import external_url_for, safe_next
-from app.config import LOGIN_MAX_ATTEMPTS, LOGIN_LOCKOUT_MINUTES
+from app.utils import external_url_for
+from app.utils import safe_next
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 

@@ -1,14 +1,18 @@
 """Additional tests for scheduler_tasks.py (run_send_reminders + no-eligible path)."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 
 from app.extensions import db
 from app.models.digest import get_digest_schedule
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.settings import get_settings

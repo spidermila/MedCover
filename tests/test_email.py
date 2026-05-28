@@ -10,12 +10,14 @@ Strategy:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 from app.extensions import db
-from app.models.event import Event, EventStatus
+from app.models.event import Event
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.outbox import OutboxEmail
 

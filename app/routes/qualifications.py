@@ -7,16 +7,25 @@ Permissions:
   qualification.edit    — edit (name, description, parent hierarchy)
   qualification.delete  — delete (only if no users or spots hold it)
 """
-
 from __future__ import annotations
 
-from flask import Blueprint, Response, render_template, redirect, url_for, flash, request
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
 from flask_login import login_required
 from sqlalchemy import collate
 
 from app.extensions import db
 from app.models.qualification import Qualification
-from app.utils import CS_COLLATION, audit, diff_changes, get_or_404, require_permission
+from app.utils import audit
+from app.utils import CS_COLLATION
+from app.utils import diff_changes
+from app.utils import get_or_404
+from app.utils import require_permission
 
 qualifications_bp = Blueprint("qualifications", __name__, url_prefix="/qualifications")
 

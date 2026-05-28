@@ -7,21 +7,36 @@ Permissions:
   equipment_item.create/edit/delete — admin only
   equipment_item.issue_personal     — admin only
 """
-
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
-from flask_login import current_user, login_required
-
-from app.extensions import db
-from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentItemStatus, EquipmentType
-from app.models.user import UserAccount
-from app.constants import RECORD_MODIFIED_MSG
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 from sqlalchemy import collate
-from app.utils import CS_COLLATION, audit, check_version_conflict, diff_changes, get_or_404, require_permission
+
+from app.constants import RECORD_MODIFIED_MSG
+from app.extensions import db
+from app.models.equipment import EquipmentCategory
+from app.models.equipment import EquipmentItem
+from app.models.equipment import EquipmentItemStatus
+from app.models.equipment import EquipmentType
+from app.models.user import UserAccount
 from app.queries import active_users_list
+from app.utils import audit
+from app.utils import check_version_conflict
+from app.utils import CS_COLLATION
+from app.utils import diff_changes
+from app.utils import get_or_404
+from app.utils import require_permission
 
 equipment_bp = Blueprint("equipment", __name__, url_prefix="/equipment")
 

@@ -1,10 +1,10 @@
 """Tests for authentication routes: login, logout, forgot-password, register."""
-
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db as _db
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _make_user, _login
+from tests.conftest import _login
+from tests.conftest import _make_user
 
 
 class TestLoginPage:

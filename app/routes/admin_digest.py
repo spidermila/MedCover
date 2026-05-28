@@ -4,8 +4,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, Response, url_for
-from flask_login import current_user, login_required
+from flask import abort
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 
 from app.extensions import db
 

@@ -1,8 +1,9 @@
 """Tests for event CRUD and lifecycle transitions."""
 from app.extensions import db
-from app.models.event import Event, EventStatus
-from app.models.master_event import MasterEvent
 from app.models.audit import AuditLogEntry
+from app.models.event import Event
+from app.models.event import EventStatus
+from app.models.master_event import MasterEvent
 
 
 def _make_master_event(app) -> int:
@@ -680,14 +681,14 @@ class TestCalendarFeedExtended:
         assert isinstance(data, list)
         assert len(data) >= 1
 
-    def test_feed_member_cannot_see_drafts(self, app, member_client):
-        """Member does not have event.view_draft so draft events are excluded."""
+    def test_feed_member_can_see_drafts(self, app, member_client):
+        """Member has event.view_draft so draft events are included in the feed."""
         _make_event_in_status(app, EventStatus.DRAFT)
         response = member_client.get("/events/feed")
         assert response.status_code == 200
         data = response.get_json()
         statuses = [item["extendedProps"]["status_key"] for item in data]
-        assert "DRAFT" not in statuses
+        assert "DRAFT" in statuses
 
 
 # ── Edit spot ─────────────────────────────────────────────────────────────────

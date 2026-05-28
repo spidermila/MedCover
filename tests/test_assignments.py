@@ -1,7 +1,9 @@
 """Tests for spot assignment: claim, release, permissions."""
 from app.extensions import db
-from app.models.event import Event, EventSpot, EventStatus
 from app.models.assignment import Assignment
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount

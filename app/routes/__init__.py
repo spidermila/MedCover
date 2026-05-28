@@ -1,27 +1,31 @@
 from __future__ import annotations
 
-from flask import Flask, Response, redirect, url_for
-from .auth import auth_bp
-from .main import main_bp
-from .setup import setup_bp
-from .events import events_bp
-from .master_events import master_events_bp
-from .qualifications import qualifications_bp
-from .equipment import equipment_bp
-from .users import users_bp
-from .reports import reports_bp
+from flask import Flask
+from flask import redirect
+from flask import Response
+from flask import url_for
+
 from .admin import admin_bp
-from .assignments import assignments_bp
-from .debriefing import debriefing_bp
-from .app_settings import app_settings_bp
-from .templates import templates_bp
-from .import_events import import_bp
-from .feedback import feedback_bp
 from .admin_digest import bp as admin_digest_bp
+from .app_settings import app_settings_bp
+from .assignments import assignments_bp
+from .auth import auth_bp
 from .backup import backup_bp
-from .work_report import work_report_bp
-from .notifications import notifications_bp
 from .calendar import calendar_bp
+from .debriefing import debriefing_bp
+from .equipment import equipment_bp
+from .events import events_bp
+from .feedback import feedback_bp
+from .import_events import import_bp
+from .main import main_bp
+from .master_events import master_events_bp
+from .notifications import notifications_bp
+from .qualifications import qualifications_bp
+from .reports import reports_bp
+from .setup import setup_bp
+from .templates import templates_bp
+from .users import users_bp
+from .work_report import work_report_bp
 
 
 def register_blueprints(app: Flask) -> None:

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
+
 from sqlalchemy.orm import Mapped
+
 from app.extensions import db
 
 if TYPE_CHECKING:
@@ -240,6 +243,35 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         if mandatory_filled < mandatory_total:
             return "Částečně obsazeno"
         return "Plně obsazeno"
+
+    @property
+    def is_centrally_coordinated(self) -> bool:
+        """True if this event belongs to a master event with an assigned coordinator."""
+        return self.master_event is not None and self.master_event.coordinator_id is not None
+
+    def user_can_manage_assignments(self, user: UserAccount) -> bool:
+        """Return True if the user may assign/unassign other users on this event.
+
+        Grants this ability when:
+        1. The user holds the ``event.assign_other`` permission (admins/coordinators), OR
+        2. ALL of the following:
+           a) the user is RP-eligible (holds a qualification with can_be_rp),
+           b) the user is currently assigned to a spot on this event,
+           c) the event's master event has NO coordinator assigned
+              (coordinated master events are managed centrally from SPOT).
+        """
+        if user.has_permission("event.assign_other"):
+            return True
+        if not user.is_rp_eligible():
+            return False
+        # Check: ME has no coordinator (exception rule from issue #255)
+        if self.is_centrally_coordinated:
+            return False
+        # Check: user is assigned to this event
+        return any(
+            s.assignment is not None and s.assignment.user_id == user.id
+            for s in self.spots
+        )
 
     def eligible_unfilled_spots_for(
         self, user: UserAccount, excluded_spot_ids: set[int] | None = None,

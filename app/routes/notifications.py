@@ -4,17 +4,26 @@ Admin notification management route.
 Provides a catalog of all email notification types defined in NOTIFICATION_CATALOG
 and allows admins to toggle each configurable type on/off via AppSettings.
 """
-
 from __future__ import annotations
 
-from flask import Blueprint, Response, flash, g, redirect, render_template, request, url_for
-from flask_login import current_user, login_required
+from flask import Blueprint
+from flask import flash
+from flask import g
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 
 from app.extensions import db
 from app.mail import NOTIFICATION_CATALOG
 from app.models.event import Event
 from app.models.settings import get_settings
-from app.utils import audit, diff_changes, require_permission
+from app.utils import audit
+from app.utils import diff_changes
+from app.utils import require_permission
 
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/admin/notifications")
 

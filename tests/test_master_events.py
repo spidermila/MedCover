@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from app.extensions import db
-from app.models.master_event import MasterEvent
 from app.models.audit import AuditLogEntry
+from app.models.master_event import MasterEvent
 from app.models.role import Role
 
 

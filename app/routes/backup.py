@@ -10,26 +10,26 @@ import logging
 import re
 from pathlib import Path
 
-from flask import (
-    Blueprint,
-    Response,
-    abort,
-    current_app,
-    flash,
-    redirect,
-    render_template,
-    request,
-    send_file,
-    url_for,
-)
-from flask_login import current_user, login_required
+from flask import abort
+from flask import Blueprint
+from flask import current_app
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import send_file
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
-from app.utils import audit, require_permission
-from app.models.settings import get_settings
 from app.models.audit import AuditLogEntry
+from app.models.settings import get_settings
+from app.utils import audit
+from app.utils import require_permission
 
 log = logging.getLogger(__name__)
 

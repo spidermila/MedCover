@@ -6,19 +6,31 @@ POST /calendar/regenerate    — authenticated, user.edit_own permission.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
 import sqlalchemy as sa
+from flask import abort
+from flask import Blueprint
+from flask import redirect
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
+from icalendar import Calendar
+from icalendar import Event as ICalEvent
 from sqlalchemy.orm import selectinload
-from flask import Blueprint, Response, abort, redirect, url_for
-from flask_login import current_user, login_required
-from icalendar import Calendar, Event as ICalEvent
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.user import UserAccount
-from app.utils import audit, external_url_for, get_app_tz, require_permission
+from app.utils import audit
+from app.utils import external_url_for
+from app.utils import get_app_tz
+from app.utils import require_permission
 
 log = logging.getLogger(__name__)
 

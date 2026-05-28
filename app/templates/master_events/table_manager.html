@@ -105,9 +105,11 @@
                   data-event-name="{{ event.name | e }}"
                   title="Smazat akci" class="tm-icon-btn">🗑</button>
           {% endif %}
+          {% if can_edit_event %}
           <button class="btn btn-link btn-sm p-0 ms-1 tm-color-btn"
                   data-event-id="{{ event.id }}"
                   title="Barva akce" class="tm-icon-btn">🌈</button>
+          {% endif %}
           <span class="ms-1">{{ badge_status(event.status.value, status_colors) }}</span>
           {% if (event.status.name == 'DRAFT' and can_publish) or (event.status.name == 'PUBLISHED' and can_open_assignments) %}
           <button class="btn btn-link btn-sm p-0 ms-1 tm-advance-btn text-success"
@@ -219,13 +221,13 @@
         <td class="tm-spot-cell tm-spot-data-col text-nowrap small" data-spot-id="{{ spot.id }}" style="background-color: {{ row.color }}">
           {% if spot.assignment %}
             <span class="tm-assigned-name">{{ spot.assignment.user.name }}</span>
-            {% if can_assign %}
+            {% if row.can_manage %}
             <button class="btn btn-sm p-0 ms-1 text-danger tm-unassign-btn"
                     data-assignment-id="{{ spot.assignment.id }}"
                     data-user-name="{{ spot.assignment.user.name }}"
                     title="Odhlásit">✕</button>
             {% endif %}
-          {% elif can_assign %}
+          {% elif row.can_manage %}
             <select class="form-select form-select-sm tm-assign-select"
                     data-spot-id="{{ spot.id }}"
                     id="assign_spot_{{ spot.id }}">

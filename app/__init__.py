@@ -3,14 +3,24 @@ from __future__ import annotations
 import os
 import secrets
 import time as _time
+from datetime import datetime
 from datetime import timedelta
-from datetime import datetime, timezone
+from datetime import timezone
 
 import click
-from flask import Flask, g, redirect, request, url_for
+from flask import Flask
+from flask import g
+from flask import redirect
+from flask import request
+from flask import url_for
 from werkzeug.wrappers import Response as WerkzeugResponse
-from .extensions import db, migrate, login_manager, mail as _flask_mail, csrf
+
 from .config import config_by_name
+from .extensions import csrf
+from .extensions import db
+from .extensions import login_manager
+from .extensions import mail as _flask_mail
+from .extensions import migrate
 # Computed once at import/startup; used as a cache-busting version for static files.
 _STARTUP_TS: str = str(int(_time.time()))
 

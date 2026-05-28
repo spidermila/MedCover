@@ -17,22 +17,38 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from dataclasses import dataclass
+from dataclasses import field
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from decimal import Decimal
 from typing import cast
 
-from flask import Blueprint, Response, abort, make_response, redirect, render_template, request, url_for
-from flask_login import current_user, login_required
+from flask import abort
+from flask import Blueprint
+from flask import make_response
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
-from app.utils import czech_sort_key, get_app_tz, quick_date_ranges, require_permission
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
+from app.utils import czech_sort_key
+from app.utils import get_app_tz
+from app.utils import quick_date_ranges
+from app.utils import require_permission
 
 reports_bp = Blueprint("reports", __name__, url_prefix="/reports")
 

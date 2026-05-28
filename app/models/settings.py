@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
 from cryptography.fernet import Fernet
-from flask import Flask, current_app
+from flask import current_app
+from flask import Flask
 
 from app.extensions import db
 

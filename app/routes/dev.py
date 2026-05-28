@@ -9,11 +9,16 @@ Provides:
   GET  /dev/                     — lists available dev accounts
   POST /dev/login-as/<role>      — instantly logs in as the dev account for that role
 """
-
 from __future__ import annotations
 
-from flask import Blueprint, Response, redirect, url_for, abort, flash
+from flask import abort
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import Response
+from flask import url_for
 from flask_login import login_user
+
 from app.extensions import db
 from app.models.user import UserAccount
 

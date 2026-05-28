@@ -5,19 +5,29 @@ Accessible only when AppSettings.setup_complete is False.
 After completion, redirects all further /setup/* requests to the dashboard.
 Step 3 creates the first admin account (no auth required — no users exist yet).
 """
-
 from __future__ import annotations
 
 import pytz
-from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint
+from flask import current_app
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
 from flask_login import login_user
 from flask_mail import Message
 
 from app.constants import MIN_PASSWORD_LENGTH
-from app.extensions import db, mail
-from app.models.settings import AppSettings, get_settings
+from app.extensions import db
+from app.extensions import mail
+from app.models.role import Permission
+from app.models.role import Role
+from app.models.role import ROLE_PERMISSIONS
+from app.models.settings import AppSettings
+from app.models.settings import get_settings
 from app.models.user import UserAccount
-from app.models.role import Role, ROLE_PERMISSIONS, Permission
 
 setup_bp = Blueprint("setup", __name__, url_prefix="/setup")
 

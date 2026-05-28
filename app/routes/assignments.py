@@ -12,19 +12,29 @@ Routes:
   POST /assignments/assign/<spot_id>           — admin/coordinator assigns a user
   POST /assignments/unassign/<assignment_id>   — admin/coordinator unassigns a user
 """
-
 from __future__ import annotations
 
-from flask import Blueprint, Response, redirect, url_for, flash, request, abort
-from flask_login import login_required, current_user
+from flask import abort
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 from sqlalchemy.exc import IntegrityError
 
-from app.extensions import db
-from app.utils import audit, get_or_404, require_permission
-from app.models.event import Event, EventSpot, EventStatus
-from app.models.assignment import Assignment
-from app.models.user import UserAccount
 import app.mail as mailer
+from app.extensions import db
+from app.models.assignment import Assignment
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
+from app.models.user import UserAccount
+from app.utils import audit
+from app.utils import get_or_404
+from app.utils import require_permission
 
 assignments_bp = Blueprint("assignments", __name__, url_prefix="/assignments")
 
@@ -48,11 +58,22 @@ def _auto_assign_rp(event: Event, user: UserAccount) -> None:
 
 
 def _auto_clear_rp(event: Event, user: UserAccount) -> None:
-    """If the leaving user is the current RP, clear the RP field."""
+    """If the leaving user is the current RP, reassign to next eligible or clear."""
     if event.responsible_person_id == user.id:
-        event.responsible_person_id = None
-        event.version += 1
-        audit("edit", "Event", event.id, f"Zodpovědná osoba odstraněna — '{user.name}' opustil/a akci")
+        # Find another RP-eligible person still assigned to this event
+        for spot in event.spots:
+            if (spot.assignment is not None
+                    and spot.assignment.user_id != user.id
+                    and spot.assignment.user.is_rp_eligible()):
+                event.responsible_person_id = spot.assignment.user.id
+                event.version += 1
+                audit("edit", "Event", event.id,
+                      f"Zodpovědná osoba automaticky přeřazena na '{spot.assignment.user.name}' (předchozí '{user.name}' opustil/a akci)")
+                break
+        else:
+            event.responsible_person_id = None
+            event.version += 1
+            audit("edit", "Event", event.id, f"Zodpovědná osoba odstraněna — '{user.name}' opustil/a akci")
 
 
 # ── Claim (own) ───────────────────────────────────────────────────────────────
@@ -70,6 +91,12 @@ def claim(spot_id: int) -> Response:
         abort(404)
 
     event = get_or_404(Event, spot.event_id)
+
+    # Block self-assignment when ME is centrally coordinated (issue #255)
+    if event.is_centrally_coordinated:
+        if not current_user.has_permission("event.assign_other"):
+            flash("Tuto akci řídí koordinátor — přihlašování není povoleno.", "warning")
+            return redirect(url_for("events.detail", event_id=event.id))
 
     # Validate event state
     if event.status != EventStatus.ASSIGNMENTS_OPEN:
@@ -124,13 +151,18 @@ def claim(spot_id: int) -> Response:
 @login_required
 def release(assignment_id: int) -> Response:
     assignment = get_or_404(Assignment, assignment_id)
-
-    # Only own assignment unless assigning-other permission
-    if assignment.user_id != current_user.id:
-        if not current_user.has_permission("event.assign_other"):
-            abort(403)
-
     event = get_or_404(Event, assignment.spot.event_id)
+
+    # Only own assignment unless elevated permission on this event
+    if assignment.user_id != current_user.id:
+        if not event.user_can_manage_assignments(current_user):
+            abort(403)
+    else:
+        # Block self-release when ME is centrally coordinated (issue #255)
+        if event.is_centrally_coordinated:
+            if not current_user.has_permission("event.assign_other"):
+                flash("Tuto akci řídí koordinátor — odhlášení není povoleno.", "warning")
+                return redirect(url_for("events.detail", event_id=event.id))
 
     # Cannot release after event is completed
     if event.status == EventStatus.COMPLETED:
@@ -160,18 +192,6 @@ def release(assignment_id: int) -> Response:
 @assignments_bp.post("/assign/<int:spot_id>")
 @login_required
 def assign_other(spot_id: int) -> Response:
-    require_permission("event.assign_other")
-
-    user_id = request.form.get("user_id", "").strip()
-    if not user_id:
-        flash("Vyberte uživatele.", "warning")
-        return redirect(request.referrer or url_for("events.index"))
-
-    user = db.session.get(UserAccount, user_id)
-    if user is None or not user.is_active or user.is_archived:
-        flash("Uživatel nenalezen nebo není aktivní.", "danger")
-        return redirect(request.referrer or url_for("events.index"))
-
     # ── Pessimistic lock ────────────────────────────────────────────────────
     spot = db.session.scalar(
         db.select(EventSpot).where(EventSpot.id == spot_id).with_for_update()
@@ -180,6 +200,20 @@ def assign_other(spot_id: int) -> Response:
         abort(404)
 
     event = get_or_404(Event, spot.event_id)
+
+    # Permission: either event.assign_other or RP-elevated on this event
+    if not event.user_can_manage_assignments(current_user):
+        abort(403)
+
+    user_id = request.form.get("user_id", "").strip()
+    if not user_id:
+        flash("Vyberte uživatele.", "warning")
+        return redirect(url_for("events.detail", event_id=event.id))
+
+    user = db.session.get(UserAccount, user_id)
+    if user is None or not user.is_active or user.is_archived:
+        flash("Uživatel nenalezen nebo není aktivní.", "danger")
+        return redirect(url_for("events.detail", event_id=event.id))
 
     if event.status not in (EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED):
         flash("Přiřazení není možné v aktuálním stavu akce.", "warning")
@@ -225,11 +259,13 @@ def assign_other(spot_id: int) -> Response:
 @assignments_bp.post("/unassign/<int:assignment_id>")
 @login_required
 def unassign_other(assignment_id: int) -> Response:
-    require_permission("event.assign_other")
-
     assignment = get_or_404(Assignment, assignment_id)
 
     event = get_or_404(Event, assignment.spot.event_id)
+
+    # Permission: either event.assign_other or RP-elevated on this event
+    if not event.user_can_manage_assignments(current_user):
+        abort(403)
     if event.status == EventStatus.COMPLETED:
         flash("Nelze odhlásit uživatele z dokončené akce.", "warning")
         return redirect(url_for("events.detail", event_id=event.id))

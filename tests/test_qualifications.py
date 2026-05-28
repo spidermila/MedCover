@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from app.extensions import db
-from app.models.qualification import Qualification
 from app.models.audit import AuditLogEntry
+from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _make_user

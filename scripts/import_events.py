@@ -82,13 +82,13 @@ Notes
 - The script is idempotent: running it multiple times produces the same output.
   Duplicate detection is handled by the web app at import time.
 """
-
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from datetime import date, datetime
+from datetime import date
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 

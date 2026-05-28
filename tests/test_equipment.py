@@ -1,10 +1,16 @@
 """Tests for equipment inventory CRUD and permissions."""
 import json
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
 from app.extensions import db
-from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentItemStatus, EquipmentType, EventEquipmentAssignment
-from app.models.event import Event, EventStatus
+from app.models.equipment import EquipmentCategory
+from app.models.equipment import EquipmentItem
+from app.models.equipment import EquipmentItemStatus
+from app.models.equipment import EquipmentType
+from app.models.equipment import EventEquipmentAssignment
+from app.models.event import Event
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 
 

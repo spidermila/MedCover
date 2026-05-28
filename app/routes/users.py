@@ -2,25 +2,40 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from typing import Any
 
-from flask import (
-    Blueprint, Response, abort, flash,
-    redirect, render_template, request, url_for,
-)
-from flask_login import current_user, login_required
+from flask import abort
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
+from sqlalchemy import collate
 from sqlalchemy.orm import selectinload
 
+from app.config import INVITE_TOKEN_HOURS
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
-from app.models.user import UserAccount, CalendarView
-from app.models.role import Role
+from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
-from sqlalchemy import collate
-from app.utils import CS_COLLATION, czech_sort_key, audit, diff_changes, external_url_for, get_or_404, require_permission
-from app.config import INVITE_TOKEN_HOURS
+from app.models.role import Role
+from app.models.user import CalendarView
+from app.models.user import UserAccount
+from app.utils import audit
+from app.utils import CS_COLLATION
+from app.utils import czech_sort_key
+from app.utils import diff_changes
+from app.utils import external_url_for
+from app.utils import get_or_404
+from app.utils import require_permission
 
 
 users_bp = Blueprint("users", __name__, url_prefix="/users")

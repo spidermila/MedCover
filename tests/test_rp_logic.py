@@ -1,17 +1,20 @@
 """Tests for RP (responsible person) auto-assign/clear logic and set_rp route."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from datetime import datetime
+from datetime import timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _make_user, _login
+from tests.conftest import _login
+from tests.conftest import _make_user
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -187,7 +190,7 @@ class TestAutoClearRpOnRelease:
         non_rp_qual_id = _make_non_rp_qual(app)
         rp_user_id = _make_user_with_qual(app, "rp_stays@test.com", rp_qual_id)
         _make_user_with_qual(app, "nonrp_leaves@test.com", non_rp_qual_id)
-        event_id, spot_id = _make_open_event(app)
+        event_id, _spot_id = _make_open_event(app)
 
         with app.app_context():
             # Add second spot for non-rp user
@@ -211,6 +214,35 @@ class TestAutoClearRpOnRelease:
         with app.app_context():
             event = db.session.get(Event, event_id)
             assert str(event.responsible_person_id) == rp_user_id
+
+    def test_rp_reassigned_to_next_eligible_on_release(self, app):
+        """When RP leaves, another RP-eligible attendee becomes RP automatically."""
+        qual_id = _make_rp_qual(app)
+        rp1_id = _make_user_with_qual(app, "rp_leaving@test.com", qual_id)
+        rp2_id = _make_user_with_qual(app, "rp_staying@test.com", qual_id)
+        event_id, spot_id = _make_open_event(app)
+
+        with app.app_context():
+            # Add second spot and assign both RP-eligible users
+            spot2 = EventSpot(event_id=event_id)
+            db.session.add(spot2)
+            db.session.flush()
+            a1 = Assignment(spot_id=spot_id, user_id=rp1_id, assigned_by_id=rp1_id)
+            a2 = Assignment(spot_id=spot2.id, user_id=rp2_id, assigned_by_id=rp2_id)
+            db.session.add_all([a1, a2])
+            event = db.session.get(Event, event_id)
+            event.responsible_person_id = rp1_id  # RP1 is the current RP
+            db.session.commit()
+            a1_id = a1.id
+
+        client = app.test_client()
+        _login(client, "rp_leaving@test.com")
+        client.post(f"/assignments/release/{a1_id}", follow_redirects=True)
+
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            # RP should have been reassigned to the remaining eligible user
+            assert str(event.responsible_person_id) == rp2_id
 
 
 # ── set_rp route ──────────────────────────────────────────────────────────────
@@ -313,3 +345,491 @@ class TestDashboardRpWarning:
         response = member_client.get("/dashboard")
         assert response.status_code == 200
         assert "bez zodpovědné osoby" not in response.data.decode()
+
+
+# ── Elevated RP permissions (user_can_manage_assignments) ─────────────────────
+
+class TestRpElevatedPermissions:
+    """Tests for issue #255 — RP-eligible users can manage assignments on events they attend."""
+    def _setup_event_with_rp_user(self, app) -> tuple[int, int, int, str]:
+        """Create event with 2 spots, assign RP-eligible user to spot 1.
+
+        Returns (event_id, spot1_id, spot2_id, rp_user_id).
+        """
+        rp_qual_id = _make_rp_qual(app)
+        rp_user_id = _make_user_with_qual(app, "elevated_rp@test.com", rp_qual_id)
+        with app.app_context():
+            me = MasterEvent(name="Elevated RP Test ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Elevated RP Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot1 = EventSpot(event_id=event.id)
+            spot2 = EventSpot(event_id=event.id)
+            db.session.add_all([spot1, spot2])
+            db.session.flush()
+            # Assign RP user to spot 1
+            assignment = Assignment(spot_id=spot1.id, user_id=rp_user_id, assigned_by_id=rp_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            return event.id, spot1.id, spot2.id, rp_user_id
+
+    def test_rp_user_can_assign_other_on_attended_event(self, app):
+        """RP-eligible user assigned to event can assign another user."""
+        _event_id, _spot1_id, spot2_id, _rp_user_id = self._setup_event_with_rp_user(app)
+        # Create a target user to be assigned
+        non_rp_qual_id = _make_non_rp_qual(app)
+        target_id = _make_user_with_qual(app, "target_user@test.com", non_rp_qual_id)
+
+        client = app.test_client()
+        _login(client, "elevated_rp@test.com")
+        response = client.post(
+            f"/assignments/assign/{spot2_id}",
+            data={"user_id": target_id},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        with app.app_context():
+            spot2 = db.session.get(EventSpot, spot2_id)
+            assert spot2.assignment is not None
+            assert str(spot2.assignment.user_id) == target_id
+
+    def test_rp_user_can_unassign_other_on_attended_event(self, app):
+        """RP-eligible user assigned to event can unassign another user."""
+        _event_id, _spot1_id, spot2_id, rp_user_id = self._setup_event_with_rp_user(app)
+        non_rp_qual_id = _make_non_rp_qual(app)
+        target_id = _make_user_with_qual(app, "target_unassign@test.com", non_rp_qual_id)
+
+        with app.app_context():
+            assignment = Assignment(spot_id=spot2_id, user_id=target_id, assigned_by_id=rp_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            assignment_id = assignment.id
+
+        client = app.test_client()
+        _login(client, "elevated_rp@test.com")
+        response = client.post(
+            f"/assignments/unassign/{assignment_id}",
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        with app.app_context():
+            spot2 = db.session.get(EventSpot, spot2_id)
+            assert spot2.assignment is None
+
+    def test_rp_user_cannot_assign_on_unattended_event(self, app):
+        """RP-eligible user NOT assigned to event cannot manage assignments."""
+        rp_qual_id = _make_rp_qual(app)
+        _make_user_with_qual(app, "rp_outsider@test.com", rp_qual_id)
+        with app.app_context():
+            me = MasterEvent(name="Outsider ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Outsider Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+            spot_id = spot.id
+
+        non_rp_qual_id = _make_non_rp_qual(app)
+        target_id = _make_user_with_qual(app, "target_outsider@test.com", non_rp_qual_id)
+
+        client = app.test_client()
+        _login(client, "rp_outsider@test.com")
+        response = client.post(
+            f"/assignments/assign/{spot_id}",
+            data={"user_id": target_id},
+        )
+        assert response.status_code == 403
+
+    def test_rp_user_blocked_when_me_has_coordinator(self, app):
+        """RP-eligible user cannot manage assignments when ME has a coordinator (issue #255 exception)."""
+        rp_qual_id = _make_rp_qual(app)
+        rp_user_id = _make_user_with_qual(app, "rp_coordinated@test.com", rp_qual_id)
+        with app.app_context():
+            # Create a coordinator user
+            coordinator = _make_user("me_coord@test.com", "ME Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Coordinated ME", coordinator_id=coordinator.id)
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Coordinated Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 3, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 3, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot1 = EventSpot(event_id=event.id)
+            spot2 = EventSpot(event_id=event.id)
+            db.session.add_all([spot1, spot2])
+            db.session.flush()
+            # Assign RP user
+            assignment = Assignment(spot_id=spot1.id, user_id=rp_user_id, assigned_by_id=rp_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            spot2_id = spot2.id
+
+        non_rp_qual_id = _make_non_rp_qual(app)
+        target_id = _make_user_with_qual(app, "target_coordinated@test.com", non_rp_qual_id)
+
+        client = app.test_client()
+        _login(client, "rp_coordinated@test.com")
+        response = client.post(
+            f"/assignments/assign/{spot2_id}",
+            data={"user_id": target_id},
+        )
+        assert response.status_code == 403
+
+    def test_model_method_directly(self, app):
+        """Direct test of Event.user_can_manage_assignments()."""
+        rp_qual_id = _make_rp_qual(app)
+        rp_user_id = _make_user_with_qual(app, "model_test_rp@test.com", rp_qual_id)
+        non_rp_qual_id = _make_non_rp_qual(app)
+        non_rp_user_id = _make_user_with_qual(app, "model_test_nonrp@test.com", non_rp_qual_id)
+        with app.app_context():
+            me = MasterEvent(name="Model Test ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Model Test Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 8, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 8, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+
+            rp_user = db.session.get(UserAccount, rp_user_id)
+            non_rp_user = db.session.get(UserAccount, non_rp_user_id)
+
+            # Not assigned — should not have elevated access
+            assert event.user_can_manage_assignments(rp_user) is False
+            assert event.user_can_manage_assignments(non_rp_user) is False
+
+            # Assign RP user
+            assignment = Assignment(spot_id=spot.id, user_id=rp_user_id, assigned_by_id=rp_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            # Re-fetch event to pick up relationship changes
+            event = db.session.get(Event, event.id)
+            rp_user = db.session.get(UserAccount, rp_user_id)
+            non_rp_user = db.session.get(UserAccount, non_rp_user_id)
+
+            # Now RP user should have elevated access
+            assert event.user_can_manage_assignments(rp_user) is True
+            # Non-RP user still should not
+            assert event.user_can_manage_assignments(non_rp_user) is False
+
+
+# ── Self-claim blocked when ME is coordinated ─────────────────────────────────
+
+class TestCoordinatedMeBlocksSelfClaim:
+    """When an ME has a coordinator, members cannot claim/release spots themselves."""
+
+    def test_member_cannot_claim_on_coordinated_me(self, app):
+        """Self-claim is blocked when ME has a coordinator."""
+        rp_qual_id = _make_rp_qual(app)
+        _make_user_with_qual(app, "claim_blocked@test.com", rp_qual_id)
+        with app.app_context():
+            coordinator = _make_user("coord_block@test.com", "Block Coord", Role.COORDINATOR)
+            me = MasterEvent(name="Block Claim ME", coordinator_id=coordinator.id)
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Block Claim Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+            spot_id = spot.id
+
+        client = app.test_client()
+        _login(client, "claim_blocked@test.com")
+        response = client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
+        assert response.status_code == 200
+        assert "koordinátor" in response.data.decode()
+        # Spot should still be empty
+        with app.app_context():
+            spot = db.session.get(EventSpot, spot_id)
+            assert spot.assignment is None
+
+    def test_member_cannot_release_on_coordinated_me(self, app):
+        """Self-release is blocked when ME has a coordinator."""
+        rp_qual_id = _make_rp_qual(app)
+        release_user_id = _make_user_with_qual(app, "release_blocked@test.com", rp_qual_id)
+        with app.app_context():
+            coordinator = _make_user("coord_block2@test.com", "Block Coord2", Role.COORDINATOR)
+            me = MasterEvent(name="Block Release ME", coordinator_id=coordinator.id)
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Block Release Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            assignment = Assignment(spot_id=spot.id, user_id=release_user_id, assigned_by_id=release_user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            assignment_id = assignment.id
+
+        client = app.test_client()
+        _login(client, "release_blocked@test.com")
+        response = client.post(f"/assignments/release/{assignment_id}", follow_redirects=True)
+        assert response.status_code == 200
+        assert "koordinátor" in response.data.decode()
+        # Assignment should still exist
+        with app.app_context():
+            a = db.session.get(Assignment, assignment_id)
+            assert a is not None
+
+
+# ── Table Manager assign/unassign ────────────────────────────────────────────
+
+class TestTableAssign:
+    """Tests for master_events.table_assign route (JSON API)."""
+
+    def test_table_assign_success(self, app):
+        """Coordinator can assign a user via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_target@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_coord@test.com", "Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Table Assign ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Assign Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+            me_id = me.id
+            spot_id = spot.id
+
+        client = app.test_client()
+        _login(client, "table_coord@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/assign/{spot_id}",
+            data={"user_id": target_id},
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+        assert "assignment_id" in data
+
+    def test_table_assign_no_permission(self, app):
+        """Member without permission cannot assign via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_target2@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_member@test.com", "Member", Role.MEMBER)
+            me = MasterEvent(name="Table NoPerms ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table NoPerms Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+            me_id = me.id
+            spot_id = spot.id
+
+        client = app.test_client()
+        _login(client, "table_member@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/assign/{spot_id}",
+            data={"user_id": target_id},
+        )
+        assert response.status_code == 403
+
+    def test_table_assign_spot_already_taken(self, app):
+        """Cannot assign via table manager if spot is occupied."""
+        rp_qual_id = _make_rp_qual(app)
+        user1_id = _make_user_with_qual(app, "table_occ1@test.com", rp_qual_id)
+        user2_id = _make_user_with_qual(app, "table_occ2@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_coord2@test.com", "Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Table Occupied ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Occupied Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 3, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 3, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            # Pre-assign user1
+            a = Assignment(spot_id=spot.id, user_id=user1_id, assigned_by_id=user1_id)
+            db.session.add(a)
+            db.session.commit()
+            me_id = me.id
+            spot_id = spot.id
+
+        client = app.test_client()
+        _login(client, "table_coord2@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/assign/{spot_id}",
+            data={"user_id": user2_id},
+        )
+        assert response.status_code == 409
+
+
+class TestTableUnassign:
+    """Tests for master_events.table_unassign route (JSON API)."""
+
+    def test_table_unassign_success(self, app):
+        """Coordinator can unassign a user via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_unsn@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_unsn_coord@test.com", "Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Table Unassign ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Unassign Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 4, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 4, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            a = Assignment(spot_id=spot.id, user_id=target_id, assigned_by_id=target_id)
+            db.session.add(a)
+            db.session.commit()
+            me_id = me.id
+            assignment_id = a.id
+
+        client = app.test_client()
+        _login(client, "table_unsn_coord@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/unassign/{assignment_id}",
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["ok"] is True
+
+    def test_table_unassign_no_permission(self, app):
+        """Member cannot unassign via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_unsn2@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_unsn_mem@test.com", "Member", Role.MEMBER)
+            me = MasterEvent(name="Table Unassign NoPerm ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Unassign NoPerm Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 9, 5, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 5, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            a = Assignment(spot_id=spot.id, user_id=target_id, assigned_by_id=target_id)
+            db.session.add(a)
+            db.session.commit()
+            me_id = me.id
+            assignment_id = a.id
+
+        client = app.test_client()
+        _login(client, "table_unsn_mem@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/unassign/{assignment_id}",
+        )
+        assert response.status_code == 403
+
+    def test_table_unassign_completed_event(self, app):
+        """Cannot unassign from completed event via table manager."""
+        rp_qual_id = _make_rp_qual(app)
+        target_id = _make_user_with_qual(app, "table_unsn_done@test.com", rp_qual_id)
+        with app.app_context():
+            _make_user("table_done_coord@test.com", "Coordinator", Role.COORDINATOR)
+            me = MasterEvent(name="Table Done ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Table Done Event",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                start_datetime=datetime(2030, 9, 6, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 6, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            a = Assignment(spot_id=spot.id, user_id=target_id, assigned_by_id=target_id)
+            db.session.add(a)
+            db.session.commit()
+            me_id = me.id
+            assignment_id = a.id
+
+        client = app.test_client()
+        _login(client, "table_done_coord@test.com")
+        response = client.post(
+            f"/master-events/{me_id}/table/unassign/{assignment_id}",
+        )
+        assert response.status_code == 409

@@ -5,7 +5,6 @@ Regression coverage for:
 - PR #179: missing > on digest delete form causes CSRF 400
 - PR #170: missing closing > on feedback delete form caused CSRF error
 """
-
 import pytest
 
 # Pages that contain POST forms requiring CSRF tokens.

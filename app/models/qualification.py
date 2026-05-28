@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
 from sqlalchemy.orm import Mapped
+
 from app.extensions import db
 
 # Self-referential M2M: qualification hierarchy
