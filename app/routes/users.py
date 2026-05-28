@@ -18,7 +18,6 @@ from app.models.user import UserAccount, CalendarView
 from app.models.role import Role
 from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
-from app.models.audit import AuditLogEntry
 from sqlalchemy import collate
 from app.utils import CS_COLLATION, czech_sort_key, audit, diff_changes, external_url_for, get_or_404, require_permission
 from app.config import INVITE_TOKEN_HOURS
@@ -129,14 +128,7 @@ def _update_profile(user: UserAccount) -> Response:
         "dashboard_horizon_days": user.dashboard_horizon_days,
         "dark_mode": user.dark_mode,
     }
-    db.session.add(AuditLogEntry(
-        actor_id=user.id,
-        action_type="edit",
-        entity_type="UserAccount",
-        entity_id=str(user.id),
-        summary=f"Uživatel {user.name} upravil svůj profil",
-        changes_json=diff_changes(before, after),
-    ))
+    audit("edit", "UserAccount", user.id, f"Uživatel {user.name} upravil svůj profil", diff_changes(before, after))
     db.session.commit()
     flash("Profil byl uložen.", "success")
     return redirect(url_for("users.profile"))
@@ -157,14 +149,7 @@ def _change_password(user: UserAccount) -> Response:
         return redirect(url_for("users.profile"))
     user.set_password(new_pw)
     user.version += 1
-    db.session.add(AuditLogEntry(
-        actor_id=user.id,
-        action_type="edit",
-        entity_type="UserAccount",
-        entity_id=str(user.id),
-        summary=f"Uživatel {user.name} změnil heslo",
-        changes_json={},  # passwords never logged
-    ))
+    audit("edit", "UserAccount", user.id, f"Uživatel {user.name} změnil své heslo", {})
     db.session.commit()
     flash("Heslo bylo změněno.", "success")
     return redirect(url_for("users.profile"))
