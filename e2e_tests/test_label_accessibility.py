@@ -3,7 +3,6 @@
 Regression coverage for:
 - PR #218: Fix label accessibility: add for/id bindings across templates
 """
-
 import pytest
 
 # Pages with forms that should have proper label bindings.

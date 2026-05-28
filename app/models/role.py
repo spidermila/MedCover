@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from app.extensions import db
 from sqlalchemy.orm import Mapped
+
+from app.extensions import db
 
 
 # Many-to-many: Role ↔ Permission

@@ -4,8 +4,6 @@ Regression coverage for:
 - PR #218: label accessibility on detail page
 - PR #210: equipment availability display
 """
-
-
 import re
 
 

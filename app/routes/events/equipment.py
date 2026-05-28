@@ -1,23 +1,28 @@
 """Event equipment routes: plan add/remove, assign/unassign, availability check."""
-
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-from flask import Response, redirect, url_for, flash, request, jsonify
+from flask import flash
+from flask import jsonify
+from flask import redirect
+from flask import request
+from flask import Response
+from flask import url_for
 from flask_login import login_required
 
-from app.extensions import db
-from app.models.event import Event, EventStatus
-from app.models.equipment import (
-    EquipmentItem,
-    EventEquipmentAssignment,
-    EventEquipmentPlan,
-    EquipmentType,
-)
-from app.utils import audit, get_or_404, require_permission
-
 from . import events_bp
+from app.extensions import db
+from app.models.equipment import EquipmentItem
+from app.models.equipment import EquipmentType
+from app.models.equipment import EventEquipmentAssignment
+from app.models.equipment import EventEquipmentPlan
+from app.models.event import Event
+from app.models.event import EventStatus
+from app.utils import audit
+from app.utils import get_or_404
+from app.utils import require_permission
 
 
 # ── Event Equipment: Plan ─────────────────────────────────────────────────────

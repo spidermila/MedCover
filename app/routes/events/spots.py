@@ -1,20 +1,28 @@
 """Event spot management routes: add, edit, delete spots; set RP; bulk actions."""
-
 from __future__ import annotations
 
-from flask import Response, redirect, url_for, flash, request, abort
-from flask_login import login_required, current_user
+from flask import abort
+from flask import flash
+from flask import redirect
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 
-from app.extensions import db
-from app.models.event import Event, EventSpot, EventStatus
-from app.models.user import UserAccount
-from app.models.qualification import Qualification
-from app.models.assignment import Assignment
-from app.utils import audit, get_or_404, require_permission
 import app.mail as mailer
-
 from . import events_bp
 from ._helpers import BULK_ACTIONS
+from app.extensions import db
+from app.models.assignment import Assignment
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
+from app.models.qualification import Qualification
+from app.models.user import UserAccount
+from app.utils import audit
+from app.utils import get_or_404
+from app.utils import require_permission
 
 
 # ── Bulk lifecycle actions ────────────────────────────────────────────────────

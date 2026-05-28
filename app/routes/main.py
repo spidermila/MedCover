@@ -1,14 +1,22 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 
-from flask import Blueprint, Response, jsonify, render_template
-from flask_login import login_required, current_user
+from flask import Blueprint
+from flask import jsonify
+from flask import render_template
+from flask import Response
+from flask_login import current_user
+from flask_login import login_required
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models.event import Event, EventSpot, EventStatus
 from app.models.assignment import Assignment
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.user import UserAccount
 from app.queries import user_fillable_qual_ids
 

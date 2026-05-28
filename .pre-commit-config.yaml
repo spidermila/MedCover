@@ -1,4 +1,9 @@
 repos:
+  - repo: https://github.com/asottile/reorder-python-imports
+    rev: v3.16.0
+    hooks:
+    -   id: reorder-python-imports
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -29,7 +34,7 @@ repos:
         args: [--py312-plus]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.0.0
+    rev: v2.1.0
     hooks:
       - id: mypy
         additional_dependencies:

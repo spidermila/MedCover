@@ -1,10 +1,12 @@
-import schedule
-import time
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+import time
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
+
+import schedule
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

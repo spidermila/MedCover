@@ -9,24 +9,25 @@ Routes:
 """
 from __future__ import annotations
 
-from flask import (
-    Blueprint,
-    Response,
-    abort,
-    current_app,
-    flash,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
-from flask_login import current_user, login_required
+from flask import abort
+from flask import Blueprint
+from flask import current_app
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 
 from app.extensions import db
-from app.utils import get_or_404, require_permission, safe_next
 from app.models.audit import AuditLogEntry
 from app.models.feedback import UserFeedback
 from app.models.settings import get_settings
+from app.utils import get_or_404
+from app.utils import require_permission
+from app.utils import safe_next
 
 feedback_bp = Blueprint("feedback", __name__)
 

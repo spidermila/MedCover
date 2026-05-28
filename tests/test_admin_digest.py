@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import re
-import sqlalchemy as sa
 from zoneinfo import ZoneInfo
 
+import sqlalchemy as sa
+
 from app.extensions import db
-from app.models.digest import DigestBlock, DigestMetricSnapshot, DigestSchedule, get_digest_schedule
+from app.models.digest import DigestBlock
+from app.models.digest import DigestMetricSnapshot
+from app.models.digest import DigestSchedule
+from app.models.digest import get_digest_schedule
 from app.models.settings import get_settings
 
 

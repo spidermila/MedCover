@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
+
 from sqlalchemy.orm import Mapped
+
 from app.extensions import db
 
 if TYPE_CHECKING:

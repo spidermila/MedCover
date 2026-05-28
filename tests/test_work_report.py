@@ -1,17 +1,22 @@
 """Tests for the výkaz práce (employee work report) feature."""
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 
 import pytest
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _make_user, _login
+from tests.conftest import _login
+from tests.conftest import _make_user
 
 
 def _make_paid_event(

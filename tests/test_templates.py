@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from app.extensions import db
-from app.models.event import Event, EventTemplate, EventSpotTemplate
-from app.models.master_event import MasterEvent
 from app.models.audit import AuditLogEntry
+from app.models.event import Event
+from app.models.event import EventSpotTemplate
+from app.models.event import EventTemplate
+from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 
 

@@ -1,19 +1,21 @@
 """Shared helpers for the events blueprint sub-modules."""
-
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
 from flask import url_for
 from flask_login import current_user
 
 from app.extensions import db
-from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
-from app.models.equipment import (
-    EquipmentItem,
-    EventEquipmentAssignment,
-    EventEquipmentPlan,
-)
+from app.models.equipment import EquipmentItem
+from app.models.equipment import EventEquipmentAssignment
+from app.models.equipment import EventEquipmentPlan
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
+from app.models.event import EventTemplate
+from app.models.event import EventType
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount

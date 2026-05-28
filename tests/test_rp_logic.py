@@ -1,17 +1,20 @@
 """Tests for RP (responsible person) auto-assign/clear logic and set_rp route."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from datetime import datetime
+from datetime import timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _make_user, _login
+from tests.conftest import _login
+from tests.conftest import _make_user
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

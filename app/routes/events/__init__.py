@@ -22,7 +22,6 @@ Permissions:
   event.cancel       — → Cancelled
   event.restore      — Cancelled → Draft
 """
-
 from __future__ import annotations
 
 from flask import Blueprint
