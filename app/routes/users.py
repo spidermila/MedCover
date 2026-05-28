@@ -23,7 +23,6 @@ from sqlalchemy.orm import selectinload
 from app.config import INVITE_TOKEN_HOURS
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
-from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
 from app.models.role import Role
