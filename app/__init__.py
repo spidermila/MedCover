@@ -6,6 +6,8 @@ import time as _time
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+from itertools import groupby as itertools_groupby
+from operator import attrgetter
 
 import click
 from flask import Flask
@@ -13,8 +15,6 @@ from flask import g
 from flask import redirect
 from flask import request
 from flask import url_for
-from itertools import groupby as itertools_groupby
-from operator import attrgetter
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from .config import config_by_name
