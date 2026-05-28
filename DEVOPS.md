@@ -207,8 +207,12 @@ tox -e py314
 
 End-to-end tests use real browsers (Chromium, Firefox, WebKit) driven by
 [Playwright](https://playwright.dev/python/) to test rendered pages, JS
-validation, form submission, and navigation. Everything runs in Docker
-containers — nothing is installed on the host.
+validation, form submission, and navigation. Everything runs in containers
+(Docker or Podman) — nothing is installed on the host.
+
+**Container runtime:** The Makefile auto-detects `podman` or `docker` (preferring
+Podman). Override with `make e2e CONTAINER_ENGINE=docker` if needed. For tox,
+set `CONTAINER_ENGINE=docker tox -e e2e`.
 
 **Architecture:** `docker-compose.e2e.yml` spins up three containers:
 
