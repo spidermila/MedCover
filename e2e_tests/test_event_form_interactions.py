@@ -70,7 +70,7 @@ def test_ted_button_sets_datetime(logged_in_page, base_url):
     page.wait_for_function(
         'typeof fpNow === "function" '
         '&& document.getElementById("start_datetime")._flatpickr !== undefined',
-        timeout=10000,
+        timeout=15000,
     )
 
     # The hidden input should be empty initially

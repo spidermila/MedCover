@@ -19,12 +19,13 @@ services:
       args:
         GIT_COMMIT: e2e
     entrypoint: ["/e2e-entrypoint.sh"]
-    command: ["flask", "run", "--host=0.0.0.0"]
+    command: ["flask", "run", "--debug", "--host=0.0.0.0"]
     volumes:
       - ./scripts/e2e-entrypoint.sh:/e2e-entrypoint.sh:ro
       - ./scripts:/app/scripts:ro
     environment:
       FLASK_ENV: development
+      FLASK_DEBUG: "1"
       SECRET_KEY: e2e-test-secret-key
       DATABASE_URL: postgresql://medcover:e2epassword@db-e2e:5432/medcover_e2e
       DEV_LOGIN_ENABLED: "true"
@@ -41,20 +42,32 @@ services:
       start_period: 30s
 
   e2e:
-    image: mcr.microsoft.com/playwright/python:v1.60.0-noble
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e
     working_dir: /e2e
     dns:
       - 8.8.8.8
       - 1.1.1.1
     volumes:
       - ./e2e_tests:/e2e
-      - ./requirements-e2e.txt:/requirements-e2e.txt:ro
-      - ./pyproject.toml:/pyproject.toml:ro
       - ./e2e-report:/e2e-report
     environment:
       BASE_URL: http://web-e2e:5000
       E2E_BROWSERS: ${E2E_BROWSERS:---browser chromium --browser firefox --browser webkit}
-    entrypoint: ["sh", "-c", "pip install --quiet -r /requirements-e2e.txt && pytest /e2e $E2E_BROWSERS -v --screenshot on --output /e2e-report/traces --html=/e2e-report/report.html --self-contained-html -o 'addopts='"]
+    entrypoint:
+      - "sh"
+      - "-c"
+      - |
+        echo 'Waiting for web-e2e...'
+        retries=60
+        until curl -sf http://web-e2e:5000/health >/dev/null 2>&1; do
+          retries=$$((retries-1))
+          [ "$$retries" -le 0 ] && echo 'web-e2e did not become ready in time' && exit 1
+          sleep 2
+        done
+        echo 'web-e2e ready'
+        pytest /e2e $E2E_BROWSERS -v --screenshot on --output /e2e-report/traces --html=/e2e-report/report.html --self-contained-html -o 'addopts='
     depends_on:
       web-e2e:
         condition: service_healthy
