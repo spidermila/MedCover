@@ -154,6 +154,12 @@ def create_app(
 
         if entity_type == "Event" and eid_int is not None:
             return url_for("events.detail", event_id=eid_int)
+        if entity_type == "Assignment" and eid_int is not None:
+            from app.models.assignment import Assignment
+            asgn = db.session.get(Assignment, eid_int)
+            if asgn and asgn.spot:
+                return url_for("events.detail", event_id=asgn.spot.event_id)
+            return None
         if entity_type == "MasterEvent" and eid_int is not None:
             return url_for("master_events.detail", me_id=eid_int)
         if entity_type == "EquipmentItem" and eid_int is not None:
