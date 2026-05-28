@@ -13,6 +13,8 @@ from flask import g
 from flask import redirect
 from flask import request
 from flask import url_for
+from itertools import groupby as itertools_groupby
+from operator import attrgetter
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from .config import config_by_name
@@ -147,11 +149,11 @@ def create_app(
     @app.template_filter("groupby_safe")
     def groupby_safe_filter(value: list, attribute: str) -> list:
         """Like Jinja2 groupby but handles None attribute values without crashing."""
-        from itertools import groupby as itertools_groupby
-        from operator import attrgetter
+
+        getter = attrgetter(attribute)
 
         def key_func(item: object) -> str:
-            val = attrgetter(attribute)(item)
+            val = getter(item)
             return val if val is not None else ""
 
         sorted_items = sorted(value, key=key_func)
