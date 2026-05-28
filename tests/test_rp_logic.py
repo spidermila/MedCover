@@ -347,8 +347,8 @@ class TestDashboardRpWarning:
         assert "bez zodpovědné osoby" not in response.data.decode()
 
 
-<<<<<<< HEAD
 # ── Elevated RP permissions (user_can_manage_assignments) ─────────────────────
+
 
 class TestRpElevatedPermissions:
     """Tests for issue #255 — RP-eligible users can manage assignments on events they attend."""
