@@ -1,34 +1,57 @@
 """Event CRUD routes: index, feed, create, create_from_template, detail, edit, delete."""
-
 from __future__ import annotations
 
-from flask import Response, render_template, redirect, url_for, flash, request, abort, jsonify
-from flask_login import login_required, current_user
+from flask import abort
+from flask import flash
+from flask import jsonify
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
+from sqlalchemy import case
+from sqlalchemy import collate
+from sqlalchemy import func
 
-from sqlalchemy import collate, func, case
-from app.extensions import db
-from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
-from app.models.master_event import MasterEvent
-from app.models.user import UserAccount
-from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentItemStatus, EquipmentType
-from app.models.qualification import Qualification
-from app.models.assignment import Assignment
-from app.constants import RECORD_MODIFIED_MSG
-from app.utils import CS_COLLATION, audit, check_version_conflict, diff_changes, get_app_tz, get_or_404, require_permission
-from app.queries import active_master_events_list, active_users_list, assignable_equipment_items, rp_eligible_users_list, user_fillable_qual_ids
 import app.mail as mailer
-
 from . import events_bp
-from ._helpers import (
-    PER_PAGE,
-    STATUS_COLORS,
-    can_view,
-    parse_event_form,
-    build_spots,
-    build_spots_from_template,
-    build_equipment_assignments,
-    equipment_warnings_for_event,
-)
+from ._helpers import build_equipment_assignments
+from ._helpers import build_spots
+from ._helpers import build_spots_from_template
+from ._helpers import can_view
+from ._helpers import equipment_warnings_for_event
+from ._helpers import parse_event_form
+from ._helpers import PER_PAGE
+from ._helpers import STATUS_COLORS
+from app.constants import RECORD_MODIFIED_MSG
+from app.extensions import db
+from app.models.assignment import Assignment
+from app.models.equipment import EquipmentCategory
+from app.models.equipment import EquipmentItem
+from app.models.equipment import EquipmentItemStatus
+from app.models.equipment import EquipmentType
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
+from app.models.event import EventTemplate
+from app.models.event import EventType
+from app.models.master_event import MasterEvent
+from app.models.qualification import Qualification
+from app.models.user import UserAccount
+from app.queries import active_master_events_list
+from app.queries import active_users_list
+from app.queries import assignable_equipment_items
+from app.queries import rp_eligible_users_list
+from app.queries import user_fillable_qual_ids
+from app.utils import audit
+from app.utils import check_version_conflict
+from app.utils import CS_COLLATION
+from app.utils import diff_changes
+from app.utils import get_app_tz
+from app.utils import get_or_404
+from app.utils import require_permission
 
 
 # ── List helpers ──────────────────────────────────────────────────────────────

@@ -1,24 +1,29 @@
 """Event lifecycle transition routes: transition, cancel, restore, split."""
-
 from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Response, redirect, url_for, flash, request, abort
-from flask_login import login_required, current_user
+from flask import abort
+from flask import flash
+from flask import redirect
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 
-from app.extensions import db
-from app.models.event import Event, EventStatus
-from app.models.user import UserAccount
-from app.utils import audit, get_or_404, require_permission
 import app.mail as mailer
-
 from . import events_bp
-from ._helpers import (
-    TRANSITIONS,
-    copy_spots_with_assignments,
-    copy_equipment,
-)
+from ._helpers import copy_equipment
+from ._helpers import copy_spots_with_assignments
+from ._helpers import TRANSITIONS
+from app.extensions import db
+from app.models.event import Event
+from app.models.event import EventStatus
+from app.models.user import UserAccount
+from app.utils import audit
+from app.utils import get_or_404
+from app.utils import require_permission
 
 
 # ── Lifecycle transitions ─────────────────────────────────────────────────────

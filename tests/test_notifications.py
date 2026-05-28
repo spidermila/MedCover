@@ -4,8 +4,10 @@ from __future__ import annotations
 import re
 
 from app.extensions import db
-from app.mail import NOTIFICATION_CATALOG, _is_notify_enabled
-from app.models.settings import AppSettings, get_settings
+from app.mail import _is_notify_enabled
+from app.mail import NOTIFICATION_CATALOG
+from app.models.settings import AppSettings
+from app.models.settings import get_settings
 
 
 def _get_csrf(client) -> str:

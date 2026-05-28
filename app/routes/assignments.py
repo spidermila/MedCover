@@ -12,19 +12,29 @@ Routes:
   POST /assignments/assign/<spot_id>           — admin/coordinator assigns a user
   POST /assignments/unassign/<assignment_id>   — admin/coordinator unassigns a user
 """
-
 from __future__ import annotations
 
-from flask import Blueprint, Response, redirect, url_for, flash, request, abort
-from flask_login import login_required, current_user
+from flask import abort
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 from sqlalchemy.exc import IntegrityError
 
-from app.extensions import db
-from app.utils import audit, get_or_404, require_permission
-from app.models.event import Event, EventSpot, EventStatus
-from app.models.assignment import Assignment
-from app.models.user import UserAccount
 import app.mail as mailer
+from app.extensions import db
+from app.models.assignment import Assignment
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
+from app.models.user import UserAccount
+from app.utils import audit
+from app.utils import get_or_404
+from app.utils import require_permission
 
 assignments_bp = Blueprint("assignments", __name__, url_prefix="/assignments")
 

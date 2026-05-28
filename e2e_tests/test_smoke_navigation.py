@@ -1,5 +1,4 @@
 """E2E tests: smoke-test all main pages (assert they load without errors)."""
-
 import pytest
 
 # Routes to visit with expected text on the page (heading or distinctive element).

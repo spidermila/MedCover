@@ -26,15 +26,16 @@ When adding a new send_* function:
   4. Pass ``notification_type=code`` to ``_enqueue()``.
   5. Update DEVOPS.md and CHANGELOG.md.
 """
-
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from typing import TYPE_CHECKING
 
-from flask import g, render_template
+from flask import g
+from flask import render_template
 
 from app.extensions import db
 from app.models.outbox import OutboxEmail

@@ -6,27 +6,42 @@ Routes:
   POST /import/events/preview    validate JSON + show editable preview
   POST /import/events/confirm    create events in one transaction
 """
-
 from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
-from flask_login import current_user, login_required
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
+from sqlalchemy import collate
 
 from app.extensions import db
-from sqlalchemy import collate
-from app.utils import CS_COLLATION, audit, get_app_tz, require_permission
-from app.models.assignment import Assignment, DebriefingRecord
-from app.models.event import Event, EventSpot, EventStatus, EventType
+from app.models.assignment import Assignment
+from app.models.assignment import DebriefingRecord
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
+from app.models.event import EventType
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.utils import audit
+from app.utils import CS_COLLATION
+from app.utils import get_app_tz
+from app.utils import require_permission
 
 import_bp = Blueprint("import_events", __name__, url_prefix="/import")
 

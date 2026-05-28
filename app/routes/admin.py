@@ -1,19 +1,24 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import socket
 import time
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint
+from flask import render_template
+from flask import request
 from flask_login import login_required
-
-from app.extensions import db
-from app.models.user import UserAccount
-from app.models.settings import get_settings
-from app.models.feedback import UserFeedback
 from sqlalchemy import collate
 
-from app.utils import CS_COLLATION, get_or_404, require_permission
+from app.extensions import db
+from app.models.feedback import UserFeedback
+from app.models.settings import get_settings
+from app.models.user import UserAccount
+from app.utils import CS_COLLATION
+from app.utils import get_or_404
+from app.utils import require_permission
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 

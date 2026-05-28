@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
-from app.models.user import UserAccount
-from app.models.role import Role
-from app.models.invite import RegistrationInvite
 from app.models.audit import AuditLogEntry
+from app.models.invite import RegistrationInvite
+from app.models.role import Role
+from app.models.user import UserAccount
 
 # ── Profile ───────────────────────────────────────────────────────────────────
 

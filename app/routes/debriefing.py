@@ -14,18 +14,34 @@ Routes:
   GET/POST /debriefing/<assignment_id>  — submit debriefing (own only)
   GET      /debriefing/manage           — list all records (Debriefing Manager)
 """
-
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-from flask import Blueprint, Response, render_template, redirect, url_for, flash, request, abort
-from flask_login import login_required, current_user
+from flask import abort
+from flask import Blueprint
+from flask import flash
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 
 from app.extensions import db
-from app.models.event import Event, EventStatus, EventType
-from app.models.assignment import Assignment, DebriefingRecord
-from app.utils import audit, diff_changes, get_app_tz, get_or_404, quick_date_ranges, require_permission
+from app.models.assignment import Assignment
+from app.models.assignment import DebriefingRecord
+from app.models.event import Event
+from app.models.event import EventStatus
+from app.models.event import EventType
+from app.utils import audit
+from app.utils import diff_changes
+from app.utils import get_app_tz
+from app.utils import get_or_404
+from app.utils import quick_date_ranges
+from app.utils import require_permission
 
 debriefing_bp = Blueprint("debriefing", __name__, url_prefix="/debriefing")
 

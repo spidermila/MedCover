@@ -4,15 +4,15 @@ Import order determines the default sort order when blocks are first seeded.
 """
 from __future__ import annotations
 
-from app.digest.blocks.server_stats import ServerStatsBlock
+from app.digest.base import BaseBlock
 from app.digest.blocks.audit_log import AuditLogBlock
-from app.digest.blocks.upcoming_events import UpcomingEventsBlock
-from app.digest.blocks.new_users import NewUsersBlock
+from app.digest.blocks.backup_status import BackupStatusBlock
 from app.digest.blocks.feedback_summary import FeedbackSummaryBlock
 from app.digest.blocks.free_text import FreeTextBlock
-from app.digest.blocks.backup_status import BackupStatusBlock
+from app.digest.blocks.new_users import NewUsersBlock
+from app.digest.blocks.server_stats import ServerStatsBlock
+from app.digest.blocks.upcoming_events import UpcomingEventsBlock
 from app.digest.blocks.user_activity import UserActivityBlock
-from app.digest.base import BaseBlock
 
 BLOCK_REGISTRY: dict[str, type[BaseBlock]] = {
     ServerStatsBlock.block_type:    ServerStatsBlock,

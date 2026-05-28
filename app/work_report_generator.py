@@ -16,7 +16,9 @@ the file and scheduling cleanup (files older than 1 day should be removed).
 from __future__ import annotations
 
 import calendar
-from datetime import date, datetime, timezone
+from datetime import date
+from datetime import datetime
+from datetime import timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,7 +27,11 @@ import holidays
 import sqlalchemy as sa
 from flask import current_app
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment
+from openpyxl.styles import Border
+from openpyxl.styles import Font
+from openpyxl.styles import PatternFill
+from openpyxl.styles import Side
 from openpyxl.worksheet.worksheet import Worksheet
 
 if TYPE_CHECKING:

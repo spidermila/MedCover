@@ -7,8 +7,8 @@ Create Date: 2026-05-10 15:00:00.000000
 """
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "c7d8e9f0a1b2"
 down_revision = "1613fcb025fb"

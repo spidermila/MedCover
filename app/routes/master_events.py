@@ -12,26 +12,43 @@ Table Manager (/<me_id>/table):
   Spot assignment/unassignment requires event.assign_other
   Event time editing requires event.edit
 """
-
 from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-
-from flask import Blueprint, Response, abort, jsonify, render_template, redirect, url_for, flash, request
-from flask_login import login_required, current_user
+from flask import abort
+from flask import Blueprint
+from flask import flash
+from flask import jsonify
+from flask import redirect
+from flask import render_template
+from flask import request
+from flask import Response
+from flask import url_for
+from flask_login import current_user
+from flask_login import login_required
 from sqlalchemy import collate
 from sqlalchemy.exc import IntegrityError
 
+from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
-from app.constants import RECORD_MODIFIED_MSG
-from app.utils import CS_COLLATION, czech_sort_key, audit, check_version_conflict, diff_changes, get_app_tz, get_or_404, require_permission
 from app.queries import active_users_list
+from app.utils import audit
+from app.utils import check_version_conflict
+from app.utils import CS_COLLATION
+from app.utils import czech_sort_key
+from app.utils import diff_changes
+from app.utils import get_app_tz
+from app.utils import get_or_404
+from app.utils import require_permission
 
 master_events_bp = Blueprint("master_events", __name__, url_prefix="/master-events")
 

@@ -1,7 +1,9 @@
 """Audit log digest block."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from typing import Any
 
 from app.digest.base import BaseBlock

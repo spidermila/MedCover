@@ -4,11 +4,15 @@ import os
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
+from sqlalchemy import text
 
 from app import create_app
 from app.extensions import db as _db
-from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS, Permission, Role
+from app.models.role import ALL_PERMISSIONS
+from app.models.role import Permission
+from app.models.role import Role
+from app.models.role import ROLE_PERMISSIONS
 from app.models.settings import AppSettings
 from app.models.user import UserAccount
 

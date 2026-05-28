@@ -10,11 +10,14 @@ server-side (that would auto-green all filled fields via CSS :valid).
 from __future__ import annotations
 
 import re
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 
 from app.extensions import db
+from app.models.event import Event
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
-from app.models.event import Event, EventStatus
-from datetime import datetime, timezone, timedelta
 
 
 # Matches any <input>, <textarea>, or <select> that already carries is-valid

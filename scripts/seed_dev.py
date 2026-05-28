@@ -11,10 +11,11 @@ Usage:
 Or from within the Docker web container:
     docker compose exec web python scripts/seed_dev.py
 """
-
-import sys
 import os
-from datetime import datetime, timezone, timedelta
+import sys
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 
 # Allow running from repo root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

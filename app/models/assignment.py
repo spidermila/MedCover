@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from typing import TYPE_CHECKING
+
 from sqlalchemy.orm import Mapped
+
 from app.extensions import db
 
 if TYPE_CHECKING:
