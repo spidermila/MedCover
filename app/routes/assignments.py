@@ -118,7 +118,6 @@ def do_assign_user(
     check_eligibility: bool = False,
     block_centrally_coordinated: bool = False,
     duplicate_error: str | None = None,
-    audit_summary: str | None = None,
 ) -> AssignResult:
     """
     Lock a spot and assign a user. Handles the full transaction.
@@ -128,6 +127,10 @@ def do_assign_user(
 
     Returns AssignResult with ok=True on success, or ok=False with error message.
     """
+    # User must be active and not archived
+    if not user.is_active or user.is_archived:
+        return AssignResult(ok=False, error="Uživatel nenalezen nebo není aktivní.")
+
     # Pessimistic lock: SELECT FOR UPDATE
     spot = db.session.scalar(
         db.select(EventSpot).where(EventSpot.id == spot_id).with_for_update()
@@ -172,9 +175,7 @@ def do_assign_user(
     db.session.add(spot.assignment)
     db.session.flush()
 
-    if audit_summary:
-        summary = audit_summary
-    elif user.id == assigned_by.id:
+    if user.id == assigned_by.id:
         summary = f"Uživatel '{user.name}' se přihlásil na akci '{event.name}'"
     else:
         summary = f"'{assigned_by.name}' přiřadil '{user.name}' na akci '{event.name}'"
@@ -197,7 +198,6 @@ def do_unassign_user(
     *,
     unassigned_by: UserAccount | None = None,
     block_centrally_coordinated: bool = False,
-    audit_summary: str | None = None,
 ) -> AssignResult:
     """
     Validate and remove an assignment. Handles the full transaction.
@@ -218,9 +218,7 @@ def do_unassign_user(
         return AssignResult(ok=False, error="Tuto akci řídí koordinátor — odhlašování není povoleno.", event=event)
 
     user = assignment.user
-    if audit_summary:
-        summary = audit_summary
-    elif unassigned_by is not None and unassigned_by.id != user.id:
+    if unassigned_by is not None and unassigned_by.id != user.id:
         summary = f"'{unassigned_by.name}' odhlásil '{user.name}' z akce '{event.name}'"
     else:
         summary = f"Uživatel '{user.name}' se odhlásil z akce '{event.name}'"
@@ -248,7 +246,7 @@ def claim(spot_id: int) -> Response:
         current_user,
         allowed_statuses=(EventStatus.ASSIGNMENTS_OPEN,),
         check_eligibility=True,
-        block_centrally_coordinated=True,
+        block_centrally_coordinated=not current_user.has_permission("event.assign_other"),
         duplicate_error="Již jste přihlášeni na tuto akci.",
     )
 
@@ -274,16 +272,18 @@ def release(assignment_id: int) -> Response:
     if assignment.user_id != current_user.id:
         if not event.user_can_manage_assignments(current_user):
             abort(403)
-    else:
-        # Block self-release when ME is centrally coordinated (issue #255)
-        if event.is_centrally_coordinated:
-            if not current_user.has_permission("event.assign_other"):
-                flash("Tuto akci řídí koordinátor — odhlášení není povoleno.", "warning")
-                return redirect(url_for("events.detail", event_id=event.id))
+
+    # Block self-release when ME is centrally coordinated, unless user
+    # has assign_other permission (coordinators/admins can always release)
+    is_self_release = assignment.user_id == current_user.id
+    block_coordinated = (
+        is_self_release and not current_user.has_permission("event.assign_other")
+    )
 
     result = do_unassign_user(
         assignment,
         unassigned_by=current_user,
+        block_centrally_coordinated=block_coordinated,
     )
 
     if not result.ok:
@@ -317,8 +317,8 @@ def assign_other(spot_id: int) -> Response:
         return redirect(url_for("events.detail", event_id=event.id))
 
     user = db.session.get(UserAccount, user_id)
-    if user is None or not user.is_active or user.is_archived:
-        flash("Uživatel nenalezen nebo není aktivní.", "danger")
+    if user is None:
+        flash("Uživatel nenalezen.", "danger")
         return redirect(url_for("events.detail", event_id=event.id))
 
     result = do_assign_user(
@@ -328,10 +328,9 @@ def assign_other(spot_id: int) -> Response:
     )
 
     if not result.ok:
-        if result.event is None:
-            abort(404)
+        redirect_event = result.event or event
         flash(result.error, "warning")
-        return redirect(url_for("events.detail", event_id=result.event.id))
+        return redirect(url_for("events.detail", event_id=redirect_event.id))
 
     flash(f"Uživatel {user.name} byl přiřazen na akci.", "success")
     return redirect(url_for("events.detail", event_id=result.event.id))
