@@ -45,9 +45,13 @@ def bulk_action() -> Response:
     except ValueError:
         abort(400)
 
+    return_url = request.form.get("return_url") or url_for("events.index")
+    if not return_url.startswith("/"):
+        return_url = url_for("events.index")
+
     if not event_ids:
         flash("Žádné akce nebyly vybrány.", "warning")
-        return redirect(url_for("events.index"))
+        return redirect(return_url)
 
     changed = 0
     skipped = 0
@@ -73,7 +77,7 @@ def bulk_action() -> Response:
     if skipped:
         msg += f" Přeskočeno {skipped} (nevhodný stav nebo nenalezeno)."
     flash(msg, "success" if changed else "warning")
-    return redirect(url_for("events.index"))
+    return redirect(return_url)
 
 
 # ── Add spot ──────────────────────────────────────────────────────────────────
