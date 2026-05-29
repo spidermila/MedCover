@@ -72,19 +72,23 @@ def czech_sort_key(text: str) -> list[int]:
     return result
 
 
-def safe_next(next_url: str | None) -> str:
-    """Return *next_url* only if same-origin; otherwise fall back to dashboard.
+def safe_next(next_url: str | None, fallback: str | None = None) -> str:
+    """Return *next_url* only if it is a same-origin relative path.
 
-    Prevents open-redirect attacks where an attacker supplies an absolute URL
-    as the ``next`` parameter (e.g. ``?next=https://evil.example``).
+    Rejects absolute URLs, scheme-relative URLs (``//evil.example``),
+    and empty/``None`` values.  Falls back to *fallback* if provided,
+    otherwise to the main dashboard.
+
+    Use this **everywhere** the app redirects to a user-supplied URL.
     """
     from flask import url_for
 
+    _fallback = fallback or url_for("main.dashboard")
     if not next_url:
-        return url_for("main.dashboard")
+        return _fallback
     parsed = urlsplit(next_url)
     if parsed.scheme or parsed.netloc:
-        return url_for("main.dashboard")
+        return _fallback
     return next_url
 
 
