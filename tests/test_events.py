@@ -1336,3 +1336,65 @@ class TestEventSplit:
             assert part2.spots[0].description == "Záchranář"
             # Assignment should be copied too
             assert part2.spots[0].assignment is not None
+
+
+class TestUserPickerDuplicateFiltering:
+    """User picker on event detail should not show already-assigned users."""
+
+    def test_assigned_user_excluded_from_picker(self, app, admin_client):
+        from datetime import datetime, timezone
+        from app.models.assignment import Assignment
+        from app.models.event import EventSpot
+        from app.models.role import Role
+        from app.models.user import UserAccount
+
+        me_id = _make_master_event(app)
+        with app.app_context():
+            me = db.session.get(MasterEvent, me_id)
+
+            admin_role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
+            # Get the admin user (the one admin_client logs in as)
+            admin_user = db.session.scalar(
+                db.select(UserAccount).where(UserAccount.email == "admin@test.com")
+            )
+
+            # Create a second active user
+            member = UserAccount(email="member_picker@test.com", name="Member Picker", is_active=True)
+            member.set_password("testpass123")
+            member.roles = [admin_role]
+            db.session.add(member)
+            db.session.flush()
+
+            event = Event(
+                name="Picker Test Event",
+                master_event_id=me.id,
+                start_datetime=datetime(2035, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2035, 1, 1, 18, 0, tzinfo=timezone.utc),
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                created_by_id=admin_user.id,
+            )
+            db.session.add(event)
+            db.session.flush()
+
+            # Two spots
+            spot1 = EventSpot(event_id=event.id, description="Spot 1")
+            spot2 = EventSpot(event_id=event.id, description="Spot 2")
+            db.session.add_all([spot1, spot2])
+            db.session.flush()
+
+            # Assign member to spot1
+            spot1.assignment = Assignment(user_id=member.id, assigned_by_id=admin_user.id)
+            db.session.commit()
+
+            event_id = event.id
+            member_id = member.id
+
+        # Load detail page — spot2's picker should NOT contain the member
+        resp = admin_client.get(f"/events/{event_id}")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+
+        # The assigned user's name should appear (they're shown as assigned to spot1)
+        assert "Member Picker" in html
+        # But should NOT appear as a selectable option value in a picker
+        assert f'<option value="{member_id}">' not in html

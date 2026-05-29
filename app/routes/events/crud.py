@@ -410,6 +410,13 @@ def detail(event_id: int) -> str | Response:
     if can_assign:
         eligible_users = list(active_users_list())
 
+    # Users already assigned to a spot on this event (for picker filtering)
+    assigned_user_ids: set[int] = {
+        spot.assignment.user_id
+        for spot in event.spots
+        if spot.assignment is not None
+    }
+
     # When ME has a coordinator, self-claim/release is blocked for regular members
     me_coordinated = (
         event.master_event is not None
@@ -468,6 +475,7 @@ def detail(event_id: int) -> str | Response:
         EventType=EventType,
         EquipmentItemStatus=EquipmentItemStatus,
         eligible_users=eligible_users,
+        assigned_user_ids=assigned_user_ids,
         can_assign=can_assign,
         me_coordinated=me_coordinated,
         all_equipment_types=all_equipment_types,
