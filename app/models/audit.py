@@ -23,7 +23,7 @@ class AuditLogEntry(db.Model):  # type: ignore[misc]
     summary = db.Column(db.Text, nullable=False)
     changes_json = db.Column(db.JSON, nullable=True)         # {field: [before, after]}
 
-    actor = db.relationship("UserAccount", foreign_keys=[actor_id])
+    actor = db.relationship("UserAccount", foreign_keys=[actor_id], back_populates="audit_entries")
 
     def __repr__(self) -> str:
         return f"<AuditLogEntry {self.action_type} {self.entity_type}:{self.entity_id}>"

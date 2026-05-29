@@ -15,8 +15,16 @@ from werkzeug.security import generate_password_hash
 from app.extensions import db
 
 if TYPE_CHECKING:
-    from app.models.role import Role
+    from app.models.assignment import Assignment
+    from app.models.assignment import DebriefingRecord
+    from app.models.audit import AuditLogEntry
+    from app.models.equipment import EquipmentItem
+    from app.models.event import Event
+    from app.models.feedback import UserFeedback
+    from app.models.invite import RegistrationInvite
+    from app.models.master_event import MasterEvent
     from app.models.qualification import Qualification
+    from app.models.role import Role
 
 
 class CalendarView(str, enum.Enum):
@@ -88,6 +96,38 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         secondary="user_qualifications",
         back_populates="holders",
         lazy="selectin",
+    )
+
+    # ── Inverse relationships (back_populates) ────────────────────────────────
+    assignments: Mapped[list[Assignment]] = db.relationship(
+        "Assignment", foreign_keys="Assignment.user_id", back_populates="user", lazy="noload",
+    )
+    assignments_made: Mapped[list[Assignment]] = db.relationship(
+        "Assignment", foreign_keys="Assignment.assigned_by_id", back_populates="assigned_by", lazy="noload",
+    )
+    submitted_debriefings: Mapped[list[DebriefingRecord]] = db.relationship(
+        "DebriefingRecord", foreign_keys="DebriefingRecord.submitted_by_id", back_populates="submitted_by", lazy="noload",
+    )
+    audit_entries: Mapped[list[AuditLogEntry]] = db.relationship(
+        "AuditLogEntry", foreign_keys="AuditLogEntry.actor_id", back_populates="actor", lazy="noload",
+    )
+    issued_equipment: Mapped[list[EquipmentItem]] = db.relationship(
+        "EquipmentItem", foreign_keys="EquipmentItem.issued_to_id", back_populates="issued_to", lazy="noload",
+    )
+    feedback_entries: Mapped[list[UserFeedback]] = db.relationship(
+        "UserFeedback", foreign_keys="UserFeedback.user_id", back_populates="user", lazy="noload",
+    )
+    created_invites: Mapped[list[RegistrationInvite]] = db.relationship(
+        "RegistrationInvite", foreign_keys="RegistrationInvite.created_by_id", back_populates="created_by", lazy="noload",
+    )
+    rp_events: Mapped[list[Event]] = db.relationship(
+        "Event", foreign_keys="Event.responsible_person_id", back_populates="responsible_person", lazy="noload",
+    )
+    created_events: Mapped[list[Event]] = db.relationship(
+        "Event", foreign_keys="Event.created_by_id", back_populates="created_by", lazy="noload",
+    )
+    coordinated_master_events: Mapped[list[MasterEvent]] = db.relationship(
+        "MasterEvent", foreign_keys="MasterEvent.coordinator_id", back_populates="coordinator", lazy="noload",
     )
 
     def regenerate_ical_token(self) -> str:
