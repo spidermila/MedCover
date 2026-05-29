@@ -3,14 +3,7 @@
 {% block title %}Admin — MedCover{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="mb-0">Administrace</h2>
-  <div class="d-flex gap-2">
-    <a href="{{ url_for('backup.index') }}" class="btn btn-outline-secondary btn-sm">🗄 Zálohy</a>
-    <a href="{{ url_for('notifications.index') }}" class="btn btn-outline-secondary btn-sm">📧 Oznámení</a>
-    <a href="{{ url_for('app_settings.index') }}" class="btn btn-outline-secondary btn-sm">⚙ Nastavení</a>
-  </div>
-</div>
+<h2 class="mb-3">Administrace</h2>
 
 {# ── Service status ──────────────────────────────────────────────────────── #}
 <div class="row g-3 mb-4">
