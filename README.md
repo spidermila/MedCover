@@ -1,7 +1,7 @@
 # MedCover
 
 [![CI](https://github.com/spidermila/MedCover/actions/workflows/ci.yml/badge.svg)](https://github.com/spidermila/MedCover/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-830%20passed-brightgreen)](https://github.com/spidermila/MedCover/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-847%20passed-brightgreen)](https://github.com/spidermila/MedCover/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-84%25-green)](https://github.com/spidermila/MedCover/actions/workflows/ci.yml)
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/spidermila/MedCover?utm_source=oss&utm_medium=github&utm_campaign=spidermila%2FMedCover&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
