@@ -379,8 +379,18 @@ def table_manager(me_id: int) -> str:
     if can_assign_any:
         _compute_eligible_users(rows, list(active_users_list()))
 
-    # Annotate each row with can_manage flag
+    # Per-event set of already-assigned user IDs (for picker filtering)
+    event_assigned: dict[int, set[int]] = {}
+    for event in events:
+        event_assigned[event.id] = {
+            spot.assignment.user_id
+            for spot in event.spots
+            if spot.assignment is not None
+        }
+
+    # Annotate each row with can_manage flag and assigned_user_ids
     for row in rows:
+        row["assigned_user_ids"] = event_assigned.get(row["event"].id, set())
         if can_assign:
             row["can_manage"] = True
         elif rp_elevated:
