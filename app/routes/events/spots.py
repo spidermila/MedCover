@@ -46,7 +46,7 @@ def bulk_action() -> Response:
         abort(400)
 
     return_url = request.form.get("return_url") or url_for("events.index")
-    if not return_url.startswith("/"):
+    if not return_url.startswith("/") or return_url.startswith("//"):
         return_url = url_for("events.index")
 
     if not event_ids:
