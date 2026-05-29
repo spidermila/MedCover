@@ -330,7 +330,7 @@
             {% endif %}
           {% endif %}
           <div class="d-flex gap-1 justify-content-end flex-wrap">
-            {# Claim own spot — blocked when ME is centrally coordinated #}
+            {# Claim own spot — blocked when ME is centrally coordinated (members only) #}
             {% if not me_coordinated and not spot.assignment and event.status == EventStatus.ASSIGNMENTS_OPEN and current_user.has_permission('event.assign_own') %}
               {% set already_assigned = namespace(val=false) %}
               {% for s in event.spots %}{% if s.assignment and s.assignment.user_id == current_user.id %}{% set already_assigned.val = true %}{% endif %}{% endfor %}

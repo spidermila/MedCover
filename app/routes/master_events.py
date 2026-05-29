@@ -432,8 +432,8 @@ def table_assign(me_id: int, spot_id: int) -> Response:
         return jsonify({"ok": False, "error": "Vyberte uživatele."}), 400
 
     user = db.session.get(UserAccount, user_id)
-    if user is None or not user.is_active or user.is_archived:
-        return jsonify({"ok": False, "error": "Uživatel nenalezen nebo není aktivní."}), 400
+    if user is None:
+        return jsonify({"ok": False, "error": "Uživatel nenalezen."}), 400
 
     result = do_assign_user(spot_id, user, current_user)
 
