@@ -618,3 +618,52 @@ class TestTableManager:
         )
         assert response.status_code == 400
         assert response.get_json()["ok"] is False
+
+
+class TestTableEventClone:
+    """Table Manager clone should not copy responsible_person_id."""
+
+    def test_clone_does_not_copy_rp(self, app, admin_client):
+        from datetime import datetime, timezone
+        from app.models.event import Event, EventStatus, EventSpot
+        from app.models.user import UserAccount
+
+        with app.app_context():
+            me = _make_me("Clone ME")
+            db.session.add(me)
+            db.session.flush()
+
+            admin = db.session.scalar(
+                db.select(UserAccount).where(UserAccount.email == "admin@test.com")
+            )
+
+            event = Event(
+                name="Source Event",
+                master_event_id=me.id,
+                start_datetime=datetime(2035, 2, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2035, 2, 1, 18, 0, tzinfo=timezone.utc),
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                responsible_person_id=admin.id,
+                created_by_id=admin.id,
+            )
+            db.session.add(event)
+            db.session.flush()
+
+            spot = EventSpot(event_id=event.id, description="Záchranář")
+            db.session.add(spot)
+            db.session.commit()
+
+            me_id = me.id
+            event_id = event.id
+
+        resp = admin_client.post(f"/master-events/{me_id}/table/event/{event_id}/clone")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+
+        with app.app_context():
+            clone = db.session.get(Event, data["new_event_id"])
+            assert clone is not None
+            assert clone.responsible_person_id is None
+            assert clone.name == "Source Event kopie"
+            assert len(clone.spots) == 1

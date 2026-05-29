@@ -774,7 +774,6 @@ def table_event_clone(me_id: int, event_id: int) -> Response:
         start_datetime=source.start_datetime,
         end_datetime=source.end_datetime,
         event_type=source.event_type,
-        responsible_person_id=source.responsible_person_id,
         description=source.description,
         status=EventStatus.DRAFT,
     )
