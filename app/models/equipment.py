@@ -85,7 +85,7 @@ class EquipmentItem(db.Model):  # type: ignore[misc]
     )
 
     equipment_type = db.relationship("EquipmentType", back_populates="items", lazy="selectin")
-    issued_to = db.relationship("UserAccount", foreign_keys=[issued_to_id])
+    issued_to = db.relationship("UserAccount", foreign_keys=[issued_to_id], back_populates="issued_equipment")
     event_assignments = db.relationship("EventEquipmentAssignment", back_populates="equipment_item", cascade="all, delete-orphan")
 
     @property

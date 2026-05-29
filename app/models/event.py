@@ -174,8 +174,8 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     )
 
     master_event = db.relationship("MasterEvent", back_populates="events")
-    responsible_person = db.relationship("UserAccount", foreign_keys=[responsible_person_id])
-    created_by = db.relationship("UserAccount", foreign_keys=[created_by_id])
+    responsible_person = db.relationship("UserAccount", foreign_keys=[responsible_person_id], back_populates="rp_events")
+    created_by = db.relationship("UserAccount", foreign_keys=[created_by_id], back_populates="created_events")
     spots: Mapped[list[EventSpot]] = db.relationship(
         "EventSpot", back_populates="event", cascade="all, delete-orphan", lazy="selectin"
     )

@@ -28,4 +28,4 @@ class UserFeedback(db.Model):  # type: ignore[misc]
         default=lambda: datetime.now(timezone.utc),
     )
 
-    user = db.relationship("UserAccount", foreign_keys=[user_id], lazy="joined")
+    user = db.relationship("UserAccount", foreign_keys=[user_id], back_populates="feedback_entries", lazy="joined")
