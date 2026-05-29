@@ -261,6 +261,8 @@ def equipment_warnings_for_event(event: Event) -> list[dict]:
             .where(
                 EventEquipmentAssignment.equipment_item_id.in_(available_ids),
                 EventEquipmentAssignment.event_id != event.id,
+                Event.status != EventStatus.CANCELLED,
+                Event.archived.is_(False),
                 Event.start_datetime < event.end_datetime,
                 Event.end_datetime > event.start_datetime,
             )

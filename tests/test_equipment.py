@@ -923,3 +923,191 @@ class TestEventCreateWithEquipment:
                 )
             )
             assert assn is None
+
+
+class TestEquipmentConflictExclusion:
+    """Cancelled/archived events should not cause equipment conflicts."""
+
+    def test_cancelled_event_does_not_cause_conflict(self, app, admin_client):
+        from app.routes.events._helpers import equipment_warnings_for_event
+
+        type_id = _make_type(app, "Conflict Type")
+        item_id = _make_item(app, type_id, "Conflict Item")
+
+        with app.app_context():
+            me = MasterEvent(name="Conflict ME")
+            db.session.add(me)
+            db.session.flush()
+
+            # Cancelled event with the item assigned (overlapping time)
+            cancelled = Event(
+                name="Cancelled Event",
+                master_event_id=me.id,
+                status=EventStatus.CANCELLED,
+                archived=True,
+                start_datetime=datetime(2031, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2031, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(cancelled)
+            db.session.flush()
+            db.session.add(EventEquipmentAssignment(event_id=cancelled.id, equipment_item_id=item_id))
+
+            # Active event with the same item (overlapping time)
+            active = Event(
+                name="Active Event",
+                master_event_id=me.id,
+                status=EventStatus.PUBLISHED,
+                start_datetime=datetime(2031, 1, 1, 9, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2031, 1, 1, 20, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(active)
+            db.session.flush()
+            db.session.add(EventEquipmentAssignment(event_id=active.id, equipment_item_id=item_id))
+            db.session.commit()
+
+            # Warnings for the active event should NOT include the cancelled one
+            warnings = equipment_warnings_for_event(active)
+            conflict_names = [w["conflicting_event"]["name"] for w in warnings if w["status"] == "conflict"]
+            assert "Cancelled Event" not in conflict_names
+
+    def test_archived_event_does_not_cause_conflict(self, app, admin_client):
+        from app.routes.events._helpers import equipment_warnings_for_event
+
+        type_id = _make_type(app, "Archived Type")
+        item_id = _make_item(app, type_id, "Archived Item")
+
+        with app.app_context():
+            me = MasterEvent(name="Archived ME")
+            db.session.add(me)
+            db.session.flush()
+
+            # Archived (but completed) event with the item
+            archived = Event(
+                name="Archived Event",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                archived=True,
+                start_datetime=datetime(2032, 3, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2032, 3, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(archived)
+            db.session.flush()
+            db.session.add(EventEquipmentAssignment(event_id=archived.id, equipment_item_id=item_id))
+
+            # New event at the same time
+            new_event = Event(
+                name="New Event",
+                master_event_id=me.id,
+                status=EventStatus.DRAFT,
+                start_datetime=datetime(2032, 3, 1, 9, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2032, 3, 1, 20, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(new_event)
+            db.session.flush()
+            db.session.add(EventEquipmentAssignment(event_id=new_event.id, equipment_item_id=item_id))
+            db.session.commit()
+
+            warnings = equipment_warnings_for_event(new_event)
+            conflict_names = [w["conflicting_event"]["name"] for w in warnings if w["status"] == "conflict"]
+            assert "Archived Event" not in conflict_names
+
+
+class TestEquipmentCheckEndpointExclusion:
+    """AJAX equipment-check endpoint should ignore cancelled/archived events."""
+
+    def test_check_excludes_cancelled_event(self, app, admin_client):
+        type_id = _make_type(app, "Check Cancel Type")
+        item_id = _make_item(app, type_id, "Check Cancel Item")
+
+        with app.app_context():
+            me = MasterEvent(name="Check Cancel ME")
+            db.session.add(me)
+            db.session.flush()
+
+            # Cancelled event with the item
+            cancelled = Event(
+                name="Cancelled Overlap",
+                master_event_id=me.id,
+                status=EventStatus.CANCELLED,
+                start_datetime=datetime(2033, 5, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2033, 5, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(cancelled)
+            db.session.flush()
+            db.session.add(EventEquipmentAssignment(event_id=cancelled.id, equipment_item_id=item_id))
+            db.session.commit()
+
+        # Check availability for the same time window — should report no conflict
+        resp = admin_client.post("/events/equipment-check", json={
+            "item_ids": [item_id],
+            "start_datetime": "2033-05-01T09:00:00+00:00",
+            "end_datetime": "2033-05-01T20:00:00+00:00",
+        })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        statuses = [r["status"] for r in data["results"]]
+        assert "conflict" not in statuses
+
+    def test_check_excludes_archived_event(self, app, admin_client):
+        type_id = _make_type(app, "Check Archive Type")
+        item_id = _make_item(app, type_id, "Check Archive Item")
+
+        with app.app_context():
+            me = MasterEvent(name="Check Archive ME")
+            db.session.add(me)
+            db.session.flush()
+
+            archived = Event(
+                name="Archived Overlap",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                archived=True,
+                start_datetime=datetime(2033, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2033, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(archived)
+            db.session.flush()
+            db.session.add(EventEquipmentAssignment(event_id=archived.id, equipment_item_id=item_id))
+            db.session.commit()
+
+        resp = admin_client.post("/events/equipment-check", json={
+            "item_ids": [item_id],
+            "start_datetime": "2033-06-01T09:00:00+00:00",
+            "end_datetime": "2033-06-01T20:00:00+00:00",
+        })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        statuses = [r["status"] for r in data["results"]]
+        assert "conflict" not in statuses
+
+    def test_check_still_reports_active_conflict(self, app, admin_client):
+        """Sanity check: active overlapping event DOES produce a conflict."""
+        type_id = _make_type(app, "Check Active Type")
+        item_id = _make_item(app, type_id, "Check Active Item")
+
+        with app.app_context():
+            me = MasterEvent(name="Check Active ME")
+            db.session.add(me)
+            db.session.flush()
+
+            active = Event(
+                name="Active Overlap",
+                master_event_id=me.id,
+                status=EventStatus.PUBLISHED,
+                start_datetime=datetime(2033, 7, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2033, 7, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(active)
+            db.session.flush()
+            db.session.add(EventEquipmentAssignment(event_id=active.id, equipment_item_id=item_id))
+            db.session.commit()
+
+        resp = admin_client.post("/events/equipment-check", json={
+            "item_ids": [item_id],
+            "start_datetime": "2033-07-01T09:00:00+00:00",
+            "end_datetime": "2033-07-01T20:00:00+00:00",
+        })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        statuses = [r["status"] for r in data["results"]]
+        assert "conflict" in statuses
