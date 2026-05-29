@@ -23,6 +23,7 @@ from app.models.user import UserAccount
 from app.utils import audit
 from app.utils import get_or_404
 from app.utils import require_permission
+from app.utils import safe_next
 
 
 # ── Bulk lifecycle actions ────────────────────────────────────────────────────
@@ -45,9 +46,7 @@ def bulk_action() -> Response:
     except ValueError:
         abort(400)
 
-    return_url = request.form.get("return_url") or url_for("events.index")
-    if not return_url.startswith("/") or return_url.startswith("//"):
-        return_url = url_for("events.index")
+    return_url = safe_next(request.form.get("return_url") or url_for("events.index"))
 
     if not event_ids:
         flash("Žádné akce nebyly vybrány.", "warning")
