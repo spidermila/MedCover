@@ -73,29 +73,24 @@
           {% if current_user.has_permission('debriefing.manage') %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('debriefing.manage') }}">Debriefing</a></li>
           {% endif %}
-          {% if current_user.has_any_permission('admin.view', 'user.view', 'event.create') %}
+          {% if current_user.has_permission('user.view') %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('users.index') }}">Uživatelé</a></li>
+          {% endif %}
+          {% if current_user.has_permission('admin.view') %}
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Administrace</a>
             <ul class="dropdown-menu">
-              {% if current_user.has_permission('admin.view') %}
               <li><a class="dropdown-item" href="{{ url_for('admin.index') }}">Dashboard</a></li>
-              {% endif %}
-              {% if current_user.has_permission('user.view') %}
-              <li><a class="dropdown-item" href="{{ url_for('users.index') }}">Uživatelé</a></li>
-              {% endif %}
-              {% if current_user.has_permission('admin.view') %}
               <li><a class="dropdown-item" href="{{ url_for('users.invites') }}">Pozvánky</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin.audit_log_list') }}">Audit log</a></li>
-              {% endif %}
-              {% if current_user.has_permission('event.create') %}
               <li><a class="dropdown-item" href="{{ url_for('import_events.events_paste') }}">Import akcí</a></li>
-              {% endif %}
-              {% if current_user.has_permission('admin.view') %}
               <li><a class="dropdown-item" href="{{ url_for('admin.permissions') }}">Přehled oprávnění</a></li>
-              {% endif %}
               {% if current_user.has_permission('admin.manage_digest') %}
               <li><a class="dropdown-item" href="{{ url_for('admin_digest.index') }}">Přehledový e-mail</a></li>
               {% endif %}
+              <li><a class="dropdown-item" href="{{ url_for('backup.index') }}">Zálohy</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('notifications.index') }}">Oznámení</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('app_settings.index') }}">Nastavení</a></li>
             </ul>
           </li>
           {% endif %}
