@@ -236,7 +236,7 @@
                     data-spot-id="{{ spot.id }}"
                     id="assign_spot_{{ spot.id }}">
               <option value="">— přiřadit —</option>
-              {% for user in row.eligible_users %}
+              {% for user in row.eligible_users if user.id not in row.assigned_user_ids %}
               <option value="{{ user.id }}">{{ user.name }}</option>
               {% endfor %}
             </select>
