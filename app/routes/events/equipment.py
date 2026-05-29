@@ -222,6 +222,8 @@ def equipment_check() -> Response:
     if available_ids:
         conflict_filter = [
             EventEquipmentAssignment.equipment_item_id.in_(available_ids),
+            Event.status != EventStatus.CANCELLED,
+            Event.archived.is_(False),
             Event.start_datetime < end_dt,
             Event.end_datetime > start_dt,
         ]
