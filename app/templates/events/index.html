@@ -3,6 +3,19 @@
 {% from 'macros/badges.html' import badge_info %}
 {% block title %}Akce — MedCover{% endblock %}
 
+{# ── Helper macro: generate events.index URL preserving all active filters ── #}
+{% macro filter_url(page=None, archived=None) %}
+  {{- url_for('events.index',
+    page=page,
+    statuses=active_statuses|join(','),
+    types=active_types|join(',') if active_types|length < all_event_types|length else None,
+    me_id=active_me.id if active_me else None,
+    sort=sort_col if sort_col != 'start' else None,
+    dir=sort_dir if sort_col != 'start' or sort_dir != 'asc' else None,
+    archived=1 if (archived if archived is not none else show_archived) else None,
+  ) -}}
+{%- endmacro %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h2 class="mb-0">Akce {{ help_icon("Akce procházejí těmito fázemi:\n• Koncept — vidí jen koordinátoři, nelze se přihlásit\n• Zveřejněná — viditelná, přihlášky zatím uzavřeny\n• Přihlášky otevřeny — členové se mohou přihlašovat (manuálně nebo automaticky dle data otevření)\n• Přihlášky uzavřeny — obsazování uzavřeno, akce probíhá\n• Dokončena — automaticky po skončení akce (scheduler)\n• Zrušena — lze nastavit kdykoli\nFáze Koncept → Zveřejněná a Zveřejněná → Přihlášky otevřeny jsou manuální (nebo automatické dle data). Fáze Dokončena se nastaví automaticky po uplynutí data ukončení.", "Fáze akce") }}</h2>
@@ -24,9 +37,9 @@
     </div>
 
     {% if show_archived %}
-      <a href="{{ url_for('events.index') }}" class="btn btn-outline-secondary btn-sm">Skrýt archivované</a>
+      <a href="{{ filter_url(archived=false) }}" class="btn btn-outline-secondary btn-sm">Skrýt archivované</a>
     {% else %}
-      <a href="{{ url_for('events.index', archived=1) }}" class="btn btn-outline-secondary btn-sm">Zobrazit archivované</a>
+      <a href="{{ filter_url(archived=true) }}" class="btn btn-outline-secondary btn-sm">Zobrazit archivované</a>
     {% endif %}
     {% if current_user.has_permission('event.create') %}
       <a href="{{ url_for('events.create') }}" class="btn btn-danger btn-sm">Nová akce</a>
@@ -131,6 +144,7 @@
   <form method="POST" action="{{ url_for('events.bulk_action') }}" id="bulk-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" id="bulk-action-input" value="">
+    <input type="hidden" name="return_url" value="{{ filter_url() }}">
     <div id="bulk-ids-container"></div>{# dynamic hidden event_ids inputs #}
     <div class="d-flex gap-2 align-items-center flex-wrap p-2 rounded border border-secondary-subtle bg-body-secondary">
       <span class="text-muted small me-1" id="bulk-count-label">0 vybráno</span>
@@ -266,19 +280,19 @@
     <div class="d-flex align-items-center gap-3 flex-wrap">
       <ul class="pagination pagination-sm mb-0">
         <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
-          <a class="page-link" href="{{ url_for('events.index', page=pagination.prev_num, archived=1 if show_archived else None) }}">‹</a>
+          <a class="page-link" href="{{ filter_url(page=pagination.prev_num) }}">‹</a>
         </li>
         {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
           {% if p %}
             <li class="page-item {{ 'active' if p == pagination.page }}">
-              <a class="page-link" href="{{ url_for('events.index', page=p, archived=1 if show_archived else None) }}">{{ p }}</a>
+              <a class="page-link" href="{{ filter_url(page=p) }}">{{ p }}</a>
             </li>
           {% else %}
             <li class="page-item disabled"><span class="page-link">…</span></li>
           {% endif %}
         {% endfor %}
         <li class="page-item {{ 'disabled' if not pagination.has_next }}">
-          <a class="page-link" href="{{ url_for('events.index', page=pagination.next_num, archived=1 if show_archived else None) }}">›</a>
+          <a class="page-link" href="{{ filter_url(page=pagination.next_num) }}">›</a>
         </li>
       </ul>
       <small class="text-muted">
