@@ -94,6 +94,16 @@ class TestChangelog:
         assert rv.status_code == 200
         assert app.config["APP_VERSION"].encode() in rv.data
 
+    def test_target_blank_has_noopener(self, app, member_client):
+        """Every target='_blank' link must have rel='noopener noreferrer' (tabnabbing protection)."""
+        import re
+        rv = member_client.get("/changelog")
+        html = rv.data.decode()
+        blanks = re.findall(r"<a [^>]*target=\"_blank\"[^>]*>", html)
+        assert blanks, "Expected at least one target=_blank link"
+        for tag in blanks:
+            assert 'rel="noopener noreferrer"' in tag, f"Missing rel noopener: {tag}"
+
 
 # ── APP_VERSION config ────────────────────────────────────────────────────────
 

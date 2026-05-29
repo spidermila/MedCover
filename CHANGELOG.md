@@ -7,45 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-05-29
+
 ### Added
 - Elevated RP permissions: RP-eligible users assigned to an event can now assign/unassign other users on that event, unless the master event has a coordinator (centrally managed from SPOT) (closes #255 Phase 2)
 - `event.view_draft` permission added to Member role — members can now see draft events
 - Auto-reassign RP: when the current responsible person leaves an event, the role is automatically transferred to the next RP-eligible attendee (previously it was simply cleared)
-- iCal profile page: step-by-step guide for adding the MedCover calendar feed to Google Calendar, linked from the profile iCal card
-- Playwright E2E browser tests in Docker: 111 tests across Chromium, Firefox and WebKit covering login, navigation, event CRUD, form validation, CSRF, label accessibility, profile, and JS interactions; run via `make e2e`
-- HTML test report with per-test screenshots (`make e2e-report` to view)
-- Table Manager: client-side status and event type filter bars (same look as /events/ page); default hides Completed and Cancelled events
-- Debriefing manage: date-range filter with quick-fill buttons (same as date-range report); record count shown next to buttons
-- Date inputs on debriefing manage and date-range report now use Flatpickr with Czech date format (dd.mm.YYYY)
+- iCal profile page: step-by-step guide for adding the MedCover calendar feed to Google Calendar, linked from the profile iCal card (#269)
+- Playwright E2E browser tests in Docker: 111 tests across Chromium, Firefox and WebKit covering login, navigation, event CRUD, form validation, CSRF, label accessibility, profile, and JS interactions; run via `make e2e` (#221)
+- HTML test report with per-test screenshots (`make e2e-report` to view) (#221)
+- Table Manager: client-side status and event type filter bars (same look as /events/ page); default hides Completed and Cancelled events (#225)
+- Debriefing manage: date-range filter with quick-fill buttons (same as date-range report); record count shown next to buttons (#230)
+- Date inputs on debriefing manage and date-range report now use Flatpickr with Czech date format (dd.mm.YYYY) (#230)
+- CI: pip-audit job and Dependabot config for automated dependency security scanning (#211)
+- CI: Azure Container Apps build & deploy workflow
 
 ### Fixed
-- Audit log no longer creates spurious entries when saving a user with no actual changes; version counter also skipped when data is identical (closes #249)
-- Table Manager: color picker button now only visible to users with `event.edit` permission (previously visible to all)
+- Audit log no longer creates spurious entries when saving a user with no actual changes; version counter also skipped when data is identical (closes #249) (#287)
+- Table Manager: color picker button now only visible to users with `event.edit` permission (previously visible to all) (#226)
 - Coordinated master events: self-claim and self-release are now blocked when an ME has a coordinator assigned (UI buttons hidden + server-side guard)
-- Split event modal: date/time input now uses the standard Flatpickr datetime picker (same as event create/edit), replacing the broken `type="date"` + `type="text"` combination that showed dates in US format (closes #239)
-- Reports: "Příští směna" column now shows the user's true next future assignment globally; previously it was empty when the report date range didn't include future events
-- CSV exports now include UTF-8 BOM so Excel on Windows auto-detects Czech characters correctly
-
-### Changed
-- Consolidated email template CSS: standardized colour palette across `base.html` and `admin_digest.html` (`#c00` → `#c0392b`, `#222` → `#333333`, consistent grey tones); added canonical palette comment; no layout changes (closes #206)
-- Increased email queue drain rate from 6 s to 3 s per message (~20 emails/min instead of ~10)
-- Unified all Czech RP labels to "Zodpovědná osoba": previously called "Zodpovědný zdravotník" (medical events), "Lektor" (training), "Vedoucí" (qualifications/dashboard) — now consistent across the entire UI regardless of event type (refs #255)
-- Centralized CSRF token handling: new `csrfFetch()` wrapper in `csrf-fetch.js` replaces 16 manual `X-CSRFToken` header injections across 4 JS files (closes #207)
-- Extracted large inline `<script>` blocks from 4 templates into external JS files for better CSP compliance and maintainability: `table-manager.js`, `events-detail-nav.js`, `events-detail-equipment.js`, `events-create-equipment.js`, `admin-notifications.js` (closes #203)
-- Refactored 10 oversized route functions (>60 lines) across 8 files into thin route handlers + private helpers; no behaviour changes (closes #195) (#213)
-- DRY up duplicated guard/render/enqueue pattern in `mail.py` via `_guarded_send()` helper; −38 lines of boilerplate (closes #196) (#214)
-- Centralized timezone handling via `get_app_tz()` helper — all datetime conversions now read `AppSettings.timezone` from the database instead of hardcoding `Europe/Prague` (closes #197)
-- Split 180-line `generate_work_report()` in `work_report_generator.py` into 5 focused helpers; main function is now a 28-line orchestrator (closes #199)
-- Deduplicated `_make_user()` / `_login()` test helpers from 5 test files into `conftest.py`; −72 lines of copy-paste code (closes #200)
-- Replaced 34 inline `style=` attributes in `table_manager.html` and `notifications.html` with semantic CSS classes; added mobile-responsive overrides (closes #204)
-- Consolidated duplicated `.paid-toggle` / `.dark-toggle` CSS from 4 templates into `main.css` with CSS custom properties (closes #202)
-- Added live on-blur field validation to all forms — mandatory fields show errors immediately when tabbing away, and errors clear as you type
-
-### Fixed
+- Split event modal: date/time input now uses the standard Flatpickr datetime picker (same as event create/edit), replacing the broken `type="date"` + `type="text"` combination that showed dates in US format (closes #239) (#286)
+- Reports: "Příští směna" column now shows the user's true next future assignment globally; previously it was empty when the report date range didn't include future events (#227)
+- CSV exports now include UTF-8 BOM so Excel on Windows auto-detects Czech characters correctly (#229)
 - Reports CSV exports now convert UTC datetimes to the configured app timezone before formatting
 - Fixed 28 `<label>` elements not associated with form controls in `events/detail.html` and `admin/digest/index.html` (accessibility) (#218)
 - Replaced remaining inline event handlers (`onsubmit`, `onclick`) in `profile.html`, `detail.html`, and `table_manager.html` with `data-confirm` attributes and JS listeners (CSP compliance)
 - Added missing `id="email"` on profile page disabled email input (label accessibility)
+- Auto-close assignments now triggers correctly when the last mandatory spot is filled (closes #288)
+- Dashboard crash when spots have NULL description (#323)
+- Flatpickr calendar popup dark mode styling
+- Form checkbox label alignment (closes #292)
+- Replaced direct `AuditLogEntry` usage with `audit()` helper across all routes (closes #238) (#323)
+- Removed duplicate dead-code route for admin user activation (closes #250)
+- Password change now correctly bumps user version counter (#294)
+
+### Changed
+- Consolidated email template CSS: standardized colour palette across `base.html` and `admin_digest.html` (`#c00` → `#c0392b`, `#222` → `#333333`, consistent grey tones); added canonical palette comment; no layout changes (closes #206) (#223)
+- Increased email queue drain rate from 6 s to 3 s per message (~20 emails/min instead of ~10)
+- Unified all Czech RP labels to "Zodpovědná osoba": previously called "Zodpovědný zdravotník" (medical events), "Lektor" (training), "Vedoucí" (qualifications/dashboard) — now consistent across the entire UI regardless of event type (refs #255) (#293)
+- Centralized CSRF token handling: new `csrfFetch()` wrapper in `csrf-fetch.js` replaces 16 manual `X-CSRFToken` header injections across 4 JS files (closes #207) (#224)
+- Extracted large inline `<script>` blocks from 4 templates into external JS files for better CSP compliance and maintainability: `table-manager.js`, `events-detail-nav.js`, `events-detail-equipment.js`, `events-create-equipment.js`, `admin-notifications.js` (closes #203) (#212)
+- Refactored 10 oversized route functions (>60 lines) across 8 files into thin route handlers + private helpers; no behaviour changes (closes #195) (#213)
+- DRY up duplicated guard/render/enqueue pattern in `mail.py` via `_guarded_send()` helper; −38 lines of boilerplate (closes #196) (#214)
+- Centralized timezone handling via `get_app_tz()` helper — all datetime conversions now read `AppSettings.timezone` from the database instead of hardcoding `Europe/Prague` (closes #197) (#215)
+- Split 180-line `generate_work_report()` in `work_report_generator.py` into 5 focused helpers; main function is now a 28-line orchestrator (closes #199) (#216)
+- Deduplicated `_make_user()` / `_login()` test helpers from 5 test files into `conftest.py`; −72 lines of copy-paste code (closes #200) (#217)
+- Replaced 34 inline `style=` attributes in `table_manager.html` and `notifications.html` with semantic CSS classes; added mobile-responsive overrides (closes #204) (#219)
+- Consolidated duplicated `.paid-toggle` / `.dark-toggle` CSS from 4 templates into `main.css` with CSS custom properties (closes #202) (#220)
+- Replaced hardcoded colour values in web UI with CSS custom properties (closes #205)
+- Added live on-blur field validation to all forms — mandatory fields show errors immediately when tabbing away, and errors clear as you type
 
 ## [0.14.0] - 2026-05-14
 
@@ -236,7 +246,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/spidermila/MedCover/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/spidermila/MedCover/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/spidermila/MedCover/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/spidermila/MedCover/compare/v0.13.0...v0.13.1
