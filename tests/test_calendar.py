@@ -347,7 +347,7 @@ class TestICalAllEventsFeed:
 
     def test_description_contains_status_and_spots(self, app, client):
         _, token = _make_member_with_all_token(app, "ical_all_desc@test.com")
-        event_id, spot_id = _make_event(app, "Desc Test Event", EventStatus.ASSIGNMENTS_OPEN)
+        _make_event(app, "Desc Test Event", EventStatus.ASSIGNMENTS_OPEN)
 
         resp = client.get(f"/calendar/all/{token}.ics")
         assert resp.status_code == 200
