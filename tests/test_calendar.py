@@ -219,3 +219,175 @@ class TestICalRegenerate:
         assert resp.status_code == 200
         assert b"ical" in resp.data.lower()
         assert b"calendar" in resp.data.lower()
+
+
+def _make_member_with_all_token(app, email: str = "ical_all@test.com") -> tuple[int, str]:
+    """Create an active member user with an ical_all_token; return (id, token)."""
+    with app.app_context():
+        from app.models.role import Role
+        role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+        user = UserAccount(email=email, name="iCal All Member", is_active=True)
+        user.set_password("testpass123")
+        user.roles = [role]
+        user.regenerate_ical_all_token()
+        db.session.add(user)
+        db.session.commit()
+        return user.id, user.ical_all_token
+
+
+class TestICalFeedArchivedExclusion:
+    """Personal feed should exclude archived events."""
+
+    def test_archived_event_excluded_from_personal_feed(self, app, client):
+        user_id, token = _make_member(app, "ical_archived@test.com")
+        with app.app_context():
+            me = MasterEvent(name="Archived ME")
+            db.session.add(me)
+            db.session.flush()
+
+            from app.models.role import Role
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
+            creator = UserAccount(email="archived_creator@test.com", name="Creator", is_active=True)
+            creator.set_password("x")
+            creator.roles = [role]
+            db.session.add(creator)
+            db.session.flush()
+
+            event = Event(
+                name="Archived Active Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                archived=True,
+                start_datetime=datetime(2030, 9, 1, 9, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 1, 17, 0, tzinfo=timezone.utc),
+                created_by_id=creator.id,
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            db.session.add(Assignment(user_id=user_id, spot_id=spot.id))
+            db.session.commit()
+
+        resp = client.get(f"/calendar/{token}.ics")
+        assert resp.status_code == 200
+        assert b"Archived Active Event" not in resp.data
+
+
+class TestICalAllEventsFeed:
+    """All-events feed tests."""
+
+    def test_invalid_token_returns_404(self, client):
+        resp = client.get("/calendar/all/deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678.ics")
+        assert resp.status_code == 404
+
+    def test_valid_token_returns_ics(self, app, client):
+        _, token = _make_member_with_all_token(app, "ical_all_basic@test.com")
+        resp = client.get(f"/calendar/all/{token}.ics")
+        assert resp.status_code == 200
+        assert "text/calendar" in resp.content_type
+        assert b"BEGIN:VCALENDAR" in resp.data
+
+    def test_active_event_appears(self, app, client):
+        _, token = _make_member_with_all_token(app, "ical_all_active@test.com")
+        _make_event(app, "All Feed Active", EventStatus.ASSIGNMENTS_OPEN)
+
+        resp = client.get(f"/calendar/all/{token}.ics")
+        assert resp.status_code == 200
+        assert b"All Feed Active" in resp.data
+
+    def test_completed_event_appears(self, app, client):
+        """Completed events should appear in the all-events feed."""
+        _, token = _make_member_with_all_token(app, "ical_all_completed@test.com")
+        _make_event(app, "All Feed Completed", EventStatus.COMPLETED)
+
+        resp = client.get(f"/calendar/all/{token}.ics")
+        assert resp.status_code == 200
+        assert b"All Feed Completed" in resp.data
+
+    def test_cancelled_event_excluded(self, app, client):
+        _, token = _make_member_with_all_token(app, "ical_all_cancelled@test.com")
+        _make_event(app, "All Feed Cancelled", EventStatus.CANCELLED)
+
+        resp = client.get(f"/calendar/all/{token}.ics")
+        assert resp.status_code == 200
+        assert b"All Feed Cancelled" not in resp.data
+
+    def test_archived_event_excluded(self, app, client):
+        _, token = _make_member_with_all_token(app, "ical_all_archived@test.com")
+        with app.app_context():
+            me = MasterEvent(name="All Archived ME")
+            db.session.add(me)
+            db.session.flush()
+
+            from app.models.role import Role
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
+            creator = UserAccount(email="all_archived_creator@test.com", name="Creator", is_active=True)
+            creator.set_password("x")
+            creator.roles = [role]
+            db.session.add(creator)
+            db.session.flush()
+
+            event = Event(
+                name="All Feed Archived",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                archived=True,
+                start_datetime=datetime(2030, 10, 1, 9, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 10, 1, 17, 0, tzinfo=timezone.utc),
+                created_by_id=creator.id,
+            )
+            db.session.add(event)
+            db.session.commit()
+
+        resp = client.get(f"/calendar/all/{token}.ics")
+        assert resp.status_code == 200
+        assert b"All Feed Archived" not in resp.data
+
+    def test_description_contains_status_and_spots(self, app, client):
+        _, token = _make_member_with_all_token(app, "ical_all_desc@test.com")
+        event_id, spot_id = _make_event(app, "Desc Test Event", EventStatus.ASSIGNMENTS_OPEN)
+
+        resp = client.get(f"/calendar/all/{token}.ics")
+        assert resp.status_code == 200
+        data = resp.data.decode()
+        assert "Stav:" in data
+        assert "Pozice:" in data
+
+
+class TestICalRegenerateAll:
+    """Regenerate all-events token tests."""
+
+    def test_regenerate_all_creates_new_token(self, app, member_client):
+        with app.app_context():
+            user = db.session.scalar(
+                db.select(UserAccount).where(UserAccount.email == "member@test.com")
+            )
+            user.regenerate_ical_all_token()
+            db.session.commit()
+            old_token = user.ical_all_token
+
+        resp = member_client.post(
+            "/calendar/regenerate-all",
+            data={"csrf_token": "ignored"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/profile" in resp.headers["Location"]
+
+        with app.app_context():
+            user = db.session.scalar(
+                db.select(UserAccount).where(UserAccount.email == "member@test.com")
+            )
+            assert user.ical_all_token != old_token
+            assert user.ical_all_token is not None
+
+    def test_regenerate_all_requires_login(self, client):
+        resp = client.post(
+            "/calendar/regenerate-all",
+            data={"csrf_token": "x"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "login" in resp.headers["Location"]

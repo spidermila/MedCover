@@ -157,7 +157,7 @@
     <!-- ── iCal subscription ── -->
     <div class="card mb-4" id="ical">
       <div class="card-header fw-semibold d-flex align-items-center gap-2">
-        Kalendářový odkaz
+        Kalendářový odkaz – moje akce
         {{ help_icon("Odkaz pro přihlášení k odběru vašich akcí v externím kalendáři (Google Kalendář, Apple Kalendář, Outlook, …). Odkaz je veřejný — zacházejte s ním jako s heslem.") }}
       </div>
       <div class="card-body">
@@ -166,7 +166,7 @@
           (ne jako jednorázový import). Kalendář se pak automaticky aktualizuje.
         </p>
         <p class="mb-1 small text-muted">
-          <strong>Co uvidíte:</strong> pouze akce, na které jste přihlášeni a které jsou aktivní (zrušené nebo dokončené akce se nezobrazí).
+          <strong>Co uvidíte:</strong> pouze akce, na které jste přihlášeni a které jsou aktivní (zrušené, dokončené nebo archivované akce se nezobrazí).
         </p>
         <p class="mb-2 small text-muted">
           <strong>Jak rychle se aktualizuje:</strong> kalendářové aplikace stahují změny přibližně každé 4 hodiny — nová přihláška nebo změna času se neprojeví okamžitě.
@@ -199,6 +199,43 @@
       </div>
     </div>
 
+    <!-- ── iCal all events subscription ── -->
+    <div class="card mb-4" id="ical-all">
+      <div class="card-header fw-semibold d-flex align-items-center gap-2">
+        Kalendářový odkaz – všechny akce
+        {{ help_icon("Odkaz pro odběr všech aktivních akcí v systému (ne jen vašich). Vhodné pro koordinátory a správce, kteří chtějí mít přehled o všem.") }}
+      </div>
+      <div class="card-body">
+        <p class="mb-2">
+          Tento odkaz obsahuje <strong>všechny akce</strong> v systému (kromě zrušených a archivovaných).
+          U každé akce uvidíte stav, pozice s kvalifikacemi a přiřazenými uživateli a zodpovědnou osobu.
+        </p>
+        <p class="mb-2 small text-muted">
+          <strong>Jak rychle se aktualizuje:</strong> kalendářové aplikace stahují změny přibližně každé 4 hodiny.
+        </p>
+
+        <div class="input-group mb-3">
+          <input type="text" class="form-control font-monospace small" id="ical-all-url-input"
+                 value="{{ ical_all_url }}" readonly>
+          <button class="btn btn-outline-secondary" type="button" id="ical-all-copy-btn"
+                  title="Kopírovat odkaz">
+            <i class="bi bi-clipboard"></i> Kopírovat
+          </button>
+        </div>
+
+        <form method="POST" action="{{ url_for('calendar.regenerate_all') }}"
+              data-confirm="Opravdu chcete vygenerovat nový odkaz? Starý odkaz přestane okamžitě fungovat.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-outline-warning">
+            <i class="bi bi-arrow-clockwise"></i> Vygenerovat nový odkaz
+          </button>
+          <span class="ms-2 small text-muted">
+            {{ help_icon("Pokud se obáváte, že váš odkaz někdo zná, vygenerujte nový. Starý odkaz okamžitě přestane fungovat.") }}
+          </span>
+        </form>
+      </div>
+    </div>
+
   </div>
 </div>
 {% endblock %}
@@ -208,20 +245,24 @@
 <script src="{{ url_for('static', filename='js/user-form.js') }}?v={{ static_ver }}"></script>
 <script nonce="{{ g.csp_nonce }}">
 (function () {
-  var copyBtn = document.getElementById('ical-copy-btn');
-  var copyInp = document.getElementById('ical-url-input');
-  if (copyBtn && copyInp) {
-    copyBtn.addEventListener('click', function () {
-      navigator.clipboard.writeText(copyInp.value).then(function () {
-        copyBtn.textContent = '✓ Zkopírováno';
-        copyBtn.classList.replace('btn-outline-secondary', 'btn-success');
-        setTimeout(function () {
-          copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Kopírovat';
-          copyBtn.classList.replace('btn-success', 'btn-outline-secondary');
-        }, 2000);
+  function setupCopyBtn(btnId, inputId) {
+    var btn = document.getElementById(btnId);
+    var inp = document.getElementById(inputId);
+    if (btn && inp) {
+      btn.addEventListener('click', function () {
+        navigator.clipboard.writeText(inp.value).then(function () {
+          btn.textContent = '✓ Zkopírováno';
+          btn.classList.replace('btn-outline-secondary', 'btn-success');
+          setTimeout(function () {
+            btn.innerHTML = '<i class="bi bi-clipboard"></i> Kopírovat';
+            btn.classList.replace('btn-success', 'btn-outline-secondary');
+          }, 2000);
+        });
       });
-    });
+    }
   }
+  setupCopyBtn('ical-copy-btn', 'ical-url-input');
+  setupCopyBtn('ical-all-copy-btn', 'ical-all-url-input');
 })();
 </script>
 {% endblock %}
