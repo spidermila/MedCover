@@ -88,7 +88,7 @@ def feed(token: str) -> Response:
         .join(EventSpot.event)
         .where(
             Assignment.user_id == user.id,
-            Event.status.notin_([s.value for s in _PERSONAL_EXCLUDED_STATUSES]),
+            Event.status.notin_(list(_PERSONAL_EXCLUDED_STATUSES)),
             Event.archived.is_(False),
         )
         .options(
@@ -144,7 +144,7 @@ def feed_all(token: str) -> Response:
         sa.select(Event)
         .where(
             Event.archived.is_(False),
-            Event.status != EventStatus.CANCELLED.value,
+            Event.status != EventStatus.CANCELLED,
         )
         .options(
             selectinload(Event.spots).selectinload(EventSpot.assignment).selectinload(Assignment.user),  # type: ignore[arg-type]
