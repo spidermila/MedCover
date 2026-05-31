@@ -87,7 +87,7 @@ def _parse_index_filters() -> dict:
     active_me: MasterEvent | None = None
     if me_id_param:
         active_me = db.session.get(MasterEvent, me_id_param)
-        if active_me and (active_me.is_general or active_me.archived):
+        if active_me and active_me.archived:
             active_me = None
 
     if "types" not in request.args:
@@ -205,7 +205,7 @@ def index() -> str:
 
     active_named_mes = db.session.scalars(
         db.select(MasterEvent)
-        .where(MasterEvent.is_general.is_(False), MasterEvent.archived.is_(False))
+        .where(MasterEvent.archived.is_(False))
         .order_by(collate(MasterEvent.name, CS_COLLATION))
     ).all()
 
