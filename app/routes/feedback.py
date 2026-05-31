@@ -46,9 +46,11 @@ def _require_feedback_enabled() -> None:
 def feedback_form() -> str:
     """Render the feedback submission form."""
     _require_feedback_enabled()
+    from_url = request.args.get("from", "")
     return render_template(
         "feedback/submit.html",
-        page_url=request.args.get("from", ""),
+        page_url=from_url,
+        cancel_url=safe_next(from_url, url_for("main.dashboard")),
     )
 
 
