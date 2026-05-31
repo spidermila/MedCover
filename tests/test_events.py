@@ -461,6 +461,107 @@ class TestBulkAction:
         assert response.status_code == 200
         assert "Žádné akce".encode() in response.data
 
+    def test_bulk_set_paid_marks_events_as_paid(self, app, admin_client):
+        ids = self._create_multiple_events(app, admin_client)
+        admin_client.post(
+            "/events/bulk",
+            data={"action": "set_paid", "event_ids": [str(i) for i in ids]},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            for event_id in ids:
+                event = db.session.get(Event, event_id)
+                assert event.paid is True
+
+    def test_bulk_set_unpaid_marks_events_as_unpaid(self, app, admin_client):
+        me_id = _make_master_event(app)
+        with app.app_context():
+            from datetime import datetime, timezone
+            events = [
+                Event(
+                    name=f"Paid Event {i}",
+                    master_event_id=me_id,
+                    start_datetime=datetime(2030, 7, 1, 10, 0, tzinfo=timezone.utc),
+                    end_datetime=datetime(2030, 7, 1, 18, 0, tzinfo=timezone.utc),
+                    status=EventStatus.DRAFT,
+                    paid=True,
+                )
+                for i in range(2)
+            ]
+            db.session.add_all(events)
+            db.session.commit()
+            ids = [e.id for e in events]
+
+        admin_client.post(
+            "/events/bulk",
+            data={"action": "set_unpaid", "event_ids": [str(i) for i in ids]},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            for event_id in ids:
+                event = db.session.get(Event, event_id)
+                assert event.paid is False
+
+    def test_bulk_set_paid_skips_already_paid(self, app, admin_client):
+        me_id = _make_master_event(app)
+        with app.app_context():
+            from datetime import datetime, timezone
+            already_paid = Event(
+                name="Already Paid",
+                master_event_id=me_id,
+                start_datetime=datetime(2030, 8, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 8, 1, 18, 0, tzinfo=timezone.utc),
+                status=EventStatus.DRAFT,
+                paid=True,
+            )
+            not_paid = Event(
+                name="Not Paid",
+                master_event_id=me_id,
+                start_datetime=datetime(2030, 8, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 8, 2, 18, 0, tzinfo=timezone.utc),
+                status=EventStatus.DRAFT,
+                paid=False,
+            )
+            db.session.add_all([already_paid, not_paid])
+            db.session.commit()
+            ids = [already_paid.id, not_paid.id]
+
+        resp = admin_client.post(
+            "/events/bulk",
+            data={"action": "set_paid", "event_ids": [str(i) for i in ids]},
+            follow_redirects=True,
+        )
+        assert "Změněno 1".encode() in resp.data
+        with app.app_context():
+            assert db.session.get(Event, ids[0]).paid is True
+            assert db.session.get(Event, ids[1]).paid is True
+
+    def test_bulk_set_paid_forbidden_for_member(self, app, member_client):
+        ids = self._create_multiple_events(app, member_client)
+        response = member_client.post(
+            "/events/bulk",
+            data={"action": "set_paid", "event_ids": [str(i) for i in ids]},
+        )
+        assert response.status_code == 403
+
+    def test_bulk_set_paid_audit_logged(self, app, admin_client):
+        ids = self._create_multiple_events(app, admin_client)
+        admin_client.post(
+            "/events/bulk",
+            data={"action": "set_paid", "event_ids": [str(i) for i in ids]},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            from app.models.audit import AuditLogEntry
+            entries = db.session.scalars(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.entity_type == "Event",
+                       AuditLogEntry.action_type == "edit")
+                .order_by(AuditLogEntry.timestamp.desc())
+            ).all()
+            paid_entries = [e for e in entries if "označena jako placená" in e.summary]
+            assert len(paid_entries) == len(ids)
+
 
 class TestAddSpot:
     def test_admin_can_add_spot(self, app, admin_client):

@@ -139,7 +139,7 @@
 } %}
 
 {# ── Bulk action toolbar (hidden until rows are selected) ───────────────── #}
-{% if current_user.has_any_permission('event.publish', 'event.assignments.open', 'event.cancel') %}
+{% if current_user.has_any_permission('event.publish', 'event.assignments.open', 'event.cancel', 'event.edit') %}
 <div id="bulk-toolbar" class="d-none mb-3">
   <form method="POST" action="{{ url_for('events.bulk_action') }}" id="bulk-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -161,6 +161,14 @@
       {% if current_user.has_permission('event.cancel') %}
       <button type="button" class="btn btn-sm btn-outline-danger" data-bulk-action="cancel">
         Zrušit vybrané
+      </button>
+      {% endif %}
+      {% if current_user.has_permission('event.edit') %}
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk-action="set_paid">
+        Označit jako placené
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bulk-action="set_unpaid">
+        Označit jako neplacené
       </button>
       {% endif %}
       <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-auto" id="btn-clear-selection">

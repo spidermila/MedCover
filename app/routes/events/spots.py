@@ -19,17 +19,23 @@ from ._helpers import BULK_ACTIONS
 # ── Bulk lifecycle actions ────────────────────────────────────────────────────
 
 
+_PAID_ACTIONS = {"set_paid", "set_unpaid"}
+
+
 @events_bp.post("/bulk")
 @login_required
 def bulk_action() -> Response:
     action = request.form.get("action", "")
-    if action not in BULK_ACTIONS:
+    if action not in BULK_ACTIONS and action not in _PAID_ACTIONS:
         abort(400)
 
-    target_status, perm, valid_from = BULK_ACTIONS[action]
-
-    if not current_user.has_permission(perm):
-        abort(403)
+    if action in _PAID_ACTIONS:
+        if not current_user.has_permission("event.edit"):
+            abort(403)
+    else:
+        _, perm, _ = BULK_ACTIONS[action]
+        if not current_user.has_permission(perm):
+            abort(403)
 
     raw_ids = request.form.getlist("event_ids")
     try:
@@ -46,24 +52,35 @@ def bulk_action() -> Response:
     changed = 0
     skipped = 0
 
-    for eid in event_ids:
-        event = db.session.get(Event, eid)
-        if event is None or event.status not in valid_from:
-            skipped += 1
-            continue
-        prev_status = event.status.value
-        event.status = target_status
-        if target_status == EventStatus.CANCELLED:
-            event.archived = True
-        event.version += 1
-        audit(
-            "status_change",
-            "Event",
-            event.id,
-            f"Hromadná akce: stav akce '{event.name}' změněn na '{target_status.value}'",
-            {"before": {"status": prev_status}, "after": {"status": target_status.value}},
-        )
-        changed += 1
+    if action in _PAID_ACTIONS:
+        paid = action == "set_paid"
+        for eid in event_ids:
+            event = db.session.get(Event, eid)
+            if event is None or event.paid == paid:
+                skipped += 1
+                continue
+            event.paid = paid
+            event.version += 1
+            audit("edit", "Event", event.id,
+                  f"Hromadná akce: akce '{event.name}' označena jako {'placená' if paid else 'neplacená'}",
+                  {"before": {"paid": not paid}, "after": {"paid": paid}})
+            changed += 1
+    else:
+        target_status, _, valid_from = BULK_ACTIONS[action]
+        for eid in event_ids:
+            event = db.session.get(Event, eid)
+            if event is None or event.status not in valid_from:
+                skipped += 1
+                continue
+            prev_status = event.status.value
+            event.status = target_status
+            if target_status == EventStatus.CANCELLED:
+                event.archived = True
+            event.version += 1
+            audit("status_change", "Event", event.id,
+                  f"Hromadná akce: stav akce '{event.name}' změněn na '{target_status.value}'",
+                  {"before": {"status": prev_status}, "after": {"status": target_status.value}})
+            changed += 1
 
     db.session.commit()
 
