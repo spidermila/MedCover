@@ -45,7 +45,7 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-fail_under = 83
+fail_under = 85
 
 [tool.black]
 line-length = 120
