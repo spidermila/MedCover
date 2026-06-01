@@ -1,10 +1,20 @@
 """Tests for Master Event CRUD: list, create, detail, edit, archive."""
 from __future__ import annotations
 
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
+
 from app.extensions import db
+from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
+from app.models.user import UserAccount
+from tests.conftest import _make_user
 
 
 def _make_me(name: str = "Test ME", **kwargs) -> MasterEvent:
@@ -312,8 +322,6 @@ class TestMasterEventArchive:
 
 def _setup_table_manager(app):
     """Create ME with one event (ASSIGNMENTS_OPEN) and one spot. Returns (me_id, event_id, spot_id)."""
-    from datetime import datetime, timezone
-    from app.models.event import Event, EventSpot, EventStatus
     with app.app_context():
         me = _make_me("Table Manager ME")
         event = Event(
@@ -359,9 +367,6 @@ class TestTableManager:
         assert response.status_code == 404
 
     def test_coordinator_can_assign_spot(self, app, coordinator_client):
-        from app.models.assignment import Assignment
-        from app.models.user import UserAccount
-        from tests.conftest import _make_user
         me_id, event_id, spot_id = _setup_table_manager(app)
         with app.app_context():
             _make_user("tm_member@test.com", "TM Member", Role.MEMBER)
@@ -389,9 +394,6 @@ class TestTableManager:
         assert response.status_code == 403
 
     def test_coordinator_can_unassign_spot(self, app, coordinator_client):
-        from app.models.assignment import Assignment
-        from app.models.user import UserAccount
-        from tests.conftest import _make_user
         me_id, event_id, spot_id = _setup_table_manager(app)
         with app.app_context():
             _make_user("tm_member2@test.com", "TM Member2", Role.MEMBER)
@@ -441,7 +443,6 @@ class TestTableManager:
         assert response.status_code == 403
 
     def test_spot_count_increase(self, app, admin_client):
-        from app.models.event import EventSpot
         me_id, event_id, spot_id = _setup_table_manager(app)
         response = admin_client.post(
             f"/master-events/{me_id}/table/spots/update",
@@ -456,7 +457,6 @@ class TestTableManager:
             assert count == 3  # was 1, added 2
 
     def test_spot_count_decrease_unfilled(self, app, admin_client):
-        from app.models.event import EventSpot
         me_id, event_id, _ = _setup_table_manager(app)
         # Add a 2nd spot first
         with app.app_context():
@@ -475,9 +475,6 @@ class TestTableManager:
             assert count == 1
 
     def test_spot_count_decrease_blocks_if_filled(self, app, admin_client):
-        from app.models.assignment import Assignment
-        from app.models.user import UserAccount
-        from tests.conftest import _make_user
         me_id, event_id, spot_id = _setup_table_manager(app)
         with app.app_context():
             _make_user("tm_fill@test.com", "TM Fill", Role.MEMBER)
@@ -502,7 +499,6 @@ class TestTableManager:
     # ── shift_hour ────────────────────────────────────────────────────────────
 
     def test_shift_hour_start_plus_one(self, app, admin_client):
-        from app.models.event import Event
         me_id, event_id, _ = _setup_table_manager(app)
         with app.app_context():
             orig_start = db.session.get(Event, event_id).start_datetime
@@ -513,13 +509,10 @@ class TestTableManager:
         assert response.status_code == 200
         assert response.get_json()["ok"] is True
         with app.app_context():
-            from datetime import timedelta
             new_start = db.session.get(Event, event_id).start_datetime
             assert new_start == orig_start + timedelta(hours=1)
 
     def test_shift_hour_end_minus_one(self, app, admin_client):
-        from app.models.event import Event
-        from datetime import timedelta
         me_id, event_id, _ = _setup_table_manager(app)
         with app.app_context():
             orig_end = db.session.get(Event, event_id).end_datetime
@@ -552,8 +545,6 @@ class TestTableManager:
     # ── advance_status ────────────────────────────────────────────────────────
 
     def _make_draft_event(self, app, me_id: int) -> int:
-        from datetime import datetime, timezone
-        from app.models.event import Event, EventStatus
         with app.app_context():
             event = Event(
                 name="Draft TM",
@@ -567,8 +558,6 @@ class TestTableManager:
             return event.id
 
     def _make_published_event(self, app, me_id: int) -> int:
-        from datetime import datetime, timezone
-        from app.models.event import Event, EventStatus
         with app.app_context():
             event = Event(
                 name="Published TM",
@@ -582,7 +571,6 @@ class TestTableManager:
             return event.id
 
     def test_advance_draft_to_published(self, app, admin_client):
-        from app.models.event import Event, EventStatus
         me_id, _, _ = _setup_table_manager(app)
         event_id = self._make_draft_event(app, me_id)
         response = admin_client.post(
@@ -596,7 +584,6 @@ class TestTableManager:
             assert event.status == EventStatus.PUBLISHED
 
     def test_advance_published_to_open(self, app, admin_client):
-        from app.models.event import Event, EventStatus
         me_id, _, _ = _setup_table_manager(app)
         event_id = self._make_published_event(app, me_id)
         response = admin_client.post(
@@ -624,9 +611,6 @@ class TestTableEventClone:
     """Table Manager clone should not copy responsible_person_id."""
 
     def test_clone_does_not_copy_rp(self, app, admin_client):
-        from datetime import datetime, timezone
-        from app.models.event import Event, EventStatus, EventSpot
-        from app.models.user import UserAccount
 
         with app.app_context():
             me = _make_me("Clone ME")
