@@ -184,13 +184,18 @@
       var body = document.getElementById('spotPickBody');
       body.innerHTML = '';
       spots.forEach(function (s) {
-        var spotId = s[0], desc = s[1] || 'Pozice #' + spotId;
+        var spotId = s[0], desc = s[1], quals = s[2] || [];
+        var label = desc || '';
+        if (quals.length > 0) {
+          label += (label ? ' — ' : '') + quals.join(', ');
+        }
+        if (!label) { label = 'Nespecifikovaná pozice'; }
         var form = document.createElement('form');
         form.method = 'POST';
         form.action = CLAIM_BASE + spotId;
         form.className = 'mb-1';
         form.innerHTML = '<input type="hidden" name="csrf_token" value="' + csrf + '">' +
-          '<button class="btn btn-success btn-sm w-100 text-start">' + desc + '</button>';
+          '<button class="btn btn-success btn-sm w-100 text-start">' + label + '</button>';
         body.appendChild(form);
       });
     });

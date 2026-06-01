@@ -1,7 +1,10 @@
 """Tests for event CRUD and lifecycle transitions."""
+import json
+import re
+from datetime import datetime
+from datetime import timezone
 
-from datetime import datetime, timezone
-
+import pytest
 import sqlalchemy as sa
 
 from app.extensions import db
@@ -17,10 +20,13 @@ from app.models.equipment import (
 from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.master_event import MasterEvent
 from app.models.outbox import OutboxEmail
+from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from tests.conftest import _make_event_in_status, _make_master_event
+from tests.conftest import _login
+from tests.conftest import _make_event_in_status
+from tests.conftest import _make_master_event
 
 
 def _event_form_data(master_event_id: int, name: str = "Test Event") -> dict:
@@ -1315,3 +1321,81 @@ class TestUserPickerDuplicateFiltering:
         assert "Member Picker" in html
         # But should NOT appear as a selectable option value in a picker
         assert f'<option value="{member_id}">' not in html
+
+
+# ── Eligible spot map structure ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "spot_desc, qual_name, expected_desc, expected_quals",
+    [
+        ("Záchranář", "TestQual", "Záchranář", ["TestQual"]),
+        ("Řidič", None, "Řidič", []),
+        (None, "TestQual", None, ["TestQual"]),
+        (None, None, None, []),
+    ],
+    ids=["desc-and-qual", "desc-only", "qual-only", "neither"],
+)
+def test_spot_map_includes_description_and_qualifications(
+    app, client, spot_desc, qual_name, expected_desc, expected_quals
+):
+    """data-spots JSON contains (spot_id, description, [qual_names], is_optional) for each eligible spot."""
+    with app.app_context():
+        qual = None
+        if qual_name:
+            qual = Qualification(name=qual_name)
+            db.session.add(qual)
+            db.session.flush()
+
+        role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+        user = UserAccount(email="spot_map_user@test.com", name="Spot Map User", is_active=True)
+        user.set_password("testpass123")
+        user.roles = [role]
+        if qual:
+            user.qualifications = [qual]
+        db.session.add(user)
+        db.session.flush()
+
+        me = MasterEvent(name="Spot Map ME")
+        db.session.add(me)
+        db.session.flush()
+
+        event = Event(
+            name="Spot Map Event",
+            master_event_id=me.id,
+            status=EventStatus.ASSIGNMENTS_OPEN,
+            start_datetime=datetime(2030, 7, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2030, 7, 1, 18, 0, tzinfo=timezone.utc),
+        )
+        db.session.add(event)
+        db.session.flush()
+
+        # The spot under test (mandatory)
+        test_spot = EventSpot(event_id=event.id, description=spot_desc, is_optional=False)
+        if qual:
+            test_spot.required_qualifications = [qual]
+        db.session.add(test_spot)
+
+        # Filler spot — no qualification required so the member is always eligible,
+        # and having 2+ spots triggers the modal picker with data-spots JSON.
+        filler_spot = EventSpot(event_id=event.id, description="Filler")
+        db.session.add(filler_spot)
+
+        db.session.commit()
+        test_spot_id = test_spot.id
+
+    _login(client, "spot_map_user@test.com")
+    resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN")
+    assert resp.status_code == 200
+
+    html = resp.data.decode()
+    match = re.search(r"data-spots='([^']+)'", html)
+    assert match, "data-spots attribute not found — expected 2+ eligible spots to trigger the picker"
+
+    spots_data = json.loads(match.group(1))
+    test_entry = next((s for s in spots_data if s[0] == test_spot_id), None)
+    assert test_entry is not None, f"Spot {test_spot_id} not found in data-spots"
+
+    assert test_entry[1] == expected_desc
+    assert test_entry[2] == expected_quals
+    assert test_entry[3] is False  # mandatory spot
