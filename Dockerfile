@@ -13,7 +13,8 @@ ARG GIT_COMMIT=dev
 ENV GIT_COMMIT=${GIT_COMMIT}
 
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+COPY docker-entrypoint-scheduler.sh /docker-entrypoint-scheduler.sh
+RUN chmod +x /docker-entrypoint.sh /docker-entrypoint-scheduler.sh
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} \"app:create_app()\""]

@@ -139,7 +139,8 @@ Two containers share a single Docker image; they run different commands:
 | `scheduler` | `python scheduler/main.py` | `python scheduler/main.py` | Background tasks: auto-transitions, reminders, digests, file cleanup |
 
 Both containers share the same codebase and connect to the same PostgreSQL database via `DATABASE_URL`.
-The `docker-entrypoint.sh` runs `flask db upgrade` + `flask verify-schema` before starting either process.
+The `web` container uses `docker-entrypoint.sh` which runs `flask db upgrade` + `flask verify-schema` before starting.
+The `scheduler` container uses `docker-entrypoint-scheduler.sh` (no migrations) and waits for `web` to be healthy before starting.
 
 ---
 
@@ -348,13 +349,16 @@ ARG GIT_COMMIT=dev
 ENV GIT_COMMIT=${GIT_COMMIT}
 
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+COPY docker-entrypoint-scheduler.sh /docker-entrypoint-scheduler.sh
+RUN chmod +x /docker-entrypoint.sh /docker-entrypoint-scheduler.sh
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} \"app:create_app()\""]
 ```
 
 `docker-entrypoint.sh` runs `flask db upgrade` then `flask verify-schema` on every container start before handing off to the CMD process. If `verify-schema` detects missing tables/columns the container exits immediately rather than serving broken traffic.
+
+`docker-entrypoint-scheduler.sh` is a lightweight entrypoint for the scheduler — it skips migrations and schema verification (the scheduler waits for `web` to be healthy first).
 
 ---
 
@@ -415,7 +419,7 @@ Copy `.env.example` to `.env` for local development. Never commit `.env`.
 ### What's ready
 
 - **Docker image**: A single `Dockerfile` builds an image usable for both `web` and `scheduler` containers.
-- **Database migrations**: Run automatically via `docker-entrypoint.sh` (`flask db upgrade`) on every container start.
+- **Database migrations**: Run automatically via `docker-entrypoint.sh` (`flask db upgrade`) on `web` container start. The scheduler uses a lightweight entrypoint without migrations.
 - **First-run setup wizard**: After the web service is live, navigate to the app URL. The wizard appears on first visit — configure the application name, admin account, and SMTP settings there.
 - **Production compose file**: `docker-compose.prod.yml` is available for self-hosted deployments (e.g. the zerver home-lab test server).
 
@@ -728,7 +732,7 @@ flask db upgrade
 flask db downgrade
 ```
 
-Migrations run automatically on every container start via `docker-entrypoint.sh` (`flask db upgrade`).
+Migrations run automatically on `web` container start via `docker-entrypoint.sh` (`flask db upgrade`). The scheduler container skips migrations and waits for web to be healthy.
 
 ---
 

@@ -50,13 +50,14 @@ services:
       args:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: medcover-prod-scheduler
+    entrypoint: ["/docker-entrypoint-scheduler.sh"]
     command: python scheduler/main.py
     env_file: .env.prod
     dns:
       - 8.8.8.8
       - 1.1.1.1
     depends_on:
-      db:
+      web:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
