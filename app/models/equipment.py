@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from app.extensions import db
 
 if TYPE_CHECKING:
-    from app.models.user import UserAccount  # noqa: F401
     from app.models.event import Event  # noqa: F401
+    from app.models.user import UserAccount  # noqa: F401
 
 
 class EquipmentCategory(str, enum.Enum):
@@ -86,7 +85,9 @@ class EquipmentItem(db.Model):  # type: ignore[misc]
 
     equipment_type = db.relationship("EquipmentType", back_populates="items", lazy="selectin")
     issued_to = db.relationship("UserAccount", foreign_keys=[issued_to_id], back_populates="issued_equipment")
-    event_assignments = db.relationship("EventEquipmentAssignment", back_populates="equipment_item", cascade="all, delete-orphan")
+    event_assignments = db.relationship(
+        "EventEquipmentAssignment", back_populates="equipment_item", cascade="all, delete-orphan"
+    )
 
     @property
     def is_available(self) -> bool:
@@ -112,9 +113,7 @@ class EventEquipmentPlan(db.Model):  # type: ignore[misc]
 
 class EventEquipmentAssignment(db.Model):  # type: ignore[misc]
     __tablename__ = "event_equipment_assignment"
-    __table_args__ = (
-        db.UniqueConstraint("event_id", "equipment_item_id", name="uq_event_equipment_item"),
-    )
+    __table_args__ = (db.UniqueConstraint("event_id", "equipment_item_id", name="uq_event_equipment_item"),)
 
     id = db.Column(db.Integer, primary_key=True)
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)

@@ -82,13 +82,13 @@ Notes
 - The script is idempotent: running it multiple times produces the same output.
   Duplicate detection is handled by the web app at import time.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from datetime import date
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -233,7 +233,8 @@ def extract(wb: Any, cutoff: date | None = None) -> list[dict[str, Any]]:
 
         # Treat midnight end as "end not specified"
         if end_time is not None:
-            from datetime import time as _time  # noqa: PLC0415
+            from datetime import time as _time  # pylint: disable=import-outside-toplevel
+
             if end_time == _time(0, 0):
                 end_time = None
 
@@ -376,13 +377,15 @@ def extract_users(wb: Any, cutoff: date | None = None) -> list[dict[str, Any]]:
             seen.add(gs_name)
 
             lidi_info = lidi.get(gs_name)
-            users.append({
-                "gs_name": gs_name,
-                "name": gs_name,  # GS stores Lastname Firstname — keep that convention
-                "email": lidi_info["email"] if lidi_info else None,
-                "phone": lidi_info["phone"] if lidi_info else None,
-                "is_zdravotnik": lidi_info["is_zdravotnik"] if lidi_info else False,
-            })
+            users.append(
+                {
+                    "gs_name": gs_name,
+                    "name": gs_name,  # GS stores Lastname Firstname — keep that convention
+                    "email": lidi_info["email"] if lidi_info else None,
+                    "phone": lidi_info["phone"] if lidi_info else None,
+                    "is_zdravotnik": lidi_info["is_zdravotnik"] if lidi_info else False,
+                }
+            )
 
     users.sort(key=lambda u: u["name"])
     return users
@@ -390,9 +393,7 @@ def extract_users(wb: Any, cutoff: date | None = None) -> list[dict[str, Any]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Extract events and users from a Google Sheets .xlsx export to JSON (v2)."
-        )
+        description=("Extract events and users from a Google Sheets .xlsx export to JSON (v2).")
     )
     parser.add_argument(
         "--input",
@@ -425,7 +426,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        import openpyxl  # noqa: PLC0415
+        import openpyxl  # pylint: disable=import-outside-toplevel
     except ImportError:
         print(
             "ERROR: openpyxl is not installed.  Run:  pip install openpyxl",

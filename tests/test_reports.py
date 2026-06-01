@@ -1,22 +1,20 @@
 """Tests for the reports blueprint."""
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from types import SimpleNamespace
 
 from app.extensions import db
-from app.models.assignment import Assignment
-from app.models.assignment import DebriefingRecord
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.assignment import Assignment, DebriefingRecord
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _login
-from tests.conftest import _make_user
+from app.routes.reports import _compute_user_stats
+from tests.conftest import _login, _make_user
 
 
 def _make_me(name: str = "Testovací nadřazená akce") -> MasterEvent:
@@ -82,6 +80,7 @@ def _make_debriefing(asgn: Assignment, actual_hours: float = 2.0, patients: int 
 
 # ── Index ─────────────────────────────────────────────────────────────────────
 
+
 class TestReportsIndex:
     def test_redirect_when_not_logged_in(self, client):
         resp = client.get("/reports/", follow_redirects=False)
@@ -109,6 +108,7 @@ class TestReportsIndex:
 
 
 # ── Per-user report ───────────────────────────────────────────────────────────
+
 
 class TestUserReport:
     def test_member_can_access_own_report(self, app, client):
@@ -240,6 +240,7 @@ class TestUserReport:
 
 # ── Per-ME report ─────────────────────────────────────────────────────────────
 
+
 class TestMEReport:
     def test_admin_can_access_me_report(self, app, client):
         with app.app_context():
@@ -293,6 +294,7 @@ class TestMEReport:
 
 # ── Date-range report ─────────────────────────────────────────────────────────
 
+
 class TestDateRangeReport:
     def test_get_shows_form(self, app, client):
         with app.app_context():
@@ -308,9 +310,13 @@ class TestDateRangeReport:
             _make_user("admin_drp@test.com", "Admin DRP", Role.ADMIN)
             me = _make_me("ME DR Params")
             now = datetime.now(timezone.utc)
-            _make_event(me, "DR Akce", EventStatus.COMPLETED,
-                        start=now - timedelta(days=1),
-                        end=now - timedelta(days=1) + timedelta(hours=2))
+            _make_event(
+                me,
+                "DR Akce",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
         _login(client, "admin_drp@test.com")
         from_d = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
         to_d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -324,13 +330,21 @@ class TestDateRangeReport:
             me = _make_me("ME DR Range")
             now = datetime.now(timezone.utc)
             # inside range
-            _make_event(me, "In Range", EventStatus.COMPLETED,
-                        start=now - timedelta(days=3),
-                        end=now - timedelta(days=3) + timedelta(hours=2))
+            _make_event(
+                me,
+                "In Range",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=3),
+                end=now - timedelta(days=3) + timedelta(hours=2),
+            )
             # outside range
-            _make_event(me, "Out of Range", EventStatus.COMPLETED,
-                        start=now - timedelta(days=30),
-                        end=now - timedelta(days=30) + timedelta(hours=2))
+            _make_event(
+                me,
+                "Out of Range",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=30),
+                end=now - timedelta(days=30) + timedelta(hours=2),
+            )
         _login(client, "admin_drr@test.com")
         from_d = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
         to_d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -355,6 +369,7 @@ class TestDateRangeReport:
 
 # ── UserStats / _compute_user_stats unit tests ────────────────────────────────
 
+
 class TestComputeUserStats:
     """Unit tests for the _compute_user_stats helper."""
 
@@ -368,8 +383,6 @@ class TestComputeUserStats:
         actual_end: datetime | None = None,
     ):
         """Return a simple namespace that mimics the Event properties used by _compute_user_stats."""
-        from decimal import Decimal
-        from types import SimpleNamespace
 
         actual_hours: Decimal | None = None
         if actual_start and actual_end:
@@ -389,7 +402,6 @@ class TestComputeUserStats:
         )
 
     def test_completed_shift_counts_served(self):
-        from app.routes.reports import _compute_user_stats
 
         now = datetime.now(timezone.utc)
         ev = self._make_fake_event(
@@ -402,7 +414,6 @@ class TestComputeUserStats:
         assert stats.shifts_planned == 0
 
     def test_future_event_counts_planned(self):
-        from app.routes.reports import _compute_user_stats
 
         now = datetime.now(timezone.utc)
         ev = self._make_fake_event(
@@ -415,7 +426,6 @@ class TestComputeUserStats:
         assert stats.shifts_served == 0
 
     def test_cancelled_event_excluded(self):
-        from app.routes.reports import _compute_user_stats
 
         now = datetime.now(timezone.utc)
         ev = self._make_fake_event(
@@ -429,8 +439,6 @@ class TestComputeUserStats:
         assert stats.hours_total == 0
 
     def test_actual_hours_used_when_available(self):
-        from app.routes.reports import _compute_user_stats
-        from decimal import Decimal
 
         now = datetime.now(timezone.utc)
         ev = self._make_fake_event(
@@ -444,8 +452,6 @@ class TestComputeUserStats:
         assert stats.hours_served == Decimal("2")
 
     def test_planned_hours_fallback_for_completed_without_actuals(self):
-        from app.routes.reports import _compute_user_stats
-        from decimal import Decimal
 
         now = datetime.now(timezone.utc)
         ev = self._make_fake_event(
@@ -457,8 +463,6 @@ class TestComputeUserStats:
         assert stats.hours_served == Decimal("2")
 
     def test_unpaid_event_counts_hours_free(self):
-        from app.routes.reports import _compute_user_stats
-        from decimal import Decimal
 
         now = datetime.now(timezone.utc)
         ev = self._make_fake_event(
@@ -471,7 +475,6 @@ class TestComputeUserStats:
         assert stats.hours_free == Decimal("2")
 
     def test_paid_event_does_not_count_hours_free(self):
-        from app.routes.reports import _compute_user_stats
 
         now = datetime.now(timezone.utc)
         ev = self._make_fake_event(
@@ -485,7 +488,6 @@ class TestComputeUserStats:
 
     def test_last_and_next_shift_dates(self):
         """_compute_user_stats sets last_shift but not next_shift (handled by _resolve_next_shifts)."""
-        from app.routes.reports import _compute_user_stats
 
         now = datetime.now(timezone.utc)
         past_ev = self._make_fake_event(
@@ -505,8 +507,6 @@ class TestComputeUserStats:
         assert stats.next_shift is None
 
     def test_shifts_and_hours_totals(self):
-        from app.routes.reports import _compute_user_stats
-        from decimal import Decimal
 
         now = datetime.now(timezone.utc)
         ev1 = self._make_fake_event(
@@ -526,6 +526,7 @@ class TestComputeUserStats:
 
 # ── Own report shortcut ────────────────────────────────────────────────────────
 
+
 class TestOwnReportShortcut:
     def test_own_report_redirects_to_user_report(self, app, client):
         with app.app_context():
@@ -543,6 +544,7 @@ class TestOwnReportShortcut:
 
 
 # ── Per-user stats in ME report ───────────────────────────────────────────────
+
 
 class TestMEReportUserStats:
     def test_me_report_shows_participant_stats(self, app, client):
@@ -563,6 +565,7 @@ class TestMEReportUserStats:
 
 # ── Per-user stats in date-range report ──────────────────────────────────────
 
+
 class TestDateRangeUserStats:
     def test_date_range_shows_participant_stats(self, app, client):
         with app.app_context():
@@ -570,9 +573,13 @@ class TestDateRangeUserStats:
             member = _make_user("member_drstat@test.com", "Member DRStat", Role.MEMBER)
             me = _make_me("ME DR Stats")
             now = datetime.now(timezone.utc)
-            ev = _make_event(me, "DR Stat Akce", EventStatus.COMPLETED,
-                             start=now - timedelta(days=2),
-                             end=now - timedelta(days=2) + timedelta(hours=3))
+            ev = _make_event(
+                me,
+                "DR Stat Akce",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=3),
+            )
             spot = _make_spot(ev)
             _make_assignment(spot, member, admin)
         _login(client, "admin_drstat@test.com")

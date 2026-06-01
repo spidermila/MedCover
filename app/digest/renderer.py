@@ -1,4 +1,5 @@
 """Digest renderer — collects data from all enabled blocks and renders the HTML email."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -12,7 +13,7 @@ from app.digest.registry import BLOCK_REGISTRY
 def render_digest(db_session: Any) -> str:
     """Render the full admin digest as an HTML string."""
     from app.models.digest import get_digest_schedule
-    from app.utils import get_app_tz  # noqa: PLC0415
+    from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
 
     schedule = get_digest_schedule()
     block_sections: list[str] = []
@@ -31,9 +32,8 @@ def render_digest(db_session: Any) -> str:
             context = instance.collect(db_session, config)
         except Exception:  # noqa: BLE001
             import logging
-            logging.getLogger(__name__).exception(
-                "Digest block %s collect() failed", db_block.block_type
-            )
+
+            logging.getLogger(__name__).exception("Digest block %s collect() failed", db_block.block_type)
             continue
         if context.get("skip"):
             continue

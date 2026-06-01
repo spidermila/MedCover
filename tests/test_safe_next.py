@@ -1,4 +1,5 @@
 """Tests for the safe_next URL validation helper."""
+
 from __future__ import annotations
 
 import pytest
@@ -11,26 +12,32 @@ class TestSafeNext:
 
     # ── Valid same-origin paths (should be returned as-is) ────────────────
 
-    @pytest.mark.parametrize("url", [
-        "/events/",
-        "/events/?statuses=DRAFT&page=2",
-        "/admin/users",
-        "/",
-    ])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/events/",
+            "/events/?statuses=DRAFT&page=2",
+            "/admin/users",
+            "/",
+        ],
+    )
     def test_valid_relative_paths_returned(self, app, url):
         with app.app_context():
             assert safe_next(url) == url
 
     # ── Malicious / external URLs (should fall back) ─────────────────────
 
-    @pytest.mark.parametrize("url", [
-        "https://evil.example.com",
-        "http://evil.example.com/steal",
-        "//evil.example.com",
-        "//evil.example.com/path",
-        "ftp://evil.example.com",
-        "javascript:alert(1)",
-    ])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://evil.example.com",
+            "http://evil.example.com/steal",
+            "//evil.example.com",
+            "//evil.example.com/path",
+            "ftp://evil.example.com",
+            "javascript:alert(1)",
+        ],
+    )
     def test_external_urls_rejected(self, app, url):
         with app.app_context():
             result = safe_next(url)

@@ -3,20 +3,17 @@ from __future__ import annotations
 import enum
 import secrets
 import uuid
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from flask_login import UserMixin
 from sqlalchemy.orm import Mapped
-from werkzeug.security import check_password_hash
-from werkzeug.security import generate_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
 
 if TYPE_CHECKING:
-    from app.models.assignment import Assignment
-    from app.models.assignment import DebriefingRecord
+    from app.models.assignment import Assignment, DebriefingRecord
     from app.models.audit import AuditLogEntry
     from app.models.equipment import EquipmentItem
     from app.models.event import Event
@@ -67,11 +64,11 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     # iCal subscription tokens — 64-char hex, public but unguessable.
     # Generated automatically on account creation; regenerating invalidates
     # any existing calendar subscriptions using the old token.
-    ical_token = db.Column(db.String(64), nullable=True, unique=True, index=True,
-                           default=lambda: secrets.token_hex(32))
+    ical_token = db.Column(db.String(64), nullable=True, unique=True, index=True, default=lambda: secrets.token_hex(32))
     # Separate token for the all-events iCal feed.
-    ical_all_token = db.Column(db.String(64), nullable=True, unique=True, index=True,
-                               default=lambda: secrets.token_hex(32))
+    ical_all_token = db.Column(
+        db.String(64), nullable=True, unique=True, index=True, default=lambda: secrets.token_hex(32)
+    )
     # Brute-force protection: track consecutive failed logins per account.
     # After LOGIN_MAX_ATTEMPTS failures the account is locked for LOGIN_LOCKOUT_MINUTES.
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False, server_default="0")
@@ -105,34 +102,64 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
 
     # ── Inverse relationships (back_populates) ────────────────────────────────
     assignments: Mapped[list[Assignment]] = db.relationship(
-        "Assignment", foreign_keys="Assignment.user_id", back_populates="user", lazy="noload",
+        "Assignment",
+        foreign_keys="Assignment.user_id",
+        back_populates="user",
+        lazy="noload",
     )
     assignments_made: Mapped[list[Assignment]] = db.relationship(
-        "Assignment", foreign_keys="Assignment.assigned_by_id", back_populates="assigned_by", lazy="noload",
+        "Assignment",
+        foreign_keys="Assignment.assigned_by_id",
+        back_populates="assigned_by",
+        lazy="noload",
     )
     submitted_debriefings: Mapped[list[DebriefingRecord]] = db.relationship(
-        "DebriefingRecord", foreign_keys="DebriefingRecord.submitted_by_id", back_populates="submitted_by", lazy="noload",
+        "DebriefingRecord",
+        foreign_keys="DebriefingRecord.submitted_by_id",
+        back_populates="submitted_by",
+        lazy="noload",
     )
     audit_entries: Mapped[list[AuditLogEntry]] = db.relationship(
-        "AuditLogEntry", foreign_keys="AuditLogEntry.actor_id", back_populates="actor", lazy="noload",
+        "AuditLogEntry",
+        foreign_keys="AuditLogEntry.actor_id",
+        back_populates="actor",
+        lazy="noload",
     )
     issued_equipment: Mapped[list[EquipmentItem]] = db.relationship(
-        "EquipmentItem", foreign_keys="EquipmentItem.issued_to_id", back_populates="issued_to", lazy="noload",
+        "EquipmentItem",
+        foreign_keys="EquipmentItem.issued_to_id",
+        back_populates="issued_to",
+        lazy="noload",
     )
     feedback_entries: Mapped[list[UserFeedback]] = db.relationship(
-        "UserFeedback", foreign_keys="UserFeedback.user_id", back_populates="user", lazy="noload",
+        "UserFeedback",
+        foreign_keys="UserFeedback.user_id",
+        back_populates="user",
+        lazy="noload",
     )
     created_invites: Mapped[list[RegistrationInvite]] = db.relationship(
-        "RegistrationInvite", foreign_keys="RegistrationInvite.created_by_id", back_populates="created_by", lazy="noload",
+        "RegistrationInvite",
+        foreign_keys="RegistrationInvite.created_by_id",
+        back_populates="created_by",
+        lazy="noload",
     )
     rp_events: Mapped[list[Event]] = db.relationship(
-        "Event", foreign_keys="Event.responsible_person_id", back_populates="responsible_person", lazy="noload",
+        "Event",
+        foreign_keys="Event.responsible_person_id",
+        back_populates="responsible_person",
+        lazy="noload",
     )
     created_events: Mapped[list[Event]] = db.relationship(
-        "Event", foreign_keys="Event.created_by_id", back_populates="created_by", lazy="noload",
+        "Event",
+        foreign_keys="Event.created_by_id",
+        back_populates="created_by",
+        lazy="noload",
     )
     coordinated_master_events: Mapped[list[MasterEvent]] = db.relationship(
-        "MasterEvent", foreign_keys="MasterEvent.coordinator_id", back_populates="coordinator", lazy="noload",
+        "MasterEvent",
+        foreign_keys="MasterEvent.coordinator_id",
+        back_populates="coordinator",
+        lazy="noload",
     )
 
     def regenerate_ical_token(self) -> str:
@@ -164,10 +191,7 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         Requires both a qualification with can_be_rp=True and the
         event.assign_own permission (excludes Viewers and inactive roles).
         """
-        return (
-            self.has_permission("event.assign_own")
-            and any(q.can_be_rp for q in self.qualifications)
-        )
+        return self.has_permission("event.assign_own") and any(q.can_be_rp for q in self.qualifications)
 
     # Flask-Login: use str(uuid) as session token
     def get_id(self) -> str:

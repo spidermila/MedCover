@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from cryptography.fernet import Fernet
-from flask import current_app
-from flask import Flask
+from flask import Flask, current_app
 
 from app.extensions import db
 
@@ -39,7 +37,7 @@ class AppSettings(db.Model):  # type: ignore[misc]
     smtp_port = db.Column(db.Integer, default=587, nullable=False)
     smtp_use_tls = db.Column(db.Boolean, default=True, nullable=False)
     smtp_username = db.Column(db.String(255), nullable=True)
-    smtp_password_enc = db.Column(db.Text, nullable=True)   # Fernet-encrypted
+    smtp_password_enc = db.Column(db.Text, nullable=True)  # Fernet-encrypted
     smtp_default_sender = db.Column(db.String(255), nullable=True)
 
     # --- Dev / testing ---
@@ -146,6 +144,7 @@ class AppSettings(db.Model):  # type: ignore[misc]
 
         # Reinitialise Flask-Mail so the cached _Mail state picks up new values
         from app.extensions import mail as _mail
+
         _mail.init_app(app)
 
     def __repr__(self) -> str:
@@ -156,6 +155,7 @@ class AppSettings(db.Model):  # type: ignore[misc]
 # Module-level helper — safe to call from any request context         #
 # ------------------------------------------------------------------ #
 
+
 def get_settings() -> AppSettings:
     """Return the single AppSettings row, creating it if it doesn't exist yet.
 
@@ -163,6 +163,7 @@ def get_settings() -> AppSettings:
     multiple callers within the same request share a single DB hit.  Outside a
     request context (e.g. the scheduler) the row is fetched directly each time.
     """
+
     def _fetch() -> AppSettings:
         row = db.session.get(AppSettings, 1)
         if row is None:
@@ -172,7 +173,8 @@ def get_settings() -> AppSettings:
         return row
 
     try:
-        from flask import g  # noqa: PLC0415
+        from flask import g  # pylint: disable=import-outside-toplevel
+
         if not hasattr(g, "_medcover_settings"):
             g._medcover_settings = _fetch()
         return g._medcover_settings

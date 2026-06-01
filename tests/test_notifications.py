@@ -1,13 +1,11 @@
 """Tests for the notification catalog and toggle route (/admin/notifications/)."""
+
 from __future__ import annotations
 
 from app.extensions import db
-from app.mail import _is_notify_enabled
-from app.mail import NOTIFICATION_CATALOG
-from app.models.settings import AppSettings
-from app.models.settings import get_settings
+from app.mail import NOTIFICATION_CATALOG, _is_notify_enabled
+from app.models.settings import AppSettings, get_settings
 from tests.conftest import _get_csrf
-
 
 # ── Catalog structure ─────────────────────────────────────────────────────────
 
@@ -17,32 +15,44 @@ class TestNotificationCatalog:
         assert len(NOTIFICATION_CATALOG) > 0
 
     def test_all_entries_have_required_keys(self):
-        required = {"code", "settings_field", "name_cs", "description_cs",
-                    "trigger_cs", "recipient_cs", "templates", "always_on"}
+        required = {
+            "code",
+            "settings_field",
+            "name_cs",
+            "description_cs",
+            "trigger_cs",
+            "recipient_cs",
+            "templates",
+            "always_on",
+        }
         for entry in NOTIFICATION_CATALOG:
             assert required.issubset(entry.keys()), f"Missing keys in {entry}"
 
     def test_always_on_entries_have_no_settings_field(self):
         for entry in NOTIFICATION_CATALOG:
             if entry["always_on"]:
-                assert entry["settings_field"] is None, (
-                    f"always_on entry {entry['code']} must have settings_field=None"
-                )
+                assert entry["settings_field"] is None, f"always_on entry {entry['code']} must have settings_field=None"
 
     def test_togglable_entries_have_settings_field(self):
         for entry in NOTIFICATION_CATALOG:
             if not entry["always_on"]:
-                assert entry["settings_field"] is not None, (
-                    f"togglable entry {entry['code']} must have a settings_field"
-                )
+                assert (
+                    entry["settings_field"] is not None
+                ), f"togglable entry {entry['code']} must have a settings_field"
 
     def test_known_codes_present(self):
         codes = {e["code"] for e in NOTIFICATION_CATALOG}
         expected = {
-            "assignment_confirmed", "assignment_released",
-            "event_published", "assignments_opened", "event_cancelled",
-            "unfilled_reminder", "debriefing_invitation",
-            "account_activated", "auth", "admin_digest",
+            "assignment_confirmed",
+            "assignment_released",
+            "event_published",
+            "assignments_opened",
+            "event_cancelled",
+            "unfilled_reminder",
+            "debriefing_invitation",
+            "account_activated",
+            "auth",
+            "admin_digest",
         }
         assert expected.issubset(codes)
 
@@ -130,6 +140,7 @@ class TestNotificationsToggle:
 
     def test_toggle_creates_audit_log(self, app, admin_client):
         from app.models.audit import AuditLogEntry
+
         csrf = _get_csrf(admin_client, "/admin/notifications/")
         admin_client.post(
             "/admin/notifications/",
@@ -176,24 +187,27 @@ class TestIsNotifyEnabled:
 class TestEventChangedNotification:
     def test_catalog_has_event_changed(self):
         from app.mail import NOTIFICATION_CATALOG
+
         codes = [e["code"] for e in NOTIFICATION_CATALOG]
         assert "event_changed" in codes
 
     def test_event_changed_has_settings_field(self):
         from app.mail import NOTIFICATION_CATALOG
+
         entry = next(e for e in NOTIFICATION_CATALOG if e["code"] == "event_changed")
         assert entry["settings_field"] == "notify_event_changed"
         assert not entry["always_on"]
 
     def test_send_event_changed_enqueues_when_enabled(self, app):
         """When notify_event_changed is on, an outbox row is created."""
+        from datetime import datetime, timezone
+
         from app.mail import send_event_changed
+        from app.models.event import Event
+        from app.models.master_event import MasterEvent
         from app.models.outbox import OutboxEmail
         from app.models.settings import get_settings
         from app.models.user import UserAccount
-        from app.models.event import Event
-        from app.models.master_event import MasterEvent
-        from datetime import datetime, timezone
 
         with app.app_context():
             settings = get_settings()
@@ -205,6 +219,7 @@ class TestEventChangedNotification:
             db.session.flush()
 
             from app.models.role import Role
+
             role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
             user = UserAccount(
                 email="member_notify_test@example.com",
@@ -227,26 +242,27 @@ class TestEventChangedNotification:
             db.session.commit()
 
             before_count = db.session.scalar(
-                db.select(db.func.count(OutboxEmail.id))
-                .where(OutboxEmail.notification_type == "event_changed")
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
-            send_event_changed(user, event, {"name": ["Stará akce", "Nová akce"]}, event_url="http://example.com/events/1")
+            send_event_changed(
+                user, event, {"name": ["Stará akce", "Nová akce"]}, event_url="http://example.com/events/1"
+            )
 
             after_count = db.session.scalar(
-                db.select(db.func.count(OutboxEmail.id))
-                .where(OutboxEmail.notification_type == "event_changed")
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
             assert after_count == before_count + 1
 
     def test_send_event_changed_skipped_when_disabled(self, app):
         """When notify_event_changed is off, no outbox row is created."""
+        from datetime import datetime, timezone
+
         from app.mail import send_event_changed
+        from app.models.event import Event
+        from app.models.master_event import MasterEvent
         from app.models.outbox import OutboxEmail
         from app.models.settings import get_settings
         from app.models.user import UserAccount
-        from app.models.event import Event
-        from app.models.master_event import MasterEvent
-        from datetime import datetime, timezone
 
         with app.app_context():
             settings = get_settings()
@@ -258,6 +274,7 @@ class TestEventChangedNotification:
             db.session.flush()
 
             from app.models.role import Role
+
             role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
             user = UserAccount(
                 email="member_notify_disabled@example.com",
@@ -280,19 +297,18 @@ class TestEventChangedNotification:
             db.session.commit()
 
             before_count = db.session.scalar(
-                db.select(db.func.count(OutboxEmail.id))
-                .where(OutboxEmail.notification_type == "event_changed")
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
             send_event_changed(user, event, {"name": ["Old", "New"]}, event_url="http://example.com/events/1")
 
             after_count = db.session.scalar(
-                db.select(db.func.count(OutboxEmail.id))
-                .where(OutboxEmail.notification_type == "event_changed")
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
             assert after_count == before_count  # nothing enqueued
 
     def test_format_change_value_datetime(self, app):
         from app.mail import _format_event_change_value
+
         with app.app_context():
             result = _format_event_change_value("start_datetime", "2026-06-01 08:00:00+00:00")
             # Should display in Prague time (UTC+2 in summer)
@@ -301,12 +317,14 @@ class TestEventChangedNotification:
 
     def test_format_change_value_bool_paid(self, app):
         from app.mail import _format_event_change_value
+
         with app.app_context():
             assert _format_event_change_value("paid", "True") == "Ano"
             assert _format_event_change_value("paid", "False") == "Ne"
 
     def test_format_change_value_none(self, app):
         from app.mail import _format_event_change_value
+
         with app.app_context():
             assert _format_event_change_value("name", None) == "—"
             assert _format_event_change_value("name", "None") == "—"
@@ -317,11 +335,12 @@ class TestEventChangedNotification:
 
 def _make_event_for_test(app):
     """Create a minimal published event for test notification use."""
+    from datetime import datetime, timezone
+
     from app.models.event import Event
     from app.models.master_event import MasterEvent
     from app.models.role import Role
     from app.models.user import UserAccount
-    from datetime import datetime, timezone
 
     with app.app_context():
         me = MasterEvent(name="ME test-notif-route")
@@ -372,6 +391,7 @@ class TestNotificationTestRoute:
 
     def test_assignment_confirmed_enqueues_to_test_email(self, app, admin_client):
         from app.models.outbox import OutboxEmail
+
         event_id = _make_event_for_test(app)
         with app.app_context():
             before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
@@ -384,13 +404,12 @@ class TestNotificationTestRoute:
         with app.app_context():
             after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
             assert after == before + 1
-            row = db.session.scalar(
-                db.select(OutboxEmail).order_by(OutboxEmail.id.desc()).limit(1)
-            )
+            row = db.session.scalar(db.select(OutboxEmail).order_by(OutboxEmail.id.desc()).limit(1))
             assert row.to_email == "tester@example.com"
 
     def test_event_changed_enqueues_to_test_email(self, app, admin_client):
         from app.models.outbox import OutboxEmail
+
         event_id = _make_event_for_test(app)
         with app.app_context():
             before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
@@ -406,6 +425,7 @@ class TestNotificationTestRoute:
 
     def test_assignment_released_enqueues(self, app, admin_client):
         from app.models.outbox import OutboxEmail
+
         event_id = _make_event_for_test(app)
         with app.app_context():
             before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
@@ -420,6 +440,7 @@ class TestNotificationTestRoute:
 
     def test_event_published_enqueues(self, app, admin_client):
         from app.models.outbox import OutboxEmail
+
         event_id = _make_event_for_test(app)
         with app.app_context():
             before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
@@ -434,6 +455,7 @@ class TestNotificationTestRoute:
 
     def test_event_cancelled_enqueues(self, app, admin_client):
         from app.models.outbox import OutboxEmail
+
         event_id = _make_event_for_test(app)
         with app.app_context():
             before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
@@ -448,6 +470,7 @@ class TestNotificationTestRoute:
 
     def test_unfilled_reminder_enqueues(self, app, admin_client):
         from app.models.outbox import OutboxEmail
+
         event_id = _make_event_for_test(app)
         with app.app_context():
             before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))

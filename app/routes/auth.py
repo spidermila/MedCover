@@ -1,34 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from flask import Blueprint
-from flask import current_app
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import session
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
-from flask_login import login_user
-from flask_login import logout_user
+from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, session, url_for
+from flask_login import current_user, login_required, login_user, logout_user
 
-from app.config import LOGIN_LOCKOUT_MINUTES
-from app.config import LOGIN_MAX_ATTEMPTS
+from app.config import LOGIN_LOCKOUT_MINUTES, LOGIN_MAX_ATTEMPTS
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.utils import external_url_for
-from app.utils import safe_next
+from app.utils import external_url_for, safe_next
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -39,10 +24,16 @@ _INVITE_SALT = "invite"
 def _send_mail(to: str, subject: str, template: str, **ctx: Any) -> None:
     """Render an HTML email template and enqueue it via the outbox."""
     from flask import render_template as rt
-    from app.mail import _enqueue, _base_context  # noqa: PLC0415
+
+    from app.mail import _base_context, _enqueue  # pylint: disable=import-outside-toplevel
 
     html_body = rt(template, **_base_context(), **ctx)
-    _enqueue(to, subject, "Tento e-mail obsahuje formátovaný obsah. Otevřete jej v e-mailovém klientovi s podporou HTML.", html_body=html_body)
+    _enqueue(
+        to,
+        subject,
+        "Tento e-mail obsahuje formátovaný obsah. Otevřete jej v e-mailovém klientovi s podporou HTML.",
+        html_body=html_body,
+    )
 
 
 def _make_signed_token(payload: str, salt: str, max_age_seconds: int) -> str:
@@ -132,6 +123,7 @@ def forgot_password() -> str | Response:
         flash("Pokud je e-mail registrován, byl odeslán odkaz pro obnovení hesla.", "info")
         if user and not user.is_archived:
             import secrets
+
             from app.config import RESET_TOKEN_MINUTES
 
             nonce = secrets.token_hex(16)
@@ -145,14 +137,16 @@ def forgot_password() -> str | Response:
                 reset_url=reset_url,
                 minutes=RESET_TOKEN_MINUTES,
             )
-            db.session.add(AuditLogEntry(
-                actor_id=user.id,
-                action_type="password_reset_requested",
-                entity_type="UserAccount",
-                entity_id=str(user.id),
-                summary=f"Požadavek na obnovení hesla pro {user.email}",
-                changes_json={},
-            ))
+            db.session.add(
+                AuditLogEntry(
+                    actor_id=user.id,
+                    action_type="password_reset_requested",
+                    entity_type="UserAccount",
+                    entity_id=str(user.id),
+                    summary=f"Požadavek na obnovení hesla pro {user.email}",
+                    changes_json={},
+                )
+            )
             db.session.commit()
         return redirect(url_for("auth.login"))
 
@@ -161,8 +155,9 @@ def forgot_password() -> str | Response:
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token: str) -> str | Response:
-    from app.config import RESET_TOKEN_MINUTES
     import uuid as _uuid
+
+    from app.config import RESET_TOKEN_MINUTES
 
     payload = _load_signed_token(token, _RESET_SALT, RESET_TOKEN_MINUTES * 60)
     if not payload or ":" not in payload:
@@ -185,14 +180,16 @@ def reset_password(token: str) -> str | Response:
         else:
             user.set_password(password)
             user.password_reset_nonce = None  # invalidate link immediately
-            db.session.add(AuditLogEntry(
-                actor_id=user.id,
-                action_type="password_reset_completed",
-                entity_type="UserAccount",
-                entity_id=str(user.id),
-                summary=f"Heslo obnoveno pro {user.email}",
-                changes_json={},
-            ))
+            db.session.add(
+                AuditLogEntry(
+                    actor_id=user.id,
+                    action_type="password_reset_completed",
+                    entity_type="UserAccount",
+                    entity_id=str(user.id),
+                    summary=f"Heslo obnoveno pro {user.email}",
+                    changes_json={},
+                )
+            )
             db.session.commit()
             flash("Heslo bylo změněno. Přihlaste se.", "success")
             return redirect(url_for("auth.login"))
@@ -209,14 +206,16 @@ def register(token: str) -> str | Response:
 
     if request.method == "GET" and invite.link_clicked_at is None:
         invite.link_clicked_at = datetime.now(timezone.utc)
-        db.session.add(AuditLogEntry(
-            actor_id=None,
-            action_type="link_clicked",
-            entity_type="RegistrationInvite",
-            entity_id=str(invite.id),
-            summary=f"Registrační odkaz otevřen pro {invite.email}",
-            changes_json={},
-        ))
+        db.session.add(
+            AuditLogEntry(
+                actor_id=None,
+                action_type="link_clicked",
+                entity_type="RegistrationInvite",
+                entity_id=str(invite.id),
+                summary=f"Registrační odkaz otevřen pro {invite.email}",
+                changes_json={},
+            )
+        )
         db.session.commit()
 
     if request.method == "POST":
@@ -242,16 +241,19 @@ def register(token: str) -> str | Response:
             invite.used_at = datetime.now(timezone.utc)
             db.session.add(user)
             db.session.flush()
-            db.session.add(AuditLogEntry(
-                actor_id=user.id,
-                action_type="complete",
-                entity_type="RegistrationInvite",
-                entity_id=str(invite.id),
-                summary=f"Registrace dokončena pro {invite.email} jako '{full_name}'",
-                changes_json={},
-            ))
+            db.session.add(
+                AuditLogEntry(
+                    actor_id=user.id,
+                    action_type="complete",
+                    entity_type="RegistrationInvite",
+                    entity_id=str(invite.id),
+                    summary=f"Registrace dokončena pro {invite.email} jako '{full_name}'",
+                    changes_json={},
+                )
+            )
             db.session.commit()
-            from app.mail import send_account_activated  # noqa: PLC0415
+            from app.mail import send_account_activated  # pylint: disable=import-outside-toplevel
+
             send_account_activated(user)
             flash("Registrace dokončena. Nyní se můžete přihlásit.", "success")
             return redirect(url_for("auth.login"))

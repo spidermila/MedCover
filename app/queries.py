@@ -4,6 +4,7 @@ Centralises common ``SELECT`` patterns that previously appeared inline in
 multiple route modules.  Keeping them here makes it easier to reason about
 performance (eager-load shapes, ordering) and to apply changes in one place.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -37,7 +38,9 @@ def active_users_list() -> Sequence[UserAccount]:
 
 def rp_eligible_users_list() -> list[UserAccount]:
     """Return active users who hold at least one qualification with can_be_rp=True."""
-    from app.models.qualification import Qualification, user_qualifications as uq_table
+    from app.models.qualification import Qualification
+    from app.models.qualification import user_qualifications as uq_table
+
     # Subquery to get distinct user IDs (avoids PG DISTINCT + ORDER BY conflict)
     eligible_ids = (
         db.select(UserAccount.id)
@@ -82,9 +85,9 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
     """
     from app.models.qualification import Qualification
 
-    all_quals: list[Qualification] = list(db.session.scalars(
-        db.select(Qualification).where(Qualification.is_deleted.is_(False))
-    ).all())
+    all_quals: list[Qualification] = list(
+        db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False))).all()
+    )
 
     user_qual_ids = {q.id for q in user.qualifications if not q.is_deleted}
 
@@ -96,10 +99,7 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
             return False
         if qual_id in user_qual_ids:
             return True
-        return any(
-            _user_can_fill(pid, visited | {qual_id})
-            for pid in parents_map.get(qual_id, [])
-        )
+        return any(_user_can_fill(pid, visited | {qual_id}) for pid in parents_map.get(qual_id, []))
 
     return {q.id for q in all_quals if _user_can_fill(q.id, frozenset())}
 
@@ -110,7 +110,7 @@ def assignable_equipment_items() -> list[tuple[str, list]]:
     Returns a list of ``(type_name, [EquipmentItem, ...])`` tuples.
     Used on the event create/edit forms to let the user pre-assign items.
     """
-    from app.models.equipment import EquipmentItem, EquipmentType, EquipmentCategory
+    from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentType
 
     items = db.session.scalars(
         db.select(EquipmentItem)

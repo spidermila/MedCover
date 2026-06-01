@@ -1,8 +1,8 @@
 """Backup status digest block."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,15 +12,18 @@ from app.digest.base import BaseBlock
 class BackupStatusBlock(BaseBlock):
     block_type = "backup_status"
     label = "Stav zálohování"
-    description = "Přehled posledních záloh: počet souborů, celková velikost, datum poslední zálohy a stav plánovaného zálohování."
+    description = (
+        "Přehled posledních záloh: počet souborů, celková velikost,"
+        " datum poslední zálohy a stav plánovaného zálohování."
+    )
     template = "email/digest_blocks/backup_status.html"
     default_config: dict[str, Any] = {
         "title": "Stav zálohování",
     }
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
-        from app.models.settings import get_settings
         from app.backup import list_backups
+        from app.models.settings import get_settings
 
         settings = get_settings()
         backup_dir = Path(settings.backup_dir)
@@ -42,9 +45,7 @@ class BackupStatusBlock(BaseBlock):
             age = datetime.now(timezone.utc) - data["last_backup_at"]
             data["last_backup_age_hours"] = int(age.total_seconds() / 3600)
             # Warn if last backup is more than 25 hours old and schedule is enabled
-            data["backup_overdue"] = (
-                settings.backup_schedule_enabled and data["last_backup_age_hours"] > 25
-            )
+            data["backup_overdue"] = settings.backup_schedule_enabled and data["last_backup_age_hours"] > 25
         else:
             data["last_backup_age_hours"] = None
             data["backup_overdue"] = settings.backup_schedule_enabled

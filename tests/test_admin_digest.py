@@ -1,4 +1,5 @@
 """Tests for the admin digest feature."""
+
 from __future__ import annotations
 
 from zoneinfo import ZoneInfo
@@ -6,10 +7,7 @@ from zoneinfo import ZoneInfo
 import sqlalchemy as sa
 
 from app.extensions import db
-from app.models.digest import DigestBlock
-from app.models.digest import DigestMetricSnapshot
-from app.models.digest import DigestSchedule
-from app.models.digest import get_digest_schedule
+from app.models.digest import DigestBlock, DigestMetricSnapshot, DigestSchedule, get_digest_schedule
 from app.models.settings import get_settings
 from tests.conftest import _get_csrf
 
@@ -43,6 +41,7 @@ def _first_block_id(app, block_type: str) -> int:
 
 
 # ── render_digest ─────────────────────────────────────────────────────────────
+
 
 def test_render_digest_returns_html(app: object) -> None:
     """render_digest should return non-empty HTML with the outer frame."""
@@ -100,10 +99,12 @@ def test_render_digest_skips_disabled_blocks(app: object) -> None:
 
 # ── run_record_metrics ────────────────────────────────────────────────────────
 
+
 def test_run_record_metrics_inserts_snapshot(app: object) -> None:
     """run_record_metrics should insert a DigestMetricSnapshot row."""
-    from app.scheduler_tasks import run_record_metrics
     from datetime import datetime, timezone
+
+    from app.scheduler_tasks import run_record_metrics
 
     with app.app_context():
         now = datetime.now(timezone.utc)
@@ -120,32 +121,35 @@ def test_run_record_metrics_inserts_snapshot(app: object) -> None:
 
 def test_run_record_metrics_prunes_old_rows(app: object) -> None:
     """run_record_metrics should delete snapshots older than 30 days."""
-    from app.scheduler_tasks import run_record_metrics
     from datetime import datetime, timedelta, timezone
+
+    from app.scheduler_tasks import run_record_metrics
 
     with app.app_context():
         old_time = datetime.now(timezone.utc) - timedelta(days=31)
-        db.session.add(DigestMetricSnapshot(
-            snapshot_at=old_time,
-            metric_name="outbox_pending_count",
-            metric_value=5.0,
-        ))
+        db.session.add(
+            DigestMetricSnapshot(
+                snapshot_at=old_time,
+                metric_name="outbox_pending_count",
+                metric_value=5.0,
+            )
+        )
         db.session.commit()
 
         run_record_metrics(db.session, now=datetime.now(timezone.utc))
 
-        old = db.session.scalar(
-            sa.select(DigestMetricSnapshot).where(DigestMetricSnapshot.snapshot_at == old_time)
-        )
+        old = db.session.scalar(sa.select(DigestMetricSnapshot).where(DigestMetricSnapshot.snapshot_at == old_time))
         assert old is None
 
 
 # ── run_admin_digest ──────────────────────────────────────────────────────────
 
+
 def test_run_admin_digest_skips_when_disabled(app: object) -> None:
     """run_admin_digest should return False when schedule.enabled is False."""
-    from app.scheduler_tasks import run_admin_digest
     from datetime import datetime, timezone
+
+    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         schedule = get_digest_schedule()
@@ -159,8 +163,9 @@ def test_run_admin_digest_skips_when_disabled(app: object) -> None:
 
 def test_run_admin_digest_skips_wrong_hour(app: object) -> None:
     """run_admin_digest should skip if current local hour != preferred_hour."""
-    from app.scheduler_tasks import run_admin_digest
     from datetime import datetime
+
+    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         tz = _local_tz(app)
@@ -178,8 +183,9 @@ def test_run_admin_digest_skips_wrong_hour(app: object) -> None:
 
 def test_run_admin_digest_skips_already_sent_today(app: object) -> None:
     """run_admin_digest should skip if already sent today (same local calendar date)."""
-    from app.scheduler_tasks import run_admin_digest
     from datetime import datetime
+
+    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         tz = _local_tz(app)
@@ -197,9 +203,10 @@ def test_run_admin_digest_skips_already_sent_today(app: object) -> None:
 
 def test_run_admin_digest_enqueues_on_new_day(app: object, admin_client: object) -> None:
     """run_admin_digest should fire if last_sent_at was a previous local day."""
-    from app.scheduler_tasks import run_admin_digest
-    from app.models.outbox import OutboxEmail
     from datetime import datetime
+
+    from app.models.outbox import OutboxEmail
+    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         tz = _local_tz(app)
@@ -213,18 +220,17 @@ def test_run_admin_digest_enqueues_on_new_day(app: object, admin_client: object)
         result = run_admin_digest(db.session, now=now)
         assert result is True
 
-        outbox = db.session.scalars(
-            sa.select(OutboxEmail).where(OutboxEmail.to_email == "admin@test.com")
-        ).all()
+        outbox = db.session.scalars(sa.select(OutboxEmail).where(OutboxEmail.to_email == "admin@test.com")).all()
 
     assert len(outbox) >= 1
 
 
 def test_run_admin_digest_enqueues_when_due(app: object, admin_client: object) -> None:
     """run_admin_digest should enqueue emails when schedule is enabled and due."""
-    from app.scheduler_tasks import run_admin_digest
-    from app.models.outbox import OutboxEmail
     from datetime import datetime
+
+    from app.models.outbox import OutboxEmail
+    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         tz = _local_tz(app)
@@ -238,15 +244,14 @@ def test_run_admin_digest_enqueues_when_due(app: object, admin_client: object) -
         result = run_admin_digest(db.session, now=now)
         assert result is True
 
-        outbox = db.session.scalars(
-            sa.select(OutboxEmail).where(OutboxEmail.to_email == "admin@test.com")
-        ).all()
+        outbox = db.session.scalars(sa.select(OutboxEmail).where(OutboxEmail.to_email == "admin@test.com")).all()
 
     assert len(outbox) >= 1
     assert outbox[0].html_body is not None
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
 
 def test_digest_preview_returns_html(app: object, admin_client: object) -> None:
     """GET /admin/digest/preview should return 200 with HTML content."""
@@ -274,14 +279,18 @@ def test_digest_save_persists(app: object, admin_client: object) -> None:
         version = schedule.version
 
     csrf = _get_csrf(admin_client, "/admin/digest/")
-    resp = admin_client.post("/admin/digest/save", data={
-        "csrf_token": csrf,
-        "enabled": "1",
-        "frequency_hours": "12",
-        "preferred_hour": "8",
-        "email_subject": "Test Subject",
-        "version": str(version),
-    }, follow_redirects=True)
+    resp = admin_client.post(
+        "/admin/digest/save",
+        data={
+            "csrf_token": csrf,
+            "enabled": "1",
+            "frequency_hours": "12",
+            "preferred_hour": "8",
+            "email_subject": "Test Subject",
+            "version": str(version),
+        },
+        follow_redirects=True,
+    )
     assert resp.status_code == 200
 
     with app.app_context():
@@ -303,14 +312,18 @@ def test_save_stale_version_flashes_danger(app, admin_client):
     """POST /admin/digest/save with wrong version → flash + redirect."""
     _seed_schedule(app)
     csrf = _get_csrf(admin_client, "/admin/digest/")
-    resp = admin_client.post("/admin/digest/save", data={
-        "csrf_token": csrf,
-        "enabled": "1",
-        "frequency_hours": "24",
-        "preferred_hour": "7",
-        "email_subject": "X",
-        "version": "9999",  # stale
-    }, follow_redirects=True)
+    resp = admin_client.post(
+        "/admin/digest/save",
+        data={
+            "csrf_token": csrf,
+            "enabled": "1",
+            "frequency_hours": "24",
+            "preferred_hour": "7",
+            "email_subject": "X",
+            "version": "9999",  # stale
+        },
+        follow_redirects=True,
+    )
     assert resp.status_code == 200
     assert "mezitím" in resp.data.decode() or "znovu" in resp.data.decode()
 
@@ -324,13 +337,15 @@ class TestAddBlock:
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")
         with app.app_context():
-            before = db.session.scalar(
-                sa.select(sa.func.count()).select_from(DigestBlock)
-            )
-        resp = admin_client.post("/admin/digest/blocks/add", data={
-            "csrf_token": csrf,
-            "block_type": "free_text",
-        }, follow_redirects=True)
+            before = db.session.scalar(sa.select(sa.func.count()).select_from(DigestBlock))
+        resp = admin_client.post(
+            "/admin/digest/blocks/add",
+            data={
+                "csrf_token": csrf,
+                "block_type": "free_text",
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
         with app.app_context():
             after = db.session.scalar(sa.select(sa.func.count()).select_from(DigestBlock))
@@ -342,10 +357,14 @@ class TestAddBlock:
         csrf = _get_csrf(admin_client, "/admin/digest/")
         with app.app_context():
             before = db.session.scalar(sa.select(sa.func.count()).select_from(DigestBlock))
-        resp = admin_client.post("/admin/digest/blocks/add", data={
-            "csrf_token": csrf,
-            "block_type": "does_not_exist",
-        }, follow_redirects=True)
+        resp = admin_client.post(
+            "/admin/digest/blocks/add",
+            data={
+                "csrf_token": csrf,
+                "block_type": "does_not_exist",
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
         with app.app_context():
             after = db.session.scalar(sa.select(sa.func.count()).select_from(DigestBlock))
@@ -357,15 +376,23 @@ class TestAddBlock:
         csrf = _get_csrf(admin_client, "/admin/digest/")
         # Add 4 more free_text blocks (there is already 1 seeded → total 5 = max)
         for _ in range(4):
-            admin_client.post("/admin/digest/blocks/add", data={
+            admin_client.post(
+                "/admin/digest/blocks/add",
+                data={
+                    "csrf_token": csrf,
+                    "block_type": "free_text",
+                },
+                follow_redirects=True,
+            )
+        # This 6th attempt should be rejected
+        resp = admin_client.post(
+            "/admin/digest/blocks/add",
+            data={
                 "csrf_token": csrf,
                 "block_type": "free_text",
-            }, follow_redirects=True)
-        # This 6th attempt should be rejected
-        resp = admin_client.post("/admin/digest/blocks/add", data={
-            "csrf_token": csrf,
-            "block_type": "free_text",
-        }, follow_redirects=True)
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
         assert "nejvýše" in resp.data.decode() or b"5" in resp.data
 
@@ -387,12 +414,16 @@ class TestSaveBlock:
             version = block.version
 
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post(f"/admin/digest/blocks/{block_id}/save", data={
-            "csrf_token": csrf,
-            "title": "Moje Zpráva",
-            "content": "Ahoj světe!",
-            "version": str(version),
-        }, follow_redirects=True)
+        resp = admin_client.post(
+            f"/admin/digest/blocks/{block_id}/save",
+            data={
+                "csrf_token": csrf,
+                "title": "Moje Zpráva",
+                "content": "Ahoj světe!",
+                "version": str(version),
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
 
         with app.app_context():
@@ -404,22 +435,29 @@ class TestSaveBlock:
         _seed_schedule(app)
         block_id = _first_block_id(app, "free_text")
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post(f"/admin/digest/blocks/{block_id}/save", data={
-            "csrf_token": csrf,
-            "title": "X",
-            "version": "9999",
-        }, follow_redirects=True)
+        resp = admin_client.post(
+            f"/admin/digest/blocks/{block_id}/save",
+            data={
+                "csrf_token": csrf,
+                "title": "X",
+                "version": "9999",
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
         assert "mezitím" in resp.data.decode() or "znovu" in resp.data.decode()
 
     def test_save_block_404_on_missing(self, app, admin_client):
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post("/admin/digest/blocks/99999/save", data={
-            "csrf_token": csrf,
-            "title": "X",
-            "version": "0",
-        })
+        resp = admin_client.post(
+            "/admin/digest/blocks/99999/save",
+            data={
+                "csrf_token": csrf,
+                "title": "X",
+                "version": "0",
+            },
+        )
         assert resp.status_code == 404
 
     def test_save_block_member_forbidden(self, app, member_client):
@@ -436,20 +474,27 @@ class TestDeleteBlock:
         _seed_schedule(app)
         # Add a fresh free_text block to delete (avoid deleting the seeded one)
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        admin_client.post("/admin/digest/blocks/add", data={
-            "csrf_token": csrf,
-            "block_type": "free_text",
-        }, follow_redirects=True)
+        admin_client.post(
+            "/admin/digest/blocks/add",
+            data={
+                "csrf_token": csrf,
+                "block_type": "free_text",
+            },
+            follow_redirects=True,
+        )
         with app.app_context():
             block = db.session.scalar(
-                sa.select(DigestBlock).where(DigestBlock.block_type == "free_text")
-                .order_by(DigestBlock.id.desc())
+                sa.select(DigestBlock).where(DigestBlock.block_type == "free_text").order_by(DigestBlock.id.desc())
             )
             block_id = block.id
 
-        resp = admin_client.post(f"/admin/digest/blocks/{block_id}/delete", data={
-            "csrf_token": csrf,
-        }, follow_redirects=True)
+        resp = admin_client.post(
+            f"/admin/digest/blocks/{block_id}/delete",
+            data={
+                "csrf_token": csrf,
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
         with app.app_context():
             assert db.session.get(DigestBlock, block_id) is None
@@ -457,9 +502,12 @@ class TestDeleteBlock:
     def test_delete_block_404_on_missing(self, app, admin_client):
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post("/admin/digest/blocks/99999/delete", data={
-            "csrf_token": csrf,
-        })
+        resp = admin_client.post(
+            "/admin/digest/blocks/99999/delete",
+            data={
+                "csrf_token": csrf,
+            },
+        )
         assert resp.status_code == 404
 
     def test_delete_block_member_forbidden(self, app, member_client):
@@ -479,9 +527,13 @@ class TestToggleBlock:
             original = db.session.get(DigestBlock, block_id).enabled
 
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post(f"/admin/digest/blocks/{block_id}/toggle", data={
-            "csrf_token": csrf,
-        }, content_type="application/x-www-form-urlencoded")
+        resp = admin_client.post(
+            f"/admin/digest/blocks/{block_id}/toggle",
+            data={
+                "csrf_token": csrf,
+            },
+            content_type="application/x-www-form-urlencoded",
+        )
         assert resp.status_code == 200
         payload = resp.get_json()
         assert payload["ok"] is True
@@ -493,9 +545,12 @@ class TestToggleBlock:
     def test_toggle_block_404_on_missing(self, app, admin_client):
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post("/admin/digest/blocks/99999/toggle", data={
-            "csrf_token": csrf,
-        })
+        resp = admin_client.post(
+            "/admin/digest/blocks/99999/toggle",
+            data={
+                "csrf_token": csrf,
+            },
+        )
         assert resp.status_code == 404
 
     def test_toggle_block_member_forbidden(self, app, member_client):
@@ -511,9 +566,7 @@ class TestReorderBlocks:
         """POST /admin/digest/blocks/reorder with reversed IDs should update sort_order."""
         _seed_schedule(app)
         with app.app_context():
-            blocks = db.session.scalars(
-                sa.select(DigestBlock).order_by(DigestBlock.sort_order)
-            ).all()
+            blocks = db.session.scalars(sa.select(DigestBlock).order_by(DigestBlock.sort_order)).all()
             ids = [b.id for b in blocks]
 
         reversed_ids = list(reversed(ids))
@@ -544,10 +597,14 @@ class TestSendTest:
         """POSTing with empty test_email should flash a danger message."""
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post("/admin/digest/send-test", data={
-            "csrf_token": csrf,
-            "test_email": "",
-        }, follow_redirects=True)
+        resp = admin_client.post(
+            "/admin/digest/send-test",
+            data={
+                "csrf_token": csrf,
+                "test_email": "",
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
         assert b"adresu" in resp.data or b"Zadejte" in resp.data
 
@@ -557,16 +614,18 @@ class TestSendTest:
 
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post("/admin/digest/send-test", data={
-            "csrf_token": csrf,
-            "test_email": "test@example.com",
-        }, follow_redirects=True)
+        resp = admin_client.post(
+            "/admin/digest/send-test",
+            data={
+                "csrf_token": csrf,
+                "test_email": "test@example.com",
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
 
         with app.app_context():
-            row = db.session.scalar(
-                sa.select(OutboxEmail).where(OutboxEmail.to_email == "test@example.com")
-            )
+            row = db.session.scalar(sa.select(OutboxEmail).where(OutboxEmail.to_email == "test@example.com"))
         assert row is not None
         assert row.html_body is not None
 
@@ -585,15 +644,17 @@ class TestSendNow:
 
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")
-        resp = admin_client.post("/admin/digest/send-now", data={
-            "csrf_token": csrf,
-        }, follow_redirects=True)
+        resp = admin_client.post(
+            "/admin/digest/send-now",
+            data={
+                "csrf_token": csrf,
+            },
+            follow_redirects=True,
+        )
         assert resp.status_code == 200
 
         with app.app_context():
-            count = db.session.scalar(
-                sa.select(sa.func.count()).select_from(OutboxEmail)
-            )
+            count = db.session.scalar(sa.select(sa.func.count()).select_from(OutboxEmail))
         assert count >= 1
 
     def test_send_now_member_forbidden(self, app, member_client):
@@ -616,18 +677,21 @@ class TestMergeBlockConfig:
         csrf = _get_csrf(client, "/admin/digest/")
         data = {"csrf_token": csrf, "title": "T", "version": str(version)}
         data.update(extra)
-        resp = client.post(
-            f"/admin/digest/blocks/{block_id}/save", data=data, follow_redirects=True
-        )
+        resp = client.post(f"/admin/digest/blocks/{block_id}/save", data=data, follow_redirects=True)
         assert resp.status_code == 200
         return block_id
 
     def test_server_stats_config_saved(self, app, admin_client):
-        block_id = self._save(admin_client, app, "server_stats", {
-            "show_user_count": "1",
-            "show_event_count": "1",
-            "peak_hours": "12",
-        })
+        block_id = self._save(
+            admin_client,
+            app,
+            "server_stats",
+            {
+                "show_user_count": "1",
+                "show_event_count": "1",
+                "peak_hours": "12",
+            },
+        )
         with app.app_context():
             cfg = db.session.get(DigestBlock, block_id).config_json
         assert cfg["show_user_count"] is True
@@ -636,13 +700,18 @@ class TestMergeBlockConfig:
         assert cfg["peak_hours"] == 12
 
     def test_audit_log_config_saved(self, app, admin_client):
-        block_id = self._save(admin_client, app, "audit_log", {
-            "hours": "48",
-            "max_rows": "100",
-            "show_actor": "1",
-            "entity_types": ["Event", "UserAccount"],
-            "action_types": ["create", "delete"],
-        })
+        block_id = self._save(
+            admin_client,
+            app,
+            "audit_log",
+            {
+                "hours": "48",
+                "max_rows": "100",
+                "show_actor": "1",
+                "entity_types": ["Event", "UserAccount"],
+                "action_types": ["create", "delete"],
+            },
+        )
         with app.app_context():
             cfg = db.session.get(DigestBlock, block_id).config_json
         assert cfg["hours"] == 48
@@ -652,11 +721,16 @@ class TestMergeBlockConfig:
         assert "create" in cfg["action_types"]
 
     def test_upcoming_events_config_saved(self, app, admin_client):
-        block_id = self._save(admin_client, app, "upcoming_events", {
-            "days_ahead": "14",
-            "max_rows": "20",
-            "show_unfilled_only": "1",
-        })
+        block_id = self._save(
+            admin_client,
+            app,
+            "upcoming_events",
+            {
+                "days_ahead": "14",
+                "max_rows": "20",
+                "show_unfilled_only": "1",
+            },
+        )
         with app.app_context():
             cfg = db.session.get(DigestBlock, block_id).config_json
         assert cfg["days_ahead"] == 14
@@ -664,11 +738,16 @@ class TestMergeBlockConfig:
         assert cfg["show_unfilled_only"] is True
 
     def test_new_users_config_saved(self, app, admin_client):
-        block_id = self._save(admin_client, app, "new_users", {
-            "hours": "72",
-            "max_rows": "30",
-            "show_pending_only": "1",
-        })
+        block_id = self._save(
+            admin_client,
+            app,
+            "new_users",
+            {
+                "hours": "72",
+                "max_rows": "30",
+                "show_pending_only": "1",
+            },
+        )
         with app.app_context():
             cfg = db.session.get(DigestBlock, block_id).config_json
         assert cfg["hours"] == 72
@@ -676,10 +755,15 @@ class TestMergeBlockConfig:
         assert cfg["show_pending_only"] is True
 
     def test_feedback_summary_config_saved(self, app, admin_client):
-        block_id = self._save(admin_client, app, "feedback_summary", {
-            "hours": "12",
-            "max_rows": "50",
-        })
+        block_id = self._save(
+            admin_client,
+            app,
+            "feedback_summary",
+            {
+                "hours": "12",
+                "max_rows": "50",
+            },
+        )
         with app.app_context():
             cfg = db.session.get(DigestBlock, block_id).config_json
         assert cfg["hours"] == 12

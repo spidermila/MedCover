@@ -1,4 +1,5 @@
 """Tests for the import feature (v2: events + users + dynamic spots + assignments)."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -10,11 +11,10 @@ from app.models.event import Event
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _get_csrf
-from tests.conftest import _make_master_event
-
+from tests.conftest import _get_csrf, _make_master_event
 
 # ── Load the extraction script without adding it to the package ────────────────
+
 
 def _import_script():
     script_path = Path(__file__).parent.parent / "scripts" / "import_events.py"
@@ -61,6 +61,7 @@ class TestIsValidNameHelper:
 def _make_user(app, name: str, email: str, is_zdravotnik: bool = False) -> str:
     """Create an active Member user and return its UUID string."""
     from tests.conftest import _make_user as _conftest_make_user
+
     with app.app_context():
         u = _conftest_make_user(email, name, Role.MEMBER)
         return str(u.id)
@@ -175,13 +176,15 @@ class TestImportPreview:
         csrf = _get_csrf(admin_client, "/import/events/")
         payload = {
             "version": 2,
-            "users": [{
-                "gs_name": "Gajda Adam",
-                "name": "Adam Gajda",
-                "email": "adam@test.com",
-                "phone": "123",
-                "is_zdravotnik": False,
-            }],
+            "users": [
+                {
+                    "gs_name": "Gajda Adam",
+                    "name": "Adam Gajda",
+                    "email": "adam@test.com",
+                    "phone": "123",
+                    "is_zdravotnik": False,
+                }
+            ],
             "events": [_minimal_event()],
         }
         resp = admin_client.post(
@@ -197,8 +200,15 @@ class TestImportPreview:
         csrf = _get_csrf(admin_client, "/import/events/")
         payload = {
             "version": 2,
-            "users": [{"gs_name": "Gajda Adam", "name": "Adam Gajda",
-                       "email": "adam_new@test.com", "phone": None, "is_zdravotnik": False}],
+            "users": [
+                {
+                    "gs_name": "Gajda Adam",
+                    "name": "Adam Gajda",
+                    "email": "adam_new@test.com",
+                    "phone": None,
+                    "is_zdravotnik": False,
+                }
+            ],
             "events": [],
         }
         resp = admin_client.post(
@@ -213,8 +223,15 @@ class TestImportPreview:
         csrf = _get_csrf(admin_client, "/import/events/")
         payload = {
             "version": 2,
-            "users": [{"gs_name": "Gajda Adam", "name": "Adam Gajda",
-                       "email": "adam@test.com", "phone": None, "is_zdravotnik": False}],
+            "users": [
+                {
+                    "gs_name": "Gajda Adam",
+                    "name": "Adam Gajda",
+                    "email": "adam@test.com",
+                    "phone": None,
+                    "is_zdravotnik": False,
+                }
+            ],
             "events": [],
         }
         resp = admin_client.post(
@@ -241,10 +258,18 @@ class TestImportConfirmUsers:
     def test_creates_user_with_member_role(self, app, admin_client):
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"gs_name": "Gajda Adam", "name": "Adam Gajda",
-                    "email": "adam_new@test.com", "phone": "123", "is_zdravotnik": False}],
+            users=[
+                {
+                    "gs_name": "Gajda Adam",
+                    "name": "Adam Gajda",
+                    "email": "adam_new@test.com",
+                    "phone": "123",
+                    "is_zdravotnik": False,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -262,10 +287,18 @@ class TestImportConfirmUsers:
             db.session.commit()
 
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"gs_name": "Novák Jan", "name": "Jan Novák",
-                    "email": "jan@test.com", "phone": "", "is_zdravotnik": True}],
+            users=[
+                {
+                    "gs_name": "Novák Jan",
+                    "name": "Jan Novák",
+                    "email": "jan@test.com",
+                    "phone": "",
+                    "is_zdravotnik": True,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -278,10 +311,18 @@ class TestImportConfirmUsers:
         _make_user(app, "Adam Gajda", "adam_orig@test.com")
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"gs_name": "Gajda Adam", "name": "Adam Gajda",
-                    "email": "adam_new@test.com", "phone": "", "is_zdravotnik": False}],
+            users=[
+                {
+                    "gs_name": "Gajda Adam",
+                    "name": "Adam Gajda",
+                    "email": "adam_new@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -293,10 +334,18 @@ class TestImportConfirmUsers:
         _make_user(app, "Different Name", "adam@test.com")
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"gs_name": "Gajda Adam", "name": "Adam Gajda",
-                    "email": "adam@test.com", "phone": "", "is_zdravotnik": False}],
+            users=[
+                {
+                    "gs_name": "Gajda Adam",
+                    "name": "Adam Gajda",
+                    "email": "adam@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -307,7 +356,8 @@ class TestImportConfirmUsers:
     def test_skips_user_without_email(self, app, admin_client):
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
             users=[{"name": "No Email User", "email": "", "phone": "", "is_zdravotnik": False}],
             master_event_id=me_id,
@@ -320,10 +370,18 @@ class TestImportConfirmUsers:
     def test_user_not_created_when_include_unchecked(self, app, admin_client):
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"name": "Unchecked User", "email": "unchecked@test.com",
-                    "phone": "", "is_zdravotnik": False, "include": False}],
+            users=[
+                {
+                    "name": "Unchecked User",
+                    "email": "unchecked@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                    "include": False,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -339,7 +397,8 @@ class TestImportConfirmSpots:
     def test_standard_3_spots_no_signups(self, app, admin_client):
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
             master_event_id=me_id,
         )
@@ -399,6 +458,7 @@ class TestImportConfirmSpots:
 class TestImportCancelledEvents:
     def test_cancelled_event_gets_cancelled_status(self, app, admin_client):
         from app.models.event import EventStatus
+
         me_id = _make_master_event(app)
         ev = _minimal_event(name="Zrušená akce", date="2030-06-01")
         ev["cancelled"] = True
@@ -424,6 +484,7 @@ class TestImportCancelledEvents:
     def test_past_cancelled_event_stays_cancelled(self, app, admin_client):
         """A past event that is cancelled should not be overridden to COMPLETED."""
         from app.models.event import EventStatus
+
         me_id = _make_master_event(app)
         ev = _minimal_event(name="Stará zrušená akce", date="2020-01-01")
         ev["cancelled"] = True
@@ -436,6 +497,7 @@ class TestImportCancelledEvents:
 
     def test_non_cancelled_event_unaffected(self, app, admin_client):
         from app.models.event import EventStatus
+
         me_id = _make_master_event(app)
         ev = _minimal_event(name="Normální akce")
         ev["cancelled"] = False
@@ -476,10 +538,7 @@ class TestImportConfirmAssignments:
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Signup Event"))
             assert event is not None
-            assignments = [
-                s.assignment for s in event.spots
-                if s.description == "Zelenáč" and s.assignment is not None
-            ]
+            assignments = [s.assignment for s in event.spots if s.description == "Zelenáč" and s.assignment is not None]
             assert len(assignments) == 2
 
     def test_signup_without_user_account_is_skipped(self, app, admin_client):
@@ -501,26 +560,31 @@ class TestImportConfirmAssignments:
         ev = _minimal_event(name="New User Event")
         ev["signups"] = ["Adam Gajda"]
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[ev],
-            users=[{"gs_name": "Gajda Adam", "name": "Adam Gajda",
-                    "email": "adam@test.com", "phone": "", "is_zdravotnik": False}],
+            users=[
+                {
+                    "gs_name": "Gajda Adam",
+                    "name": "Adam Gajda",
+                    "email": "adam@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "New User Event"))
             assert event is not None
-            assigned_names = [
-                s.assignment.user.name
-                for s in event.spots
-                if s.assignment is not None
-            ]
+            assigned_names = [s.assignment.user.name for s in event.spots if s.assignment is not None]
             assert "Adam Gajda" in assigned_names
 
     def test_past_event_gets_auto_debriefing(self, app, admin_client):
         """Past events (end < now) should automatically receive DebriefingRecord rows."""
         from app.models.assignment import DebriefingRecord
+
         me_id = _make_master_event(app)
         uid = _make_user(app, "Eva Nováková", "eva@test.com")
         ev = _minimal_event(name="Past Event Debrief", date="2020-01-15")
@@ -533,9 +597,7 @@ class TestImportConfirmAssignments:
             rp_spot = next((s for s in event.spots if s.assignment is not None), None)
             assert rp_spot is not None
             asgn_id = rp_spot.assignment.id
-            debrief = db.session.scalar(
-                db.select(DebriefingRecord).where(DebriefingRecord.assignment_id == asgn_id)
-            )
+            debrief = db.session.scalar(db.select(DebriefingRecord).where(DebriefingRecord.assignment_id == asgn_id))
             assert debrief is not None
             assert "importovaný" in debrief.feedback_event.lower()
 
@@ -569,9 +631,7 @@ class TestImportConfirmAssignments:
         resp2 = admin_client.post("/import/events/confirm", data=data, follow_redirects=False)
         assert resp2.status_code == 302
         with app.app_context():
-            count = db.session.scalar(
-                db.select(db.func.count()).select_from(Event).where(Event.name == "Dup Event")
-            )
+            count = db.session.scalar(db.select(db.func.count()).select_from(Event).where(Event.name == "Dup Event"))
             assert count == 1  # still only 1, not 2
 
 
@@ -579,18 +639,26 @@ class TestImportIdempotency:
     def test_rerun_does_not_duplicate_user(self, app, admin_client):
         """Importing the same user payload twice creates the user only once."""
         me_id = _make_master_event(app)
-        user_payload = [{"gs_name": "Novák Jan", "name": "Novák Jan",
-                         "email": "jan@test.com", "phone": None, "is_zdravotnik": False}]
+        user_payload = [
+            {
+                "gs_name": "Novák Jan",
+                "name": "Novák Jan",
+                "email": "jan@test.com",
+                "phone": None,
+                "is_zdravotnik": False,
+            }
+        ]
 
         for _ in range(2):
-            _post_confirm(app, admin_client, events=[_minimal_event(name=f"Akce {_}")],
-                          users=user_payload, master_event_id=me_id)
+            _post_confirm(
+                app, admin_client, events=[_minimal_event(name=f"Akce {_}")], users=user_payload, master_event_id=me_id
+            )
 
         with app.app_context():
             count = db.session.scalar(
-                db.select(db.func.count()).select_from(UserAccount).where(
-                    db.func.lower(UserAccount.name) == "novák jan"
-                )
+                db.select(db.func.count())
+                .select_from(UserAccount)
+                .where(db.func.lower(UserAccount.name) == "novák jan")
             )
             assert count == 1
 
@@ -598,16 +666,20 @@ class TestImportIdempotency:
         """If a user already exists with the same email, it must not be re-created."""
         me_id = _make_master_event(app)
         _make_user(app, "Petra Horáková", "petra@test.com")
-        user_payload = [{"gs_name": "Horáková Petra", "name": "Petra Horáková NEW",
-                         "email": "petra@test.com", "phone": None, "is_zdravotnik": False}]
+        user_payload = [
+            {
+                "gs_name": "Horáková Petra",
+                "name": "Petra Horáková NEW",
+                "email": "petra@test.com",
+                "phone": None,
+                "is_zdravotnik": False,
+            }
+        ]
 
-        _post_confirm(app, admin_client, events=[_minimal_event()],
-                      users=user_payload, master_event_id=me_id)
+        _post_confirm(app, admin_client, events=[_minimal_event()], users=user_payload, master_event_id=me_id)
 
         with app.app_context():
             count = db.session.scalar(
-                db.select(db.func.count()).select_from(UserAccount).where(
-                    UserAccount.email == "petra@test.com"
-                )
+                db.select(db.func.count()).select_from(UserAccount).where(UserAccount.email == "petra@test.com")
             )
             assert count == 1  # not duplicated despite different name in payload

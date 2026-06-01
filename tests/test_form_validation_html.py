@@ -7,13 +7,13 @@ before the user has even interacted with them.
 These tests also verify that the Bootstrap "was-validated" class is never pre-applied
 server-side (that would auto-green all filled fields via CSS :valid).
 """
+
 from __future__ import annotations
 
 import re
 
 from app.extensions import db
 from tests.conftest import _make_event_in_status
-
 
 # Matches any <input>, <textarea>, or <select> that already carries is-valid
 _IS_VALID_IN_FIELD = re.compile(
@@ -27,15 +27,16 @@ _WAS_VALIDATED_IN_FORM = re.compile(
 
 
 def _assert_no_preinjected_validity(html: str, page: str) -> None:
-    assert not _IS_VALID_IN_FIELD.search(html), (
-        f"{page}: server rendered 'is-valid' class on a form field before user interaction"
-    )
-    assert not _WAS_VALIDATED_IN_FORM.search(html), (
-        f"{page}: server rendered 'was-validated' on a form before user interaction"
-    )
+    assert not _IS_VALID_IN_FIELD.search(
+        html
+    ), f"{page}: server rendered 'is-valid' class on a form field before user interaction"
+    assert not _WAS_VALIDATED_IN_FORM.search(
+        html
+    ), f"{page}: server rendered 'was-validated' on a form before user interaction"
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 class TestNoPreinjectedValidity:
 
@@ -56,10 +57,12 @@ class TestNoPreinjectedValidity:
         _assert_no_preinjected_validity(resp.data.decode(), "login")
 
     def test_register_form(self, app, client):
-        from app.models.user import UserAccount
+        from datetime import datetime, timedelta, timezone
+
         from app.models.invite import RegistrationInvite
         from app.models.role import Role
-        from datetime import datetime, timezone, timedelta
+        from app.models.user import UserAccount
+
         with app.app_context():
             role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
             inviter = UserAccount(email="reg_inviter@test.com", name="Inviter", is_active=True)
@@ -101,10 +104,9 @@ class TestNoPreinjectedValidity:
 
     def test_user_detail_form(self, app, admin_client):
         from app.models.user import UserAccount
+
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "admin@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
             uid = user.id
         resp = admin_client.get(f"/users/{uid}")
         assert resp.status_code == 200

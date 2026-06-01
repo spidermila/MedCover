@@ -1,13 +1,12 @@
 import os
 import pathlib
 
-
 RESET_TOKEN_MINUTES = 10
 INVITE_TOKEN_HOURS = 72
 
 # Brute-force login protection
-LOGIN_MAX_ATTEMPTS = 5        # consecutive failures before lockout
-LOGIN_LOCKOUT_MINUTES = 15    # how long the account is locked
+LOGIN_MAX_ATTEMPTS = 5  # consecutive failures before lockout
+LOGIN_LOCKOUT_MINUTES = 15  # how long the account is locked
 
 _VERSION_FILE = pathlib.Path(__file__).parent.parent / "VERSION"
 
@@ -32,7 +31,9 @@ class Config:
     SQLALCHEMY_DATABASE_URI = _fix_db_url(os.environ.get("DATABASE_URL", ""))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
-    WTF_CSRF_TIME_LIMIT: int | None = None  # disable timestamp expiry; tokens are still cryptographically bound to SECRET_KEY
+    WTF_CSRF_TIME_LIMIT: int | None = (
+        None  # disable timestamp expiry; tokens are still cryptographically bound to SECRET_KEY
+    )
     DEV_LOGIN_ENABLED = False
     # Short git commit hash injected at Docker build time via ARG GIT_COMMIT.
     # Falls back to "dev" when running outside of Docker (local dev, tests).
@@ -61,10 +62,12 @@ class TestingConfig(Config):
     # Always use the dedicated test database — never the dev/prod DATABASE_URL.
     # This ensures that conftest.py's drop_all() teardown cannot wipe the dev DB.
     SECRET_KEY = os.getenv("SECRET_KEY", "test-secret-not-for-production")
-    SQLALCHEMY_DATABASE_URI = _fix_db_url(os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql://medcover:devpassword@localhost:5432/medcover_test",
-    ))
+    SQLALCHEMY_DATABASE_URI = _fix_db_url(
+        os.getenv(
+            "TEST_DATABASE_URL",
+            "postgresql://medcover:devpassword@localhost:5432/medcover_test",
+        )
+    )
     WTF_CSRF_ENABLED = False
     # Required so url_for() works outside an active request context (e.g. in
     # unit tests that call send_* functions directly with app_context only).
@@ -83,9 +86,9 @@ class ProductionConfig(Config):
         db_url = os.environ.get("DATABASE_URL", "")
         if db_url and "sslmode" not in db_url:
             import warnings
+
             warnings.warn(
-                "DATABASE_URL does not include sslmode=require. "
-                "Add ?sslmode=require for production security.",
+                "DATABASE_URL does not include sslmode=require. " "Add ?sslmode=require for production security.",
                 stacklevel=2,
             )
 

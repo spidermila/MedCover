@@ -2,21 +2,11 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from flask import abort
-from flask import Blueprint
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import collate
 from sqlalchemy.orm import selectinload
 
@@ -26,16 +16,16 @@ from app.extensions import db
 from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
 from app.models.role import Role
-from app.models.user import CalendarView
-from app.models.user import UserAccount
-from app.utils import audit
-from app.utils import CS_COLLATION
-from app.utils import czech_sort_key
-from app.utils import diff_changes
-from app.utils import external_url_for
-from app.utils import get_or_404
-from app.utils import require_permission
-
+from app.models.user import CalendarView, UserAccount
+from app.utils import (
+    CS_COLLATION,
+    audit,
+    czech_sort_key,
+    diff_changes,
+    external_url_for,
+    get_or_404,
+    require_permission,
+)
 
 users_bp = Blueprint("users", __name__, url_prefix="/users")
 
@@ -55,6 +45,7 @@ def _validate_phone(raw: str) -> bool:
 
 # ── Own profile ───────────────────────────────────────────────────────────────
 
+
 @users_bp.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile() -> str | Response:
@@ -67,11 +58,11 @@ def profile() -> str | Response:
         if action == "password":
             return _change_password(user)
     from app.models.equipment import EquipmentItem
-    issued_items = db.session.scalars(
-        db.select(EquipmentItem).where(EquipmentItem.issued_to_id == user.id)
-    ).all()
+
+    issued_items = db.session.scalars(db.select(EquipmentItem).where(EquipmentItem.issued_to_id == user.id)).all()
     from app.models.assignment import Assignment
-    from app.models.event import EventSpot, Event, EventStatus
+    from app.models.event import Event, EventSpot, EventStatus
+
     now = datetime.now(timezone.utc)
     upcoming = db.session.scalars(
         db.select(Assignment)
@@ -87,6 +78,7 @@ def profile() -> str | Response:
         .limit(10)
     ).all()
     from app.utils import external_url_for
+
     ical_url = external_url_for("calendar.feed", token=user.ical_token)
     ical_all_url = external_url_for("calendar.feed_all", token=user.ical_all_token)
     return render_template(
@@ -97,7 +89,7 @@ def profile() -> str | Response:
         upcoming=upcoming,
         ical_url=ical_url,
         ical_all_url=ical_all_url,
-        min_password_length=MIN_PASSWORD_LENGTH
+        min_password_length=MIN_PASSWORD_LENGTH,
     )
 
 
@@ -166,6 +158,7 @@ def _change_password(user: UserAccount) -> Response:
 
 # ── iCal guides ──────────────────────────────────────────────────────────────
 
+
 @users_bp.route("/profile/ical-guide/google")
 @login_required
 def ical_guide_google() -> str:
@@ -173,6 +166,7 @@ def ical_guide_google() -> str:
 
 
 # ── Admin: user list ──────────────────────────────────────────────────────────
+
 
 @users_bp.route("/")
 @login_required
@@ -193,10 +187,10 @@ def index() -> str:
         sort_dir = "asc"
 
     sort_col = {
-        "name":       collate(UserAccount.name, CS_COLLATION),
-        "email":      UserAccount.email,
-        "status":     UserAccount.is_active,
-        "created":    UserAccount.created_at,
+        "name": collate(UserAccount.name, CS_COLLATION),
+        "email": UserAccount.email,
+        "status": UserAccount.is_active,
+        "created": UserAccount.created_at,
         "last_login": UserAccount.last_login_at,
     }[sort]
     if sort == "last_login":
@@ -205,6 +199,7 @@ def index() -> str:
         order = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
 
     from app.models.user import user_roles as user_roles_table
+
     query = db.select(UserAccount).order_by(order)
     if not show_archived:
         query = query.where(UserAccount.is_archived.is_(False))
@@ -218,16 +213,14 @@ def index() -> str:
             )
         )
     if role_filter:
-        query = query.join(
-            user_roles_table, UserAccount.id == user_roles_table.c.user_id
-        ).join(
-            Role, user_roles_table.c.role_id == Role.id
-        ).where(Role.name == role_filter)
+        query = (
+            query.join(user_roles_table, UserAccount.id == user_roles_table.c.user_id)
+            .join(Role, user_roles_table.c.role_id == Role.id)
+            .where(Role.name == role_filter)
+        )
 
     total = db.session.scalar(db.select(db.func.count()).select_from(query.subquery()))
-    users = db.session.scalars(
-        query.offset((page - 1) * _PAGE_SIZE).limit(_PAGE_SIZE)
-    ).all()
+    users = db.session.scalars(query.offset((page - 1) * _PAGE_SIZE).limit(_PAGE_SIZE)).all()
     total_pages = max(1, (total + _PAGE_SIZE - 1) // _PAGE_SIZE)
     roles = db.session.scalars(db.select(Role).order_by(collate(Role.name, CS_COLLATION))).all()
     return render_template(
@@ -251,12 +244,15 @@ def create_user() -> str | Response:
     """Manually create a new active user account (no invite required)."""
     require_permission("user.create")
 
-    from app.models.qualification import Qualification
     import secrets
+
+    from app.models.qualification import Qualification
 
     all_roles = db.session.scalars(db.select(Role).order_by(collate(Role.name, CS_COLLATION))).all()
     all_qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))
+        db.select(Qualification)
+        .where(Qualification.is_deleted.is_(False))
+        .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
 
     if request.method == "GET":
@@ -313,10 +309,19 @@ def detail(user_id: uuid.UUID) -> str:
     user = get_or_404(UserAccount, user_id)
     roles = db.session.scalars(db.select(Role).order_by(collate(Role.name, CS_COLLATION))).all()
     from app.models.qualification import Qualification
+
     qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))
+        db.select(Qualification)
+        .where(Qualification.is_deleted.is_(False))
+        .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
-    return render_template("users/detail.html", user=user, all_roles=roles, all_qualifications=qualifications, min_password_length=MIN_PASSWORD_LENGTH)
+    return render_template(
+        "users/detail.html",
+        user=user,
+        all_roles=roles,
+        all_qualifications=qualifications,
+        min_password_length=MIN_PASSWORD_LENGTH,
+    )
 
 
 def _apply_role_update(user: UserAccount, role_ids: list[int]) -> bool:
@@ -326,15 +331,18 @@ def _apply_role_update(user: UserAccount, role_ids: list[int]) -> bool:
     Caller is responsible for version bump.
     """
     before_roles = sorted(r.name for r in user.roles)
-    new_roles = db.session.scalars(
-        db.select(Role).where(Role.id.in_(role_ids))
-    ).all() if role_ids else []
+    new_roles = db.session.scalars(db.select(Role).where(Role.id.in_(role_ids))).all() if role_ids else []
     user.roles = list(new_roles)
     after_roles = sorted(r.name for r in user.roles)
     if before_roles == after_roles:
         return False
-    audit("edit", "UserAccount", user.id, f"Role uživatele {user.name} aktualizovány",
-          diff_changes({"roles": before_roles}, {"roles": after_roles}))
+    audit(
+        "edit",
+        "UserAccount",
+        user.id,
+        f"Role uživatele {user.name} aktualizovány",
+        diff_changes({"roles": before_roles}, {"roles": after_roles}),
+    )
     return True
 
 
@@ -345,19 +353,29 @@ def _apply_qualification_update(user: UserAccount, qual_ids: list[int]) -> bool:
     Caller is responsible for version bump.
     """
     from app.models.qualification import Qualification
+
     before_quals = sorted((c.name for c in user.qualifications), key=czech_sort_key)
-    new_creds = db.session.scalars(
-        db.select(Qualification).where(
-            Qualification.id.in_(qual_ids),
-            Qualification.is_deleted.is_(False),
-        )
-    ).all() if qual_ids else []
+    new_creds = (
+        db.session.scalars(
+            db.select(Qualification).where(
+                Qualification.id.in_(qual_ids),
+                Qualification.is_deleted.is_(False),
+            )
+        ).all()
+        if qual_ids
+        else []
+    )
     user.qualifications = list(new_creds)
     after_quals = sorted((c.name for c in user.qualifications), key=czech_sort_key)
     if before_quals == after_quals:
         return False
-    audit("edit", "UserAccount", user.id, f"Kvalifikace uživatele {user.name} aktualizovány",
-          diff_changes({"qualifications": before_quals}, {"qualifications": after_quals}))
+    audit(
+        "edit",
+        "UserAccount",
+        user.id,
+        f"Kvalifikace uživatele {user.name} aktualizovány",
+        diff_changes({"qualifications": before_quals}, {"qualifications": after_quals}),
+    )
     return True
 
 
@@ -397,7 +415,13 @@ def save_user(user_id: uuid.UUID) -> Response:
     info_after: dict[str, Any] = {"name": user.name, "email": user.email, "phone": user.phone}
     info_changed = info_before != info_after
     if info_changed:
-        audit("edit", "UserAccount", user.id, f"Admin upravil údaje uživatele {user.name}", diff_changes(info_before, info_after))
+        audit(
+            "edit",
+            "UserAccount",
+            user.id,
+            f"Admin upravil údaje uživatele {user.name}",
+            diff_changes(info_before, info_after),
+        )
 
     # ── Roles ───────────────────────────────────────────────────────────────
     roles_changed = False
@@ -437,7 +461,9 @@ def activate(user_id: uuid.UUID) -> Response:
     user = get_or_404(UserAccount, user_id)
     user.is_active = True
     user.version += 1
-    audit("edit", "UserAccount", user.id, f"Účet {user.name} ({user.email}) byl aktivován", {"is_active": [False, True]})
+    audit(
+        "edit", "UserAccount", user.id, f"Účet {user.name} ({user.email}) byl aktivován", {"is_active": [False, True]}
+    )
     db.session.commit()
     _send_activation_email(user)
     flash(f"Účet {user.name} byl aktivován.", "success")
@@ -454,7 +480,9 @@ def deactivate(user_id: uuid.UUID) -> Response:
         return redirect(url_for("users.detail", user_id=user_id))
     user.is_active = False
     user.version += 1
-    audit("edit", "UserAccount", user.id, f"Účet {user.name} ({user.email}) byl deaktivován", {"is_active": [True, False]})
+    audit(
+        "edit", "UserAccount", user.id, f"Účet {user.name} ({user.email}) byl deaktivován", {"is_active": [True, False]}
+    )
     db.session.commit()
     flash(f"Účet {user.name} byl deaktivován.", "warning")
     return redirect(url_for("users.detail", user_id=user_id))
@@ -475,7 +503,9 @@ def archive(user_id: uuid.UUID) -> Response:
     user.is_active = False
     user.version += 1
     audit(
-        "edit", "UserAccount", user.id,
+        "edit",
+        "UserAccount",
+        user.id,
         f"Účet {user.name} ({user.email}) byl archivován",
         {"is_archived": [False, True], "is_active": [True, False]},
     )
@@ -496,7 +526,9 @@ def unarchive(user_id: uuid.UUID) -> Response:
     # Unarchiving does not re-activate — admin must do that explicitly.
     user.version += 1
     audit(
-        "edit", "UserAccount", user.id,
+        "edit",
+        "UserAccount",
+        user.id,
         f"Účet {user.name} ({user.email}) byl obnoven z archivu",
         {"is_archived": [True, False]},
     )
@@ -506,6 +538,7 @@ def unarchive(user_id: uuid.UUID) -> Response:
 
 
 # ── Batch actions ─────────────────────────────────────────────────────────────
+
 
 @users_bp.route("/batch", methods=["POST"])
 @login_required
@@ -555,9 +588,7 @@ def batch_action() -> Response:
         flash("Žádní platní uživatelé nevybrání.", "warning")
         return redirect(url_for("users.index"))
 
-    users_list = db.session.scalars(
-        db.select(UserAccount).where(UserAccount.id.in_(user_uuids))
-    ).all()
+    users_list = db.session.scalars(db.select(UserAccount).where(UserAccount.id.in_(user_uuids))).all()
 
     # --- Apply action ---
     changed = 0
@@ -577,10 +608,16 @@ def batch_action() -> Response:
             user.version += 1
 
         after = sorted(r.name for r in user.roles)
-        audit("edit", "UserAccount", user.id, (
+        audit(
+            "edit",
+            "UserAccount",
+            user.id,
+            (
                 f"Hromadná akce: {'přidána' if action == 'add_role' else 'odebrána'} "
                 f"role '{role.name}' uživateli {user.name}"
-            ), diff_changes({"roles": before}, {"roles": after}))
+            ),
+            diff_changes({"roles": before}, {"roles": after}),
+        )
         changed += 1
 
     db.session.commit()
@@ -595,6 +632,7 @@ def batch_action() -> Response:
 
 
 # ── Invites ───────────────────────────────────────────────────────────────────
+
 
 @users_bp.route("/invites")
 @login_required
@@ -667,6 +705,7 @@ def _queue_invite_email(invite: RegistrationInvite) -> None:
     """Enqueue invite email into outbox and link it to the invite row."""
     from app.config import INVITE_TOKEN_HOURS as _HOURS
     from app.mail import _base_context  # noqa: PLC0415
+
     register_url = external_url_for("auth.register", token=invite.token)
     html_body = render_template(
         "email/invite.html",
@@ -726,4 +765,5 @@ def cancel_invite(invite_id: int) -> Response:
 
 def _send_activation_email(user: UserAccount) -> None:
     from app.mail import send_account_activated  # noqa: PLC0415
+
     send_account_activated(user)

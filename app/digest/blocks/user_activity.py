@@ -1,9 +1,8 @@
 """User activity digest block — audit log entries per user."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.digest.base import BaseBlock
@@ -22,6 +21,7 @@ class UserActivityBlock(BaseBlock):
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
         import sqlalchemy as sa
+
         from app.models.audit import AuditLogEntry
         from app.models.user import UserAccount
 
@@ -44,15 +44,10 @@ class UserActivityBlock(BaseBlock):
         actor_ids = [r.actor_id for r in rows]
         users_by_id: dict[Any, str] = {}
         if actor_ids:
-            users = db_session.scalars(
-                sa.select(UserAccount).where(UserAccount.id.in_(actor_ids))
-            ).all()
+            users = db_session.scalars(sa.select(UserAccount).where(UserAccount.id.in_(actor_ids))).all()
             users_by_id = {u.id: u.name for u in users}
 
-        entries = [
-            {"name": users_by_id.get(r.actor_id, str(r.actor_id)), "count": r.cnt}
-            for r in rows
-        ]
+        entries = [{"name": users_by_id.get(r.actor_id, str(r.actor_id)), "count": r.cnt} for r in rows]
 
         return {
             "title": config.get("title", self.default_config["title"]),

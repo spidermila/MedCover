@@ -1,22 +1,22 @@
 """Tests for the výkaz práce (employee work report) feature."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+import os
+from datetime import datetime, timedelta, timezone
 
+import openpyxl
 import pytest
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _login
-from tests.conftest import _make_user
+from app.scheduler_tasks import cleanup_work_report_files
+from app.work_report_generator import generate_work_report
+from tests.conftest import _login, _make_user
 
 
 def _make_paid_event(
@@ -65,6 +65,7 @@ def _make_paid_event(
 
 
 # ── Route smoke tests ──────────────────────────────────────────────────────────
+
 
 class TestVykazIndex:
     def test_requires_login(self, client):
@@ -143,11 +144,10 @@ class TestVykazDownload:
 
 # ── Generator unit tests ───────────────────────────────────────────────────────
 
+
 class TestVykazGenerator:
     def test_generator_produces_valid_xlsx(self, app, tmp_path, monkeypatch):
         """generate_work_report creates a readable xlsx with correct sheet name."""
-        import openpyxl
-        from app.work_report_generator import generate_work_report
 
         with app.app_context():
             monkeypatch.setattr(app, "instance_path", str(tmp_path))
@@ -160,8 +160,6 @@ class TestVykazGenerator:
 
     def test_generator_correct_day_count(self, app, tmp_path, monkeypatch):
         """February 2026 should have 28 day rows (not 29 or 31)."""
-        import openpyxl
-        from app.work_report_generator import generate_work_report
 
         with app.app_context():
             monkeypatch.setattr(app, "instance_path", str(tmp_path))
@@ -177,8 +175,6 @@ class TestVykazGenerator:
 
     def test_generator_fills_paid_events(self, app, tmp_path, monkeypatch):
         """Events attended by the user appear in the correct day row."""
-        import openpyxl
-        from app.work_report_generator import generate_work_report
 
         now = datetime(2026, 3, 15, 10, 0, tzinfo=timezone.utc)
         end = datetime(2026, 3, 15, 14, 0, tzinfo=timezone.utc)
@@ -198,8 +194,6 @@ class TestVykazGenerator:
 
     def test_generator_holiday_yellow(self, app, tmp_path, monkeypatch):
         """January 1 (Czech public holiday) should have yellow fill."""
-        import openpyxl
-        from app.work_report_generator import generate_work_report
 
         with app.app_context():
             monkeypatch.setattr(app, "instance_path", str(tmp_path))
@@ -213,8 +207,6 @@ class TestVykazGenerator:
 
     def test_generator_weekend_red_font(self, app, tmp_path, monkeypatch):
         """Saturday day-name cell should use red font."""
-        import openpyxl
-        from app.work_report_generator import generate_work_report
 
         with app.app_context():
             monkeypatch.setattr(app, "instance_path", str(tmp_path))
@@ -232,8 +224,6 @@ class TestVykazGenerator:
 
 class TestCleanupVykazFiles:
     def test_cleanup_removes_old_files(self, tmp_path):
-        from app.scheduler_tasks import cleanup_work_report_files
-        import os
 
         work_report_dir = tmp_path / "work_report" / "user1"
         work_report_dir.mkdir(parents=True)

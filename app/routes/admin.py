@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import socket
 import time
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint
-from flask import render_template
-from flask import request
+from flask import Blueprint, render_template, request
 from flask_login import login_required
 from sqlalchemy import collate
 
@@ -16,16 +12,14 @@ from app.extensions import db
 from app.models.feedback import UserFeedback
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from app.utils import CS_COLLATION
-from app.utils import get_or_404
-from app.utils import require_permission
+from app.utils import CS_COLLATION, get_or_404, require_permission
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 _PAGE_SIZE = 50
 
 # Response-time thresholds
-_DB_WARN_MS = 200    # warn above 200 ms
+_DB_WARN_MS = 200  # warn above 200 ms
 _SMTP_WARN_MS = 1000  # warn above 1 s
 
 
@@ -62,60 +56,66 @@ def _check_smtp(settings: object) -> dict:
         return {"configured": False, "status": "unconfigured", "ms": None, "error": None}
     try:
         t0 = time.monotonic()
-        with socket.create_connection((settings.smtp_server, settings.smtp_port), timeout=3):  # type: ignore[attr-defined]
+        with socket.create_connection(  # type: ignore[attr-defined]
+            (settings.smtp_server, settings.smtp_port), timeout=3
+        ):
             pass
         ms = int((time.monotonic() - t0) * 1000)
         status = "warning" if ms > _SMTP_WARN_MS else "ok"
         return {"configured": True, "status": status, "ms": ms, "error": None}
     except TimeoutError:
-        return {"configured": True, "status": "error", "ms": None,
-                "error": f"Spojení na {settings.smtp_server}:{settings.smtp_port} vypršelo (timeout 3 s)"}  # type: ignore[attr-defined]
+        return {
+            "configured": True,
+            "status": "error",
+            "ms": None,
+            "error": f"Spojení na {settings.smtp_server}:{settings.smtp_port} vypršelo (timeout 3 s)",
+        }  # type: ignore[attr-defined]
     except OSError as exc:
         return {"configured": True, "status": "error", "ms": None, "error": str(exc)}
 
 
 def _admin_statistics(now: datetime) -> dict:
     """Collect user/event/outbox/audit statistics for the admin dashboard."""
+    from app.models.audit import AuditLogEntry
     from app.models.event import Event, EventStatus
     from app.models.outbox import OutboxEmail
-    from app.models.audit import AuditLogEntry
 
-    user_total = db.session.scalar(db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived.is_(False)))
-    user_active = db.session.scalar(db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_active.is_(True), UserAccount.is_archived.is_(False)))
+    user_total = db.session.scalar(
+        db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived.is_(False))
+    )
+    user_active = db.session.scalar(
+        db.select(db.func.count())
+        .select_from(UserAccount)
+        .where(UserAccount.is_active.is_(True), UserAccount.is_archived.is_(False))
+    )
 
     event_counts = {
-        s.value: db.session.scalar(
-            db.select(db.func.count()).select_from(Event).where(Event.status == s)
-        )
+        s.value: db.session.scalar(db.select(db.func.count()).select_from(Event).where(Event.status == s))
         for s in EventStatus
     }
 
     cutoff_24h = now - timedelta(hours=24)
     outbox_pending = db.session.scalar(
-        db.select(db.func.count()).select_from(OutboxEmail)
+        db.select(db.func.count())
+        .select_from(OutboxEmail)
         .where(OutboxEmail.status == "pending", OutboxEmail.created_at >= cutoff_24h)
     )
     outbox_failed = db.session.scalar(
-        db.select(db.func.count()).select_from(OutboxEmail)
+        db.select(db.func.count())
+        .select_from(OutboxEmail)
         .where(OutboxEmail.status == "failed", OutboxEmail.created_at >= cutoff_24h)
     )
     outbox_sent = db.session.scalar(
-        db.select(db.func.count()).select_from(OutboxEmail)
+        db.select(db.func.count())
+        .select_from(OutboxEmail)
         .where(OutboxEmail.status == "sent", OutboxEmail.created_at >= cutoff_24h)
     )
-    outbox_last = db.session.scalar(
-        db.select(OutboxEmail).order_by(OutboxEmail.created_at.desc()).limit(1)
-    )
+    outbox_last = db.session.scalar(db.select(OutboxEmail).order_by(OutboxEmail.created_at.desc()).limit(1))
     outbox_last_sent = db.session.scalar(
-        db.select(OutboxEmail.sent_at)
-        .where(OutboxEmail.status == "sent")
-        .order_by(OutboxEmail.sent_at.desc())
-        .limit(1)
+        db.select(OutboxEmail.sent_at).where(OutboxEmail.status == "sent").order_by(OutboxEmail.sent_at.desc()).limit(1)
     )
 
-    recent_audit = db.session.scalars(
-        db.select(AuditLogEntry).order_by(AuditLogEntry.timestamp.desc()).limit(8)
-    ).all()
+    recent_audit = db.session.scalars(db.select(AuditLogEntry).order_by(AuditLogEntry.timestamp.desc()).limit(8)).all()
 
     feedback_count = db.session.scalar(db.select(db.func.count()).select_from(UserFeedback))
 
@@ -123,7 +123,9 @@ def _admin_statistics(now: datetime) -> dict:
         "user_total": user_total,
         "user_active": user_active,
         "user_pending": user_total - user_active,
-        "user_archived": db.session.scalar(db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived.is_(True))),
+        "user_archived": db.session.scalar(
+            db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived.is_(True))
+        ),
         "event_total": sum(event_counts.values()),
         "event_counts": event_counts,
         "outbox_pending": outbox_pending,
@@ -169,6 +171,7 @@ def index() -> str:
 
 # ── Permission matrix ─────────────────────────────────────────────────────────
 
+
 @admin_bp.route("/permissions")
 @login_required
 def permissions() -> str:
@@ -186,6 +189,7 @@ def permissions() -> str:
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
+
 
 @admin_bp.route("/audit-log/")
 @login_required
@@ -228,9 +232,7 @@ def audit_log_list() -> str:
 
     # Paginate manually: count + offset/limit
     total = db.session.scalar(db.select(db.func.count()).select_from(query.subquery()))
-    entries = db.session.scalars(
-        query.offset((page - 1) * _PAGE_SIZE).limit(_PAGE_SIZE)
-    ).all()
+    entries = db.session.scalars(query.offset((page - 1) * _PAGE_SIZE).limit(_PAGE_SIZE)).all()
     total_pages = max(1, (total + _PAGE_SIZE - 1) // _PAGE_SIZE)
 
     # Distinct values for filter dropdowns
@@ -242,9 +244,9 @@ def audit_log_list() -> str:
     ).all()
     actors = db.session.scalars(
         db.select(UserAccount)
-        .where(UserAccount.id.in_(
-            db.select(AuditLogEntry.actor_id).where(AuditLogEntry.actor_id.isnot(None)).distinct()
-        ))
+        .where(
+            UserAccount.id.in_(db.select(AuditLogEntry.actor_id).where(AuditLogEntry.actor_id.isnot(None)).distinct())
+        )
         .order_by(collate(UserAccount.name, CS_COLLATION))
     ).all()
 
@@ -272,6 +274,7 @@ def audit_log_detail(entry_id: int) -> str:
     require_permission("admin.view")
 
     from app.models.audit import AuditLogEntry
+
     entry = get_or_404(AuditLogEntry, entry_id)
 
     return render_template("admin/audit_log_detail.html", entry=entry)

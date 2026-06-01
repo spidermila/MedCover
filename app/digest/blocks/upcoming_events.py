@@ -1,9 +1,8 @@
 """Upcoming events digest block."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.digest.base import BaseBlock
@@ -23,6 +22,7 @@ class UpcomingEventsBlock(BaseBlock):
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
         import sqlalchemy as sa
+
         from app.models.event import Event, EventStatus
 
         now = datetime.now(timezone.utc)
@@ -36,11 +36,13 @@ class UpcomingEventsBlock(BaseBlock):
             .where(
                 Event.start_datetime >= now,
                 Event.start_datetime <= until,
-                Event.status.in_([
-                    EventStatus.PUBLISHED,
-                    EventStatus.ASSIGNMENTS_OPEN,
-                    EventStatus.ASSIGNMENTS_CLOSED,
-                ]),
+                Event.status.in_(
+                    [
+                        EventStatus.PUBLISHED,
+                        EventStatus.ASSIGNMENTS_OPEN,
+                        EventStatus.ASSIGNMENTS_CLOSED,
+                    ]
+                ),
                 Event.archived.is_(False),
             )
             .order_by(Event.start_datetime.asc())
@@ -53,11 +55,13 @@ class UpcomingEventsBlock(BaseBlock):
             unfilled_count = len(ev.unfilled_spots)
             if unfilled_only and unfilled_count == 0:
                 continue
-            rows.append({
-                "event": ev,
-                "unfilled_count": unfilled_count,
-                "total_spots": len(ev.spots),
-            })
+            rows.append(
+                {
+                    "event": ev,
+                    "unfilled_count": unfilled_count,
+                    "total_spots": len(ev.spots),
+                }
+            )
 
         return {
             "title": config.get("title", self.default_config["title"]),

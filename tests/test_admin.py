@@ -1,6 +1,10 @@
 """Tests for admin blueprint: dashboard, audit log."""
+
+from cryptography.fernet import Fernet
+
 from app.extensions import db
 from app.models.audit import AuditLogEntry
+from app.models.settings import get_settings
 from app.utils import diff_changes
 
 
@@ -73,9 +77,6 @@ class TestAppSettings:
 
     def test_settings_page_does_not_expose_smtp_password(self, app, admin_client):
         """The plaintext SMTP password must never appear in the settings page HTML."""
-        from app.extensions import db
-        from app.models.settings import get_settings
-        from cryptography.fernet import Fernet
 
         # Configure a real (encrypted) SMTP password in settings
         test_password = "super_secret_smtp_pass_99"
@@ -121,14 +122,22 @@ class TestAuditLogUI:
 
     def test_audit_log_filter_by_entity_type(self, app, admin_client):
         with app.app_context():
-            db.session.add(AuditLogEntry(
-                action_type="create", entity_type="Event",
-                entity_id="1", summary="Akce vytvořena",
-            ))
-            db.session.add(AuditLogEntry(
-                action_type="edit", entity_type="MasterEvent",
-                entity_id="2", summary="ME upravena",
-            ))
+            db.session.add(
+                AuditLogEntry(
+                    action_type="create",
+                    entity_type="Event",
+                    entity_id="1",
+                    summary="Akce vytvořena",
+                )
+            )
+            db.session.add(
+                AuditLogEntry(
+                    action_type="edit",
+                    entity_type="MasterEvent",
+                    entity_id="2",
+                    summary="ME upravena",
+                )
+            )
             db.session.commit()
 
         response = admin_client.get("/admin/audit-log/?entity_type=Event")

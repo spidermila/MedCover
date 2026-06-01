@@ -32,5 +32,5 @@ from .role import role_permissions  # noqa: F401
 from .settings import AppSettings  # noqa: F401
 from .settings import get_settings  # noqa: F401
 from .user import CalendarView  # noqa: F401
-from .user import user_roles  # noqa: F401
 from .user import UserAccount  # noqa: F401
+from .user import user_roles  # noqa: F401

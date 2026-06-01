@@ -1,22 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint
-from flask import jsonify
-from flask import render_template
-from flask import Response
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, jsonify, render_template
+from flask_login import current_user, login_required
 from sqlalchemy import or_
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.user import UserAccount
 from app.queries import user_fillable_qual_ids
 
@@ -42,11 +34,13 @@ def changelog() -> str:
 
 def _my_events_section(now: datetime, horizon: datetime) -> tuple[list[tuple[Event, list[str]]], set[int]]:
     """Build the 'Moje akce' section and return (tagged_events, assigned_event_id_set)."""
-    assigned_event_id_set: set = set(db.session.scalars(
-        db.select(EventSpot.event_id)
-        .join(Assignment, Assignment.spot_id == EventSpot.id)
-        .where(Assignment.user_id == current_user.id)
-    ).all())
+    assigned_event_id_set: set = set(
+        db.session.scalars(
+            db.select(EventSpot.event_id)
+            .join(Assignment, Assignment.spot_id == EventSpot.id)
+            .where(Assignment.user_id == current_user.id)
+        ).all()
+    )
 
     my_events_query = (
         db.select(Event)
@@ -82,7 +76,9 @@ def _my_events_section(now: datetime, horizon: datetime) -> tuple[list[tuple[Eve
 
 
 def _open_events_section(
-    now: datetime, horizon: datetime, already_in: set[int],
+    now: datetime,
+    horizon: datetime,
+    already_in: set[int],
 ) -> tuple[list[Event], list[Event]]:
     """Build the open-signups section: (eligible_events, all_open_events)."""
     if not current_user.has_permission("event.assign_own"):
@@ -100,14 +96,8 @@ def _open_events_section(
     ).all()
 
     fillable_ids = user_fillable_qual_ids(current_user)
-    eligible = [
-        e for e in candidates
-        if any(s.assignment is None and s.is_eligible_for(fillable_ids) for s in e.spots)
-    ]
-    all_open = [
-        e for e in candidates
-        if any(s.assignment is None for s in e.spots)
-    ]
+    eligible = [e for e in candidates if any(s.assignment is None and s.is_eligible_for(fillable_ids) for s in e.spots)]
+    all_open = [e for e in candidates if any(s.assignment is None for s in e.spots)]
     return eligible, all_open
 
 
@@ -116,18 +106,21 @@ def _attention_events_section(now: datetime, horizon: datetime) -> list[Event]:
     if not current_user.has_any_permission("event.publish", "event.assignments.open"):
         return []
 
-    events = list(db.session.scalars(
-        db.select(Event)
-        .where(
-            Event.archived.is_(False),
-            Event.status.in_([EventStatus.DRAFT, EventStatus.PUBLISHED, EventStatus.ASSIGNMENTS_OPEN]),
-            Event.start_datetime <= horizon,
-            Event.end_datetime >= now,
-        )
-        .order_by(Event.start_datetime)
-    ).all())
+    events = list(
+        db.session.scalars(
+            db.select(Event)
+            .where(
+                Event.archived.is_(False),
+                Event.status.in_([EventStatus.DRAFT, EventStatus.PUBLISHED, EventStatus.ASSIGNMENTS_OPEN]),
+                Event.start_datetime <= horizon,
+                Event.end_datetime >= now,
+            )
+            .order_by(Event.start_datetime)
+        ).all()
+    )
     return [
-        e for e in events
+        e
+        for e in events
         if e.status in (EventStatus.DRAFT, EventStatus.PUBLISHED)
         or (e.status == EventStatus.ASSIGNMENTS_OPEN and e.mandatory_filled_spots < e.mandatory_total_spots)
     ]
@@ -138,17 +131,19 @@ def _missing_rp_events_section(now: datetime) -> list[Event]:
     if not current_user.has_any_permission("event.publish", "event.assignments.open"):
         return []
     rp_horizon = now + timedelta(days=7)
-    return list(db.session.scalars(
-        db.select(Event)
-        .where(
-            Event.archived.is_(False),
-            Event.status.notin_([EventStatus.DRAFT, EventStatus.CANCELLED]),
-            Event.responsible_person_id == None,  # noqa: E711
-            Event.start_datetime >= now,
-            Event.start_datetime <= rp_horizon,
-        )
-        .order_by(Event.start_datetime)
-    ).all())
+    return list(
+        db.session.scalars(
+            db.select(Event)
+            .where(
+                Event.archived.is_(False),
+                Event.status.notin_([EventStatus.DRAFT, EventStatus.CANCELLED]),
+                Event.responsible_person_id == None,  # noqa: E711
+                Event.start_datetime >= now,
+                Event.start_datetime <= rp_horizon,
+            )
+            .order_by(Event.start_datetime)
+        ).all()
+    )
 
 
 def _pending_debriefings_section() -> list[Assignment]:
@@ -156,18 +151,21 @@ def _pending_debriefings_section() -> list[Assignment]:
     if not current_user.has_permission("debriefing.submit_own"):
         return []
     from app.models.assignment import DebriefingRecord
-    return list(db.session.scalars(
-        db.select(Assignment)
-        .join(EventSpot, Assignment.spot_id == EventSpot.id)
-        .join(Event, EventSpot.event_id == Event.id)
-        .outerjoin(DebriefingRecord, DebriefingRecord.assignment_id == Assignment.id)
-        .where(
-            Assignment.user_id == current_user.id,
-            Event.status == EventStatus.COMPLETED,
-            DebriefingRecord.id == None,  # noqa: E711
-        )
-        .order_by(Event.start_datetime.desc())
-    ).all())
+
+    return list(
+        db.session.scalars(
+            db.select(Assignment)
+            .join(EventSpot, Assignment.spot_id == EventSpot.id)
+            .join(Event, EventSpot.event_id == Event.id)
+            .outerjoin(DebriefingRecord, DebriefingRecord.assignment_id == Assignment.id)
+            .where(
+                Assignment.user_id == current_user.id,
+                Event.status == EventStatus.COMPLETED,
+                DebriefingRecord.id == None,  # noqa: E711
+            )
+            .order_by(Event.start_datetime.desc())
+        ).all()
+    )
 
 
 @main_bp.route("/dashboard")
@@ -181,12 +179,14 @@ def dashboard() -> str:
 
     pending_activations: list[UserAccount] = []
     if current_user.has_permission("user.activate"):
-        pending_activations = list(db.session.scalars(
-            db.select(UserAccount)
-            .where(UserAccount.is_active.is_(False))
-            .where(UserAccount.is_archived.is_(False))
-            .order_by(UserAccount.created_at)
-        ).all())
+        pending_activations = list(
+            db.session.scalars(
+                db.select(UserAccount)
+                .where(UserAccount.is_active.is_(False))
+                .where(UserAccount.is_archived.is_(False))
+                .order_by(UserAccount.created_at)
+            ).all()
+        )
 
     return render_template(
         "main/dashboard.html",

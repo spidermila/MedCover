@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from flask import Flask
-from flask import redirect
-from flask import Response
-from flask import url_for
+from flask import Flask, Response, redirect, url_for
 
 from .admin import admin_bp
 from .admin_digest import bp as admin_digest_bp
@@ -53,6 +50,7 @@ def register_blueprints(app: Flask) -> None:
 
     if app.config.get("DEV_LOGIN_ENABLED"):
         from .dev import dev_bp
+
         app.register_blueprint(dev_bp)
 
     @app.route("/")

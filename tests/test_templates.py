@@ -1,11 +1,10 @@
 """Tests for the Event Templates CRUD feature."""
+
 from __future__ import annotations
 
 from app.extensions import db
 from app.models.audit import AuditLogEntry
-from app.models.event import Event
-from app.models.event import EventSpotTemplate
-from app.models.event import EventTemplate
+from app.models.event import Event, EventSpotTemplate, EventTemplate
 from app.models.qualification import Qualification
 from tests.conftest import _make_master_event
 
@@ -39,6 +38,7 @@ def _event_form_data(master_event_id: int, name: str = "Template Test Event") ->
 
 # ── List page ─────────────────────────────────────────────────────────────────
 
+
 class TestTemplateListPermissions:
     def test_list_requires_login(self, client):
         response = client.get("/templates/", follow_redirects=False)
@@ -64,6 +64,7 @@ class TestTemplateListPermissions:
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
+
 
 class TestTemplateCreate:
     def test_create_page_loads_for_admin(self, admin_client):
@@ -142,6 +143,7 @@ class TestTemplateCreate:
 
 
 # ── Edit ──────────────────────────────────────────────────────────────────────
+
 
 class TestTemplateEdit:
     def test_edit_page_loads_for_admin(self, app, admin_client):
@@ -276,6 +278,7 @@ class TestTemplateEdit:
 
 # ── Delete ────────────────────────────────────────────────────────────────────
 
+
 class TestTemplateDelete:
     def test_admin_can_delete_template(self, app, admin_client):
         tmpl_id = _make_template(app, name="To Delete")
@@ -309,6 +312,7 @@ class TestTemplateDelete:
 
 # ── Create event from template ────────────────────────────────────────────────
 
+
 class TestCreateEventFromTemplate:
     def test_create_from_template_page_loads(self, app, admin_client):
         tmpl_id = _make_template(app, name="Load Template")
@@ -325,7 +329,7 @@ class TestCreateEventFromTemplate:
         tmpl_id = _make_template(app, name="Paid Template", paid=True)
         response = admin_client.get(f"/events/create-from-template/{tmpl_id}")
         # paid checkbox should be checked
-        assert b'checked' in response.data
+        assert b"checked" in response.data
 
     def test_create_from_nonexistent_template_returns_404(self, app, admin_client):
         response = admin_client.get("/events/create-from-template/99999")
@@ -386,12 +390,14 @@ class TestCreateEventFromTemplate:
 
 # ── Template lint ─────────────────────────────────────────────────────────────
 
+
 class TestTemplateLint:
     """Static checks on Jinja2 HTML templates to catch common mistakes."""
 
     def _strip_quoted(self, s: str) -> str:
         """Remove quoted attribute values so > inside values don't fool the parser."""
         import re
+
         s = re.sub(r'"[^"]*"', '""', s)
         s = re.sub(r"'[^']*'", "''", s)
         return s
@@ -427,7 +433,7 @@ class TestTemplateLint:
                     stripped = self._strip_quoted(block)
                     # Find the position after the "<form" keyword
                     form_pos = stripped.lower().find("<form")
-                    after_form = stripped[form_pos + 5:] if form_pos != -1 else stripped
+                    after_form = stripped[form_pos + 5 :] if form_pos != -1 else stripped
                     first_gt = after_form.find(">")
                     first_lt = after_form.find("<")
                     broken = first_gt == -1 or (first_lt != -1 and first_lt < first_gt)
@@ -438,10 +444,7 @@ class TestTemplateLint:
                 else:
                     i += 1
 
-        assert not issues, (
-            "Found <form> tags missing their closing >:\n"
-            + "\n".join(f"  {loc}" for loc in issues)
-        )
+        assert not issues, "Found <form> tags missing their closing >:\n" + "\n".join(f"  {loc}" for loc in issues)
 
     def test_all_post_forms_have_csrf_token(self):
         """Every POST form in a template must contain csrf_token.
@@ -466,7 +469,4 @@ class TestTemplateLint:
                         rel = tmpl.relative_to(template_dir)
                         issues.append(str(rel))
 
-        assert not issues, (
-            "POST forms missing csrf_token:\n"
-            + "\n".join(f"  {p}" for p in issues)
-        )
+        assert not issues, "POST forms missing csrf_token:\n" + "\n".join(f"  {p}" for p in issues)

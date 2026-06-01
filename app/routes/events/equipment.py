@@ -1,31 +1,21 @@
 """Event equipment routes: plan add/remove, assign/unassign, availability check."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
-from flask import flash
-from flask import jsonify
-from flask import redirect
-from flask import request
-from flask import Response
-from flask import url_for
+from flask import Response, flash, jsonify, redirect, request, url_for
 from flask_login import login_required
 
-from . import events_bp
 from app.extensions import db
-from app.models.equipment import EquipmentItem
-from app.models.equipment import EquipmentType
-from app.models.equipment import EventEquipmentAssignment
-from app.models.equipment import EventEquipmentPlan
-from app.models.event import Event
-from app.models.event import EventStatus
-from app.utils import audit
-from app.utils import get_or_404
-from app.utils import require_permission
+from app.models.equipment import EquipmentItem, EquipmentType, EventEquipmentAssignment, EventEquipmentPlan
+from app.models.event import Event, EventStatus
+from app.utils import audit, get_or_404, require_permission
 
+from . import events_bp
 
 # ── Event Equipment: Plan ─────────────────────────────────────────────────────
+
 
 @events_bp.post("/<int:event_id>/equipment/plan")
 @login_required
@@ -49,11 +39,13 @@ def equipment_plan_add(event_id: int) -> Response:
     if existing:
         existing.quantity_required = quantity
     else:
-        db.session.add(EventEquipmentPlan(
-            event_id=event_id,
-            equipment_type_id=type_id,
-            quantity_required=quantity,
-        ))
+        db.session.add(
+            EventEquipmentPlan(
+                event_id=event_id,
+                equipment_type_id=type_id,
+                quantity_required=quantity,
+            )
+        )
 
     audit("edit", "Event", event.id, f"Plán vybavení akce '{event.name}': {et.name} × {quantity}")
     db.session.commit()
@@ -86,6 +78,7 @@ def equipment_plan_remove(event_id: int) -> Response:
 
 # ── Event Equipment: Assignments ──────────────────────────────────────────────
 
+
 @events_bp.post("/<int:event_id>/equipment/assign")
 @login_required
 def equipment_assign(event_id: int) -> Response:
@@ -104,7 +97,10 @@ def equipment_assign(event_id: int) -> Response:
     item = get_or_404(EquipmentItem, item_id)
 
     if not item.is_available:
-        flash(f'Položka „{item.name}" je momentálně nedostupná: {item.unavailability_reason or "bez udaného důvodu"}.', "danger")
+        flash(
+            f'Položka „{item.name}" je momentálně nedostupná: {item.unavailability_reason or "bez udaného důvodu"}.',
+            "danger",
+        )
         return redirect(url_for("events.detail", event_id=event_id))
 
     existing = db.session.scalar(
@@ -150,7 +146,9 @@ def equipment_unassign(event_id: int) -> Response:
 
     item = db.session.get(EquipmentItem, item_id)
     db.session.delete(assignment)
-    audit("edit", "Event", event.id, f"Vrácena položka vybavení '{item.name if item else item_id}' z akce '{event.name}'")
+    audit(
+        "edit", "Event", event.id, f"Vrácena položka vybavení '{item.name if item else item_id}' z akce '{event.name}'"
+    )
     db.session.commit()
 
     flash("Položka vybavení byla vrácena.", "success")
@@ -158,6 +156,7 @@ def equipment_unassign(event_id: int) -> Response:
 
 
 # ── Equipment Availability Check (AJAX) ───────────────────────────────────────
+
 
 @events_bp.post("/equipment-check")
 @login_required
@@ -198,9 +197,7 @@ def equipment_check() -> Response:
     results = []
 
     # Batch-load all requested items in one query
-    items = db.session.scalars(
-        db.select(EquipmentItem).where(EquipmentItem.id.in_(item_ids))
-    ).all()
+    items = db.session.scalars(db.select(EquipmentItem).where(EquipmentItem.id.in_(item_ids))).all()
     items_by_id = {item.id: item for item in items}
 
     available_ids: list[int] = []
@@ -209,12 +206,14 @@ def equipment_check() -> Response:
         if item is None:
             continue
         if not item.is_available:
-            results.append({
-                "item_id": item.id,
-                "item_name": item.name,
-                "status": "unavailable",
-                "reason": item.unavailability_reason or "Bez udaného důvodu",
-            })
+            results.append(
+                {
+                    "item_id": item.id,
+                    "item_name": item.name,
+                    "status": "unavailable",
+                    "reason": item.unavailability_reason or "Bez udaného důvodu",
+                }
+            )
         else:
             available_ids.append(item.id)
 
@@ -240,25 +239,29 @@ def equipment_check() -> Response:
         for c in conflicts:
             conflicting_item_ids.add(c.equipment_item_id)
             ce = c.event
-            results.append({
-                "item_id": c.equipment_item_id,
-                "item_name": items_by_id[c.equipment_item_id].name,
-                "status": "conflict",
-                "conflicting_event": {
-                    "name": ce.name,
-                    "start": ce.start_datetime.isoformat(),
-                    "end": ce.end_datetime.isoformat(),
-                    "url": url_for("events.detail", event_id=ce.id),
-                },
-            })
+            results.append(
+                {
+                    "item_id": c.equipment_item_id,
+                    "item_name": items_by_id[c.equipment_item_id].name,
+                    "status": "conflict",
+                    "conflicting_event": {
+                        "name": ce.name,
+                        "start": ce.start_datetime.isoformat(),
+                        "end": ce.end_datetime.isoformat(),
+                        "url": url_for("events.detail", event_id=ce.id),
+                    },
+                }
+            )
 
         # Items with no conflicts → ok
         for aid in available_ids:
             if aid not in conflicting_item_ids:
-                results.append({
-                    "item_id": aid,
-                    "item_name": items_by_id[aid].name,
-                    "status": "ok",
-                })
+                results.append(
+                    {
+                        "item_id": aid,
+                        "item_name": items_by_id[aid].name,
+                        "status": "ok",
+                    }
+                )
 
     return jsonify({"results": results})

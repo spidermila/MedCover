@@ -2,8 +2,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import schedule
@@ -31,9 +30,11 @@ MAIL_QUEUE_INTERVAL_SECONDS: int = int(os.environ.get("MAIL_QUEUE_INTERVAL_SECON
 
 def _logged_task(name: str, fn: Callable[[], None]) -> Callable[[], None]:
     """Wrap a scheduled task to emit an INFO log line each time it fires."""
+
     def _wrapper() -> None:
         log.info("Task running: %s", name)
         fn()
+
     _wrapper.__name__ = fn.__name__
     return _wrapper
 
@@ -49,8 +50,9 @@ def process_email_queue() -> None:
     the admin settings page take effect without a container restart.
     """
     with app.app_context():
-        from app.models.settings import get_settings
         from app.mail import drain_one_outbox_email
+        from app.models.settings import get_settings
+
         s = get_settings()
         s.apply_to_app(app)
         drain_one_outbox_email()
@@ -60,8 +62,8 @@ def open_assignments() -> None:
     """Auto-transition Events from Published → Assignments Open when assignments_open_datetime has passed."""
     with app.app_context():
         from app.extensions import db
-        from app.models.event import Event, EventStatus
         from app.models.audit import AuditLogEntry
+        from app.models.event import Event, EventStatus
 
         now = datetime.now(timezone.utc)
         events = db.session.scalars(
@@ -75,13 +77,15 @@ def open_assignments() -> None:
         for event in events:
             event.status = EventStatus.ASSIGNMENTS_OPEN
             event.version += 1
-            db.session.add(AuditLogEntry(
-                actor_id=SCHEDULER_ACTOR_ID,
-                action_type="status_change",
-                entity_type="Event",
-                entity_id=str(event.id),
-                summary=f"[Scheduler] Přihlašování automaticky otevřeno pro akci '{event.name}'",
-            ))
+            db.session.add(
+                AuditLogEntry(
+                    actor_id=SCHEDULER_ACTOR_ID,
+                    action_type="status_change",
+                    entity_type="Event",
+                    entity_id=str(event.id),
+                    summary=f"[Scheduler] Přihlašování automaticky otevřeno pro akci '{event.name}'",
+                )
+            )
             log.info("Opened assignments for event id=%s name=%r", event.id, event.name)
 
         if events:
@@ -93,8 +97,8 @@ def close_completed_events() -> None:
     """Auto-transition Events from Assignments Open/Closed → Completed after end_datetime."""
     with app.app_context():
         from app.extensions import db
-        from app.models.event import Event, EventStatus
         from app.models.audit import AuditLogEntry
+        from app.models.event import Event, EventStatus
 
         now = datetime.now(timezone.utc)
         events = db.session.scalars(
@@ -109,13 +113,15 @@ def close_completed_events() -> None:
             event.status = EventStatus.COMPLETED
             event.archived = True
             event.version += 1
-            db.session.add(AuditLogEntry(
-                actor_id=SCHEDULER_ACTOR_ID,
-                action_type="status_change",
-                entity_type="Event",
-                entity_id=str(event.id),
-                summary=f"[Scheduler] Akce '{event.name}' automaticky dokončena po skončení termínu",
-            ))
+            db.session.add(
+                AuditLogEntry(
+                    actor_id=SCHEDULER_ACTOR_ID,
+                    action_type="status_change",
+                    entity_type="Event",
+                    entity_id=str(event.id),
+                    summary=f"[Scheduler] Akce '{event.name}' automaticky dokončena po skončení termínu",
+                )
+            )
             log.info("Completed event id=%s name=%r", event.id, event.name)
 
         if events:
@@ -132,6 +138,7 @@ def send_reminders() -> None:
     with app.app_context():
         from app.extensions import db
         from app.scheduler_tasks import run_send_reminders
+
         run_send_reminders(db.session)
 
 
@@ -140,6 +147,7 @@ def send_admin_digest_task() -> None:
     with app.app_context():
         from app.extensions import db
         from app.scheduler_tasks import run_admin_digest
+
         run_admin_digest(db.session)
 
 
@@ -148,6 +156,7 @@ def scheduled_backup_task() -> None:
     with app.app_context():
         from app.extensions import db
         from app.scheduler_tasks import run_scheduled_backup
+
         run_scheduled_backup(db.session)
 
 
@@ -156,6 +165,7 @@ def record_metrics() -> None:
     with app.app_context():
         from app.extensions import db
         from app.scheduler_tasks import run_record_metrics
+
         run_record_metrics(db.session)
 
 
@@ -163,6 +173,7 @@ def cleanup_work_report() -> None:
     """Remove employee work report xlsx files older than 1 day."""
     with app.app_context():
         from app.scheduler_tasks import cleanup_work_report_files
+
         cleanup_work_report_files(app.instance_path)
 
 
@@ -177,7 +188,9 @@ schedule.every(1).hours.do(_logged_task("cleanup_work_report", cleanup_work_repo
 
 log.info(
     "Scheduler started (instance=%s pid=%d mail_queue_interval=%ds)",
-    INSTANCE_ID or "?", os.getpid(), MAIL_QUEUE_INTERVAL_SECONDS,
+    INSTANCE_ID or "?",
+    os.getpid(),
+    MAIL_QUEUE_INTERVAL_SECONDS,
 )
 
 _last_alive_log: float = 0.0  # monotonic timestamp of last hourly alive message
@@ -190,7 +203,8 @@ while True:
     if _now_mono - _last_alive_log >= 3600:
         log.info(
             "Scheduler alive (instance=%s pid=%d)",
-            INSTANCE_ID or "?", os.getpid(),
+            INSTANCE_ID or "?",
+            os.getpid(),
         )
         _last_alive_log = _now_mono
 
@@ -199,6 +213,7 @@ while True:
         with app.app_context():
             from app.extensions import db
             from app.models.settings import get_settings
+
             s = get_settings()
             s.scheduler_last_seen = datetime.now(timezone.utc)
             db.session.commit()

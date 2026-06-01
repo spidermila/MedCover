@@ -1,19 +1,12 @@
 """Admin digest configuration, preview and send routes."""
+
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from flask import abort
-from flask import Blueprint
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 
 from app.extensions import db
 
@@ -38,13 +31,14 @@ def _require_digest_perm() -> None:
 
 # ── Settings page ─────────────────────────────────────────────────────────────
 
+
 @bp.route("/", methods=["GET"])
 @login_required
 def index() -> str:
     _require_digest_perm()
+    from app.digest.registry import BLOCK_REGISTRY
     from app.models.digest import get_digest_schedule
     from app.models.settings import get_settings
-    from app.digest.registry import BLOCK_REGISTRY
 
     schedule = get_digest_schedule()
     return render_template(
@@ -92,9 +86,10 @@ _MAX_INSTANCES_PER_TYPE = 5
 @login_required
 def add_block() -> Response:
     _require_digest_perm()
-    from app.models.digest import get_digest_schedule, DigestBlock
-    from app.digest.registry import BLOCK_REGISTRY
     import sqlalchemy as sa
+
+    from app.digest.registry import BLOCK_REGISTRY
+    from app.models.digest import DigestBlock, get_digest_schedule
 
     block_type = request.form.get("block_type", "").strip()
     if block_type not in BLOCK_REGISTRY:
@@ -104,29 +99,37 @@ def add_block() -> Response:
     cls = BLOCK_REGISTRY[block_type]
     schedule = get_digest_schedule()
 
-    count = db.session.scalar(
-        sa.select(sa.func.count()).select_from(DigestBlock).where(
-            DigestBlock.digest_schedule_id == schedule.id,
-            DigestBlock.block_type == block_type,
+    count = (
+        db.session.scalar(
+            sa.select(sa.func.count())
+            .select_from(DigestBlock)
+            .where(
+                DigestBlock.digest_schedule_id == schedule.id,
+                DigestBlock.block_type == block_type,
+            )
         )
-    ) or 0
+        or 0
+    )
     if count >= _MAX_INSTANCES_PER_TYPE:
         flash(f'Blok "{cls.label}" lze přidat nejvýše {_MAX_INSTANCES_PER_TYPE}×.', "danger")
         return redirect(url_for("admin_digest.index"))
 
-    max_order = db.session.scalar(
-        sa.select(sa.func.max(DigestBlock.sort_order)).where(
-            DigestBlock.digest_schedule_id == schedule.id
+    max_order = (
+        db.session.scalar(
+            sa.select(sa.func.max(DigestBlock.sort_order)).where(DigestBlock.digest_schedule_id == schedule.id)
         )
-    ) or 0
+        or 0
+    )
 
-    db.session.add(DigestBlock(
-        digest_schedule_id=schedule.id,
-        block_type=block_type,
-        enabled=True,
-        sort_order=max_order + 1,
-        config_json=dict(cls.default_config),
-    ))
+    db.session.add(
+        DigestBlock(
+            digest_schedule_id=schedule.id,
+            block_type=block_type,
+            enabled=True,
+            sort_order=max_order + 1,
+            config_json=dict(cls.default_config),
+        )
+    )
     db.session.commit()
     flash(f'Blok "{cls.label}" byl přidán.', "success")
     return redirect(url_for("admin_digest.index"))
@@ -136,16 +139,19 @@ def add_block() -> Response:
 @login_required
 def save_block(block_id: int) -> Response:
     _require_digest_perm()
-    from app.models.digest import get_digest_schedule, DigestBlock
-    from app.digest.registry import BLOCK_REGISTRY
     import sqlalchemy as sa
+
+    from app.digest.registry import BLOCK_REGISTRY
+    from app.models.digest import DigestBlock, get_digest_schedule
 
     schedule = get_digest_schedule()
     block = db.session.scalar(
-        sa.select(DigestBlock).where(
+        sa.select(DigestBlock)
+        .where(
             DigestBlock.id == block_id,
             DigestBlock.digest_schedule_id == schedule.id,
-        ).with_for_update()
+        )
+        .with_for_update()
     )
     if block is None:
         abort(404)
@@ -172,9 +178,10 @@ def save_block(block_id: int) -> Response:
 @login_required
 def delete_block(block_id: int) -> Response:
     _require_digest_perm()
-    from app.models.digest import get_digest_schedule, DigestBlock
-    from app.digest.registry import BLOCK_REGISTRY
     import sqlalchemy as sa
+
+    from app.digest.registry import BLOCK_REGISTRY
+    from app.models.digest import DigestBlock, get_digest_schedule
 
     schedule = get_digest_schedule()
     block = db.session.scalar(
@@ -199,8 +206,15 @@ def _merge_block_config(block_type: str, config: dict[str, object], form: Any) -
     config["title"] = form.get("title", config.get("title", "")).strip()
 
     if block_type == "server_stats":
-        for key in ("show_user_count", "show_event_count", "show_db_size", "show_table_sizes",
-                    "show_scheduler_heartbeat", "show_outbox_pending", "show_outbox_peak"):
+        for key in (
+            "show_user_count",
+            "show_event_count",
+            "show_db_size",
+            "show_table_sizes",
+            "show_scheduler_heartbeat",
+            "show_outbox_pending",
+            "show_outbox_peak",
+        ):
             config[key] = bool(form.get(key))
         config["peak_hours"] = max(1, form.get("peak_hours", type=int) or 24)
         config["max_table_rows"] = max(1, min(50, form.get("max_table_rows", type=int) or 5))
@@ -236,12 +250,14 @@ def _merge_block_config(block_type: str, config: dict[str, object], form: Any) -
 
 # ── Block enable toggle ───────────────────────────────────────────────────────
 
+
 @bp.route("/blocks/<int:block_id>/toggle", methods=["POST"])
 @login_required
 def toggle_block(block_id: int) -> dict[str, object]:
     _require_digest_perm()
-    from app.models.digest import get_digest_schedule, DigestBlock
     import sqlalchemy as sa
+
+    from app.models.digest import DigestBlock, get_digest_schedule
 
     schedule = get_digest_schedule()
     block = db.session.scalar(
@@ -263,34 +279,34 @@ def toggle_block(block_id: int) -> dict[str, object]:
 
 # ── Block reorder ─────────────────────────────────────────────────────────────
 
+
 @bp.route("/blocks/reorder", methods=["POST"])
 @login_required
 def reorder_blocks() -> dict[str, bool]:
     _require_digest_perm()
-    from app.models.digest import DigestBlock
     import sqlalchemy as sa
+
+    from app.models.digest import DigestBlock
 
     ids: list[int] = request.get_json(silent=True) or []
     if len(ids) > 50:
         abort(400)
     for i, block_id in enumerate(ids):
-        db.session.execute(
-            sa.update(DigestBlock)
-            .where(DigestBlock.id == block_id)
-            .values(sort_order=i)
-        )
+        db.session.execute(sa.update(DigestBlock).where(DigestBlock.id == block_id).values(sort_order=i))
     db.session.commit()
     return {"ok": True}
 
 
 # ── Preview ───────────────────────────────────────────────────────────────────
 
+
 @bp.route("/preview")
 @login_required
 def preview() -> Response:
     _require_digest_perm()
-    from app.digest.renderer import render_digest
     import html as _html
+
+    from app.digest.renderer import render_digest
 
     digest_html = render_digest(db.session)
     # Sandbox the digest content in an iframe to prevent XSS from admin-controlled
@@ -300,12 +316,13 @@ def preview() -> Response:
         '<!DOCTYPE html><html><body style="margin:0">'
         f'<iframe srcdoc="{escaped}"'
         ' style="width:100%;height:100vh;border:none;" sandbox></iframe>'
-        '</body></html>'
+        "</body></html>"
     )
     return Response(wrapper, content_type="text/html; charset=utf-8")
 
 
 # ── Send test ─────────────────────────────────────────────────────────────────
+
 
 @bp.route("/send-test", methods=["POST"])
 @login_required
@@ -330,23 +347,23 @@ def send_test() -> Response:
 
 # ── Send now (to all admins) ──────────────────────────────────────────────────
 
+
 @bp.route("/send-now", methods=["POST"])
 @login_required
 def send_now() -> Response:
     _require_digest_perm()
+    import sqlalchemy as sa
+
     from app.digest.renderer import render_digest
     from app.mail import send_admin_digest, user_can_receive_notification
     from app.models.digest import get_digest_schedule
     from app.models.user import UserAccount
-    import sqlalchemy as sa
 
     schedule = get_digest_schedule()
     html = render_digest(db.session)
 
     recipients = db.session.scalars(
-        sa.select(UserAccount)
-        .where(UserAccount.is_active.is_(True))
-        .where(UserAccount.is_archived.is_(False))
+        sa.select(UserAccount).where(UserAccount.is_active.is_(True)).where(UserAccount.is_archived.is_(False))
     ).all()
 
     count = 0

@@ -1,15 +1,20 @@
 """Tests for the qualifications blueprint (CRUD + permission enforcement)."""
+
 from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
 from app.models.audit import AuditLogEntry
+from app.models.event import Event, EventSpot, EventStatus
+from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _make_user
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_qual(name: str, description: str | None = None) -> Qualification:
     q = Qualification(name=name, description=description)
@@ -27,9 +32,7 @@ def _make_user_with_qual(app, qual: Qualification) -> UserAccount:
 
 def _make_event_spot_with_qual(qual: Qualification) -> int:
     """Create a minimal MasterEvent → Event → EventSpot and attach qual. Returns spot id."""
-    from app.models.master_event import MasterEvent
-    from app.models.event import Event, EventStatus, EventSpot
-    from datetime import datetime, timezone, timedelta
+
     me = MasterEvent(name="Test ME for spot")
     db.session.add(me)
     db.session.flush()
@@ -52,6 +55,7 @@ def _make_event_spot_with_qual(qual: Qualification) -> int:
 
 
 # ── Index ─────────────────────────────────────────────────────────────────────
+
 
 class TestQualificationIndex:
     def test_requires_login(self, client):
@@ -96,6 +100,7 @@ class TestQualificationIndex:
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
+
 
 class TestQualificationCreate:
     def test_get_create_page_admin(self, admin_client):
@@ -180,6 +185,7 @@ class TestQualificationCreate:
 
 
 # ── Edit ──────────────────────────────────────────────────────────────────────
+
 
 class TestQualificationEdit:
     def test_get_edit_page(self, app, admin_client):
@@ -293,6 +299,7 @@ class TestQualificationEdit:
 
 # ── Delete ────────────────────────────────────────────────────────────────────
 
+
 class TestQualificationDelete:
     def test_delete_qualification(self, app, admin_client):
         """Deleting an unreferenced qualification soft-deletes it."""
@@ -339,7 +346,7 @@ class TestQualificationDelete:
 
     def test_delete_cascades_active_spot(self, app, admin_client):
         """Qualification is removed from active (DRAFT) event spots on delete."""
-        from app.models.event import EventSpot
+
         with app.app_context():
             q = _make_qual("SpotQual")
             qid = q.id
@@ -356,9 +363,7 @@ class TestQualificationDelete:
 
     def test_delete_keeps_tombstone_on_completed_spot(self, app, admin_client):
         """Qualification stays linked (tombstone) on completed/cancelled event spots."""
-        from app.models.event import EventSpot, Event, EventStatus
-        from datetime import datetime, timezone, timedelta
-        from app.models.master_event import MasterEvent
+
         with app.app_context():
             q = _make_qual("CompletedSpotQual")
             qid = q.id
@@ -419,6 +424,7 @@ class TestQualificationDelete:
 
 # ── Model: can_be_filled_by ───────────────────────────────────────────────────
 
+
 class TestCanBeFilledBy:
     def test_same_qualification_fills_itself(self, app):
         with app.app_context():
@@ -451,8 +457,8 @@ class TestCanBeFilledBy:
             gp = _make_qual("GrandParent")
             p = _make_qual("Parent2")
             c = _make_qual("GrandChild")
-            p.parents.append(gp)   # gp can fill p's spots
-            c.parents.append(p)    # p can fill c's spots → gp can fill c's spots transitively
+            p.parents.append(gp)  # gp can fill p's spots
+            c.parents.append(p)  # p can fill c's spots → gp can fill c's spots transitively
             db.session.commit()
             # c.can_be_filled_by(gp) → True (transitively)
             assert c.can_be_filled_by(gp)

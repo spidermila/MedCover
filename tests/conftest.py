@@ -2,24 +2,17 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from app import create_app
 from app.extensions import db as _db
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
-from app.models.role import ALL_PERMISSIONS
-from app.models.role import Permission
-from app.models.role import Role
-from app.models.role import ROLE_PERMISSIONS
+from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS, Permission, Role
 from app.models.settings import AppSettings
 from app.models.user import UserAccount
 
@@ -28,33 +21,35 @@ if TYPE_CHECKING:
 
 # All mutable tables — reference data (role, permission, role_permissions,
 # app_settings, alembic_version) is preserved across the suite.
-_MUTABLE_TABLES = " ,".join([
-    "event_equipment_assignment",
-    "event_equipment_plan",
-    "equipment_item",
-    "equipment_type",
-    "debriefing_record",
-    "assignment",
-    "event_spot",
-    "spot_qualifications",
-    "spot_template_qualifications",
-    "event_spot_template",
-    "event_template",
-    "event",
-    "master_event",
-    "user_qualifications",
-    "qualification_parents",
-    "qualification",
-    "registration_invite",
-    "digest_metric_snapshot",
-    "digest_block",
-    "digest_schedule",
-    "outbox_email",
-    "audit_log_entry",
-    "user_feedback",
-    "user_roles",
-    "user_account",
-])
+_MUTABLE_TABLES = " ,".join(
+    [
+        "event_equipment_assignment",
+        "event_equipment_plan",
+        "equipment_item",
+        "equipment_type",
+        "debriefing_record",
+        "assignment",
+        "event_spot",
+        "spot_qualifications",
+        "spot_template_qualifications",
+        "event_spot_template",
+        "event_template",
+        "event",
+        "master_event",
+        "user_qualifications",
+        "qualification_parents",
+        "qualification",
+        "registration_invite",
+        "digest_metric_snapshot",
+        "digest_block",
+        "digest_schedule",
+        "outbox_email",
+        "audit_log_entry",
+        "user_feedback",
+        "user_roles",
+        "user_account",
+    ]
+)
 
 # ── Testcontainers: automatic Postgres container lifecycle ─────────────────────
 # The controller starts one container; xdist workers receive the URL via
@@ -138,6 +133,7 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 # Read lazily (via function) so that pytest_configure can set os.environ
 # before the URL is consumed by the app fixture.
 
+
 def _base_test_db_url() -> str:
     return os.environ.get(
         "TEST_DATABASE_URL",
@@ -166,9 +162,7 @@ def _ensure_db_exists(db_url: str) -> None:
     maintenance_url = f"{base}/postgres"
     engine = create_engine(maintenance_url, isolation_level="AUTOCOMMIT")
     with engine.connect() as conn:
-        exists = conn.execute(
-            text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": db_name}
-        ).fetchone()
+        exists = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": db_name}).fetchone()
         if not exists:
             conn.execute(text(f'CREATE DATABASE "{db_name}"'))
     engine.dispose()
@@ -181,10 +175,13 @@ def _drop_db(db_url: str) -> None:
     engine = create_engine(maintenance_url, isolation_level="AUTOCOMMIT")
     with engine.connect() as conn:
         # Terminate open connections before dropping
-        conn.execute(text(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = :n AND pid <> pg_backend_pid()"
-        ), {"n": db_name})
+        conn.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = :n AND pid <> pg_backend_pid()"
+            ),
+            {"n": db_name},
+        )
         conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
     engine.dispose()
 
@@ -203,7 +200,7 @@ def app(worker_id: str):
     flask_app = create_app("testing", db_url=db_url)
 
     with flask_app.app_context():
-        _db.drop_all()   # clear leftover types/tables from previous runs
+        _db.drop_all()  # clear leftover types/tables from previous runs
         _db.create_all()
         _seed_reference_data()
         _db.session.remove()
@@ -268,9 +265,7 @@ def clean_db(app):
     with app.app_context():
         _db.session.remove()
         with _db.engine.connect() as conn:
-            conn.execute(_db.text(
-                f"TRUNCATE TABLE {_MUTABLE_TABLES} RESTART IDENTITY CASCADE"
-            ))
+            conn.execute(_db.text(f"TRUNCATE TABLE {_MUTABLE_TABLES} RESTART IDENTITY CASCADE"))
             conn.commit()
         # Reset mutable AppSettings fields to their defaults
         settings = _db.session.get(AppSettings, 1)
@@ -416,6 +411,7 @@ def _make_event_in_status(
 def _make_user_with_qual(app, email: str, qual_id: int) -> str:
     """Create a Member user with the given qualification; return str(user.id)."""
     from app.models.qualification import Qualification
+
     with app.app_context():
         qual = _db.session.get(Qualification, qual_id)
         u = _make_user(email, "Test User", Role.MEMBER)

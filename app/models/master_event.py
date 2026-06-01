@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from app.extensions import db
 
@@ -29,7 +28,9 @@ class MasterEvent(db.Model):  # type: ignore[misc]
         nullable=False,
     )
 
-    coordinator = db.relationship("UserAccount", foreign_keys=[coordinator_id], back_populates="coordinated_master_events")
+    coordinator = db.relationship(
+        "UserAccount", foreign_keys=[coordinator_id], back_populates="coordinated_master_events"
+    )
     events = db.relationship("Event", back_populates="master_event", lazy="dynamic")
 
     def __repr__(self) -> str:

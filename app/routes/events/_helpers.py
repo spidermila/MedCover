@@ -1,21 +1,15 @@
 """Shared helpers for the events blueprint sub-modules."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from flask import url_for
 from flask_login import current_user
 
 from app.extensions import db
-from app.models.equipment import EquipmentItem
-from app.models.equipment import EventEquipmentAssignment
-from app.models.equipment import EventEquipmentPlan
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
-from app.models.event import EventTemplate
-from app.models.event import EventType
+from app.models.equipment import EquipmentItem, EventEquipmentAssignment, EventEquipmentPlan
+from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
@@ -23,10 +17,10 @@ from app.utils import get_app_tz
 
 # Valid manual lifecycle transitions: (from_status, to_status, required_permission)
 TRANSITIONS: list[tuple[EventStatus, EventStatus, str]] = [
-    (EventStatus.DRAFT,               EventStatus.PUBLISHED,            "event.publish"),
-    (EventStatus.PUBLISHED,           EventStatus.ASSIGNMENTS_OPEN,     "event.assignments.open"),
-    (EventStatus.ASSIGNMENTS_OPEN,    EventStatus.ASSIGNMENTS_CLOSED,   "event.assignments.close"),
-    (EventStatus.ASSIGNMENTS_CLOSED,  EventStatus.ASSIGNMENTS_OPEN,     "event.assignments.open"),
+    (EventStatus.DRAFT, EventStatus.PUBLISHED, "event.publish"),
+    (EventStatus.PUBLISHED, EventStatus.ASSIGNMENTS_OPEN, "event.assignments.open"),
+    (EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED, "event.assignments.close"),
+    (EventStatus.ASSIGNMENTS_CLOSED, EventStatus.ASSIGNMENTS_OPEN, "event.assignments.open"),
 ]
 
 # Maps action name → (target_status, required_permission, valid_from_statuses)
@@ -50,12 +44,12 @@ BULK_ACTIONS: dict[str, tuple[EventStatus, str, set[EventStatus]]] = {
 
 # FullCalendar event background colours by status value
 STATUS_COLORS: dict[str, str] = {
-    "Koncept":              "#6c757d",
-    "Zveřejněná":          "#0d6efd",
-    "Přihlášky otevřeny":  "#198754",
-    "Přihlášky uzavřeny":  "#ffc107",
-    "Dokončena":            "#212529",
-    "Zrušena":              "#adb5bd",
+    "Koncept": "#6c757d",
+    "Zveřejněná": "#0d6efd",
+    "Přihlášky otevřeny": "#198754",
+    "Přihlášky uzavřeny": "#ffc107",
+    "Dokončena": "#212529",
+    "Zrušena": "#adb5bd",
 }
 
 PER_PAGE = 75
@@ -86,11 +80,14 @@ def _parse_form_fields(form: dict) -> dict:
     }
 
 
-def _validate_event_fields(fields: dict) -> tuple[str | None, EventType, int | None, datetime | None, datetime | None, datetime | None]:
+def _validate_event_fields(
+    fields: dict,
+) -> tuple[str | None, EventType, int | None, datetime | None, datetime | None, datetime | None]:
     """Validate parsed form fields and return (error, event_type, ppc, start_dt, end_dt, assignments_open_dt).
 
     On error, only the first element is non-None.
     """
+
     def _local_to_utc(s: str) -> datetime:
         return datetime.fromisoformat(s).replace(tzinfo=get_app_tz()).astimezone(timezone.utc)
 
@@ -129,9 +126,16 @@ def _validate_event_fields(fields: dict) -> tuple[str | None, EventType, int | N
             rp_role_names = {r.name for r in rp_user.roles}
             if rp_role_names <= {Role.VIEWER}:
                 return (
-                    f"Uživatel {rp_user.name} má pouze roli Pozorovatel a nemůže být "
-                    "odpovědnou osobou. Jako OP je potřeba mít roli Člen nebo vyšší."
-                ), event_type, None, None, None, None
+                    (
+                        f"Uživatel {rp_user.name} má pouze roli Pozorovatel a nemůže být "
+                        "odpovědnou osobou. Jako OP je potřeba mít roli Člen nebo vyšší."
+                    ),
+                    event_type,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
 
     assignments_open_dt = None
     if fields["assignments_open_str"]:
@@ -150,7 +154,9 @@ def parse_event_form(form: dict, existing: Event | None = None) -> tuple[Event |
     (AppSettings.timezone) and stored as UTC in the database.
     """
     fields = _parse_form_fields(form)
-    error, event_type, planned_participants_count, start_dt, end_dt, assignments_open_dt = _validate_event_fields(fields)
+    error, event_type, planned_participants_count, start_dt, end_dt, assignments_open_dt = _validate_event_fields(
+        fields
+    )
     if error:
         return None, error
 
@@ -191,9 +197,13 @@ def build_spots(event: Event, form: dict) -> None:
         description = (form.get(f"spot_desc_{i}") or "").strip() or None
         is_optional = form.get(f"spot_optional_{i}") == "1"
         qual_ids = [int(c) for c in form.getlist(f"spot_cred_{i}") if str(c).isdigit()]
-        qualifications = db.session.scalars(
-            db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
-        ).all() if qual_ids else []
+        qualifications = (
+            db.session.scalars(
+                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
+            ).all()
+            if qual_ids
+            else []
+        )
         spot = EventSpot(event_id=event.id, description=description, is_optional=is_optional)
         spot.required_qualifications = list(qualifications)
         db.session.add(spot)
@@ -244,12 +254,14 @@ def equipment_warnings_for_event(event: Event) -> list[dict]:
     available_ids: list[int] = []
     for item in assigned_items:
         if not item.is_available:
-            warnings.append({
-                "item_name": item.name,
-                "status": "unavailable",
-                "reason": item.unavailability_reason or "Bez udaného důvodu",
-                "conflicting_event": None,
-            })
+            warnings.append(
+                {
+                    "item_name": item.name,
+                    "status": "unavailable",
+                    "reason": item.unavailability_reason or "Bez udaného důvodu",
+                    "conflicting_event": None,
+                }
+            )
         else:
             available_ids.append(item.id)
 
@@ -271,17 +283,19 @@ def equipment_warnings_for_event(event: Event) -> list[dict]:
         id_to_name = {item.id: item.name for item in assigned_items}
         for c in conflicts:
             ce = c.event
-            warnings.append({
-                "item_name": id_to_name[c.equipment_item_id],
-                "status": "conflict",
-                "reason": None,
-                "conflicting_event": {
-                    "name": ce.name,
-                    "start": ce.start_datetime,
-                    "end": ce.end_datetime,
-                    "url": url_for("events.detail", event_id=ce.id),
-                },
-            })
+            warnings.append(
+                {
+                    "item_name": id_to_name[c.equipment_item_id],
+                    "status": "conflict",
+                    "reason": None,
+                    "conflicting_event": {
+                        "name": ce.name,
+                        "start": ce.start_datetime,
+                        "end": ce.end_datetime,
+                        "url": url_for("events.detail", event_id=ce.id),
+                    },
+                }
+            )
     return warnings
 
 
@@ -310,13 +324,17 @@ def copy_spots_with_assignments(source: Event, target: Event) -> None:
 def copy_equipment(source: Event, target: Event) -> None:
     """Copy equipment plans and assignments from source to target."""
     for plan in source.equipment_plans:
-        db.session.add(EventEquipmentPlan(
-            event_id=target.id,
-            equipment_type_id=plan.equipment_type_id,
-            quantity_required=plan.quantity_required,
-        ))
+        db.session.add(
+            EventEquipmentPlan(
+                event_id=target.id,
+                equipment_type_id=plan.equipment_type_id,
+                quantity_required=plan.quantity_required,
+            )
+        )
     for ea in source.equipment_assignments:
-        db.session.add(EventEquipmentAssignment(
-            event_id=target.id,
-            equipment_item_id=ea.equipment_item_id,
-        ))
+        db.session.add(
+            EventEquipmentAssignment(
+                event_id=target.id,
+                equipment_item_id=ea.equipment_item_id,
+            )
+        )

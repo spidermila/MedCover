@@ -47,9 +47,18 @@ show_missing = true
 skip_covered = false
 fail_under = 83
 
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+skip_glob = ["migrations/*"]
+
 [tool.flake8]
 max-line-length = 120
-extend-ignore = ["E501", "W503", "E402"]
+extend-ignore = ["W503", "E402", "E203"]
 exclude = [
     ".git",
     "__pycache__",

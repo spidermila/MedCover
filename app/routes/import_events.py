@@ -6,42 +6,27 @@ Routes:
   POST /import/events/preview    validate JSON + show editable preview
   POST /import/events/confirm    create events in one transaction
 """
+
 from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import collate
 
 from app.extensions import db
-from app.models.assignment import Assignment
-from app.models.assignment import DebriefingRecord
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
-from app.models.event import EventType
+from app.models.assignment import Assignment, DebriefingRecord
+from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.utils import audit
-from app.utils import CS_COLLATION
-from app.utils import get_app_tz
-from app.utils import require_permission
+from app.utils import CS_COLLATION, audit, get_app_tz, require_permission
 
 import_bp = Blueprint("import_events", __name__, url_prefix="/import")
 
@@ -103,6 +88,7 @@ def _process_import_users(
     Returns (created_count, skipped_count, by_name_map, by_email_map).
     The maps include both pre-existing and newly created users for idempotency.
     """
+
     def _qual_by_substr(keyword: str) -> Qualification | None:
         kw = keyword.lower()
         return db.session.scalars(
@@ -114,15 +100,11 @@ def _process_import_users(
 
     user_zdravotnik_qual = _qual_by_substr("zdravotník") or _qual_by_substr("zdravotnik")
     user_zelenac_qual = _qual_by_substr("zelenáč") or _qual_by_substr("zelenac")
-    member_role = db.session.scalars(
-        db.select(Role).where(Role.name == "Member")
-    ).first()
+    member_role = db.session.scalars(db.select(Role).where(Role.name == "Member")).first()
 
     pre_existing = list(db.session.scalars(db.select(UserAccount)).all())
     existing_by_name: dict[str, UserAccount] = {u.name.lower(): u for u in pre_existing}
-    existing_by_email: dict[str, UserAccount] = {
-        u.email.lower(): u for u in pre_existing if u.email
-    }
+    existing_by_email: dict[str, UserAccount] = {u.email.lower(): u for u in pre_existing if u.email}
 
     created = 0
     skipped = 0
@@ -195,16 +177,12 @@ def _create_spots_and_assignments(
     Returns the number of auto-generated debriefings.
     """
     _IMPORT_DEBRIEFING_NOTE = (
-        "importovaný historický dozor - tento debriefing byl "
-        "vygenerován aplikací během importu"
+        "importovaný historický dozor - tento debriefing byl " "vygenerován aplikací během importu"
     )
 
     signup_count_str = form.get(f"{prefix}signup_count", "0")
     signup_count = int(signup_count_str) if signup_count_str.isdigit() else 0
-    signup_names = [
-        form.get(f"{prefix}signup_{j}", "").strip()
-        for j in range(signup_count)
-    ]
+    signup_names = [form.get(f"{prefix}signup_{j}", "").strip() for j in range(signup_count)]
     signup_names = [n for n in signup_names if n]
 
     total_people = len(signup_names) + (1 if responsible_person_id else 0)
@@ -260,12 +238,14 @@ def _create_spots_and_assignments(
                 event.responsible_person_id = rp_user_obj.id
             if is_past:
                 db.session.flush()
-                db.session.add(DebriefingRecord(
-                    assignment_id=rp_assignment.id,
-                    submitted_by_id=current_user.id,
-                    grade=3,
-                    feedback_event=_IMPORT_DEBRIEFING_NOTE,
-                ))
+                db.session.add(
+                    DebriefingRecord(
+                        assignment_id=rp_assignment.id,
+                        submitted_by_id=current_user.id,
+                        grade=3,
+                        feedback_event=_IMPORT_DEBRIEFING_NOTE,
+                    )
+                )
                 auto_debriefings += 1
 
     # Each signup → Zelenáč spots in order
@@ -282,12 +262,14 @@ def _create_spots_and_assignments(
             db.session.add(signup_assignment)
             if is_past:
                 db.session.flush()
-                db.session.add(DebriefingRecord(
-                    assignment_id=signup_assignment.id,
-                    submitted_by_id=current_user.id,
-                    grade=3,
-                    feedback_event=_IMPORT_DEBRIEFING_NOTE,
-                ))
+                db.session.add(
+                    DebriefingRecord(
+                        assignment_id=signup_assignment.id,
+                        submitted_by_id=current_user.id,
+                        grade=3,
+                        feedback_event=_IMPORT_DEBRIEFING_NOTE,
+                    )
+                )
                 auto_debriefings += 1
 
     return auto_debriefings
@@ -341,16 +323,18 @@ def _build_users_preview(payload_users: list[Any], all_users: list[UserAccount])
             existing_user = db_by_email[email.lower()]
             match_reason = "email"
 
-        rows.append({
-            "gs_name": gs_name,
-            "name": name,
-            "email": email,
-            "phone": phone,
-            "is_zdravotnik": is_zdravotnik,
-            "existing": existing_user,
-            "match_reason": match_reason,
-            "is_archived": existing_user.is_archived if existing_user else False,
-        })
+        rows.append(
+            {
+                "gs_name": gs_name,
+                "name": name,
+                "email": email,
+                "phone": phone,
+                "is_zdravotnik": is_zdravotnik,
+                "existing": existing_user,
+                "match_reason": match_reason,
+                "is_archived": existing_user.is_archived if existing_user else False,
+            }
+        )
     return rows
 
 
@@ -423,15 +407,12 @@ def _validate_row(row: Any, idx: int) -> tuple[dict | None, list[str]]:
         "description": str(row.get("description") or "").strip(),
         "time_missing": bool(row.get("time_missing", False)),
         "cancelled": bool(row.get("cancelled", False)),
-        "signups": [
-            str(s).strip()
-            for s in row.get("signups", [])
-            if isinstance(s, str) and str(s).strip()
-        ],
+        "signups": [str(s).strip() for s in row.get("signups", []) if isinstance(s, str) and str(s).strip()],
     }, []
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
 
 @import_bp.get("/events/")
 @login_required
@@ -455,16 +436,18 @@ def events_preview() -> str | Response:
         return error_html
 
     # ── Load DB lookups ─────────────────────────────────────────────────────
-    all_users = list(db.session.scalars(
-        db.select(UserAccount).order_by(collate(UserAccount.name, CS_COLLATION))
-    ).all())
+    all_users = list(db.session.scalars(db.select(UserAccount).order_by(collate(UserAccount.name, CS_COLLATION))).all())
     active_users = [u for u in all_users if u.is_active]
-    master_events = list(db.session.scalars(
-        db.select(MasterEvent).order_by(collate(MasterEvent.name, CS_COLLATION))
-    ).all())
-    qualifications = list(db.session.scalars(
-        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))
-    ).all())
+    master_events = list(
+        db.session.scalars(db.select(MasterEvent).order_by(collate(MasterEvent.name, CS_COLLATION))).all()
+    )
+    qualifications = list(
+        db.session.scalars(
+            db.select(Qualification)
+            .where(Qualification.is_deleted.is_(False))
+            .order_by(collate(Qualification.name, CS_COLLATION))
+        ).all()
+    )
 
     users_preview_rows = _build_users_preview(payload_users, all_users)
 
@@ -488,28 +471,24 @@ def events_preview() -> str | Response:
             warnings.append("Čas akce nebyl zadán — akce bude vytvořena bez pozic.")
         if cleaned["responsible_person"] and rp_confidence == "none":
             rp_name = cleaned["responsible_person"]
-            warnings.append(
-                f'Zodpovědná osoba "{rp_name}" nebyla nalezena v databázi. Přiřaďte ručně.'
-            )
+            warnings.append(f'Zodpovědná osoba "{rp_name}" nebyla nalezena v databázi. Přiřaďte ručně.')
         elif rp_confidence in ("iexact", "reversed"):
             rp_name_found = rp_user.name if rp_user else ""
-            warnings.append(
-                f'Zodpovědná osoba spárována přibližně: "{rp_name_found}". Zkontrolujte.'
-            )
+            warnings.append(f'Zodpovědná osoba spárována přibližně: "{rp_name_found}". Zkontrolujte.')
 
         is_duplicate = (cleaned["name"], cleaned["date"]) in existing_events
         if is_duplicate:
-            warnings.append(
-                "Akce se stejným názvem a datem již v databázi existuje."
-            )
+            warnings.append("Akce se stejným názvem a datem již v databázi existuje.")
 
-        preview_rows.append({
-            **cleaned,
-            "rp_user": rp_user,
-            "rp_confidence": rp_confidence,
-            "warnings": warnings,
-            "is_duplicate": is_duplicate,
-        })
+        preview_rows.append(
+            {
+                **cleaned,
+                "rp_user": rp_user,
+                "rp_confidence": rp_confidence,
+                "warnings": warnings,
+                "is_duplicate": is_duplicate,
+            }
+        )
 
     if parse_errors:
         flash(
@@ -679,8 +658,16 @@ def events_confirm() -> Response:
 
             if not time_missing and not cancelled:
                 auto_debriefings += _create_spots_and_assignments(
-                    event, form, prefix, responsible_person_id, name_to_user,
-                    is_past, _get_int, global_zdravotnik_qual_id, global_zelenac_qual_id, _qual,
+                    event,
+                    form,
+                    prefix,
+                    responsible_person_id,
+                    name_to_user,
+                    is_past,
+                    _get_int,
+                    global_zdravotnik_qual_id,
+                    global_zelenac_qual_id,
+                    _qual,
                 )
 
             audit("import", "Event", event.id, f"Akce importována z Google Sheets: {name}", None)

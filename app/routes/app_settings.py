@@ -2,26 +2,17 @@
 Admin application settings route — lets admins edit org info and SMTP config
 after the initial setup wizard has completed.
 """
+
 from __future__ import annotations
 
 import pytz
-from flask import Blueprint
-from flask import current_app
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
+from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from flask_mail import Message
 
-from app.extensions import db
-from app.extensions import mail
+from app.extensions import db, mail
 from app.models.settings import get_settings
-from app.utils import audit
-from app.utils import diff_changes
-from app.utils import require_permission
+from app.utils import audit, diff_changes, require_permission
 
 app_settings_bp = Blueprint("app_settings", __name__, url_prefix="/admin/settings")
 
@@ -29,9 +20,18 @@ _ALL_TIMEZONES = pytz.common_timezones
 
 
 _SETTINGS_FIELDS = [
-    "org_name", "timezone", "app_base_url", "feedback_enabled", "dev_email_block",
-    "dev_email_allowlist", "smtp_server", "smtp_port", "smtp_use_tls",
-    "smtp_username", "smtp_default_sender", "session_timeout_hours",
+    "org_name",
+    "timezone",
+    "app_base_url",
+    "feedback_enabled",
+    "dev_email_block",
+    "dev_email_allowlist",
+    "smtp_server",
+    "smtp_port",
+    "smtp_use_tls",
+    "smtp_username",
+    "smtp_default_sender",
+    "session_timeout_hours",
 ]
 
 
@@ -75,7 +75,9 @@ def index() -> str | Response:
         flash("Neplatná časová zóna.", "warning")
         return render_template("admin/app_settings.html", settings=settings, timezones=_ALL_TIMEZONES)
 
-    if vals["app_base_url"] and not (vals["app_base_url"].startswith("http://") or vals["app_base_url"].startswith("https://")):
+    if vals["app_base_url"] and not (
+        vals["app_base_url"].startswith("http://") or vals["app_base_url"].startswith("https://")
+    ):
         flash("Základní URL aplikace musí začínat http:// nebo https://.", "warning")
         return render_template("admin/app_settings.html", settings=settings, timezones=_ALL_TIMEZONES)
 

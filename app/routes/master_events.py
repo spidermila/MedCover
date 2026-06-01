@@ -12,47 +12,39 @@ Table Manager (/<me_id>/table):
   Spot assignment/unassignment requires event.assign_other
   Event time editing requires event.edit
 """
+
 from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
-from flask import abort
-from flask import Blueprint
-from flask import flash
-from flask import jsonify
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import collate
 
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.queries import active_users_list
-from app.utils import audit
-from app.utils import check_version_conflict
-from app.utils import CS_COLLATION
-from app.utils import czech_sort_key
-from app.utils import diff_changes
-from app.utils import get_app_tz
-from app.utils import get_or_404
-from app.utils import require_permission
+from app.utils import (
+    CS_COLLATION,
+    audit,
+    check_version_conflict,
+    czech_sort_key,
+    diff_changes,
+    get_app_tz,
+    get_or_404,
+    require_permission,
+)
 
 master_events_bp = Blueprint("master_events", __name__, url_prefix="/master-events")
 
 
 # ── List ─────────────────────────────────────────────────────────────────────
+
 
 @master_events_bp.get("/")
 @login_required
@@ -74,6 +66,7 @@ def index() -> str:
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
+
 
 @master_events_bp.route("/create", methods=["GET", "POST"])
 @login_required
@@ -105,13 +98,14 @@ def create() -> str | Response:
         audit("create", "MasterEvent", me.id, f"Vytvořena nadřazená akce '{me.name}'")
         db.session.commit()
 
-        flash(f'Nadřazená akce „{me.name}" byla vytvořena.',  'success')
+        flash(f'Nadřazená akce „{me.name}" byla vytvořena.', "success")
         return redirect(url_for("master_events.detail", me_id=me.id))
 
     return render_template("master_events/create.html", coordinators=coordinators)
 
 
 # ── Detail ────────────────────────────────────────────────────────────────────
+
 
 @master_events_bp.get("/<int:me_id>")
 @login_required
@@ -139,6 +133,7 @@ def detail(me_id: int) -> str:
 
 # ── Edit ──────────────────────────────────────────────────────────────────────
 
+
 @master_events_bp.route("/<int:me_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit(me_id: int) -> str | Response:
@@ -161,9 +156,7 @@ def edit(me_id: int) -> str | Response:
             flash("Název nadřazené akce je povinný.", "danger")
             return render_template("master_events/edit.html", me=me, coordinators=coordinators)
 
-        conflict = db.session.scalar(
-            db.select(MasterEvent).where(MasterEvent.name == name, MasterEvent.id != me_id)
-        )
+        conflict = db.session.scalar(db.select(MasterEvent).where(MasterEvent.name == name, MasterEvent.id != me_id))
         if conflict:
             flash("Nadřazená akce s tímto názvem již existuje.", "danger")
             return render_template("master_events/edit.html", me=me, coordinators=coordinators)
@@ -174,20 +167,27 @@ def edit(me_id: int) -> str | Response:
         me.coordinator_id = coordinator_id
         me.version += 1
 
-        audit("edit", "MasterEvent", me.id, f"Upraven záznam nadřazené akce '{me.name}'", diff_changes(
-            before,
-            {"name": me.name, "description": me.description, "coordinator_id": str(me.coordinator_id)},
-        ))
+        audit(
+            "edit",
+            "MasterEvent",
+            me.id,
+            f"Upraven záznam nadřazené akce '{me.name}'",
+            diff_changes(
+                before,
+                {"name": me.name, "description": me.description, "coordinator_id": str(me.coordinator_id)},
+            ),
+        )
 
         db.session.commit()
 
-        flash(f'Nadřazená akce „{me.name}" byla uložena.',  'success')
+        flash(f'Nadřazená akce „{me.name}" byla uložena.', "success")
         return redirect(url_for("master_events.detail", me_id=me.id))
 
     return render_template("master_events/edit.html", me=me, coordinators=coordinators)
 
 
 # ── Archive / Unarchive ───────────────────────────────────────────────────────
+
 
 @master_events_bp.post("/<int:me_id>/archive")
 @login_required
@@ -204,7 +204,7 @@ def archive(me_id: int) -> Response:
     audit("archive", "MasterEvent", me.id, f"Nadřazená akce '{me.name}' byla archivována")
     db.session.commit()
 
-    flash(f'Nadřazená akce „{me.name}" byla archivována.',  'success')
+    flash(f'Nadřazená akce „{me.name}" byla archivována.', "success")
     return redirect(url_for("master_events.index"))
 
 
@@ -220,7 +220,7 @@ def unarchive(me_id: int) -> Response:
     audit("unarchive", "MasterEvent", me.id, f"Nadřazená akce '{me.name}' byla obnovena z archivu")
     db.session.commit()
 
-    flash(f'Nadřazená akce „{me.name}" byla obnovena z archivu.',  'success')
+    flash(f'Nadřazená akce „{me.name}" byla obnovena z archivu.', "success")
     return redirect(url_for("master_events.detail", me_id=me_id))
 
 
@@ -237,8 +237,8 @@ _ROW_COLORS = [
     "#c8e6fa",
 ]
 
-_TM_COLOR_RE = re.compile(r'\[color:(#[0-9A-Fa-f]{6})\]', re.IGNORECASE)
-_HEX_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
+_TM_COLOR_RE = re.compile(r"\[color:(#[0-9A-Fa-f]{6})\]", re.IGNORECASE)
+_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 def _parse_tm_color(description: str | None) -> str | None:
@@ -274,22 +274,26 @@ def _build_table_rows(events: list) -> tuple[list[dict], int]:
                 key=lambda q: czech_sort_key(q.name),
             )
             qual_name = ", ".join(q.name for q in qual_objs) if qual_objs else "—"
-            rows.append({
-                "event": event,
-                "qual_ids": qual_ids,
-                "qual_objs": qual_objs,
-                "qual_name": qual_name,
-                "spots": spots,
-                "color": "",
-                "event_color": _parse_tm_color(event.description),
-            })
+            rows.append(
+                {
+                    "event": event,
+                    "qual_ids": qual_ids,
+                    "qual_objs": qual_objs,
+                    "qual_name": qual_name,
+                    "spots": spots,
+                    "color": "",
+                    "event_color": _parse_tm_color(event.description),
+                }
+            )
 
-    rows.sort(key=lambda r: (
-        r["event"].start_datetime.astimezone(get_app_tz()).date(),
-        r["event"].name,
-        r["event"].start_datetime,
-        r["qual_name"],
-    ))
+    rows.sort(
+        key=lambda r: (
+            r["event"].start_datetime.astimezone(get_app_tz()).date(),
+            r["event"].name,
+            r["event"].start_datetime,
+            r["qual_name"],
+        )
+    )
 
     color_map: dict[frozenset, str] = {}
     for row in rows:
@@ -304,11 +308,9 @@ def _build_table_rows(events: list) -> tuple[list[dict], int]:
 
 def _compute_eligible_users(rows: list[dict], all_users: list) -> None:
     """Annotate each row with ``eligible_users`` list (users who can fill those spots)."""
-    from app.models.qualification import Qualification
+    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
-    all_quals = db.session.scalars(
-        db.select(Qualification).where(Qualification.is_deleted.is_(False))
-    ).all()
+    all_quals = db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False))).all()
     parents_map: dict[int, list[int]] = {q.id: [p.id for p in q.parents] for q in all_quals}
 
     def _can_fill(uq_ids: set[int], target: int, visited: frozenset[int]) -> bool:
@@ -343,35 +345,32 @@ def table_manager(me_id: int) -> str:
     me = get_or_404(MasterEvent, me_id)
 
     events = db.session.scalars(
-        db.select(Event)
-        .where(Event.master_event_id == me_id)
-        .order_by(Event.start_datetime)
+        db.select(Event).where(Event.master_event_id == me_id).order_by(Event.start_datetime)
     ).all()
 
     rows, max_spot_cols = _build_table_rows(list(events))
 
     # Compute how many rows each event occupies (for rowspan in utility column)
-    from collections import Counter as _Counter
+    from collections import Counter as _Counter  # pylint: disable=import-outside-toplevel
+
     event_row_spans: dict[int, int] = dict(_Counter(r["event"].id for r in rows))
 
     can_assign = current_user.has_permission("event.assign_other")
     # RP-elevated: user can manage assignments on events they're assigned to
     # (only when ME has no coordinator — issue #255 exception rule)
-    rp_elevated = (
-        not can_assign
-        and me.coordinator_id is None
-        and current_user.is_rp_eligible()
-    )
+    rp_elevated = not can_assign and me.coordinator_id is None and current_user.is_rp_eligible()
     can_assign_any = can_assign  # True if user can manage ALL events
 
     if rp_elevated:
         # Determine which events the user is assigned to
-        user_event_ids = set(db.session.scalars(
-            db.select(Event.id)
-            .join(EventSpot, EventSpot.event_id == Event.id)
-            .join(Assignment, Assignment.spot_id == EventSpot.id)
-            .where(Event.master_event_id == me_id, Assignment.user_id == current_user.id)
-        ).all())
+        user_event_ids = set(
+            db.session.scalars(
+                db.select(Event.id)
+                .join(EventSpot, EventSpot.event_id == Event.id)
+                .join(Assignment, Assignment.spot_id == EventSpot.id)
+                .where(Event.master_event_id == me_id, Assignment.user_id == current_user.id)
+            ).all()
+        )
         if user_event_ids:
             can_assign_any = True
 
@@ -381,11 +380,7 @@ def table_manager(me_id: int) -> str:
     # Per-event set of already-assigned user IDs (for picker filtering)
     event_assigned: dict[int, set[int]] = {}
     for event in events:
-        event_assigned[event.id] = {
-            spot.assignment.user_id
-            for spot in event.spots
-            if spot.assignment is not None
-        }
+        event_assigned[event.id] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
 
     # Annotate each row with can_manage flag and assigned_user_ids
     for row in rows:
@@ -421,8 +416,8 @@ def table_manager(me_id: int) -> str:
 @master_events_bp.post("/<int:me_id>/table/assign/<int:spot_id>")
 @login_required
 def table_assign(me_id: int, spot_id: int) -> Response:
-    from app.models.user import UserAccount
-    from app.routes.assignments import do_assign_user
+    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
+    from app.routes.assignments import do_assign_user  # pylint: disable=import-outside-toplevel
 
     # Pre-check: load spot & event for ME ownership and permission check
     spot = db.session.get(EventSpot, spot_id)
@@ -457,7 +452,7 @@ def table_assign(me_id: int, spot_id: int) -> Response:
 @master_events_bp.post("/<int:me_id>/table/unassign/<int:assignment_id>")
 @login_required
 def table_unassign(me_id: int, assignment_id: int) -> Response:
-    from app.routes.assignments import do_unassign_user
+    from app.routes.assignments import do_unassign_user  # pylint: disable=import-outside-toplevel
 
     assignment = db.session.get(Assignment, assignment_id)
     if assignment is None:
@@ -495,16 +490,19 @@ def _handle_advance_status(event: Event) -> Response:
     before_status = event.status.value
     event.status = target_status
     event.version += 1
-    audit("status_change", "Event", event.id,
-          f"Stav akce '{event.name}' změněn na '{target_status.value}' (tabulkový manažer)",
-          diff_changes({"status": before_status}, {"status": target_status.value}))
+    audit(
+        "status_change",
+        "Event",
+        event.id,
+        f"Stav akce '{event.name}' změněn na '{target_status.value}' (tabulkový manažer)",
+        diff_changes({"status": before_status}, {"status": target_status.value}),
+    )
     db.session.commit()
-    import app.mail as mailer
-    from app.models.user import UserAccount
+    import app.mail as mailer  # pylint: disable=import-outside-toplevel
+    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
+
     active_users = db.session.scalars(
-        db.select(UserAccount)
-        .where(UserAccount.is_active.is_(True))
-        .where(UserAccount.is_archived.is_(False))
+        db.select(UserAccount).where(UserAccount.is_active.is_(True)).where(UserAccount.is_archived.is_(False))
     ).all()
     if target_status == EventStatus.PUBLISHED:
         for u in active_users:
@@ -523,15 +521,20 @@ def _handle_shift_day(event: Event, value: str) -> Response:
         return jsonify({"ok": False, "error": "Neplatná hodnota posunu."}), 400
     if delta_days not in (-1, 1):
         return jsonify({"ok": False, "error": "Povolené hodnoty: -1 nebo 1."}), 400
-    from datetime import timedelta
+    from datetime import timedelta  # pylint: disable=import-outside-toplevel
+
     before = {"start_datetime": event.start_datetime.isoformat(), "end_datetime": event.end_datetime.isoformat()}
     event.start_datetime += timedelta(days=delta_days)
     event.end_datetime += timedelta(days=delta_days)
     after = {"start_datetime": event.start_datetime.isoformat(), "end_datetime": event.end_datetime.isoformat()}
     event.version += 1
-    audit("edit", "Event", event.id,
-          f"Posunut datum akce '{event.name}' o {delta_days:+d} den (tabulkový manažer)",
-          diff_changes(before, after))
+    audit(
+        "edit",
+        "Event",
+        event.id,
+        f"Posunut datum akce '{event.name}' o {delta_days:+d} den (tabulkový manažer)",
+        diff_changes(before, after),
+    )
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -541,20 +544,25 @@ def _handle_shift_hour(event: Event, value: str) -> Response:
     try:
         which, delta_str = value.split(":", 1)
         delta_hours = int(delta_str)
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return jsonify({"ok": False, "error": "Neplatná hodnota posunu hodiny."}), 400
     if which not in ("start", "end") or delta_hours not in (-1, 1):
         return jsonify({"ok": False, "error": "Neplatné parametry posunu hodiny."}), 400
-    from datetime import timedelta
+    from datetime import timedelta  # pylint: disable=import-outside-toplevel
+
     attr = "start_datetime" if which == "start" else "end_datetime"
     before = {attr: getattr(event, attr).isoformat()}
     setattr(event, attr, getattr(event, attr) + timedelta(hours=delta_hours))
     after = {attr: getattr(event, attr).isoformat()}
     event.version += 1
     lbl = "začátek" if which == "start" else "konec"
-    audit("edit", "Event", event.id,
-          f"Posunut {lbl} akce '{event.name}' o {delta_hours:+d} hodinu (tabulkový manažer)",
-          diff_changes(before, after))
+    audit(
+        "edit",
+        "Event",
+        event.id,
+        f"Posunut {lbl} akce '{event.name}' o {delta_hours:+d} hodinu (tabulkový manažer)",
+        diff_changes(before, after),
+    )
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -580,25 +588,26 @@ def _handle_datetime_field(event: Event, field: str, value: str) -> Response:
         return jsonify({"ok": False, "error": "Neznámé pole."}), 400
 
     event.version += 1
-    audit("edit", "Event", event.id,
-          f"Upraven čas akce '{event.name}' (tabulkový manažer)",
-          changes)
+    audit("edit", "Event", event.id, f"Upraven čas akce '{event.name}' (tabulkový manažer)", changes)
     db.session.commit()
 
     display_time = dt.astimezone(get_app_tz()).strftime("%H:%M")
     display_date = dt.astimezone(get_app_tz()).strftime("%d.%m.")
     _CZECH_DAYS = ["po", "út", "st", "čt", "pá", "so", "ne"]
     display_day = _CZECH_DAYS[dt.astimezone(get_app_tz()).weekday()]
-    from decimal import Decimal
+    from decimal import Decimal  # pylint: disable=import-outside-toplevel
+
     delta = event.end_datetime - event.start_datetime
     hours = Decimal(str(round(delta.total_seconds() / 3600, 1)))
 
-    return jsonify({
-        "ok": True,
-        "display": display_time,
-        "display_date": f"{display_date} {display_day}",
-        "hours": str(hours).replace(".", ","),
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "display": display_time,
+            "display_date": f"{display_date} {display_day}",
+            "hours": str(hours).replace(".", ","),
+        }
+    )
 
 
 @master_events_bp.post("/<int:me_id>/table/event/<int:event_id>/update")
@@ -620,8 +629,7 @@ def table_event_update(me_id: int, event_id: int) -> Response:
         color = value if _HEX_RE.match(value) else None
         event.description = _set_tm_color(event.description, color)
         event.version += 1
-        audit("edit", "Event", event.id,
-              f"Nastavena barva řádku (tabulkový manažer): {color or 'reset'}")
+        audit("edit", "Event", event.id, f"Nastavena barva řádku (tabulkový manažer): {color or 'reset'}")
         db.session.commit()
         return jsonify({"ok": True, "color": color or ""})
 
@@ -634,9 +642,7 @@ def table_event_update(me_id: int, event_id: int) -> Response:
         before = {"name": event.name}
         event.name = value
         event.version += 1
-        audit("edit", "Event", event.id,
-              "Přejmenována akce (tabulkový manažer)",
-              diff_changes(before, {"name": value}))
+        audit("edit", "Event", event.id, "Přejmenována akce (tabulkový manažer)", diff_changes(before, {"name": value}))
         db.session.commit()
         return jsonify({"ok": True, "display": value})
 
@@ -655,8 +661,9 @@ def table_spots_update(me_id: int) -> Response:
     """Add or remove spots for a given (event, qualification) row."""
     require_permission("event.edit")
 
-    from app.models.qualification import Qualification
-    import json
+    import json  # pylint: disable=import-outside-toplevel
+
+    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
     event_id_str = request.form.get("event_id", "").strip()
     qual_ids_json = request.form.get("qual_ids_json", "[]").strip()
@@ -669,7 +676,7 @@ def table_spots_update(me_id: int) -> Response:
 
     try:
         qual_ids: list[int] = [int(x) for x in json.loads(qual_ids_json)]
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return jsonify({"ok": False, "error": "Neplatné kvalifikace."}), 400
 
     try:
@@ -685,8 +692,7 @@ def table_spots_update(me_id: int) -> Response:
 
     qual_id_set = frozenset(qual_ids)
     row_spots = [
-        s for s in event.spots
-        if frozenset(q.id for q in s.required_qualifications if not q.is_deleted) == qual_id_set
+        s for s in event.spots if frozenset(q.id for q in s.required_qualifications if not q.is_deleted) == qual_id_set
     ]
     current_count = len(row_spots)
 
@@ -694,10 +700,13 @@ def table_spots_update(me_id: int) -> Response:
         return jsonify({"ok": True})
 
     if new_count > current_count:
-        qualifications = db.session.scalars(
-            db.select(Qualification)
-            .where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
-        ).all() if qual_ids else []
+        qualifications = (
+            db.session.scalars(
+                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
+            ).all()
+            if qual_ids
+            else []
+        )
         for _ in range(new_count - current_count):
             spot = EventSpot(event_id=event.id)
             spot.required_qualifications = list(qualifications)
@@ -705,25 +714,30 @@ def table_spots_update(me_id: int) -> Response:
         qual_names = ", ".join(q.name for q in qualifications) if qualifications else "žádná"
         added = new_count - current_count
         event.version += 1
-        audit("edit", "Event", event.id,
-              f"Přidáno {added}× pozice ({qual_names}) — tabulkový manažer")
+        audit("edit", "Event", event.id, f"Přidáno {added}× pozice ({qual_names}) — tabulkový manažer")
     else:
         to_remove = current_count - new_count
         unfilled = [s for s in row_spots if s.assignment is None]
         if len(unfilled) < to_remove:
             filled_blocking = to_remove - len(unfilled)
-            return jsonify({
-                "ok": False,
-                "error": f"Nelze odebrat {to_remove} pozici/í — {filled_blocking} z nich je obsazena.",
-            }), 409
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": f"Nelze odebrat {to_remove} pozici/í — {filled_blocking} z nich je obsazena.",
+                    }
+                ),
+                409,
+            )
         for spot in unfilled[:to_remove]:
             db.session.delete(spot)
-        qual_names = ", ".join(
-            q.name for q in row_spots[0].required_qualifications if not q.is_deleted
-        ) if row_spots else "žádná"
+        qual_names = (
+            ", ".join(q.name for q in row_spots[0].required_qualifications if not q.is_deleted)
+            if row_spots
+            else "žádná"
+        )
         event.version += 1
-        audit("edit", "Event", event.id,
-              f"Odebráno {to_remove}× pozice ({qual_names}) — tabulkový manažer")
+        audit("edit", "Event", event.id, f"Odebráno {to_remove}× pozice ({qual_names}) — tabulkový manažer")
 
     db.session.commit()
     return jsonify({"ok": True})
@@ -759,7 +773,6 @@ def table_event_clone(me_id: int, event_id: int) -> Response:
         new_spot.required_qualifications = list(spot.required_qualifications)
         db.session.add(new_spot)
 
-    audit("create", "Event", clone.id,
-          f"Klonována akce '{source.name}' → '{clone.name}' (tabulkový manažer)")
+    audit("create", "Event", clone.id, f"Klonována akce '{source.name}' → '{clone.name}' (tabulkový manažer)")
     db.session.commit()
     return jsonify({"ok": True, "new_event_id": clone.id})

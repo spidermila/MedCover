@@ -27,14 +27,14 @@ extra columns from an older or newer backup.  This means:
 - Restoring to a schema that added NOT NULL columns without defaults will
   fail at the DB level — the restore routine surfaces this as an error.
 """
+
 from __future__ import annotations
 
 import io
 import json
 import logging
 import zipfile
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +113,7 @@ def _serialize_value(val: Any) -> Any:
         return val.hex()
     # UUID and other types with __str__ that aren't natively JSON-serialisable
     import uuid
+
     if isinstance(val, uuid.UUID):
         return str(val)
     return val
@@ -140,10 +141,7 @@ def export_to_zip(backup_dir: str | Path, now: datetime | None = None) -> Path:
     for table_name in all_tables:
         rows = db.session.execute(sa.text(f'SELECT * FROM "{table_name}"')).fetchall()
         columns = [col["name"] for col in inspector.get_columns(table_name)]
-        tables_data[table_name] = [
-            {col: _serialize_value(val) for col, val in zip(columns, row)}
-            for row in rows
-        ]
+        tables_data[table_name] = [{col: _serialize_value(val) for col, val in zip(columns, row)} for row in rows]
 
     payload = {
         "version": "1.0",
@@ -223,9 +221,7 @@ def restore_from_zip(zip_path: str | Path) -> None:
 
         # Pre-collect column info before TRUNCATE acquires AccessExclusiveLock.
         current_columns_map: dict[str, set[str]] = {
-            t: {col["name"] for col in inspector.get_columns(t)}
-            for t in all_table_names
-            if t not in _EXCLUDED_TABLES
+            t: {col["name"] for col in inspector.get_columns(t)} for t in all_table_names if t not in _EXCLUDED_TABLES
         }
 
         if tables_to_clear:
@@ -245,10 +241,7 @@ def restore_from_zip(zip_path: str | Path) -> None:
                 filtered = {k: v for k, v in row.items() if k in current_columns}
                 # sa.text() bypasses SQLAlchemy type coercion, so dict/list
                 # values (JSON columns) must be serialized manually.
-                filtered = {
-                    k: json.dumps(v) if isinstance(v, (dict, list)) else v
-                    for k, v in filtered.items()
-                }
+                filtered = {k: json.dumps(v) if isinstance(v, (dict, list)) else v for k, v in filtered.items()}
                 if filtered:
                     col_list = ", ".join(f'"{c}"' for c in filtered)
                     val_list = ", ".join(f":{c}" for c in filtered)
@@ -265,13 +258,11 @@ def restore_from_zip(zip_path: str | Path) -> None:
             try:
                 pk_cols = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
                 for pk in pk_cols:
-                    seq = conn.execute(sa.text(
-                        f"SELECT pg_get_serial_sequence('{table_name}', '{pk}')"
-                    )).scalar()
+                    seq = conn.execute(sa.text(f"SELECT pg_get_serial_sequence('{table_name}', '{pk}')")).scalar()
                     if seq:
-                        next_id = conn.execute(sa.text(
-                            f'SELECT COALESCE(MAX("{pk}"), 0) + 1 FROM "{table_name}"'
-                        )).scalar()
+                        next_id = conn.execute(
+                            sa.text(f'SELECT COALESCE(MAX("{pk}"), 0) + 1 FROM "{table_name}"')
+                        ).scalar()
                         if next_id is not None:
                             conn.execute(sa.text(f"SELECT setval('{seq}', {int(next_id)}, false)"))
                 conn.commit()
@@ -317,10 +308,12 @@ def list_backups(backup_dir: str | Path) -> list[dict]:
     result = []
     for f in files:
         stat = f.stat()
-        result.append({
-            "name": f.name,
-            "path": f,
-            "size_bytes": stat.st_size,
-            "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-        })
+        result.append(
+            {
+                "name": f.name,
+                "path": f,
+                "size_bytes": stat.st_size,
+                "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+            }
+        )
     return result

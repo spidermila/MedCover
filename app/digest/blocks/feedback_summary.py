@@ -1,9 +1,8 @@
 """User feedback digest block."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.digest.base import BaseBlock
@@ -22,6 +21,7 @@ class FeedbackSummaryBlock(BaseBlock):
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
         import sqlalchemy as sa
+
         from app.models.feedback import UserFeedback
 
         hours = int(config.get("hours", 24))

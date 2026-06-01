@@ -1,32 +1,23 @@
 """Event spot management routes: add, edit, delete spots; set RP; bulk actions."""
+
 from __future__ import annotations
 
-from flask import abort
-from flask import flash
-from flask import redirect
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Response, abort, flash, redirect, request, url_for
+from flask_login import current_user, login_required
 
 import app.mail as mailer
-from . import events_bp
-from ._helpers import BULK_ACTIONS
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.qualification import Qualification
 from app.models.user import UserAccount
-from app.utils import audit
-from app.utils import get_or_404
-from app.utils import require_permission
-from app.utils import safe_next
+from app.utils import audit, get_or_404, require_permission, safe_next
 
+from . import events_bp
+from ._helpers import BULK_ACTIONS
 
 # ── Bulk lifecycle actions ────────────────────────────────────────────────────
+
 
 @events_bp.post("/bulk")
 @login_required
@@ -65,9 +56,13 @@ def bulk_action() -> Response:
         if target_status == EventStatus.CANCELLED:
             event.archived = True
         event.version += 1
-        audit("status_change", "Event", event.id,
-              f"Hromadná akce: stav akce '{event.name}' změněn na '{target_status.value}'",
-              {"before": {"status": prev_status}, "after": {"status": target_status.value}})
+        audit(
+            "status_change",
+            "Event",
+            event.id,
+            f"Hromadná akce: stav akce '{event.name}' změněn na '{target_status.value}'",
+            {"before": {"status": prev_status}, "after": {"status": target_status.value}},
+        )
         changed += 1
 
     db.session.commit()
@@ -80,6 +75,7 @@ def bulk_action() -> Response:
 
 
 # ── Add spot ──────────────────────────────────────────────────────────────────
+
 
 @events_bp.post("/<int:event_id>/spots/add")
 @login_required
@@ -94,9 +90,13 @@ def add_spot(event_id: int) -> Response:
     except (ValueError, TypeError):
         quantity = 1
     qual_ids = [int(c) for c in request.form.getlist("qualification_ids") if c.isdigit()]
-    qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
-    ).all() if qual_ids else []
+    qualifications = (
+        db.session.scalars(
+            db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
+        ).all()
+        if qual_ids
+        else []
+    )
 
     for _ in range(quantity):
         spot = EventSpot(event_id=event_id, description=description, is_optional=is_optional)
@@ -106,7 +106,12 @@ def add_spot(event_id: int) -> Response:
     event.version += 1
     opt_flag = " (volitelná)" if is_optional else ""
     qual_names = ", ".join(c.name for c in qualifications) if qualifications else "žádná"
-    audit("edit", "Event", event.id, f"Přidáno {quantity}× pozice '{description or '—'}'{opt_flag} (kvalifikace: {qual_names})")
+    audit(
+        "edit",
+        "Event",
+        event.id,
+        f"Přidáno {quantity}× pozice '{description or '—'}'{opt_flag} (kvalifikace: {qual_names})",
+    )
     db.session.commit()
 
     flash(f"{'Pozice přidány' if quantity > 1 else 'Místo přidáno'}.", "success")
@@ -114,6 +119,7 @@ def add_spot(event_id: int) -> Response:
 
 
 # ── Edit spot ─────────────────────────────────────────────────────────────────
+
 
 @events_bp.post("/<int:event_id>/spots/<int:spot_id>/edit")
 @login_required
@@ -126,9 +132,13 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
 
     description = request.form.get("description", "").strip() or None
     qual_ids = [int(c) for c in request.form.getlist("qualification_ids") if c.isdigit()]
-    qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
-    ).all() if qual_ids else []
+    qualifications = (
+        db.session.scalars(
+            db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
+        ).all()
+        if qual_ids
+        else []
+    )
     confirm_unassign = request.form.get("confirm_unassign") == "1"
 
     # Check if the assigned user would become ineligible under the new credentials
@@ -163,7 +173,12 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
     if unassign_needed:
         assignment = spot.assignment
         unassigned_user = assignment.user
-        audit("delete", "Assignment", assignment.id, f"Uživatel '{unassigned_user.name}' automaticky odhlášen — nesplňuje nové požadavky pozice")
+        audit(
+            "delete",
+            "Assignment",
+            assignment.id,
+            f"Uživatel '{unassigned_user.name}' automaticky odhlášen — nesplňuje nové požadavky pozice",
+        )
         db.session.delete(assignment)
         db.session.flush()
 
@@ -178,6 +193,7 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
 
 
 # ── Delete spot ───────────────────────────────────────────────────────────────
+
 
 @events_bp.post("/<int:event_id>/spots/<int:spot_id>/delete")
 @login_required
@@ -202,6 +218,7 @@ def delete_spot(event_id: int, spot_id: int) -> Response:
 
 # ── Set Responsible Person ────────────────────────────────────────────────────
 
+
 @events_bp.post("/<int:event_id>/set_rp")
 @login_required
 def set_rp(event_id: int) -> Response:
@@ -216,6 +233,7 @@ def set_rp(event_id: int) -> Response:
         return redirect(url_for("events.detail", event_id=event_id))
 
     import uuid as _uuid
+
     try:
         user_id = _uuid.UUID(user_id_str)
     except ValueError:
@@ -243,7 +261,13 @@ def set_rp(event_id: int) -> Response:
     old_rp = event.responsible_person_id
     event.responsible_person_id = user_id
     event.version += 1
-    audit("edit", "Event", event_id, f"Zodpovědná osoba nastavena na '{user.name}'", {"responsible_person_id": {"before": str(old_rp), "after": str(user_id)}})
+    audit(
+        "edit",
+        "Event",
+        event_id,
+        f"Zodpovědná osoba nastavena na '{user.name}'",
+        {"responsible_person_id": {"before": str(old_rp), "after": str(user_id)}},
+    )
     db.session.commit()
 
     flash(f"{user.name} — zodpovědná osoba nastavena.", "success")

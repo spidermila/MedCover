@@ -6,6 +6,7 @@ Regression coverage for:
 - PR #170: missing closing > on feedback delete form caused CSRF error
 - Issue #335: missing > on equipment item forms caused CSRF error
 """
+
 import pytest
 
 
@@ -23,7 +24,7 @@ def _discover_app_pages(page, base_url):
                 continue
             paths.add(href)
         elif href.startswith(base_url):
-            path = href[len(base_url):]
+            path = href[len(base_url) :]
             if path and "/auth/logout" not in path and "/static/" not in path:
                 paths.add(path)
     return sorted(paths)
@@ -72,9 +73,10 @@ def test_all_post_forms_have_csrf_token_dynamic(logged_in_page, base_url):
                 action = form.get_attribute("action") or "(no action)"
                 violations.append(f"{path} → form action={action}")
 
-    assert not violations, (
-        f"Found {len(violations)} POST form(s) missing csrf_token inside the <form> element:\n"
-        + "\n".join(f"  • {v}" for v in violations)
+    assert (
+        not violations
+    ), f"Found {len(violations)} POST form(s) missing csrf_token inside the <form> element:\n" + "\n".join(
+        f"  • {v}" for v in violations
     )
 
 
@@ -98,9 +100,7 @@ def test_known_form_pages_have_csrf_token(logged_in_page, base_url, path):
     for i in range(count):
         form = forms.nth(i)
         csrf = form.locator('input[name="csrf_token"]')
-        assert csrf.count() > 0, (
-            f"Form #{i} on {path} has no csrf_token input. Action: {form.get_attribute('action')}"
-        )
+        assert csrf.count() > 0, f"Form #{i} on {path} has no csrf_token input. Action: {form.get_attribute('action')}"
 
 
 def test_no_inline_event_handlers(logged_in_page, base_url):
@@ -131,6 +131,5 @@ def test_no_inline_event_handlers(logged_in_page, base_url):
         for handler in handlers:
             count = page.locator(f"[{handler}]").count()
             assert count == 0, (
-                f"Found {count} element(s) with {handler}= on {path}. "
-                f"Inline handlers are forbidden by CSP."
+                f"Found {count} element(s) with {handler}= on {path}. " f"Inline handlers are forbidden by CSP."
             )

@@ -1,9 +1,8 @@
 """New users digest block."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.digest.base import BaseBlock
@@ -23,6 +22,7 @@ class NewUsersBlock(BaseBlock):
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
         import sqlalchemy as sa
+
         from app.models.user import UserAccount
 
         hours = int(config.get("hours", 24))

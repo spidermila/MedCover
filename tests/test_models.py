@@ -1,6 +1,10 @@
 """Tests for event model unit tests (no HTTP, pure model logic)."""
+
+from app.extensions import db
 from app.models.event import EventStatus
+from app.models.role import Role
 from app.models.user import UserAccount
+from tests.conftest import _make_user
 
 
 class TestEventStatusValues:
@@ -25,10 +29,6 @@ class TestEventStatusValues:
 
 class TestUserPermissions:
     def test_has_permission_returns_true_for_admin(self, app):
-        from app.extensions import db
-        from app.models.role import Role
-        from app.models.user import UserAccount
-        from tests.conftest import _make_user
 
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
@@ -37,10 +37,6 @@ class TestUserPermissions:
             assert loaded.has_permission("event.create") is True
 
     def test_has_permission_returns_false_for_viewer(self, app):
-        from app.extensions import db
-        from app.models.role import Role
-        from app.models.user import UserAccount
-        from tests.conftest import _make_user
 
         with app.app_context():
             _make_user("viewer@test.com", "Viewer", Role.VIEWER)
@@ -48,10 +44,6 @@ class TestUserPermissions:
             assert loaded.has_permission("event.create") is False
 
     def test_has_any_permission(self, app):
-        from app.extensions import db
-        from app.models.role import Role
-        from app.models.user import UserAccount
-        from tests.conftest import _make_user
 
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
@@ -59,10 +51,6 @@ class TestUserPermissions:
             assert loaded.has_any_permission("event.create", "nonexistent.perm") is True
 
     def test_has_any_permission_all_missing(self, app):
-        from app.extensions import db
-        from app.models.role import Role
-        from app.models.user import UserAccount
-        from tests.conftest import _make_user
 
         with app.app_context():
             _make_user("viewer@test.com", "Viewer", Role.VIEWER)
@@ -101,15 +89,10 @@ class TestUserPassword:
 
 class TestUserGetId:
     def test_get_id_returns_string(self, app):
-        from app.extensions import db
-        from app.models.role import Role
-        from tests.conftest import _make_user
 
         with app.app_context():
             _make_user("getid@test.com", "GetId User", Role.MEMBER)
-            loaded = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "getid@test.com")
-            )
+            loaded = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "getid@test.com"))
             result = loaded.get_id()
             assert isinstance(result, str)
             # Must be UUID-like (non-empty string representation of the PK)
