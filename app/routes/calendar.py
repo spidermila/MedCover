@@ -88,7 +88,7 @@ def feed(token: str) -> Response:
         .join(EventSpot.event)
         .where(
             Assignment.user_id == user.id,
-            Event.status.notin_(list(_PERSONAL_EXCLUDED_STATUSES)),
+            Event.status.notin_(_PERSONAL_EXCLUDED_STATUSES),
             Event.archived.is_(False),
         )
         .options(
