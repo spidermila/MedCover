@@ -41,6 +41,7 @@ def transition(event_id: int) -> Response:
     if not current_user.has_permission(allowed[2]):
         abort(403)
 
+    previous_status = event.status
     event.status = target_status
     event.version += 1
     audit(
@@ -49,7 +50,7 @@ def transition(event_id: int) -> Response:
         event.id,
         f"Stav akce '{event.name}' změněn na '{target_status.value}'",
         {
-            "before": {"status": event.status.value},
+            "before": {"status": previous_status.value},
             "after": {"status": target_status.value},
         },
     )
