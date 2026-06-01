@@ -23,6 +23,7 @@ from .extensions import db
 from .extensions import login_manager
 from .extensions import mail as _flask_mail
 from .extensions import migrate
+from .models.assignment import Assignment
 # Computed once at import/startup; used as a cache-busting version for static files.
 _STARTUP_TS: str = str(int(_time.time()))
 
@@ -167,22 +168,22 @@ def create_app(
         except (ValueError, TypeError):
             eid_int = None
 
-        if entity_type == "Event" and eid_int is not None:
-            return url_for("events.detail", event_id=eid_int)
-        if entity_type == "Assignment" and eid_int is not None:
-            from app.models.assignment import Assignment
-            asgn = db.session.get(Assignment, eid_int)
-            if asgn and asgn.spot:
-                return url_for("events.detail", event_id=asgn.spot.event_id)
-            return None
-        if entity_type == "MasterEvent" and eid_int is not None:
-            return url_for("master_events.detail", me_id=eid_int)
-        if entity_type == "EquipmentItem" and eid_int is not None:
-            return url_for("equipment.item_edit", item_id=eid_int)
-        if entity_type == "EquipmentType" and eid_int is not None:
-            return url_for("equipment.type_edit", type_id=eid_int)
-        if entity_type == "EventTemplate" and eid_int is not None:
-            return url_for("templates.edit", template_id=eid_int)
+        if eid_int is not None:
+            if entity_type == "Event":
+                return url_for("events.detail", event_id=eid_int)
+            if entity_type == "Assignment":
+                asgn = db.session.get(Assignment, eid_int)
+                if asgn and asgn.spot:
+                    return url_for("events.detail", event_id=asgn.spot.event_id)
+                return None
+            if entity_type == "MasterEvent":
+                return url_for("master_events.detail", me_id=eid_int)
+            if entity_type == "EquipmentItem":
+                return url_for("equipment.item_edit", item_id=eid_int)
+            if entity_type == "EquipmentType":
+                return url_for("equipment.type_edit", type_id=eid_int)
+            if entity_type == "EventTemplate":
+                return url_for("templates.edit", template_id=eid_int)
         if entity_type == "AppSettings":
             return url_for("app_settings.index")
         if entity_type == "Qualification":
