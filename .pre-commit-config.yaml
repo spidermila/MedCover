@@ -55,7 +55,8 @@ repos:
       - id: pylint-imports
         name: pylint (import-outside-toplevel)
         entry: pylint --disable=all --enable=C0415
-        language: system
+        language: python
+        additional_dependencies: [pylint]
         types: [python]
         files: ^tests/
 
