@@ -196,12 +196,17 @@
           {% if rp_eligible_attendees | length > 1 or (rp_eligible_attendees | length == 1 and event.responsible_person_id != rp_eligible_attendees[0].id) %}
             <form method="post" action="{{ url_for('events.set_rp', event_id=event.id) }}" class="mt-2 d-flex gap-2 align-items-center">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <select name="user_id" class="form-select form-select-sm maxw-220">
+              <select name="user_id" class="form-select form-select-sm maxw-220"
+                      data-original="{{ event.responsible_person_id or '' }}"
+                      onchange="this.nextElementSibling.disabled = this.value === this.dataset.original">
                 {% for u in rp_eligible_attendees %}
                   <option value="{{ u.id }}" {% if u.id == event.responsible_person_id %}selected{% endif %}>{{ u.name }}</option>
                 {% endfor %}
               </select>
-              <button type="submit" class="btn btn-sm btn-outline-primary">Nastavit zodpovědnou osobu</button>
+              <button type="submit" class="btn btn-sm btn-outline-primary"
+                      {% if event.responsible_person_id in rp_eligible_attendees | map(attribute='id') | list %}disabled{% endif %}>
+                Nastavit zodpovědnou osobu
+              </button>
             </form>
           {% endif %}
         {% endif %}
