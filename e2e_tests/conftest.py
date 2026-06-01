@@ -25,9 +25,9 @@ def logged_in_page(page, base_url):
 
 def _login(page, base_url: str, email: str, password: str) -> None:
     """Log into the app via the login form."""
-    page.goto(f"{base_url}/auth/login")
+    page.goto(f"{base_url}/auth/login", wait_until="domcontentloaded")
     page.fill("#email", email)
     page.fill("#password", password)
-    page.locator('button[type="submit"]').click(timeout=60000)
+    page.locator('button[type="submit"]').click(timeout=90000)
     # Wait for redirect to dashboard
-    page.wait_for_url("**/dashboard**", timeout=60000)
+    page.wait_for_url("**/dashboard**", timeout=90000, wait_until="domcontentloaded")

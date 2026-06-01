@@ -1,0 +1,36 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/templates/**"
+      - "app/routes/**"
+      - "app/static/**"
+      - "e2e_tests/**"
+      - "requirements-e2e.txt"
+      - "docker-compose.e2e.yml"
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run e2e tests (chromium only in CI)
+        env:
+          E2E_BROWSERS: "--browser chromium"
+        run: |
+          docker compose -f docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from e2e
+          EXIT_CODE=$?
+          docker compose -f docker-compose.e2e.yml down -v
+          exit $EXIT_CODE
+
+      - name: Upload e2e report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-report
+          path: e2e-report/

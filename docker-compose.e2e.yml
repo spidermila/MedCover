@@ -41,15 +41,20 @@ services:
       start_period: 30s
 
   e2e:
-    image: mcr.microsoft.com/playwright/python:v1.52.0-noble
+    image: mcr.microsoft.com/playwright/python:v1.60.0-noble
     working_dir: /e2e
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ./e2e_tests:/e2e
       - ./requirements-e2e.txt:/requirements-e2e.txt:ro
+      - ./pyproject.toml:/pyproject.toml:ro
       - ./e2e-report:/e2e-report
     environment:
       BASE_URL: http://web-e2e:5000
-    entrypoint: ["sh", "-c", "pip install --quiet -r /requirements-e2e.txt && pytest /e2e --browser chromium --browser firefox --browser webkit -v --screenshot on --output /e2e-report/traces --html=/e2e-report/report.html --self-contained-html"]
+      E2E_BROWSERS: ${E2E_BROWSERS:---browser chromium --browser firefox --browser webkit}
+    entrypoint: ["sh", "-c", "pip install --quiet -r /requirements-e2e.txt && pytest /e2e $E2E_BROWSERS -v --screenshot on --output /e2e-report/traces --html=/e2e-report/report.html --self-contained-html -o 'addopts='"]
     depends_on:
       web-e2e:
         condition: service_healthy
