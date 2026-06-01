@@ -33,7 +33,7 @@ def _parse_spot_slots(form: dict) -> list[tuple[str | None, bool, list[int]]]:
     """
     try:
         spot_total = int(form.get("spot_total", 0) or 0)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         spot_total = 0
 
     slots: list[tuple[str | None, bool, list[int]]] = []
@@ -55,7 +55,7 @@ def _rebuild_equipment_plans(template: EventTemplate, form: dict) -> None:
             try:
                 type_id = int(key.split("equip_qty_")[1])
                 qty = int(val)
-            except ValueError, IndexError:
+            except (ValueError, IndexError):
                 continue
             if qty > 0:
                 ep = EventTemplateEquipmentPlan(

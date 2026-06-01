@@ -190,7 +190,7 @@ def build_spots(event: Event, form: dict) -> None:
     """Create spots from the dynamic spot builder fields (spot_desc_N / spot_cred_N / spot_optional_N)."""
     try:
         spot_total = int(form.get("spot_total", 0) or 0)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         spot_total = 0
 
     for i in range(spot_total):

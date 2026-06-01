@@ -131,7 +131,7 @@ def create_app(
         """
         try:
             formatted = f"{float(value):.{decimals}f}"  # type: ignore[arg-type]
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return "—"
         if strip:
             formatted = formatted.rstrip("0").rstrip(".")
@@ -155,7 +155,7 @@ def create_app(
         """Return a URL to view the given entity, or None if no page exists."""
         try:
             eid_int = int(entity_id)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             eid_int = None
 
         if eid_int is not None:
