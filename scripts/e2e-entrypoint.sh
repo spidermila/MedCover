@@ -5,8 +5,8 @@ echo "=== E2E: Waiting for database ==="
 MAX_RETRIES=${DB_WAIT_RETRIES:-60}
 RETRY=0
 until python -c "
-import os, psycopg
-psycopg.connect(os.environ['DATABASE_URL']).close()
+import os, psycopg2
+psycopg2.connect(os.environ['DATABASE_URL'], connect_timeout=5).close()
 " 2>/dev/null; do
   RETRY=$((RETRY+1))
   if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
