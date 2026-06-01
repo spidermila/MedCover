@@ -53,7 +53,7 @@ def _load_signed_token(token: str, salt: str, max_age_seconds: int) -> str | Non
     s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
     try:
         return s.loads(token, salt=salt, max_age=max_age_seconds)
-    except (SignatureExpired, BadSignature):
+    except SignatureExpired, BadSignature:
         return None
 
 

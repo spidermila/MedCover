@@ -237,7 +237,7 @@ def check_version_conflict(obj: object, form_value: str | None) -> bool:
     """
     try:
         submitted = int(form_value or 0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         submitted = 0
     current = getattr(obj, "version", None)
     return current is not None and submitted != current
@@ -249,7 +249,7 @@ def parse_enum(enum_class: type[E], value: object, default: E | None = None) -> 
         return default
     try:
         return enum_class(value)  # type: ignore[call-arg]
-    except (ValueError, KeyError):
+    except ValueError, KeyError:
         return default
 
 
