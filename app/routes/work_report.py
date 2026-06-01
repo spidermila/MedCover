@@ -77,7 +77,7 @@ def generate() -> object:
     try:
         year = int(request.form["year"])
         month = int(request.form["month"])
-    except KeyError, ValueError:
+    except (KeyError, ValueError):
         flash("Neplatné hodnoty formuláře.", "danger")
         return redirect(url_for("work_report.index"))
 
@@ -110,7 +110,7 @@ def download() -> object:
     try:
         year = int(request.args["year"])
         month = int(request.args["month"])
-    except KeyError, ValueError:
+    except (KeyError, ValueError):
         flash("Neplatné parametry.", "danger")
         return redirect(url_for("work_report.index"))
 

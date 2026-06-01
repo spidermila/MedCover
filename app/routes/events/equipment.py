@@ -191,7 +191,7 @@ def equipment_check() -> Response:
             start_dt = start_dt.replace(tzinfo=timezone.utc)
         if end_dt.tzinfo is None:
             end_dt = end_dt.replace(tzinfo=timezone.utc)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return jsonify({"error": "Neplatný formát datumu."}), 400
 
     results = []

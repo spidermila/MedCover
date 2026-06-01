@@ -87,7 +87,7 @@ def add_spot(event_id: int) -> Response:
     is_optional = request.form.get("is_optional") == "1"
     try:
         quantity = max(1, min(10, int(request.form.get("quantity", 1))))
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         quantity = 1
     qual_ids = [int(c) for c in request.form.getlist("qualification_ids") if c.isdigit()]
     qualifications = (

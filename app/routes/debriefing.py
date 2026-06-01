@@ -71,7 +71,7 @@ def _parse_rp_actuals(
     if start_str:
         try:
             actual_start = datetime.fromisoformat(start_str).replace(tzinfo=tz).astimezone(timezone.utc)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             errors.append("Zadejte platný skutečný čas začátku.")
     elif not is_training:
         errors.append("Zadejte platný skutečný čas začátku.")
@@ -79,7 +79,7 @@ def _parse_rp_actuals(
     if end_str:
         try:
             actual_end = datetime.fromisoformat(end_str).replace(tzinfo=tz).astimezone(timezone.utc)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             errors.append("Zadejte platný skutečný čas konce.")
     elif not is_training:
         errors.append("Zadejte platný skutečný čas konce.")
