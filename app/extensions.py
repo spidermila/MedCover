@@ -30,5 +30,5 @@ def load_user(user_id: str) -> UserAccount | None:
 
     try:
         return db.session.get(UserAccount, uuid.UUID(user_id))
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return None
