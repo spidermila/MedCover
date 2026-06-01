@@ -9,7 +9,8 @@ import pytest
 from app.extensions import db
 from app.models.assignment import DebriefingRecord
 from app.models.audit import AuditLogEntry
-from app.models.event import Event, EventStatus
+from app.models.event import Event
+from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
