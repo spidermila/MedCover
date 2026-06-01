@@ -295,13 +295,14 @@ services:
       context: .
       args:
         GIT_COMMIT: ${GIT_COMMIT:-dev}
+    entrypoint: ["/docker-entrypoint-scheduler.sh"]
     command: python scheduler/main.py
     restart: unless-stopped
     volumes:
       - .:/app
     env_file: .env
     depends_on:
-      db:
+      web:
         condition: service_healthy
 
   db:
