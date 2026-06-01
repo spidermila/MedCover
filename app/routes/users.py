@@ -57,11 +57,11 @@ def profile() -> str | Response:
             return _update_profile(user)
         if action == "password":
             return _change_password(user)
-    from app.models.equipment import EquipmentItem
+    from app.models.equipment import EquipmentItem  # pylint: disable=import-outside-toplevel
 
     issued_items = db.session.scalars(db.select(EquipmentItem).where(EquipmentItem.issued_to_id == user.id)).all()
-    from app.models.assignment import Assignment
-    from app.models.event import Event, EventSpot, EventStatus
+    from app.models.assignment import Assignment  # pylint: disable=import-outside-toplevel
+    from app.models.event import Event, EventSpot, EventStatus  # pylint: disable=import-outside-toplevel
 
     now = datetime.now(timezone.utc)
     upcoming = db.session.scalars(
@@ -77,10 +77,15 @@ def profile() -> str | Response:
         .options(selectinload(Assignment.spot).selectinload(EventSpot.event))  # type: ignore[arg-type]
         .limit(10)
     ).all()
-    from app.utils import external_url_for
+    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
+    # Lazy-init iCal token on first profile visit.
+    token_created = False
+    if not user.ical_token:
+        user.regenerate_ical_token()
+        db.session.commit()
+        token_created = True
     ical_url = external_url_for("calendar.feed", token=user.ical_token)
-    ical_all_url = external_url_for("calendar.feed_all", token=user.ical_all_token)
     return render_template(
         "users/profile.html",
         user=user,
@@ -89,6 +94,7 @@ def profile() -> str | Response:
         upcoming=upcoming,
         ical_url=ical_url,
         ical_all_url=ical_all_url,
+        token_created=token_created,
         min_password_length=MIN_PASSWORD_LENGTH,
     )
 
@@ -198,7 +204,7 @@ def index() -> str:
     else:
         order = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
 
-    from app.models.user import user_roles as user_roles_table
+    from app.models.user import user_roles as user_roles_table  # pylint: disable=import-outside-toplevel
 
     query = db.select(UserAccount).order_by(order)
     if not show_archived:
@@ -244,9 +250,9 @@ def create_user() -> str | Response:
     """Manually create a new active user account (no invite required)."""
     require_permission("user.create")
 
-    import secrets
+    import secrets  # pylint: disable=import-outside-toplevel
 
-    from app.models.qualification import Qualification
+    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
     all_roles = db.session.scalars(db.select(Role).order_by(collate(Role.name, CS_COLLATION))).all()
     all_qualifications = db.session.scalars(
@@ -308,7 +314,7 @@ def detail(user_id: uuid.UUID) -> str:
     require_permission("user.view")
     user = get_or_404(UserAccount, user_id)
     roles = db.session.scalars(db.select(Role).order_by(collate(Role.name, CS_COLLATION))).all()
-    from app.models.qualification import Qualification
+    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
     qualifications = db.session.scalars(
         db.select(Qualification)
@@ -352,7 +358,7 @@ def _apply_qualification_update(user: UserAccount, qual_ids: list[int]) -> bool:
     Returns True if the qualifications were modified, False if they were identical.
     Caller is responsible for version bump.
     """
-    from app.models.qualification import Qualification
+    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
     before_quals = sorted((c.name for c in user.qualifications), key=czech_sort_key)
     new_creds = (
@@ -703,8 +709,8 @@ def create_invite() -> Response:
 
 def _queue_invite_email(invite: RegistrationInvite) -> None:
     """Enqueue invite email into outbox and link it to the invite row."""
-    from app.config import INVITE_TOKEN_HOURS as _HOURS
-    from app.mail import _base_context  # noqa: PLC0415
+    from app.config import INVITE_TOKEN_HOURS as _HOURS  # pylint: disable=import-outside-toplevel
+    from app.mail import _base_context  # pylint: disable=import-outside-toplevel
 
     register_url = external_url_for("auth.register", token=invite.token)
     html_body = render_template(
@@ -764,6 +770,6 @@ def cancel_invite(invite_id: int) -> Response:
 
 
 def _send_activation_email(user: UserAccount) -> None:
-    from app.mail import send_account_activated  # noqa: PLC0415
+    from app.mail import send_account_activated  # pylint: disable=import-outside-toplevel
 
     send_account_activated(user)

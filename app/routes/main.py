@@ -150,7 +150,7 @@ def _pending_debriefings_section() -> list[Assignment]:
     """Assignments where the user has a completed event but no debriefing yet."""
     if not current_user.has_permission("debriefing.submit_own"):
         return []
-    from app.models.assignment import DebriefingRecord
+    from app.models.assignment import DebriefingRecord  # pylint: disable=import-outside-toplevel
 
     return list(
         db.session.scalars(

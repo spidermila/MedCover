@@ -143,7 +143,7 @@ class AppSettings(db.Model):  # type: ignore[misc]
         app.config["MAIL_DEFAULT_SENDER"] = self.smtp_default_sender
 
         # Reinitialise Flask-Mail so the cached _Mail state picks up new values
-        from app.extensions import mail as _mail
+        from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
 
         _mail.init_app(app)
 

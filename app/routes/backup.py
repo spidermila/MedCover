@@ -55,7 +55,7 @@ def _safe_backup_path(filename: str) -> Path:
 def index() -> str:
     require_permission("admin.view")
 
-    from app.backup import list_backups
+    from app.backup import list_backups  # pylint: disable=import-outside-toplevel
 
     backup_dir = _resolve_backup_dir()
     backups = list_backups(backup_dir)
@@ -76,7 +76,7 @@ def index() -> str:
 def run_backup() -> Response:
     require_permission("backup.run")
 
-    from app.backup import export_to_zip, prune_old_backups
+    from app.backup import export_to_zip, prune_old_backups  # pylint: disable=import-outside-toplevel
 
     backup_dir = _resolve_backup_dir()
     settings = get_settings()
@@ -173,8 +173,8 @@ def upload_restore() -> Response:
 
 def _do_restore(zip_path: Path, actor_id: int | None) -> None:
     """Run restore_from_zip and flash success/error."""
-    from app.backup import restore_from_zip
-    from app.models.user import UserAccount
+    from app.backup import restore_from_zip  # pylint: disable=import-outside-toplevel
+    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
 
     try:
         restore_from_zip(zip_path)

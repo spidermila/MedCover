@@ -87,7 +87,7 @@ def add_spot(event_id: int) -> Response:
     is_optional = request.form.get("is_optional") == "1"
     try:
         quantity = max(1, min(10, int(request.form.get("quantity", 1))))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         quantity = 1
     qual_ids = [int(c) for c in request.form.getlist("qualification_ids") if c.isdigit()]
     qualifications = (
@@ -232,7 +232,7 @@ def set_rp(event_id: int) -> Response:
         flash("Vyberte zodpovědnou osobu.", "warning")
         return redirect(url_for("events.detail", event_id=event_id))
 
-    import uuid as _uuid
+    import uuid as _uuid  # pylint: disable=import-outside-toplevel
 
     try:
         user_id = _uuid.UUID(user_id_str)

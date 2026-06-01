@@ -44,13 +44,13 @@ def create_app(
 
     # Import models here so Flask-Migrate discovers all tables
     with app.app_context():
-        from . import models  # noqa: F401
+        from . import models  # noqa: F401 # pylint: disable=import-outside-toplevel
 
         # Apply SMTP settings from DB immediately so the scheduler (which never
         # handles HTTP requests and therefore never triggers before_request) gets
         # a correctly configured Flask-Mail on startup.
         try:
-            from .models.settings import get_settings
+            from .models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
             _settings = get_settings()
             if _settings and _settings.smtp_configured:
@@ -58,7 +58,7 @@ def create_app(
         except Exception:
             pass  # DB not ready yet (first migration run)
 
-    from .routes import register_blueprints
+    from .routes import register_blueprints  # pylint: disable=import-outside-toplevel
 
     register_blueprints(app)
     register_cli_commands(app)
@@ -67,7 +67,7 @@ def create_app(
     def _inject_app_config() -> dict:
         """Inject app config and feature flags into all templates."""
         try:
-            from .models.settings import get_settings as _gs
+            from .models.settings import get_settings as _gs  # pylint: disable=import-outside-toplevel
 
             _s = _gs()
             feedback_enabled = _s.feedback_enabled
@@ -94,7 +94,7 @@ def create_app(
     def midpoint_iso_filter(event: object) -> str:
         """Return the midpoint between event.start_datetime and event.end_datetime
         formatted as 'YYYY-MM-DDTHH:MM' for a datetime-local input."""
-        from app.models.event import Event as _Event
+        from app.models.event import Event as _Event  # pylint: disable=import-outside-toplevel
 
         if not isinstance(event, _Event):
             return ""
@@ -131,7 +131,7 @@ def create_app(
         """
         try:
             formatted = f"{float(value):.{decimals}f}"  # type: ignore[arg-type]
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return "—"
         if strip:
             formatted = formatted.rstrip("0").rstrip(".")
@@ -155,7 +155,7 @@ def create_app(
         """Return a URL to view the given entity, or None if no page exists."""
         try:
             eid_int = int(entity_id)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             eid_int = None
 
         if eid_int is not None:
@@ -221,7 +221,7 @@ def create_app(
         Skips static files, the setup blueprint itself, and auth routes
         (so the app doesn't get into a redirect loop before the DB is seeded).
         """
-        from .models.settings import get_settings
+        from .models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
         # Allow static files, setup pages, and health probe through unconditionally
         if request.endpoint and (
@@ -270,9 +270,9 @@ def register_cli_commands(app: Flask) -> None:
         that updated alembic_version but failed to apply the DDL).
         Exits non-zero and prints a clear error if anything is missing.
         """
-        import sys
+        import sys  # pylint: disable=import-outside-toplevel
 
-        from sqlalchemy import inspect as sa_inspect
+        from sqlalchemy import inspect as sa_inspect  # pylint: disable=import-outside-toplevel
 
         inspector = sa_inspect(db.engine)
         existing_tables = set(inspector.get_table_names())
@@ -319,14 +319,14 @@ def register_cli_commands(app: Flask) -> None:
         Example:
             docker compose exec web flask send-test-email <your-address@domain.com>
         """
-        import socket
-        import sys
-        import time
+        import socket  # pylint: disable=import-outside-toplevel
+        import sys  # pylint: disable=import-outside-toplevel
+        import time  # pylint: disable=import-outside-toplevel
 
-        from flask_mail import Message
+        from flask_mail import Message  # pylint: disable=import-outside-toplevel
 
-        from app.extensions import mail as _flask_mail
-        from app.models.settings import get_settings
+        from app.extensions import mail as _flask_mail  # pylint: disable=import-outside-toplevel
+        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
         settings = get_settings()
         if not settings.smtp_configured:

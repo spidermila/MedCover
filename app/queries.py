@@ -38,8 +38,8 @@ def active_users_list() -> Sequence[UserAccount]:
 
 def rp_eligible_users_list() -> list[UserAccount]:
     """Return active users who hold at least one qualification with can_be_rp=True."""
-    from app.models.qualification import Qualification
-    from app.models.qualification import user_qualifications as uq_table
+    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
+    from app.models.qualification import user_qualifications as uq_table  # pylint: disable=import-outside-toplevel
 
     # Subquery to get distinct user IDs (avoids PG DISTINCT + ORDER BY conflict)
     eligible_ids = (
@@ -83,7 +83,7 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
     :meth:`EventSpot.is_eligible_for` instead of calling the per-spot recursive
     :meth:`EventSpot.is_eligible` in a loop.
     """
-    from app.models.qualification import Qualification
+    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
     all_quals: list[Qualification] = list(
         db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False))).all()
@@ -110,7 +110,11 @@ def assignable_equipment_items() -> list[tuple[str, list]]:
     Returns a list of ``(type_name, [EquipmentItem, ...])`` tuples.
     Used on the event create/edit forms to let the user pre-assign items.
     """
-    from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentType
+    from app.models.equipment import (  # pylint: disable=import-outside-toplevel
+        EquipmentCategory,
+        EquipmentItem,
+        EquipmentType,
+    )
 
     items = db.session.scalars(
         db.select(EquipmentItem)

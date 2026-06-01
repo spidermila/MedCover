@@ -102,7 +102,7 @@ class DigestMetricSnapshot(db.Model):  # type: ignore[misc]
 
 def get_digest_schedule() -> DigestSchedule:
     """Return the single DigestSchedule row, creating it with defaults if absent."""
-    from app.digest.registry import BLOCK_REGISTRY
+    from app.digest.registry import BLOCK_REGISTRY  # pylint: disable=import-outside-toplevel
 
     row = db.session.get(DigestSchedule, 1)
     if row is None:

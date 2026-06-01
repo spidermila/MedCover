@@ -267,7 +267,7 @@ def _user_stat_csv_rows(user_stat_rows: list[tuple[UserAccount, UserStats]]) -> 
 @login_required
 def index() -> str:
     require_permission("report.view")
-    from app.queries import active_master_events_list, active_users_list
+    from app.queries import active_master_events_list, active_users_list  # pylint: disable=import-outside-toplevel
 
     master_events = active_master_events_list()
     all_users = active_users_list() if current_user.has_permission("report.view") else []

@@ -23,7 +23,7 @@ _INVITE_SALT = "invite"
 
 def _send_mail(to: str, subject: str, template: str, **ctx: Any) -> None:
     """Render an HTML email template and enqueue it via the outbox."""
-    from flask import render_template as rt
+    from flask import render_template as rt  # pylint: disable=import-outside-toplevel
 
     from app.mail import _base_context, _enqueue  # pylint: disable=import-outside-toplevel
 
@@ -37,19 +37,23 @@ def _send_mail(to: str, subject: str, template: str, **ctx: Any) -> None:
 
 
 def _make_signed_token(payload: str, salt: str, max_age_seconds: int) -> str:
-    from itsdangerous import URLSafeTimedSerializer
+    from itsdangerous import URLSafeTimedSerializer  # pylint: disable=import-outside-toplevel
 
     s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
     return s.dumps(payload, salt=salt)
 
 
 def _load_signed_token(token: str, salt: str, max_age_seconds: int) -> str | None:
-    from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+    from itsdangerous import (  # pylint: disable=import-outside-toplevel
+        BadSignature,
+        SignatureExpired,
+        URLSafeTimedSerializer,
+    )
 
     s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
     try:
         return s.loads(token, salt=salt, max_age=max_age_seconds)
-    except (SignatureExpired, BadSignature):
+    except SignatureExpired, BadSignature:
         return None
 
 
@@ -122,9 +126,9 @@ def forgot_password() -> str | Response:
         # Always show the same message to prevent user enumeration.
         flash("Pokud je e-mail registrován, byl odeslán odkaz pro obnovení hesla.", "info")
         if user and not user.is_archived:
-            import secrets
+            import secrets  # pylint: disable=import-outside-toplevel
 
-            from app.config import RESET_TOKEN_MINUTES
+            from app.config import RESET_TOKEN_MINUTES  # pylint: disable=import-outside-toplevel
 
             nonce = secrets.token_hex(16)
             user.password_reset_nonce = nonce
@@ -155,9 +159,9 @@ def forgot_password() -> str | Response:
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token: str) -> str | Response:
-    import uuid as _uuid
+    import uuid as _uuid  # pylint: disable=import-outside-toplevel
 
-    from app.config import RESET_TOKEN_MINUTES
+    from app.config import RESET_TOKEN_MINUTES  # pylint: disable=import-outside-toplevel
 
     payload = _load_signed_token(token, _RESET_SALT, RESET_TOKEN_MINUTES * 60)
     if not payload or ":" not in payload:

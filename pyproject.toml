@@ -49,7 +49,7 @@ fail_under = 83
 
 [tool.black]
 line-length = 120
-target-version = ["py312"]
+target-version = ["py313"]
 
 [tool.isort]
 profile = "black"
@@ -58,6 +58,9 @@ skip_glob = ["migrations/*"]
 
 [tool.flake8]
 max-line-length = 120
+# W503: line break before binary operator (conflicts with black)
+# E402: module-level import not at top of file (needed for Flask factory pattern)
+# E203: whitespace before ':' (conflicts with black's slice formatting)
 extend-ignore = ["W503", "E402", "E203"]
 exclude = [
     ".git",

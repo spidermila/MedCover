@@ -22,8 +22,8 @@ class BackupStatusBlock(BaseBlock):
     }
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
-        from app.backup import list_backups
-        from app.models.settings import get_settings
+        from app.backup import list_backups  # pylint: disable=import-outside-toplevel
+        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
         settings = get_settings()
         backup_dir = Path(settings.backup_dir)

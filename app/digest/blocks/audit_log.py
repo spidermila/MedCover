@@ -40,9 +40,9 @@ class AuditLogBlock(BaseBlock):
     }
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
-        import sqlalchemy as sa
+        import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
 
-        from app.models.audit import AuditLogEntry
+        from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
 
         hours = int(config.get("hours", 24))
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
