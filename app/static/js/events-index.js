@@ -190,12 +190,19 @@
           label += (label ? ' — ' : '') + quals.join(', ');
         }
         if (!label) { label = 'Nespecifikovaná pozice'; }
+        var csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrf;
+        var btn = document.createElement('button');
+        btn.className = 'btn btn-success btn-sm w-100 text-start';
+        btn.textContent = label;
         var form = document.createElement('form');
         form.method = 'POST';
         form.action = CLAIM_BASE + spotId;
         form.className = 'mb-1';
-        form.innerHTML = '<input type="hidden" name="csrf_token" value="' + csrf + '">' +
-          '<button class="btn btn-success btn-sm w-100 text-start">' + label + '</button>';
+        form.appendChild(csrfInput);
+        form.appendChild(btn);
         body.appendChild(form);
       });
     });
