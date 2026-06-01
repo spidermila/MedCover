@@ -281,12 +281,8 @@ class TestCalendarFeed:
             event = Event(
                 name="Completed Test Event",
                 master_event_id=me.id,
-                start_datetime=__import__("datetime").datetime(
-                    2020, 1, 1, 10, 0, tzinfo=__import__("datetime").timezone.utc
-                ),
-                end_datetime=__import__("datetime").datetime(
-                    2020, 1, 1, 18, 0, tzinfo=__import__("datetime").timezone.utc
-                ),
+                start_datetime=datetime(2020, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2020, 1, 1, 18, 0, tzinfo=timezone.utc),
                 status=EventStatus.COMPLETED,
                 created_by_id=creator.id,
             )
