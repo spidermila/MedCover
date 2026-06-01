@@ -5,13 +5,8 @@ echo "=== E2E: Waiting for database ==="
 MAX_RETRIES=${DB_WAIT_RETRIES:-60}
 RETRY=0
 until python -c "
-import socket, sys, os
-url = os.environ.get('DATABASE_URL', '')
-# Extract host:port from postgresql://user:pass@host:port/db
-host_part = url.split('@')[1].split('/')[0] if '@' in url else 'db-e2e:5432'
-host, port = host_part.rsplit(':', 1)
-s = socket.socket(); s.settimeout(2)
-s.connect((host, int(port))); s.close()
+import os, psycopg
+psycopg.connect(os.environ['DATABASE_URL']).close()
 " 2>/dev/null; do
   RETRY=$((RETRY+1))
   if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
