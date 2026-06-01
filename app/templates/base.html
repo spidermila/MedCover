@@ -91,8 +91,10 @@
               <li><a class="dropdown-item" href="{{ url_for('admin_digest.index') }}">Přehledový e-mail</a></li>
               {% endif %}
               <li><a class="dropdown-item" href="{{ url_for('backup.index') }}">Zálohy</a></li>
+              {% if current_user.has_permission('admin.manage_settings') %}
               <li><a class="dropdown-item" href="{{ url_for('notifications.index') }}">Oznámení</a></li>
               <li><a class="dropdown-item" href="{{ url_for('app_settings.index') }}">Nastavení</a></li>
+              {% endif %}
             </ul>
           </li>
           {% endif %}
