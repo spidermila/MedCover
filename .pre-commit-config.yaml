@@ -1,8 +1,21 @@
 repos:
-  - repo: https://github.com/asottile/reorder-python-imports
-    rev: v3.16.0
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
     hooks:
-    -   id: reorder-python-imports
+      - id: pyupgrade
+        args: [--py312-plus]
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 6.0.1
+    hooks:
+      - id: isort
+        exclude: ^migrations/
+
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+        exclude: ^migrations/
 
   - repo: local
     hooks:
@@ -35,13 +48,16 @@ repos:
         exclude: ^migrations/
         args:
           - --max-line-length=120
-          - --extend-ignore=E501,W503,E402
+          - --extend-ignore=W503,E402,E203
 
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.21.2
+  - repo: local
     hooks:
-      - id: pyupgrade
-        args: [--py312-plus]
+      - id: pylint-imports
+        name: pylint (import-outside-toplevel)
+        entry: pylint --disable=all --enable=C0415
+        language: system
+        types: [python]
+        files: ^tests/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.1.0

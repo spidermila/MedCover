@@ -5,28 +5,18 @@ Accessible only when AppSettings.setup_complete is False.
 After completion, redirects all further /setup/* requests to the dashboard.
 Step 3 creates the first admin account (no auth required — no users exist yet).
 """
+
 from __future__ import annotations
 
 import pytz
-from flask import Blueprint
-from flask import current_app
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
+from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_user
 from flask_mail import Message
 
 from app.constants import MIN_PASSWORD_LENGTH
-from app.extensions import db
-from app.extensions import mail
-from app.models.role import Permission
-from app.models.role import Role
-from app.models.role import ROLE_PERMISSIONS
-from app.models.settings import AppSettings
-from app.models.settings import get_settings
+from app.extensions import db, mail
+from app.models.role import ROLE_PERMISSIONS, Permission, Role
+from app.models.settings import AppSettings, get_settings
 from app.models.user import UserAccount
 
 setup_bp = Blueprint("setup", __name__, url_prefix="/setup")
@@ -45,11 +35,12 @@ def _guard(settings: AppSettings) -> Response | None:
 # Step 1 — Organisation                                               #
 # ------------------------------------------------------------------ #
 
+
 @setup_bp.route("/", methods=["GET", "POST"])
 @setup_bp.route("/step1", methods=["GET", "POST"])
 def step1() -> str | Response:
     settings = get_settings()
-    if (redir := _guard(settings)):
+    if redir := _guard(settings):
         return redir
 
     if request.method == "POST":
@@ -72,10 +63,11 @@ def step1() -> str | Response:
 # Step 2 — SMTP                                                       #
 # ------------------------------------------------------------------ #
 
+
 @setup_bp.route("/step2", methods=["GET", "POST"])
 def step2() -> str | Response:
     settings = get_settings()
-    if (redir := _guard(settings)):
+    if redir := _guard(settings):
         return redir
 
     if request.method == "POST":
@@ -120,10 +112,11 @@ def step2() -> str | Response:
 # Step 3 — First admin account                                        #
 # ------------------------------------------------------------------ #
 
+
 @setup_bp.route("/step3", methods=["GET", "POST"])
 def step3() -> str | Response:
     settings = get_settings()
-    if (redir := _guard(settings)):
+    if redir := _guard(settings):
         return redir
 
     if request.method == "POST":
@@ -178,6 +171,7 @@ def done() -> str:
 # Helpers                                                             #
 # ------------------------------------------------------------------ #
 
+
 def _ensure_roles() -> None:
     """Idempotently create all permissions and roles (mirrors seed_dev.py logic)."""
     from app.models.role import ALL_PERMISSIONS
@@ -204,10 +198,13 @@ def _ensure_roles() -> None:
 def _ensure_general_me() -> None:
     """Idempotently create the built-in General master event."""
     from app.models.master_event import MasterEvent
+
     if not db.session.scalar(db.select(MasterEvent).where(MasterEvent.is_general.is_(True))):
-        db.session.add(MasterEvent(
-            name="Obecné",
-            description="Výchozí nadřazená akce pro akce bez specifického zařazení.",
-            is_general=True,
-        ))
+        db.session.add(
+            MasterEvent(
+                name="Obecné",
+                description="Výchozí nadřazená akce pro akce bez specifického zařazení.",
+                is_general=True,
+            )
+        )
         db.session.flush()

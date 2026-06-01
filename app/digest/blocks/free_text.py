@@ -1,4 +1,5 @@
 """Free text digest block — admin-authored HTML/text content."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -9,7 +10,9 @@ from app.digest.base import BaseBlock
 class FreeTextBlock(BaseBlock):
     block_type = "free_text"
     label = "Volný text"
-    description = "Libovolný HTML obsah zadaný administrátorem — vhodný pro úvodní komentář, pokyny nebo pravidelnou zprávu."
+    description = (
+        "Libovolný HTML obsah zadaný administrátorem — vhodný pro úvodní komentář, pokyny nebo pravidelnou zprávu."
+    )
     template = "email/digest_blocks/free_text.html"
     default_config: dict[str, Any] = {
         "title": "Poznámka",

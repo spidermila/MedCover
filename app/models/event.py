@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -11,8 +10,8 @@ from sqlalchemy.orm import Mapped
 from app.extensions import db
 
 if TYPE_CHECKING:
-    from app.models.qualification import Qualification
     from app.models.assignment import Assignment
+    from app.models.qualification import Qualification
     from app.models.user import UserAccount
 
 
@@ -88,11 +87,15 @@ class EventTemplate(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     version = db.Column(db.Integer, default=1, nullable=False)
 
     spot_templates = db.relationship(
-        "EventSpotTemplate", back_populates="template", cascade="all, delete-orphan",
+        "EventSpotTemplate",
+        back_populates="template",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )
     equipment_plans = db.relationship(
-        "EventTemplateEquipmentPlan", back_populates="template", cascade="all, delete-orphan",
+        "EventTemplateEquipmentPlan",
+        back_populates="template",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )
 
@@ -174,13 +177,17 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     )
 
     master_event = db.relationship("MasterEvent", back_populates="events")
-    responsible_person = db.relationship("UserAccount", foreign_keys=[responsible_person_id], back_populates="rp_events")
+    responsible_person = db.relationship(
+        "UserAccount", foreign_keys=[responsible_person_id], back_populates="rp_events"
+    )
     created_by = db.relationship("UserAccount", foreign_keys=[created_by_id], back_populates="created_events")
     spots: Mapped[list[EventSpot]] = db.relationship(
         "EventSpot", back_populates="event", cascade="all, delete-orphan", lazy="selectin"
     )
     equipment_plans = db.relationship("EventEquipmentPlan", back_populates="event", cascade="all, delete-orphan")
-    equipment_assignments = db.relationship("EventEquipmentAssignment", back_populates="event", cascade="all, delete-orphan")
+    equipment_assignments = db.relationship(
+        "EventEquipmentAssignment", back_populates="event", cascade="all, delete-orphan"
+    )
 
     # ── Derived staffing status ─────────────────────────────────────────────
     @property
@@ -268,10 +275,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         if self.is_centrally_coordinated:
             return False
         # Check: user is assigned to this event
-        return any(
-            s.assignment is not None and s.assignment.user_id == user.id
-            for s in self.spots
-        )
+        return any(s.assignment is not None and s.assignment.user_id == user.id for s in self.spots)
 
     def __repr__(self) -> str:
         return f"<Event {self.id}: {self.name} [{self.status}]>"
@@ -292,7 +296,10 @@ class EventSpot(db.Model):  # type: ignore[misc]
         "Qualification", secondary=spot_qualifications, lazy="selectin"
     )
     assignment: Mapped[Assignment | None] = db.relationship(
-        "Assignment", back_populates="spot", uselist=False, cascade="all, delete-orphan",
+        "Assignment",
+        back_populates="spot",
+        uselist=False,
+        cascade="all, delete-orphan",
         lazy="selectin",
     )
 

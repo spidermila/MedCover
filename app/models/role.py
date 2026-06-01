@@ -4,7 +4,6 @@ from sqlalchemy.orm import Mapped
 
 from app.extensions import db
 
-
 # Many-to-many: Role ↔ Permission
 role_permissions = db.Table(
     "role_permissions",
@@ -127,7 +126,10 @@ ALL_PERMISSIONS: list[dict] = [
     {"code": "equipment_item.delete", "description": "Delete equipment items"},
     {"code": "equipment_item.issue_personal", "description": "Issue personal equipment to a member"},
     {"code": "equipment_item.report_own", "description": "Report status of own issued personal items"},
-    {"code": "equipment_item.availability_modify", "description": "Set equipment item availability (available/unavailable)"},
+    {
+        "code": "equipment_item.availability_modify",
+        "description": "Set equipment item availability (available/unavailable)",
+    },
     {"code": "event.equipment.plan", "description": "Plan required equipment for an event"},
     {"code": "event.equipment.assign", "description": "Assign shared equipment items to an event"},
     # Debriefing
@@ -135,8 +137,14 @@ ALL_PERMISSIONS: list[dict] = [
     {"code": "debriefing.view_own", "description": "View own submitted debriefing record"},
     # The two permissions below are reserved for the Debriefing Manager role only.
     # They are intentionally excluded from Admin to protect participant confidentiality.
-    {"code": "debriefing.view_all", "description": "View all confidential debriefing records (Debriefing Manager only)"},
-    {"code": "debriefing.manage", "description": "Manage debriefing settings and pending requests (Debriefing Manager only)"},
+    {
+        "code": "debriefing.view_all",
+        "description": "View all confidential debriefing records (Debriefing Manager only)",
+    },
+    {
+        "code": "debriefing.manage",
+        "description": "Manage debriefing settings and pending requests (Debriefing Manager only)",
+    },
     # Reports
     {"code": "report.view", "description": "View reports"},
     {"code": "work_report.generate", "description": "Generate own monthly work report (výkaz práce)"},
@@ -157,35 +165,57 @@ ALL_PERMISSIONS: list[dict] = [
 ROLE_PERMISSIONS: dict[str, list[str]] = {
     # Admin gets all permissions except those intentionally reserved for Debriefing Manager.
     # Even admins must not access confidential participant debriefing responses.
-    Role.ADMIN: [
-        p["code"] for p in ALL_PERMISSIONS
-        if p["code"] not in Role._ADMIN_EXCLUDED_PERMISSIONS
-    ],
+    Role.ADMIN: [p["code"] for p in ALL_PERMISSIONS if p["code"] not in Role._ADMIN_EXCLUDED_PERMISSIONS],
     Role.COORDINATOR: [
-        "user.view", "user.edit_own",
+        "user.view",
+        "user.edit_own",
         "qualification.view",
-        "master_event.view", "master_event.create", "master_event.edit",
-        "event.view", "event.view_draft", "event.create", "event.edit",
-        "event.publish", "event.assignments.open", "event.assignments.close",
-        "event.cancel", "event.restore", "event.delete_draft",
-        "event.assign_own", "event.assign_other", "event.set_responsible_person",
+        "master_event.view",
+        "master_event.create",
+        "master_event.edit",
+        "event.view",
+        "event.view_draft",
+        "event.create",
+        "event.edit",
+        "event.publish",
+        "event.assignments.open",
+        "event.assignments.close",
+        "event.cancel",
+        "event.restore",
+        "event.delete_draft",
+        "event.assign_own",
+        "event.assign_other",
+        "event.set_responsible_person",
         "event.notification.send",
-        "event_template.view", "event_template.create", "event_template.edit", "event_template.delete",
-        "equipment.view", "equipment_item.issue_personal", "equipment_item.report_own",
+        "event_template.view",
+        "event_template.create",
+        "event_template.edit",
+        "event_template.delete",
+        "equipment.view",
+        "equipment_item.issue_personal",
+        "equipment_item.report_own",
         "equipment_item.availability_modify",
-        "event.equipment.plan", "event.equipment.assign",
-        "debriefing.submit_own", "debriefing.view_own",
+        "event.equipment.plan",
+        "event.equipment.assign",
+        "debriefing.submit_own",
+        "debriefing.view_own",
         "report.view",
         "work_report.generate",
     ],
     Role.MEMBER: [
-        "user.view", "user.edit_own",
+        "user.view",
+        "user.edit_own",
         "qualification.view",
         "master_event.view",
-        "event.view", "event.view_draft", "event.assign_own",
+        "event.view",
+        "event.view_draft",
+        "event.assign_own",
         "event_template.view",
-        "equipment.view", "equipment_item.issue_personal", "equipment_item.report_own",
-        "debriefing.submit_own", "debriefing.view_own",
+        "equipment.view",
+        "equipment_item.issue_personal",
+        "equipment_item.report_own",
+        "debriefing.submit_own",
+        "debriefing.view_own",
         "report.view",
         "work_report.generate",
     ],

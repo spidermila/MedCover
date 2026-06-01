@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from app.extensions import db
 
@@ -112,12 +111,14 @@ def get_digest_schedule() -> DigestSchedule:
         db.session.flush()
         # Seed one DigestBlock row per registered block type
         for i, (btype, cls) in enumerate(BLOCK_REGISTRY.items()):
-            db.session.add(DigestBlock(
-                digest_schedule_id=1,
-                block_type=btype,
-                enabled=False,
-                sort_order=i,
-                config_json=dict(cls.default_config),
-            ))
+            db.session.add(
+                DigestBlock(
+                    digest_schedule_id=1,
+                    block_type=btype,
+                    enabled=False,
+                    sort_order=i,
+                    config_json=dict(cls.default_config),
+                )
+            )
         db.session.commit()
     return row

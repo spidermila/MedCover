@@ -4,26 +4,17 @@ Admin notification management route.
 Provides a catalog of all email notification types defined in NOTIFICATION_CATALOG
 and allows admins to toggle each configurable type on/off via AppSettings.
 """
+
 from __future__ import annotations
 
-from flask import Blueprint
-from flask import flash
-from flask import g
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, flash, g, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.mail import NOTIFICATION_CATALOG
 from app.models.event import Event
 from app.models.settings import get_settings
-from app.utils import audit
-from app.utils import diff_changes
-from app.utils import require_permission
+from app.utils import audit, diff_changes, require_permission
 
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/admin/notifications")
 
@@ -55,9 +46,7 @@ def index() -> str | Response:
 
     # Unique togglable fields (one checkbox per field, not per catalog entry)
     togglable_fields = {
-        entry["settings_field"]
-        for entry in NOTIFICATION_CATALOG
-        if entry["settings_field"] is not None
+        entry["settings_field"] for entry in NOTIFICATION_CATALOG if entry["settings_field"] is not None
     }
     toggle_groups = _build_toggle_groups(NOTIFICATION_CATALOG)
 
@@ -87,10 +76,7 @@ def index() -> str | Response:
 def _recent_events() -> list[Event]:
     """Return the 20 most recently created non-archived events for the test dropdown."""
     return db.session.scalars(
-        db.select(Event)
-        .where(Event.archived.is_(False))
-        .order_by(Event.start_datetime.desc())
-        .limit(20)
+        db.select(Event).where(Event.archived.is_(False)).order_by(Event.start_datetime.desc()).limit(20)
     ).all()
 
 
@@ -128,8 +114,8 @@ def test_notification(code: str) -> Response:
         flash("Nepodařilo se najít žádnou akci pro zkušební oznámení.", "warning")
         return redirect(url_for("notifications.index"))
 
-    import app.mail as mailer  # noqa: PLC0415
-    from app.utils import external_url_for  # noqa: PLC0415
+    import app.mail as mailer  # pylint: disable=import-outside-toplevel
+    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
     # Temporarily override the outbox recipient for this request.
     g._test_notification_email = test_email
@@ -150,15 +136,15 @@ def test_notification(code: str) -> Response:
             fake_changes: dict = {"description": ["—", "Zkušební oznámení"]}
             mailer.send_event_changed(current_user, event, fake_changes, event_url=event_url)
         elif code == "unfilled_reminder":
-            from app.models.event import EventSpot  # noqa: PLC0415
-            spots = db.session.scalars(
-                db.select(EventSpot).where(EventSpot.event_id == event.id).limit(5)
-            ).all()
+            from app.models.event import EventSpot  # pylint: disable=import-outside-toplevel
+
+            spots = db.session.scalars(db.select(EventSpot).where(EventSpot.event_id == event.id).limit(5)).all()
             mailer.send_unfilled_spots_reminder(current_user, event, unfilled=list(spots) or [None])
         elif code == "debriefing_invitation":
             # Build a minimal stand-in assignment for the debriefing URL
-            from app.models.assignment import Assignment  # noqa: PLC0415
-            from app.models.event import EventSpot  # noqa: PLC0415
+            from app.models.assignment import Assignment  # pylint: disable=import-outside-toplevel
+            from app.models.event import EventSpot  # pylint: disable=import-outside-toplevel
+
             fake_assignment = db.session.scalar(
                 db.select(Assignment)
                 .join(EventSpot, Assignment.spot_id == EventSpot.id)

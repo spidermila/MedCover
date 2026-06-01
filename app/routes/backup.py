@@ -3,6 +3,7 @@
 All routes are under /admin/backup and require the admin.view permission as a
 baseline, with more specific backup.* permissions per action.
 """
+
 from __future__ import annotations
 
 import io
@@ -10,26 +11,15 @@ import logging
 import re
 from pathlib import Path
 
-from flask import abort
-from flask import Blueprint
-from flask import current_app
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import send_file
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask_login import current_user, login_required
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.settings import get_settings
-from app.utils import audit
-from app.utils import require_permission
+from app.utils import audit, require_permission
 
 log = logging.getLogger(__name__)
 
@@ -59,12 +49,14 @@ def _safe_backup_path(filename: str) -> Path:
 
 # ── List & management page ────────────────────────────────────────────────────
 
+
 @backup_bp.route("/")
 @login_required
 def index() -> str:
     require_permission("admin.view")
 
     from app.backup import list_backups
+
     backup_dir = _resolve_backup_dir()
     backups = list_backups(backup_dir)
     settings = get_settings()
@@ -78,18 +70,26 @@ def index() -> str:
 
 # ── Ad-hoc backup ─────────────────────────────────────────────────────────────
 
+
 @backup_bp.route("/run", methods=["POST"])
 @login_required
 def run_backup() -> Response:
     require_permission("backup.run")
 
     from app.backup import export_to_zip, prune_old_backups
+
     backup_dir = _resolve_backup_dir()
     settings = get_settings()
     try:
         zip_path = export_to_zip(backup_dir)
         pruned = prune_old_backups(backup_dir, settings.backup_keep_count)
-        audit("create", "Backup", zip_path.name, f"Ruční záloha vytvořena: {zip_path.name}", {"file": zip_path.name, "pruned": [p.name for p in pruned]})
+        audit(
+            "create",
+            "Backup",
+            zip_path.name,
+            f"Ruční záloha vytvořena: {zip_path.name}",
+            {"file": zip_path.name, "pruned": [p.name for p in pruned]},
+        )
         db.session.commit()
         flash(f"Záloha byla vytvořena: {zip_path.name}", "success")
     except Exception as exc:
@@ -99,6 +99,7 @@ def run_backup() -> Response:
 
 
 # ── Download ──────────────────────────────────────────────────────────────────
+
 
 @backup_bp.route("/download/<filename>")
 @login_required
@@ -114,6 +115,7 @@ def download(filename: str) -> Response:
 
 
 # ── Restore from stored file ──────────────────────────────────────────────────
+
 
 @backup_bp.route("/restore/<filename>", methods=["POST"])
 @login_required
@@ -131,6 +133,7 @@ def restore(filename: str) -> Response:
 
 
 # ── Upload & restore ──────────────────────────────────────────────────────────
+
 
 @backup_bp.route("/upload-restore", methods=["POST"])
 @login_required
@@ -167,10 +170,12 @@ def upload_restore() -> Response:
 
 # ── Shared restore helper ─────────────────────────────────────────────────────
 
+
 def _do_restore(zip_path: Path, actor_id: int | None) -> None:
     """Run restore_from_zip and flash success/error."""
     from app.backup import restore_from_zip
     from app.models.user import UserAccount
+
     try:
         restore_from_zip(zip_path)
         # AuditLogEntry written *after* restore — session was wiped and reloaded.
@@ -178,33 +183,39 @@ def _do_restore(zip_path: Path, actor_id: int | None) -> None:
         # restore where dev and prod have different user IDs), so check first.
         if actor_id is not None and db.session.get(UserAccount, actor_id) is None:
             actor_id = None
-        db.session.add(AuditLogEntry(
-            actor_id=actor_id,
-            action_type="restore",
-            entity_type="Backup",
-            entity_id=zip_path.name,
-            summary=f"Databáze obnovena ze zálohy: {zip_path.name}",
-            changes_json={"file": zip_path.name},
-        ))
+        db.session.add(
+            AuditLogEntry(
+                actor_id=actor_id,
+                action_type="restore",
+                entity_type="Backup",
+                entity_id=zip_path.name,
+                summary=f"Databáze obnovena ze zálohy: {zip_path.name}",
+                changes_json={"file": zip_path.name},
+            )
+        )
         db.session.commit()
         flash(f"Databáze byla úspěšně obnovena ze zálohy {zip_path.name}.", "success")
-        flash(Markup(
-            "Následující nastavení <strong>nebyla obnovena</strong> ze zálohy "
-            "a je třeba je zkontrolovat a případně nakonfigurovat ručně:"
-            "<ul class='mb-0 mt-2'>"
-            f"<li><a href='{url_for('app_settings.index')}'>Nastavení aplikace</a>"
-            " — název organizace, časová zóna, URL aplikace, SMTP&nbsp;/&nbsp;e-mail</li>"
-            f"<li><a href='{url_for('notifications.index')}'>Oznámení</a>"
-            " — zapnutí/vypnutí e-mailových upozornění</li>"
-            "<li>Nastavení zálohování — adresář, počet uchovávaných záloh, plánování</li>"
-            "</ul>"
-        ), "info")
+        flash(
+            Markup(
+                "Následující nastavení <strong>nebyla obnovena</strong> ze zálohy "
+                "a je třeba je zkontrolovat a případně nakonfigurovat ručně:"
+                "<ul class='mb-0 mt-2'>"
+                f"<li><a href='{url_for('app_settings.index')}'>Nastavení aplikace</a>"
+                " — název organizace, časová zóna, URL aplikace, SMTP&nbsp;/&nbsp;e-mail</li>"
+                f"<li><a href='{url_for('notifications.index')}'>Oznámení</a>"
+                " — zapnutí/vypnutí e-mailových upozornění</li>"
+                "<li>Nastavení zálohování — adresář, počet uchovávaných záloh, plánování</li>"
+                "</ul>"
+            ),
+            "info",
+        )
     except Exception as exc:
         log.error("Restore from %s failed: %s", zip_path.name, exc, exc_info=True)
         flash(f"Obnovení selhalo: {exc}", "danger")
 
 
 # ── Delete backup file ────────────────────────────────────────────────────────
+
 
 @backup_bp.route("/delete/<filename>", methods=["POST"])
 @login_required
@@ -229,6 +240,7 @@ def delete(filename: str) -> Response:
 
 
 # ── Settings update ───────────────────────────────────────────────────────────
+
 
 @backup_bp.route("/settings", methods=["POST"])
 @login_required

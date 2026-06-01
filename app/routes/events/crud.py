@@ -1,68 +1,56 @@
 """Event CRUD routes: index, feed, create, create_from_template, detail, edit, delete."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
-from flask import abort
-from flask import flash
-from flask import jsonify
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
-from sqlalchemy import case
-from sqlalchemy import collate
-from sqlalchemy import func
+from flask import Response, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+from sqlalchemy import case, collate, func
 
 import app.mail as mailer
-from . import events_bp
-from ._helpers import build_equipment_assignments
-from ._helpers import build_spots
-from ._helpers import build_spots_from_template
-from ._helpers import can_view
-from ._helpers import equipment_warnings_for_event
-from ._helpers import parse_event_form
-from ._helpers import PER_PAGE
-from ._helpers import STATUS_COLORS
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.equipment import EquipmentCategory
-from app.models.equipment import EquipmentItem
-from app.models.equipment import EquipmentItemStatus
-from app.models.equipment import EquipmentType
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
-from app.models.event import EventTemplate
-from app.models.event import EventType
+from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentItemStatus, EquipmentType
+from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.user import UserAccount
-from app.queries import active_master_events_list
-from app.queries import active_users_list
-from app.queries import assignable_equipment_items
-from app.queries import rp_eligible_users_list
-from app.queries import user_fillable_qual_ids
-from app.utils import audit
-from app.utils import check_version_conflict
-from app.utils import CS_COLLATION
-from app.utils import diff_changes
-from app.utils import get_app_tz
-from app.utils import get_or_404
-from app.utils import require_permission
+from app.queries import (
+    active_master_events_list,
+    active_users_list,
+    assignable_equipment_items,
+    rp_eligible_users_list,
+    user_fillable_qual_ids,
+)
+from app.utils import (
+    CS_COLLATION,
+    audit,
+    check_version_conflict,
+    diff_changes,
+    get_app_tz,
+    get_or_404,
+    require_permission,
+)
 
+from . import events_bp
+from ._helpers import (
+    PER_PAGE,
+    STATUS_COLORS,
+    build_equipment_assignments,
+    build_spots,
+    build_spots_from_template,
+    can_view,
+    equipment_warnings_for_event,
+    parse_event_form,
+)
 
 # ── List helpers ──────────────────────────────────────────────────────────────
 
 _ALL_STATUSES = [s.name for s in EventStatus]
 _DEFAULT_STATUSES = [
-    s.name for s in EventStatus
-    if s not in (EventStatus.DRAFT, EventStatus.CANCELLED, EventStatus.COMPLETED)
+    s.name for s in EventStatus if s not in (EventStatus.DRAFT, EventStatus.CANCELLED, EventStatus.COMPLETED)
 ]
 _ALL_EVENT_TYPES = [t.name for t in EventType]
 _VALID_SORT_COLS = {"start", "name", "status", "me_name", "total", "rp"}
@@ -114,7 +102,9 @@ def _apply_index_order(query: db.select, sort_col: str, sort_dir: str) -> db.sel
     """Apply ORDER BY clause to the event list query."""
     _asc = sort_dir == "asc"
     if sort_col == "name":
-        return query.order_by(collate(Event.name, CS_COLLATION).asc() if _asc else collate(Event.name, CS_COLLATION).desc())
+        return query.order_by(
+            collate(Event.name, CS_COLLATION).asc() if _asc else collate(Event.name, CS_COLLATION).desc()
+        )
     if sort_col == "status":
         return query.order_by(Event.status.asc() if _asc else Event.status.desc())
     if sort_col == "me_name":
@@ -152,9 +142,9 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
     if not current_user.has_permission("event.assign_own"):
         return {}
 
-    user_assigned_spot_ids = set(db.session.scalars(
-        db.select(Assignment.spot_id).where(Assignment.user_id == current_user.id)
-    ).all())
+    user_assigned_spot_ids = set(
+        db.session.scalars(db.select(Assignment.spot_id).where(Assignment.user_id == current_user.id)).all()
+    )
     fillable_ids = user_fillable_qual_ids(current_user)
     result: dict[int, list[tuple[int, str | None]]] = {}
     for e in events:
@@ -163,8 +153,7 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
         eligible = [
             (s.id, s.description)
             for s in e.spots
-            if s.assignment is None and s.id not in user_assigned_spot_ids
-            and s.is_eligible_for(fillable_ids)
+            if s.assignment is None and s.id not in user_assigned_spot_ids and s.is_eligible_for(fillable_ids)
         ]
         if eligible:
             result[e.id] = eligible
@@ -172,6 +161,7 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
+
 
 @events_bp.get("/")
 @login_required
@@ -207,16 +197,14 @@ def index() -> str:
     events = pagination.items
 
     active_named_mes = db.session.scalars(
-        db.select(MasterEvent)
-        .where(MasterEvent.archived.is_(False))
-        .order_by(collate(MasterEvent.name, CS_COLLATION))
+        db.select(MasterEvent).where(MasterEvent.archived.is_(False)).order_by(collate(MasterEvent.name, CS_COLLATION))
     ).all()
 
     event_templates: list[EventTemplate] = []
     if current_user.has_permission("event.create"):
-        event_templates = list(db.session.scalars(
-            db.select(EventTemplate).order_by(collate(EventTemplate.name, CS_COLLATION))
-        ).all())
+        event_templates = list(
+            db.session.scalars(db.select(EventTemplate).order_by(collate(EventTemplate.name, CS_COLLATION))).all()
+        )
 
     return render_template(
         "events/index.html",
@@ -242,6 +230,7 @@ def index() -> str:
 
 # ── Calendar JSON feed ────────────────────────────────────────────────────────
 
+
 @events_bp.get("/feed")
 @login_required
 def feed() -> Response:
@@ -262,11 +251,7 @@ def feed() -> Response:
     user_assigned_spot_ids: set[int] = set()
     fillable_ids: set[int] = set()
     if current_user.has_permission("event.assign_own"):
-        assigned = db.session.scalars(
-            db.select(Assignment).where(
-                Assignment.user_id == current_user.id
-            )
-        ).all()
+        assigned = db.session.scalars(db.select(Assignment).where(Assignment.user_id == current_user.id)).all()
         user_assigned_spot_ids = {a.spot_id for a in assigned}
         fillable_ids = user_fillable_qual_ids(current_user)
 
@@ -276,35 +261,37 @@ def feed() -> Response:
         eligible = False
         if current_user.has_permission("event.assign_own"):
             eligible = any(
-                s.assignment is None and s.id not in user_assigned_spot_ids
-                and s.is_eligible_for(fillable_ids)
+                s.assignment is None and s.id not in user_assigned_spot_ids and s.is_eligible_for(fillable_ids)
                 for s in e.spots
             )
-        items.append({
-            "id": e.id,
-            "title": e.name,
-            "start": e.start_datetime.isoformat(),
-            "end": e.end_datetime.isoformat(),
-            "url": url_for("events.detail", event_id=e.id),
-            "backgroundColor": color,
-            "borderColor": color,
-            "textColor": "#000" if e.status.value == "Přihlášky uzavřeny" else "#fff",
-            "extendedProps": {
-                "status": e.status.value,
-                "status_key": e.status.name,
-                "filled": e.mandatory_filled_spots,
-                "total": e.mandatory_total_spots,
-                "rp": e.responsible_person.name if e.responsible_person else None,
-                "start_local": e.start_datetime.astimezone(get_app_tz()).strftime("%d.%m.%Y %H:%M"),
-                "end_local": e.end_datetime.astimezone(get_app_tz()).strftime("%d.%m.%Y %H:%M"),
-                "me_name": None if e.master_event.is_general else e.master_event.name,
-                "eligible": eligible,
-            },
-        })
+        items.append(
+            {
+                "id": e.id,
+                "title": e.name,
+                "start": e.start_datetime.isoformat(),
+                "end": e.end_datetime.isoformat(),
+                "url": url_for("events.detail", event_id=e.id),
+                "backgroundColor": color,
+                "borderColor": color,
+                "textColor": "#000" if e.status.value == "Přihlášky uzavřeny" else "#fff",
+                "extendedProps": {
+                    "status": e.status.value,
+                    "status_key": e.status.name,
+                    "filled": e.mandatory_filled_spots,
+                    "total": e.mandatory_total_spots,
+                    "rp": e.responsible_person.name if e.responsible_person else None,
+                    "start_local": e.start_datetime.astimezone(get_app_tz()).strftime("%d.%m.%Y %H:%M"),
+                    "end_local": e.end_datetime.astimezone(get_app_tz()).strftime("%d.%m.%Y %H:%M"),
+                    "me_name": None if e.master_event.is_general else e.master_event.name,
+                    "eligible": eligible,
+                },
+            }
+        )
     return jsonify(items)
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
+
 
 @events_bp.route("/create", methods=["GET", "POST"])
 @login_required
@@ -313,7 +300,11 @@ def create() -> str | Response:
 
     master_events = active_master_events_list()
     users = rp_eligible_users_list()
-    all_qualifications = db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))).all()
+    all_qualifications = db.session.scalars(
+        db.select(Qualification)
+        .where(Qualification.is_deleted.is_(False))
+        .order_by(collate(Qualification.name, CS_COLLATION))
+    ).all()
     equipment_groups = assignable_equipment_items() if current_user.has_permission("event.equipment.assign") else []
 
     if request.method == "POST":
@@ -331,10 +322,12 @@ def create() -> str | Response:
 
         quick_publish = request.form.get("action") == "quick_publish"
         if quick_publish:
-            if not current_user.has_permission("event.publish") or \
-               not current_user.has_permission("event.assignments.open"):
+            if not current_user.has_permission("event.publish") or not current_user.has_permission(
+                "event.assignments.open"
+            ):
                 abort(403)
             from datetime import datetime, timezone
+
             event.status = EventStatus.ASSIGNMENTS_OPEN
             event.assignments_open_datetime = datetime.now(timezone.utc)
 
@@ -377,6 +370,7 @@ def create() -> str | Response:
 
 # ── Create from template ──────────────────────────────────────────────────────
 
+
 @events_bp.get("/create-from-template/<int:template_id>")
 @login_required
 def create_from_template(template_id: int) -> str | Response:
@@ -385,7 +379,11 @@ def create_from_template(template_id: int) -> str | Response:
 
     master_events = active_master_events_list()
     users = rp_eligible_users_list()
-    all_qualifications = db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))).all()
+    all_qualifications = db.session.scalars(
+        db.select(Qualification)
+        .where(Qualification.is_deleted.is_(False))
+        .order_by(collate(Qualification.name, CS_COLLATION))
+    ).all()
     equipment_groups = assignable_equipment_items() if current_user.has_permission("event.equipment.assign") else []
 
     return render_template(
@@ -401,6 +399,7 @@ def create_from_template(template_id: int) -> str | Response:
 
 # ── Detail ────────────────────────────────────────────────────────────────────
 
+
 @events_bp.get("/<int:event_id>")
 @login_required
 def detail(event_id: int) -> str | Response:
@@ -414,11 +413,7 @@ def detail(event_id: int) -> str | Response:
         eligible_users = list(active_users_list())
 
     # Users already assigned to a spot on this event (for picker filtering)
-    assigned_user_ids: set[int] = {
-        spot.assignment.user_id
-        for spot in event.spots
-        if spot.assignment is not None
-    }
+    assigned_user_ids: set[int] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
 
     # When ME has a coordinator, self-claim/release is blocked for regular members
     me_coordinated = (
@@ -435,20 +430,26 @@ def detail(event_id: int) -> str | Response:
     assigned_item_ids = {ea.equipment_item_id for ea in event.equipment_assignments}
     if assigned_item_ids:
         available_equipment_items = db.session.scalars(
-            db.select(EquipmentItem).where(
+            db.select(EquipmentItem)
+            .where(
                 EquipmentItem.id.notin_(assigned_item_ids),
                 EquipmentItem.equipment_type.has(EquipmentType.category != EquipmentCategory.PERSONAL),
-            ).order_by(collate(EquipmentItem.name, CS_COLLATION))
+            )
+            .order_by(collate(EquipmentItem.name, CS_COLLATION))
         ).all()
     else:
         available_equipment_items = db.session.scalars(
-            db.select(EquipmentItem).where(
+            db.select(EquipmentItem)
+            .where(
                 EquipmentItem.equipment_type.has(EquipmentType.category != EquipmentCategory.PERSONAL),
-            ).order_by(collate(EquipmentItem.name, CS_COLLATION))
+            )
+            .order_by(collate(EquipmentItem.name, CS_COLLATION))
         ).all()
 
     all_qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))
+        db.select(Qualification)
+        .where(Qualification.is_deleted.is_(False))
+        .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
 
     # Precompute for JS eligibility check: for each qualification R, which qualification IDs can fill it?
@@ -493,6 +494,7 @@ def detail(event_id: int) -> str | Response:
 
 # ── Edit ──────────────────────────────────────────────────────────────────────
 
+
 @events_bp.route("/<int:event_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit(event_id: int) -> str | Response:
@@ -510,7 +512,9 @@ def edit(event_id: int) -> str | Response:
     if request.method == "POST":
         if check_version_conflict(event, request.form.get("version")):
             flash(RECORD_MODIFIED_MSG, "danger")
-            return render_template("events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType)
+            return render_template(
+                "events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType
+            )
 
         # Snapshot before mutation
         before = {
@@ -531,7 +535,9 @@ def edit(event_id: int) -> str | Response:
         updated, error = parse_event_form(request.form, existing=event)
         if error:
             flash(error, "danger")
-            return render_template("events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType)
+            return render_template(
+                "events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType
+            )
 
         after = {
             "name": event.name,
@@ -556,12 +562,9 @@ def edit(event_id: int) -> str | Response:
         actual_changes = diff_changes(before, after)
         if actual_changes:
             from app.utils import external_url_for
+
             event_url = external_url_for("events.detail", event_id=event.id)
-            assigned_users = [
-                spot.assignment.user
-                for spot in event.spots
-                if spot.assignment is not None
-            ]
+            assigned_users = [spot.assignment.user for spot in event.spots if spot.assignment is not None]
             for u in assigned_users:
                 mailer.send_event_changed(u, event, actual_changes, event_url=event_url)
             db.session.commit()  # commit the enqueued outbox rows
@@ -569,10 +572,13 @@ def edit(event_id: int) -> str | Response:
         flash("Akce byla uložena.", "success")
         return redirect(url_for("events.detail", event_id=event.id))
 
-    return render_template("events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType)
+    return render_template(
+        "events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType
+    )
 
 
 # ── Delete ────────────────────────────────────────────────────────────────────
+
 
 @events_bp.post("/<int:event_id>/delete")
 @login_required
@@ -596,7 +602,7 @@ def delete_event(event_id: int) -> Response:
 
     if is_ajax:
         return jsonify({"ok": True})
-    flash(f'Akce \u201e{name}\u201c byla smazána.', "success")
+    flash(f"Akce \u201e{name}\u201c byla smazána.", "success")
     if me_id:
         return redirect(url_for("master_events.detail", me_id=me_id))
     return redirect(url_for("events.index"))

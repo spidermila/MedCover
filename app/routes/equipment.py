@@ -7,41 +7,27 @@ Permissions:
   equipment_item.create/edit/delete — admin only
   equipment_item.issue_personal     — admin only
 """
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
-from flask import Blueprint
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import collate
 
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
-from app.models.equipment import EquipmentCategory
-from app.models.equipment import EquipmentItem
-from app.models.equipment import EquipmentItemStatus
-from app.models.equipment import EquipmentType
+from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentItemStatus, EquipmentType
 from app.models.user import UserAccount
 from app.queries import active_users_list
-from app.utils import audit
-from app.utils import check_version_conflict
-from app.utils import CS_COLLATION
-from app.utils import diff_changes
-from app.utils import get_or_404
-from app.utils import require_permission
+from app.utils import CS_COLLATION, audit, check_version_conflict, diff_changes, get_or_404, require_permission
 
 equipment_bp = Blueprint("equipment", __name__, url_prefix="/equipment")
 
 
 # ── Types: List / Index ───────────────────────────────────────────────────────
+
 
 @equipment_bp.get("/")
 @login_required
@@ -55,6 +41,7 @@ def index() -> str:
 
 
 # ── Types: Create ─────────────────────────────────────────────────────────────
+
 
 @equipment_bp.route("/types/create", methods=["GET", "POST"])
 @login_required
@@ -93,6 +80,7 @@ def type_create() -> str | Response:
 
 
 # ── Types: Edit ───────────────────────────────────────────────────────────────
+
 
 @equipment_bp.route("/types/<int:type_id>/edit", methods=["GET", "POST"])
 @login_required
@@ -133,8 +121,13 @@ def type_edit(type_id: int) -> str | Response:
         et.category = category
         et.version += 1
 
-        audit("edit", "EquipmentType", str(et.id), f"Upraven typ vybavení '{et.name}'",
-              diff_changes(before, {"name": et.name, "description": et.description, "category": et.category.value}))
+        audit(
+            "edit",
+            "EquipmentType",
+            str(et.id),
+            f"Upraven typ vybavení '{et.name}'",
+            diff_changes(before, {"name": et.name, "description": et.description, "category": et.category.value}),
+        )
         db.session.commit()
 
         flash(f'Typ vybavení „{et.name}" byl uložen.', "success")
@@ -144,6 +137,7 @@ def type_edit(type_id: int) -> str | Response:
 
 
 # ── Types: Delete ─────────────────────────────────────────────────────────────
+
 
 @equipment_bp.post("/types/<int:type_id>/delete")
 @login_required
@@ -165,6 +159,7 @@ def type_delete(type_id: int) -> Response:
 
 
 # ── Items: List ───────────────────────────────────────────────────────────────
+
 
 @equipment_bp.get("/items/")
 @login_required
@@ -200,6 +195,7 @@ def items() -> str:
 
 
 # ── Items: Create ─────────────────────────────────────────────────────────────
+
 
 @equipment_bp.route("/items/create", methods=["GET", "POST"])
 @login_required
@@ -242,11 +238,17 @@ def item_create() -> str | Response:
         flash(f'Položka vybavení „{item.name}" byla vytvořena.', "success")
         return redirect(url_for("equipment.items"))
 
-    return render_template("equipment/item_form.html", types=types, edit=False,
-                           can_modify_availability=False, EquipmentItemStatus=EquipmentItemStatus)
+    return render_template(
+        "equipment/item_form.html",
+        types=types,
+        edit=False,
+        can_modify_availability=False,
+        EquipmentItemStatus=EquipmentItemStatus,
+    )
 
 
 # ── Items: Edit ───────────────────────────────────────────────────────────────
+
 
 @equipment_bp.route("/items/<int:item_id>/edit", methods=["GET", "POST"])
 @login_required
@@ -261,9 +263,14 @@ def item_edit(item_id: int) -> str | Response:
     if request.method == "POST":
         if check_version_conflict(item, request.form.get("version")):
             flash(RECORD_MODIFIED_MSG, "danger")
-            return render_template("equipment/item_form.html", item=item, types=types, edit=True,
-                                   can_modify_availability=can_modify_availability,
-                                   EquipmentItemStatus=EquipmentItemStatus)
+            return render_template(
+                "equipment/item_form.html",
+                item=item,
+                types=types,
+                edit=True,
+                can_modify_availability=can_modify_availability,
+                EquipmentItemStatus=EquipmentItemStatus,
+            )
 
         name = request.form.get("name", "").strip()
         type_id = request.form.get("type_id", type=int)
@@ -273,13 +280,20 @@ def item_edit(item_id: int) -> str | Response:
 
         if not name:
             flash("Název položky vybavení je povinný.", "danger")
-            return render_template("equipment/item_form.html", item=item, types=types, edit=True,
-                                   can_modify_availability=can_modify_availability,
-                                   EquipmentItemStatus=EquipmentItemStatus)
+            return render_template(
+                "equipment/item_form.html",
+                item=item,
+                types=types,
+                edit=True,
+                can_modify_availability=can_modify_availability,
+                EquipmentItemStatus=EquipmentItemStatus,
+            )
 
         before = {
-            "name": item.name, "type_id": item.type_id,
-            "serial_number": item.serial_number, "home_location": item.home_location,
+            "name": item.name,
+            "type_id": item.type_id,
+            "serial_number": item.serial_number,
+            "home_location": item.home_location,
             "notes": item.notes,
             "status": item.status.name if item.status else None,
         }
@@ -292,12 +306,18 @@ def item_edit(item_id: int) -> str | Response:
 
         if can_modify_availability:
             new_status_raw = request.form.get("status", "AVAILABLE")
-            new_status = EquipmentItemStatus[new_status_raw] if new_status_raw in EquipmentItemStatus.__members__ else EquipmentItemStatus.AVAILABLE
+            new_status = (
+                EquipmentItemStatus[new_status_raw]
+                if new_status_raw in EquipmentItemStatus.__members__
+                else EquipmentItemStatus.AVAILABLE
+            )
             unavailability_reason = request.form.get("unavailability_reason", "").strip() or None
             unavailability_since_raw = request.form.get("unavailability_since", "").strip()
             if new_status == EquipmentItemStatus.UNAVAILABLE and unavailability_since_raw:
                 try:
-                    unavailability_since: datetime | None = datetime.fromisoformat(unavailability_since_raw).replace(tzinfo=timezone.utc)
+                    unavailability_since: datetime | None = datetime.fromisoformat(unavailability_since_raw).replace(
+                        tzinfo=timezone.utc
+                    )
                 except ValueError:
                     unavailability_since = None
             elif new_status == EquipmentItemStatus.UNAVAILABLE:
@@ -313,24 +333,37 @@ def item_edit(item_id: int) -> str | Response:
         item.version += 1
 
         after = {
-            "name": item.name, "type_id": item.type_id,
-            "serial_number": item.serial_number, "home_location": item.home_location,
+            "name": item.name,
+            "type_id": item.type_id,
+            "serial_number": item.serial_number,
+            "home_location": item.home_location,
             "notes": item.notes,
             "status": item.status.name if item.status else None,
         }
-        audit("edit", "EquipmentItem", str(item.id), f"Upravena položka vybavení '{item.name}'",
-              diff_changes(before, after))
+        audit(
+            "edit",
+            "EquipmentItem",
+            str(item.id),
+            f"Upravena položka vybavení '{item.name}'",
+            diff_changes(before, after),
+        )
         db.session.commit()
 
         flash(f'Položka vybavení „{item.name}" byla uložena.', "success")
         return redirect(url_for("equipment.items"))
 
-    return render_template("equipment/item_form.html", item=item, types=types, edit=True,
-                           can_modify_availability=can_modify_availability,
-                           EquipmentItemStatus=EquipmentItemStatus)
+    return render_template(
+        "equipment/item_form.html",
+        item=item,
+        types=types,
+        edit=True,
+        can_modify_availability=can_modify_availability,
+        EquipmentItemStatus=EquipmentItemStatus,
+    )
 
 
 # ── Items: Delete ─────────────────────────────────────────────────────────────
+
 
 @equipment_bp.post("/items/<int:item_id>/delete")
 @login_required
@@ -359,6 +392,7 @@ def item_delete(item_id: int) -> Response:
 
 # ── Items: Issue / Return ─────────────────────────────────────────────────────
 
+
 @equipment_bp.post("/items/<int:item_id>/issue")
 @login_required
 def item_issue(item_id: int) -> Response:
@@ -383,9 +417,13 @@ def item_issue(item_id: int) -> Response:
     item.issued_to_id = user.id
     item.issued_at = datetime.now(timezone.utc)
     item.version += 1
-    audit("edit", "EquipmentItem", str(item.id),
-          f"Vydána osobní položka '{item.name}' uživateli '{user.name}'",
-          {"issued_to": [None, str(user.id)]})
+    audit(
+        "edit",
+        "EquipmentItem",
+        str(item.id),
+        f"Vydána osobní položka '{item.name}' uživateli '{user.name}'",
+        {"issued_to": [None, str(user.id)]},
+    )
     db.session.commit()
 
     flash(f'Položka „{item.name}" byla vydána uživateli {user.name}.', "success")
@@ -407,9 +445,13 @@ def item_return(item_id: int) -> Response:
     item.issued_to_id = None
     item.issued_at = None
     item.version += 1
-    audit("edit", "EquipmentItem", str(item.id),
-          f"Vrácena osobní položka '{item.name}'",
-          {"issued_to": [old_user_id, None]})
+    audit(
+        "edit",
+        "EquipmentItem",
+        str(item.id),
+        f"Vrácena osobní položka '{item.name}'",
+        {"issued_to": [old_user_id, None]},
+    )
     db.session.commit()
 
     flash(f'Položka „{item.name}" byla vrácena.', "success")
@@ -431,9 +473,13 @@ def item_take(item_id: int) -> Response:
     item.issued_to_id = current_user.id
     item.issued_at = datetime.now(timezone.utc)
     item.version += 1
-    audit("edit", "EquipmentItem", str(item.id),
-          f"Vydána osobní položka '{item.name}' uživateli '{current_user.name}' (vzít s sebou)",
-          {"issued_to": [None, str(current_user.id)]})
+    audit(
+        "edit",
+        "EquipmentItem",
+        str(item.id),
+        f"Vydána osobní položka '{item.name}' uživateli '{current_user.name}' (vzít s sebou)",
+        {"issued_to": [None, str(current_user.id)]},
+    )
     db.session.commit()
 
     flash(f'Položka „{item.name}" byla vydána vám.', "success")

@@ -5,12 +5,11 @@ The scheduler (scheduler/main.py) delegates its core logic here so that
 tests can call these functions directly with the test app context, without
 importing or patching the scheduler module itself.
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import sqlalchemy as sa
@@ -29,8 +28,8 @@ def run_send_reminders(db_session: Any, now: datetime | None = None) -> int:
     Returns:
         Number of reminder emails enqueued.
     """
-    from app.models.event import Event, EventStatus
     from app.mail import send_unfilled_spots_reminder
+    from app.models.event import Event, EventStatus
 
     if now is None:
         now = datetime.now(timezone.utc)
@@ -94,21 +93,21 @@ def run_record_metrics(db_session: Any, now: datetime | None = None) -> None:
     if now is None:
         now = datetime.now(timezone.utc)
 
-    pending = db_session.scalar(
-        sa.select(sa.func.count()).select_from(OutboxEmail)
-        .where(OutboxEmail.status == "pending")
-    ) or 0
+    pending = (
+        db_session.scalar(sa.select(sa.func.count()).select_from(OutboxEmail).where(OutboxEmail.status == "pending"))
+        or 0
+    )
 
-    db_session.add(DigestMetricSnapshot(
-        snapshot_at=now,
-        metric_name="outbox_pending_count",
-        metric_value=float(pending),
-    ))
+    db_session.add(
+        DigestMetricSnapshot(
+            snapshot_at=now,
+            metric_name="outbox_pending_count",
+            metric_value=float(pending),
+        )
+    )
 
     cutoff = now - timedelta(days=30)
-    db_session.execute(
-        sa.delete(DigestMetricSnapshot).where(DigestMetricSnapshot.snapshot_at < cutoff)
-    )
+    db_session.execute(sa.delete(DigestMetricSnapshot).where(DigestMetricSnapshot.snapshot_at < cutoff))
     db_session.commit()
     log.debug("Metric snapshot: outbox_pending_count=%d", pending)
 
@@ -118,17 +117,18 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
 
     Returns True if the digest was enqueued, False if skipped.
     """
-    from app.models.digest import get_digest_schedule
     from app.digest.renderer import render_digest
     from app.mail import send_admin_digest
-    from app.models.user import UserAccount
+    from app.models.digest import get_digest_schedule
     from app.models.role import Role
+    from app.models.user import UserAccount
 
     if now is None:
         now = datetime.now(timezone.utc)
 
     schedule = get_digest_schedule()
-    from app.utils import get_app_tz  # noqa: PLC0415
+    from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
+
     local_tz = get_app_tz()
 
     if not schedule.enabled:
@@ -142,7 +142,8 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
         if local_now.hour != schedule.preferred_hour:
             log.debug(
                 "Admin digest: skipped — hour mismatch (now=%d preferred=%d).",
-                local_now.hour, schedule.preferred_hour,
+                local_now.hour,
+                schedule.preferred_hour,
             )
             return False
         if schedule.last_sent_at is not None:
@@ -159,14 +160,13 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
             if elapsed < schedule.frequency_hours * 3600:
                 log.debug(
                     "Admin digest: skipped — %.0fs elapsed, need %.0fs.",
-                    elapsed, schedule.frequency_hours * 3600,
+                    elapsed,
+                    schedule.frequency_hours * 3600,
                 )
                 return False
 
     eligible = db_session.scalars(
-        sa.select(UserAccount)
-        .join(UserAccount.roles)
-        .where(UserAccount.is_active.is_(True), Role.name == "Admin")
+        sa.select(UserAccount).join(UserAccount.roles).where(UserAccount.is_active.is_(True), Role.name == "Admin")
     ).all()
 
     if not eligible:
@@ -202,9 +202,9 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
     Returns:
         True if a backup was created, False otherwise.
     """
-    from app.models.settings import get_settings
+    from app.backup import export_to_zip, list_backups, prune_old_backups
     from app.models.audit import AuditLogEntry
-    from app.backup import export_to_zip, prune_old_backups, list_backups
+    from app.models.settings import get_settings
 
     if now is None:
         now = datetime.now(timezone.utc)
@@ -214,13 +214,15 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
         log.debug("Scheduled backup: skipped — backup schedule disabled.")
         return False
 
-    from app.utils import get_app_tz  # noqa: PLC0415
+    from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
+
     local_tz = get_app_tz()
     local_hour = now.astimezone(local_tz).hour
     if local_hour != settings.backup_schedule_hour:
         log.debug(
             "Scheduled backup: skipped — hour mismatch (now=%d scheduled=%d).",
-            local_hour, settings.backup_schedule_hour,
+            local_hour,
+            settings.backup_schedule_hour,
         )
         return False
 
@@ -236,25 +238,29 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
         pruned = prune_old_backups(settings.backup_dir, settings.backup_keep_count)
         log.info("Scheduled backup created: %s (pruned %d old files)", zip_path.name, len(pruned))
 
-        db_session.add(AuditLogEntry(
-            actor_id=None,
-            action_type="create",
-            entity_type="Backup",
-            entity_id=zip_path.name,
-            summary=f"Automatická záloha vytvořena: {zip_path.name}",
-            changes_json={"file": zip_path.name, "pruned": [p.name for p in pruned]},
-        ))
+        db_session.add(
+            AuditLogEntry(
+                actor_id=None,
+                action_type="create",
+                entity_type="Backup",
+                entity_id=zip_path.name,
+                summary=f"Automatická záloha vytvořena: {zip_path.name}",
+                changes_json={"file": zip_path.name, "pruned": [p.name for p in pruned]},
+            )
+        )
         db_session.commit()
         return True
     except Exception as exc:
         log.error("Scheduled backup failed: %s", exc, exc_info=True)
-        db_session.add(AuditLogEntry(
-            actor_id=None,
-            action_type="error",
-            entity_type="Backup",
-            entity_id="error",
-            changes_json={"error": str(exc)},
-        ))
+        db_session.add(
+            AuditLogEntry(
+                actor_id=None,
+                action_type="error",
+                entity_type="Backup",
+                entity_id="error",
+                changes_json={"error": str(exc)},
+            )
+        )
         db_session.commit()
         return False
 

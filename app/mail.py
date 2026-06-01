@@ -26,16 +26,15 @@ When adding a new send_* function:
   4. Pass ``notification_type=code`` to ``_enqueue()``.
   5. Update DEVOPS.md and CHANGELOG.md.
 """
+
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from flask import g
-from flask import render_template
+from flask import g, render_template
 
 from app.extensions import db
 from app.models.outbox import OutboxEmail
@@ -73,7 +72,9 @@ NOTIFICATION_CATALOG: list[dict] = [
         "code": "assignment_confirmed",
         "settings_field": "notify_assignment",
         "name_cs": "Přihlášení na službu",
-        "description_cs": "Odesílán dobrovolníkovi při přihlášení na místo ve službě (jím samotným nebo koordinátorem).",
+        "description_cs": (
+            "Odesílán dobrovolníkovi při přihlášení na místo ve službě (jím samotným nebo koordinátorem)."
+        ),
         "trigger_cs": "Přihlášení na místo ve službě",
         "recipient_cs": "Přihlášený dobrovolník (role: Člen)",
         "templates": ["email/assignment_confirmed.html"],
@@ -133,7 +134,9 @@ NOTIFICATION_CATALOG: list[dict] = [
         "code": "unfilled_reminder",
         "settings_field": "notify_unfilled_reminder",
         "name_cs": "Připomínka nevyplněných míst",
-        "description_cs": "Plánovačem odesílán koordinátorovi/zodpovědné osobě, pokud na akci zbývají nevyplněná místa.",
+        "description_cs": (
+            "Plánovačem odesílán koordinátorovi/zodpovědné osobě, pokud na akci zbývají nevyplněná místa."
+        ),
         "trigger_cs": "Automaticky plánovačem (periodická kontrola)",
         "recipient_cs": "Tvůrce akce a zodpovědná osoba (role: Koordinátor, Člen)",
         "templates": ["email/unfilled_spots_reminder.html"],
@@ -188,13 +191,13 @@ NOTIFICATION_CATALOG: list[dict] = [
 # Roles whose members may receive each notification category.
 # "auth" (invite / password-reset / activation) is exempt — always allowed.
 _NOTIFICATION_ALLOWED_ROLES: dict[str, set[str]] = {
-    "admin_digest":       {"Admin"},
-    "event_published":    {"Coordinator", "Member"},
+    "admin_digest": {"Admin"},
+    "event_published": {"Coordinator", "Member"},
     "assignments_opened": {"Coordinator", "Member"},
-    "assignment":        {"Member"},                 # confirmed, released
+    "assignment": {"Member"},  # confirmed, released
     "unfilled_reminder": {"Coordinator", "Member"},  # reminder to coordinator / RP
-    "event_cancelled":   {"Member"},                 # cancelled → notify assigned users
-    "event_changed":     {"Member"},                 # event details changed → notify assigned users
+    "event_cancelled": {"Member"},  # cancelled → notify assigned users
+    "event_changed": {"Member"},  # event details changed → notify assigned users
 }
 
 
@@ -240,7 +243,8 @@ def _is_notify_enabled(settings_field: str) -> bool:
     if _is_test_notification():
         return True
     try:
-        from app.models.settings import get_settings  # noqa: PLC0415
+        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
+
         return bool(getattr(get_settings(), settings_field, True))
     except Exception:  # noqa: BLE001
         return True  # fail open — don't suppress notifications on settings error
@@ -248,8 +252,9 @@ def _is_notify_enabled(settings_field: str) -> bool:
 
 def _base_context() -> dict:
     """Return template context variables shared by all user-facing email templates."""
-    from app.models.settings import get_settings  # noqa: PLC0415
-    from app.utils import external_url_for  # noqa: PLC0415
+    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
+    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
+
     try:
         org_name = get_settings().org_name or "MedCover"
     except Exception:  # noqa: BLE001
@@ -274,15 +279,17 @@ def _enqueue(
     if override:
         to = override
     try:
-        db.session.add(OutboxEmail(
-            to_email=to,
-            subject=subject,
-            body=body,
-            html_body=html_body,
-            notification_type=notification_type,
-            instance_name=_INSTANCE_ID or None,
-        ))
-        db.session.flush()   # assign id without a separate commit
+        db.session.add(
+            OutboxEmail(
+                to_email=to,
+                subject=subject,
+                body=body,
+                html_body=html_body,
+                notification_type=notification_type,
+                instance_name=_INSTANCE_ID or None,
+            )
+        )
+        db.session.flush()  # assign id without a separate commit
     except Exception as exc:  # noqa: BLE001
         log.warning("Failed to enqueue mail to %s — %s", to, exc)
 
@@ -308,52 +315,78 @@ def _guarded_send(
     if not user_can_receive_notification(user, notif_type):
         return
     html = render_template(template, user_name=user.name, **_base_context(), **ctx)
-    _enqueue(user.email, subject, _PLAIN_FALLBACK,
-             html_body=html, notification_type=notification_type)
+    _enqueue(user.email, subject, _PLAIN_FALLBACK, html_body=html, notification_type=notification_type)
 
 
 # ── Assignment notifications ──────────────────────────────────────────────────
 
+
 def send_assignment_confirmed(user: UserAccount, event: Event) -> None:
     """Notify a user that their spot assignment was confirmed."""
-    _guarded_send("notify_assignment", "assignment", user,
-                  f"MedCover — Přihlášení na akci: {event.name}",
-                  "email/assignment_confirmed.html",
-                  "assignment_confirmed", event=event)
+    _guarded_send(
+        "notify_assignment",
+        "assignment",
+        user,
+        f"MedCover — Přihlášení na akci: {event.name}",
+        "email/assignment_confirmed.html",
+        "assignment_confirmed",
+        event=event,
+    )
 
 
 def send_assignment_released(user: UserAccount, event: Event) -> None:
     """Notify a user that their assignment was released (by themselves or coordinator)."""
-    _guarded_send("notify_assignment", "assignment", user,
-                  f"MedCover — Odhlášení z akce: {event.name}",
-                  "email/assignment_released.html",
-                  "assignment_released", event=event)
+    _guarded_send(
+        "notify_assignment",
+        "assignment",
+        user,
+        f"MedCover — Odhlášení z akce: {event.name}",
+        "email/assignment_released.html",
+        "assignment_released",
+        event=event,
+    )
 
 
 # ── Event lifecycle notifications ─────────────────────────────────────────────
 
+
 def send_event_published(user: UserAccount, event: Event) -> None:
     """Notify a user that an event they might be interested in was published."""
-    _guarded_send("notify_event_published", "event_published", user,
-                  f"MedCover — Nová akce: {event.name}",
-                  "email/event_published.html",
-                  "event_published", event=event)
+    _guarded_send(
+        "notify_event_published",
+        "event_published",
+        user,
+        f"MedCover — Nová akce: {event.name}",
+        "email/event_published.html",
+        "event_published",
+        event=event,
+    )
 
 
 def send_assignments_opened(user: UserAccount, event: Event) -> None:
     """Notify a user that assignments opened for an event."""
-    _guarded_send("notify_assignments_opened", "assignments_opened", user,
-                  f"MedCover — Otevřeny přihlášky: {event.name}",
-                  "email/assignments_opened.html",
-                  "assignments_opened", event=event)
+    _guarded_send(
+        "notify_assignments_opened",
+        "assignments_opened",
+        user,
+        f"MedCover — Otevřeny přihlášky: {event.name}",
+        "email/assignments_opened.html",
+        "assignments_opened",
+        event=event,
+    )
 
 
 def send_event_cancelled(user: UserAccount, event: Event) -> None:
     """Notify an assigned user that an event was cancelled."""
-    _guarded_send("notify_event_cancelled", "event_cancelled", user,
-                  f"MedCover — Akce zrušena: {event.name}",
-                  "email/event_cancelled.html",
-                  "event_cancelled", event=event)
+    _guarded_send(
+        "notify_event_cancelled",
+        "event_cancelled",
+        user,
+        f"MedCover — Akce zrušena: {event.name}",
+        "email/event_cancelled.html",
+        "event_cancelled",
+        event=event,
+    )
 
 
 # Human-readable Czech labels for event fields shown in change notifications.
@@ -379,8 +412,10 @@ def _format_event_change_value(field: str, raw: object) -> str:
     # Format ISO datetime strings to Czech local time.
     if "datetime" in field:
         try:
-            from app.utils import get_app_tz  # noqa: PLC0415
             from datetime import datetime as _dt
+
+            from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
+
             parsed = _dt.fromisoformat(val)
             local = parsed.astimezone(get_app_tz())
             return local.strftime("%d.%m.%Y %H:%M")
@@ -418,14 +453,23 @@ def send_event_changed(
     ]
     html_body = render_template(
         "email/event_changed.html",
-        user_name=user.name, event=event, event_url=event_url,
-        changes=formatted, **_base_context(),
+        user_name=user.name,
+        event=event,
+        event_url=event_url,
+        changes=formatted,
+        **_base_context(),
     )
-    _enqueue(user.email, f"MedCover — Změna akce: {event.name}", _PLAIN_FALLBACK,
-             html_body=html_body, notification_type="event_changed")
+    _enqueue(
+        user.email,
+        f"MedCover — Změna akce: {event.name}",
+        _PLAIN_FALLBACK,
+        html_body=html_body,
+        notification_type="event_changed",
+    )
 
 
 # ── Reminder (scheduler) ──────────────────────────────────────────────────────
+
 
 def send_unfilled_spots_reminder(
     user: UserAccount,
@@ -433,14 +477,21 @@ def send_unfilled_spots_reminder(
     unfilled: list,
 ) -> None:
     """Remind coordinator/RP that an event still has unfilled spots."""
-    _guarded_send("notify_unfilled_reminder", "unfilled_reminder", user,
-                  f"MedCover — Připomínka: volná místa na akci {event.name}",
-                  "email/unfilled_spots_reminder.html",
-                  "unfilled_reminder",
-                  coordinator_name=user.name, event=event, unfilled=unfilled)
+    _guarded_send(
+        "notify_unfilled_reminder",
+        "unfilled_reminder",
+        user,
+        f"MedCover — Připomínka: volná místa na akci {event.name}",
+        "email/unfilled_spots_reminder.html",
+        "unfilled_reminder",
+        coordinator_name=user.name,
+        event=event,
+        unfilled=unfilled,
+    )
 
 
 # ── Admin digest ──────────────────────────────────────────────────────────────
+
 
 def send_admin_digest(recipient_email: str, subject: str, html_body: str) -> None:
     """Enqueue a digest email to a single recipient.
@@ -448,8 +499,7 @@ def send_admin_digest(recipient_email: str, subject: str, html_body: str) -> Non
     Plain-text fallback is a minimal message directing the user to an HTML-capable client.
     """
     plain_fallback = "Tento e-mail obsahuje formátovaný obsah. Otevřete jej v e-mailovém klientovi s podporou HTML."
-    _enqueue(recipient_email, subject, plain_fallback, html_body=html_body,
-             notification_type="admin_digest")
+    _enqueue(recipient_email, subject, plain_fallback, html_body=html_body, notification_type="admin_digest")
 
 
 # ── Outbox drain (callable from tests and scheduler) ─────────────────────────
@@ -459,15 +509,21 @@ def _write_failure_audit(row: OutboxEmail) -> None:
     """Write an AuditLogEntry when an outbox email permanently fails.
     Called inside the active DB session — no commit here."""
     from app.models.audit import AuditLogEntry
+
     try:
-        db.session.add(AuditLogEntry(
-            actor_id=None,
-            action_type="email_failed",
-            entity_type="OutboxEmail",
-            entity_id=str(row.id),
-            summary=f"E-mail pro {row.to_email} se nepodařilo odeslat po {row.retry_count} pokusech: {row.last_error}",
-            changes_json={"to": row.to_email, "subject": row.subject, "error": row.last_error},
-        ))
+        db.session.add(
+            AuditLogEntry(
+                actor_id=None,
+                action_type="email_failed",
+                entity_type="OutboxEmail",
+                entity_id=str(row.id),
+                summary=(
+                    f"E-mail pro {row.to_email} se nepodařilo odeslat"
+                    f" po {row.retry_count} pokusech: {row.last_error}"
+                ),
+                changes_json={"to": row.to_email, "subject": row.subject, "error": row.last_error},
+            )
+        )
     except Exception as exc:  # noqa: BLE001
         log.warning("Failed to write failure audit log for outbox id=%d — %s", row.id, exc)
 
@@ -478,8 +534,9 @@ def drain_one_outbox_email() -> bool:
     Returns True if a row was processed (sent or failed), False if the queue
     was empty.  Designed to be called from both the scheduler and tests.
     """
-    from app.extensions import mail as _mail
     from flask_mail import Message
+
+    from app.extensions import mail as _mail
 
     row: OutboxEmail | None = db.session.scalars(
         db.select(OutboxEmail)
@@ -497,6 +554,7 @@ def drain_one_outbox_email() -> bool:
 
     # --- Dev email block check ---
     from app.models.settings import get_settings as _get_settings
+
     _settings = _get_settings()
     if not _settings.is_email_allowed(row.to_email):
         row.status = "skipped"
@@ -504,7 +562,9 @@ def drain_one_outbox_email() -> bool:
         db.session.commit()
         log.warning(
             "Mail suppressed (dev_email_block): id=%d to=%s subject=%r",
-            row.id, row.to_email, row.subject,
+            row.id,
+            row.to_email,
+            row.subject,
         )
         return True
 
@@ -525,13 +585,20 @@ def drain_one_outbox_email() -> bool:
             row.status = "failed"
             log.error(
                 "Mail permanently failed: id=%d to=%s — %s (after %d retries)",
-                row.id, row.to_email, exc, row.retry_count,
+                row.id,
+                row.to_email,
+                exc,
+                row.retry_count,
             )
             _write_failure_audit(row)
         else:
             log.warning(
                 "Mail send failed (attempt %d/%d): id=%d to=%s — %s",
-                row.retry_count, OutboxEmail.MAX_RETRIES, row.id, row.to_email, exc,
+                row.retry_count,
+                OutboxEmail.MAX_RETRIES,
+                row.id,
+                row.to_email,
+                exc,
             )
 
     db.session.commit()
@@ -539,6 +606,7 @@ def drain_one_outbox_email() -> bool:
 
 
 # ── Debriefing invitation ─────────────────────────────────────────────────────
+
 
 def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
     """Send a debriefing invitation email to the assigned user."""
@@ -548,24 +616,37 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
     if not user_can_receive_notification(user, "assignment"):
         return
     from flask import url_for
+
     debriefing_url = url_for("debriefing.submit", assignment_id=assignment.id, _external=True)
     html = render_template(
         "email/debriefing_invitation.html",
-        user_name=user.name, event=event, debriefing_url=debriefing_url,
+        user_name=user.name,
+        event=event,
+        debriefing_url=debriefing_url,
         **_base_context(),
     )
-    _enqueue(user.email, f"MedCover — Výjezdová zpráva: {event.name}", _PLAIN_FALLBACK,
-             html_body=html, notification_type="debriefing_invitation")
+    _enqueue(
+        user.email,
+        f"MedCover — Výjezdová zpráva: {event.name}",
+        _PLAIN_FALLBACK,
+        html_body=html,
+        notification_type="debriefing_invitation",
+    )
 
 
 # ── Account activation ────────────────────────────────────────────────────────
 
+
 def send_account_activated(user: UserAccount) -> None:
     """Enqueue an account-activation notification to the newly activated user."""
-    from app.utils import external_url_for  # noqa: PLC0415
+    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
+
     login_url = external_url_for("auth.login")
-    html_body = render_template(
-        "email/account_activated.html", user=user, login_url=login_url, **_base_context()
+    html_body = render_template("email/account_activated.html", user=user, login_url=login_url, **_base_context())
+    _enqueue(
+        user.email,
+        "MedCover — váš účet byl aktivován",
+        _PLAIN_FALLBACK,
+        html_body=html_body,
+        notification_type="account_activated",
     )
-    _enqueue(user.email, "MedCover — váš účet byl aktivován", _PLAIN_FALLBACK,
-             html_body=html_body, notification_type="account_activated")

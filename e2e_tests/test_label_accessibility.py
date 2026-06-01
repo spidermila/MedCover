@@ -3,6 +3,7 @@
 Regression coverage for:
 - PR #218: Fix label accessibility: add for/id bindings across templates
 """
+
 import pytest
 
 # Pages with forms that should have proper label bindings.
@@ -13,8 +14,7 @@ LABEL_PAGES = [
 ]
 
 
-@pytest.mark.parametrize("path", LABEL_PAGES,
-                         ids=[p.strip("/").replace("/", "-") for p in LABEL_PAGES])
+@pytest.mark.parametrize("path", LABEL_PAGES, ids=[p.strip("/").replace("/", "-") for p in LABEL_PAGES])
 def test_labels_have_for_attribute(logged_in_page, base_url, path):
     """Every <label> with a 'for' attribute must reference an existing element."""
     page = logged_in_page

@@ -1,14 +1,12 @@
 """Tests for spot assignment: claim, release, permissions."""
+
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _make_event_with_spot
-from tests.conftest import _make_user
+from tests.conftest import _make_event_with_spot, _make_user
 
 
 class TestAssignmentClaim:
@@ -17,14 +15,10 @@ class TestAssignmentClaim:
         response = member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=False)
         assert response.status_code == 302
         with app.app_context():
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assert assignment is not None
             # Verify the correct user is stored
-            member = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "member@test.com")
-            )
+            member = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             assert assignment.user_id == member.id
 
     def test_claim_already_taken_spot_is_rejected(self, app, member_client):
@@ -61,6 +55,7 @@ class TestAssignmentClaim:
             db.session.flush()
 
             from datetime import datetime, timezone
+
             event = Event(
                 name="Draft Event",
                 master_event_id=me.id,
@@ -90,14 +85,10 @@ class TestAssignmentRelease:
         event_id, spot_id = _make_event_with_spot(app)
         member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
         with app.app_context():
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assignment_id = assignment.id
 
-        response = member_client.post(
-            f"/assignments/release/{assignment_id}", follow_redirects=False
-        )
+        response = member_client.post(f"/assignments/release/{assignment_id}", follow_redirects=False)
         assert response.status_code == 302
         with app.app_context():
             remaining = db.session.get(Assignment, assignment_id)
@@ -109,9 +100,7 @@ class TestAdminAssignment:
         event_id, spot_id = _make_event_with_spot(app)
         with app.app_context():
             _make_user("target@test.com", "Target", Role.MEMBER)
-            target = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "target@test.com")
-            )
+            target = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "target@test.com"))
             target_id = str(target.id)
 
         response = admin_client.post(
@@ -121,18 +110,14 @@ class TestAdminAssignment:
         )
         assert response.status_code == 302
         with app.app_context():
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assert assignment is not None
 
     def test_member_cannot_assign_others(self, app, member_client):
         event_id, spot_id = _make_event_with_spot(app)
         with app.app_context():
             _make_user("target@test.com", "Target", Role.MEMBER)
-            target = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "target@test.com")
-            )
+            target = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "target@test.com"))
             target_id = str(target.id)
 
         response = member_client.post(
@@ -154,6 +139,7 @@ class TestAdminAssignment:
             _make_user("member2@test.com", "Second Member", Role.MEMBER)
 
         from tests.conftest import _login
+
         second_client = app.test_client()
         _login(second_client, "member2@test.com")
         response = second_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
@@ -174,15 +160,14 @@ class TestAssignmentReleaseOwnership:
         # First member claims the spot
         member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
         with app.app_context():
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assignment_id = assignment.id
 
         # Second member (fresh client — separate session) tries to release it
         with app.app_context():
             _make_user("member2@test.com", "Second Member", Role.MEMBER)
         from tests.conftest import _login
+
         second_client = app.test_client()
         _login(second_client, "member2@test.com")
         response = second_client.post(f"/assignments/release/{assignment_id}", follow_redirects=False)
@@ -200,19 +185,16 @@ class TestAdminUnassign:
         with app.app_context():
             _make_user("claimer@test.com", "Claimer", Role.MEMBER)
         from tests.conftest import _login
+
         claimer = app.test_client()
         _login(claimer, "claimer@test.com")
         claimer.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
 
         with app.app_context():
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assignment_id = assignment.id
 
-        response = admin_client.post(
-            f"/assignments/unassign/{assignment_id}", follow_redirects=False
-        )
+        response = admin_client.post(f"/assignments/unassign/{assignment_id}", follow_redirects=False)
         assert response.status_code == 302
         with app.app_context():
             remaining = db.session.get(Assignment, assignment_id)
@@ -223,9 +205,7 @@ class TestAdminUnassign:
         # Admin assigns target@test.com
         with app.app_context():
             _make_user("target@test.com", "Target", Role.MEMBER)
-            target = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "target@test.com")
-            )
+            target = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "target@test.com"))
             target_id = str(target.id)
 
         admin_client.post(
@@ -234,9 +214,7 @@ class TestAdminUnassign:
             follow_redirects=True,
         )
         with app.app_context():
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assert assignment is not None
             assignment_id = assignment.id
 
@@ -244,6 +222,7 @@ class TestAdminUnassign:
         with app.app_context():
             _make_user("attacker@test.com", "Attacker", Role.MEMBER)
         from tests.conftest import _login
+
         attacker = app.test_client()
         _login(attacker, "attacker@test.com")
         response = attacker.post(f"/assignments/unassign/{assignment_id}")
@@ -256,10 +235,12 @@ class TestAdminUnassign:
 
 # ── Claim edge cases ──────────────────────────────────────────────────────────
 
+
 class TestClaimEdgeCases:
     def test_viewer_cannot_claim(self, app):
         """A Viewer user (no event.assign_own) gets 403."""
         from tests.conftest import _login
+
         event_id, spot_id = _make_event_with_spot(app)
         with app.app_context():
             _make_user("viewer@test.com", "Viewer", Role.VIEWER)
@@ -285,6 +266,7 @@ class TestClaimEdgeCases:
             db.session.add(creator)
             db.session.flush()
             from datetime import datetime, timezone
+
             event = Event(
                 name="Published Event",
                 master_event_id=me.id,
@@ -304,9 +286,12 @@ class TestClaimEdgeCases:
         assert response.status_code == 200
         assert "otevřeno" in response.data.decode() or "není" in response.data.decode()
         with app.app_context():
-            assert db.session.scalar(
-                db.select(db.func.count()).select_from(Assignment).where(Assignment.spot_id == spot_id)
-            ) == 0
+            assert (
+                db.session.scalar(
+                    db.select(db.func.count()).select_from(Assignment).where(Assignment.spot_id == spot_id)
+                )
+                == 0
+            )
 
     def test_claim_when_already_assigned_to_event_flashes(self, app, member_client):
         """User already has a spot on this event — second claim rejected."""
@@ -328,6 +313,7 @@ class TestClaimEdgeCases:
 
 # ── Release edge cases ────────────────────────────────────────────────────────
 
+
 class TestReleaseEdgeCases:
     def test_release_nonexistent_assignment_returns_404(self, app, member_client):
         response = member_client.post("/assignments/release/999999")
@@ -341,9 +327,7 @@ class TestReleaseEdgeCases:
             event = db.session.get(Event, event_id)
             event.status = EventStatus.COMPLETED
             db.session.commit()
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assignment_id = assignment.id
 
         response = member_client.post(f"/assignments/release/{assignment_id}", follow_redirects=True)
@@ -358,9 +342,7 @@ class TestReleaseEdgeCases:
             event = db.session.get(Event, event_id)
             event.status = EventStatus.ASSIGNMENTS_CLOSED
             db.session.commit()
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assignment_id = assignment.id
 
         member_client.post(f"/assignments/release/{assignment_id}", follow_redirects=True)
@@ -371,12 +353,11 @@ class TestReleaseEdgeCases:
 
 # ── Assign-other edge cases ───────────────────────────────────────────────────
 
+
 class TestAssignOtherEdgeCases:
     def test_assign_without_user_id_flashes(self, app, admin_client):
         _, spot_id = _make_event_with_spot(app)
-        response = admin_client.post(
-            f"/assignments/assign/{spot_id}", data={}, follow_redirects=True
-        )
+        response = admin_client.post(f"/assignments/assign/{spot_id}", data={}, follow_redirects=True)
         assert response.status_code == 200
         assert "Vyberte" in response.data.decode() or "uživatele" in response.data.decode()
 
@@ -399,9 +380,7 @@ class TestAssignOtherEdgeCases:
         with app.app_context():
             target = _make_user("t@test.com", "Target", Role.MEMBER)
             target_id = str(target.id)
-        response = admin_client.post(
-            "/assignments/assign/999999", data={"user_id": target_id}
-        )
+        response = admin_client.post("/assignments/assign/999999", data={"user_id": target_id})
         assert response.status_code == 404
 
     def test_assign_on_wrong_event_status_flashes(self, app, admin_client):
@@ -417,6 +396,7 @@ class TestAssignOtherEdgeCases:
             db.session.add(creator)
             db.session.flush()
             from datetime import datetime, timezone
+
             event = Event(
                 name="Draft Ev",
                 master_event_id=me.id,
@@ -451,9 +431,7 @@ class TestAssignOtherEdgeCases:
             t1_id, t2_id = str(t1.id), str(t2.id)
 
         admin_client.post(f"/assignments/assign/{spot_id}", data={"user_id": t1_id}, follow_redirects=True)
-        response = admin_client.post(
-            f"/assignments/assign/{spot_id}", data={"user_id": t2_id}, follow_redirects=True
-        )
+        response = admin_client.post(f"/assignments/assign/{spot_id}", data={"user_id": t2_id}, follow_redirects=True)
         assert response.status_code == 200
         assert "obsazena" in response.data.decode()
 
@@ -478,6 +456,7 @@ class TestAssignOtherEdgeCases:
 
 # ── Unassign-other edge cases ─────────────────────────────────────────────────
 
+
 class TestUnassignOtherEdgeCases:
     def test_unassign_completed_event_flashes(self, app, admin_client):
         """Cannot unassign from a COMPLETED event."""
@@ -489,9 +468,7 @@ class TestUnassignOtherEdgeCases:
         with app.app_context():
             db.session.get(Event, event_id).status = EventStatus.COMPLETED
             db.session.commit()
-            assignment = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            )
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assignment_id = assignment.id
 
         response = admin_client.post(f"/assignments/unassign/{assignment_id}", follow_redirects=True)
@@ -508,9 +485,7 @@ class TestUnassignOtherEdgeCases:
         with app.app_context():
             db.session.get(Event, event_id).status = EventStatus.ASSIGNMENTS_CLOSED
             db.session.commit()
-            assignment_id = db.session.scalar(
-                db.select(Assignment).where(Assignment.spot_id == spot_id)
-            ).id
+            assignment_id = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id)).id
 
         admin_client.post(f"/assignments/unassign/{assignment_id}", follow_redirects=True)
         with app.app_context():

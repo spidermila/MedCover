@@ -1,5 +1,11 @@
 """Basic smoke tests to verify the app factory and routes are wired up."""
 
+import re
+
+from app.extensions import db
+from app.models.settings import get_settings
+from app.utils import external_url_for
+
 
 def test_app_creates_successfully(app):
     assert app is not None
@@ -27,8 +33,6 @@ class TestExternalUrlFor:
 
     def test_falls_back_to_flask_external_when_no_base_url(self, app):
         """Without app_base_url configured, must return a valid absolute URL."""
-        from app.utils import external_url_for
-        from app.models.settings import get_settings
 
         with app.test_request_context("/"):
             settings = get_settings()
@@ -40,9 +44,6 @@ class TestExternalUrlFor:
 
     def test_uses_configured_base_url(self, app):
         """When app_base_url is set, it must be used as the URL base."""
-        from app.utils import external_url_for
-        from app.models.settings import get_settings
-        from app.extensions import db
 
         with app.test_request_context("/"):
             settings = get_settings()
@@ -58,9 +59,6 @@ class TestExternalUrlFor:
 
     def test_base_url_trailing_slash_stripped(self, app):
         """Trailing slash on base URL must not produce double slashes."""
-        from app.utils import external_url_for
-        from app.models.settings import get_settings
-        from app.extensions import db
 
         with app.test_request_context("/"):
             settings = get_settings()
@@ -96,7 +94,7 @@ class TestChangelog:
 
     def test_target_blank_has_noopener(self, app, member_client):
         """Every target='_blank' link must have rel='noopener noreferrer' (tabnabbing protection)."""
-        import re
+
         rv = member_client.get("/changelog")
         html = rv.data.decode()
         blanks = re.findall(r"<a [^>]*target=\"_blank\"[^>]*>", html)

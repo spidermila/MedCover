@@ -16,42 +16,35 @@ Service functions (shared with master_events table manager):
   do_assign_user()   — lock spot, validate, create assignment, commit
   do_unassign_user() — validate, delete assignment, commit
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from flask import abort
-from flask import Blueprint
-from flask import flash
-from flask import redirect
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, abort, flash, redirect, request, url_for
+from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
 import app.mail as mailer
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.user import UserAccount
-from app.utils import audit
-from app.utils import get_or_404
-from app.utils import require_permission
+from app.utils import audit, get_or_404, require_permission
 
 assignments_bp = Blueprint("assignments", __name__, url_prefix="/assignments")
 
 
 # ── Side-effect helpers ────────────────────────────────────────────────────────
 
+
 def _auto_close_if_full(event: Event) -> None:
     """Transition event to ASSIGNMENTS_CLOSED when all mandatory spots are filled."""
-    if (event.status == EventStatus.ASSIGNMENTS_OPEN
-            and event.mandatory_total_spots > 0
-            and event.mandatory_filled_spots >= event.mandatory_total_spots):
+    if (
+        event.status == EventStatus.ASSIGNMENTS_OPEN
+        and event.mandatory_total_spots > 0
+        and event.mandatory_filled_spots >= event.mandatory_total_spots
+    ):
         event.status = EventStatus.ASSIGNMENTS_CLOSED
         event.version += 1
         audit("status_change", "Event", event.id, "Přihlašování automaticky uzavřeno — všechny pozice obsazeny")
@@ -70,14 +63,20 @@ def _auto_clear_rp(event: Event, user: UserAccount) -> None:
     if event.responsible_person_id == user.id:
         # Find another RP-eligible person still assigned to this event
         for spot in event.spots:
-            if (spot.assignment is not None
-                    and spot.assignment.user_id != user.id
-                    and spot.assignment.user.is_rp_eligible()):
+            if (
+                spot.assignment is not None
+                and spot.assignment.user_id != user.id
+                and spot.assignment.user.is_rp_eligible()
+            ):
                 event.responsible_person_id = spot.assignment.user.id
                 event.version += 1
                 new_rp = spot.assignment.user.name
-                audit("edit", "Event", event.id,
-                      f"Zodpovědná osoba automaticky přeřazena na '{new_rp}' (předchozí '{user.name}' opustil/a akci)")
+                audit(
+                    "edit",
+                    "Event",
+                    event.id,
+                    f"Zodpovědná osoba automaticky přeřazena na '{new_rp}' (předchozí '{user.name}' opustil/a akci)",
+                )
                 break
         else:
             event.responsible_person_id = None
@@ -99,6 +98,7 @@ def _auto_reopen_if_freed(event: Event) -> None:
 @dataclass
 class AssignResult:
     """Result of an assign/unassign operation."""
+
     ok: bool
     error: str = ""
     assignment: Assignment | None = None
@@ -132,9 +132,7 @@ def do_assign_user(
         return AssignResult(ok=False, error="Uživatel nenalezen nebo není aktivní.")
 
     # Pessimistic lock: SELECT FOR UPDATE
-    spot = db.session.scalar(
-        db.select(EventSpot).where(EventSpot.id == spot_id).with_for_update()
-    )
+    spot = db.session.scalar(db.select(EventSpot).where(EventSpot.id == spot_id).with_for_update())
     if spot is None:
         return AssignResult(ok=False, error="Pozice nenalezena.")
 
@@ -235,6 +233,7 @@ def do_unassign_user(
 
 # ── Claim (own) ───────────────────────────────────────────────────────────────
 
+
 @assignments_bp.post("/claim/<int:spot_id>")
 @login_required
 def claim(spot_id: int) -> Response:
@@ -262,6 +261,7 @@ def claim(spot_id: int) -> Response:
 
 # ── Release (own) ─────────────────────────────────────────────────────────────
 
+
 @assignments_bp.post("/release/<int:assignment_id>")
 @login_required
 def release(assignment_id: int) -> Response:
@@ -276,9 +276,7 @@ def release(assignment_id: int) -> Response:
     # Block self-release when ME is centrally coordinated, unless user
     # has assign_other permission (coordinators/admins can always release)
     is_self_release = assignment.user_id == current_user.id
-    block_coordinated = (
-        is_self_release and not current_user.has_permission("event.assign_other")
-    )
+    block_coordinated = is_self_release and not current_user.has_permission("event.assign_other")
 
     result = do_unassign_user(
         assignment,
@@ -297,6 +295,7 @@ def release(assignment_id: int) -> Response:
 
 
 # ── Assign other ──────────────────────────────────────────────────────────────
+
 
 @assignments_bp.post("/assign/<int:spot_id>")
 @login_required
@@ -337,6 +336,7 @@ def assign_other(spot_id: int) -> Response:
 
 
 # ── Unassign other ────────────────────────────────────────────────────────────
+
 
 @assignments_bp.post("/unassign/<int:assignment_id>")
 @login_required

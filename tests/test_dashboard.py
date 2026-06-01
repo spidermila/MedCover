@@ -1,15 +1,12 @@
 """Tests for the main dashboard: event sort order (#113) and user-name links (#105)."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
 
@@ -21,9 +18,7 @@ class TestDashboardEventSortOrder:
         now = datetime.now(timezone.utc)
 
         with app.app_context():
-            member = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "member@test.com")
-            )
+            member = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             me = MasterEvent(name="Sort Test ME")
             db.session.add(me)
             db.session.flush()
@@ -58,9 +53,7 @@ class TestDashboardEventSortOrder:
                 spot = EventSpot(event_id=ev.id)
                 db.session.add(spot)
                 db.session.flush()
-                db.session.add(
-                    Assignment(spot_id=spot.id, user_id=member.id, assigned_by_id=member.id)
-                )
+                db.session.add(Assignment(spot_id=spot.id, user_id=member.id, assigned_by_id=member.id))
             db.session.commit()
 
         response = member_client.get("/dashboard")
@@ -72,9 +65,9 @@ class TestDashboardEventSortOrder:
         pos_far = body.index("Far Future Event")
 
         # Near should appear before Mid, Mid before Far
-        assert pos_near < pos_mid < pos_far, (
-            "Dashboard 'Moje akce' events must be ordered by start_datetime (nearest first)"
-        )
+        assert (
+            pos_near < pos_mid < pos_far
+        ), "Dashboard 'Moje akce' events must be ordered by start_datetime (nearest first)"
 
 
 class TestDashboardPendingActivationLink:

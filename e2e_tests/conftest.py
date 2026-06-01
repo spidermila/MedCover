@@ -1,4 +1,5 @@
 """Playwright E2E test fixtures."""
+
 import os
 
 import pytest

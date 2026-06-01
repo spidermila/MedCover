@@ -5,34 +5,24 @@ GET  /calendar/all/<token>.ics  — all non-archived events feed.
 POST /calendar/regenerate       — regenerate personal iCal token.
 POST /calendar/regenerate-all   — regenerate all-events iCal token.
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 import sqlalchemy as sa
-from flask import abort
-from flask import Blueprint
-from flask import redirect
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, abort, redirect, url_for
+from flask_login import current_user, login_required
 from icalendar import Calendar
 from icalendar import Event as ICalEvent
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.user import UserAccount
-from app.utils import audit
-from app.utils import external_url_for
-from app.utils import get_app_tz
-from app.utils import require_permission
+from app.utils import audit, external_url_for, get_app_tz, require_permission
 
 log = logging.getLogger(__name__)
 
@@ -76,9 +66,7 @@ def feed(token: str) -> Response:
     Contains only events the user is assigned to (excluding cancelled,
     completed, and archived events).
     """
-    user: UserAccount | None = db.session.scalar(
-        sa.select(UserAccount).where(UserAccount.ical_token == token)
-    )
+    user: UserAccount | None = db.session.scalar(sa.select(UserAccount).where(UserAccount.ical_token == token))
     if user is None or not user.is_active or user.is_archived:
         abort(404)
 
@@ -91,9 +79,7 @@ def feed(token: str) -> Response:
             Event.status.notin_(_PERSONAL_EXCLUDED_STATUSES),
             Event.archived.is_(False),
         )
-        .options(
-            selectinload(Assignment.spot).selectinload(EventSpot.event)  # type: ignore[arg-type]
-        )
+        .options(selectinload(Assignment.spot).selectinload(EventSpot.event))  # type: ignore[arg-type]
     ).all()
 
     cal = _make_calendar(f"MedCover – {user.name}", "Vaše akce v systému MedCover")
@@ -134,9 +120,7 @@ def feed_all(token: str) -> Response:
     Includes completed events. Each entry shows status, spots with
     qualifications and assigned users, and the responsible person.
     """
-    user: UserAccount | None = db.session.scalar(
-        sa.select(UserAccount).where(UserAccount.ical_all_token == token)
-    )
+    user: UserAccount | None = db.session.scalar(sa.select(UserAccount).where(UserAccount.ical_all_token == token))
     if user is None or not user.is_active or user.is_archived:
         abort(404)
 
@@ -178,9 +162,7 @@ def feed_all(token: str) -> Response:
             description_parts.append("")
             description_parts.append("Pozice:")
             for spot in event.spots:
-                quals = ", ".join(
-                    q.name for q in spot.required_qualifications if not q.is_deleted
-                )
+                quals = ", ".join(q.name for q in spot.required_qualifications if not q.is_deleted)
                 assigned = spot.assignment.user.name if spot.assignment else "neobsazeno"
                 spot_desc = spot.description or "—"
                 line = f"  • {spot_desc}"

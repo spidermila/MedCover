@@ -1,32 +1,23 @@
 """Event lifecycle transition routes: transition, cancel, restore, split."""
+
 from __future__ import annotations
 
 from datetime import datetime
 
-from flask import abort
-from flask import flash
-from flask import redirect
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Response, abort, flash, redirect, request, url_for
+from flask_login import current_user, login_required
 
 import app.mail as mailer
-from . import events_bp
-from ._helpers import copy_equipment
-from ._helpers import copy_spots_with_assignments
-from ._helpers import TRANSITIONS
 from app.extensions import db
-from app.models.event import Event
-from app.models.event import EventStatus
+from app.models.event import Event, EventStatus
 from app.models.user import UserAccount
-from app.utils import audit
-from app.utils import get_or_404
-from app.utils import require_permission
+from app.utils import audit, get_or_404, require_permission
 
+from . import events_bp
+from ._helpers import TRANSITIONS, copy_equipment, copy_spots_with_assignments
 
 # ── Lifecycle transitions ─────────────────────────────────────────────────────
+
 
 @events_bp.post("/<int:event_id>/transition")
 @login_required
@@ -52,26 +43,28 @@ def transition(event_id: int) -> Response:
 
     event.status = target_status
     event.version += 1
-    audit("status_change", "Event", event.id, f"Stav akce '{event.name}' změněn na '{target_status.value}'", {
-        "before": {"status": event.status.value},
-        "after": {"status": target_status.value},
-    })
+    audit(
+        "status_change",
+        "Event",
+        event.id,
+        f"Stav akce '{event.name}' změněn na '{target_status.value}'",
+        {
+            "before": {"status": event.status.value},
+            "after": {"status": target_status.value},
+        },
+    )
     db.session.commit()
 
     # Email notifications
     if target_status == EventStatus.PUBLISHED:
         active_users = db.session.scalars(
-            db.select(UserAccount)
-            .where(UserAccount.is_active.is_(True))
-            .where(UserAccount.is_archived.is_(False))
+            db.select(UserAccount).where(UserAccount.is_active.is_(True)).where(UserAccount.is_archived.is_(False))
         ).all()
         for u in active_users:
             mailer.send_event_published(u, event)
     elif target_status == EventStatus.ASSIGNMENTS_OPEN:
         active_users = db.session.scalars(
-            db.select(UserAccount)
-            .where(UserAccount.is_active.is_(True))
-            .where(UserAccount.is_archived.is_(False))
+            db.select(UserAccount).where(UserAccount.is_active.is_(True)).where(UserAccount.is_archived.is_(False))
         ).all()
         for u in active_users:
             mailer.send_assignments_opened(u, event)
@@ -103,10 +96,7 @@ def cancel(event_id: int) -> Response:
     audit("status_change", "Event", event.id, f"Akce '{event.name}' zrušena a archivována")
 
     # Notify all assigned users before commit so we still have spot data
-    assigned_users = [
-        s.assignment.user
-        for s in event.spots if s.assignment
-    ]
+    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
     db.session.commit()
 
     for user in assigned_users:
@@ -138,6 +128,7 @@ def restore(event_id: int) -> Response:
 
 # ── Split event ───────────────────────────────────────────────────────────────
 
+
 @events_bp.post("/<int:event_id>/split")
 @login_required
 def split_event(event_id: int) -> Response:
@@ -156,7 +147,8 @@ def split_event(event_id: int) -> Response:
         return redirect(url_for("events.detail", event_id=event_id))
 
     try:
-        from app.utils import get_app_tz  # noqa: PLC0415
+        from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
+
         tz = get_app_tz()
         split_dt = datetime.fromisoformat(raw_dt).replace(tzinfo=tz)
     except ValueError:
@@ -174,10 +166,16 @@ def split_event(event_id: int) -> Response:
     event.end_datetime = split_dt
     event.name = f"{original_name} 1/2"
     event.version += 1
-    audit("edit", "Event", event.id,
-          f"Akce rozdělena — konec zkrácen na {split_dt.isoformat()} (část 1/2)",
-          {"end_datetime": {"before": original_end.isoformat(), "after": split_dt.isoformat()},
-           "name": {"before": original_name, "after": event.name}})
+    audit(
+        "edit",
+        "Event",
+        event.id,
+        f"Akce rozdělena — konec zkrácen na {split_dt.isoformat()} (část 1/2)",
+        {
+            "end_datetime": {"before": original_end.isoformat(), "after": split_dt.isoformat()},
+            "name": {"before": original_name, "after": event.name},
+        },
+    )
 
     # Create the second part
     part2 = Event(
@@ -201,8 +199,7 @@ def split_event(event_id: int) -> Response:
     copy_spots_with_assignments(event, part2)
     copy_equipment(event, part2)
 
-    audit("create", "Event", part2.id,
-          f"Akce '{part2.name}' vytvořena rozdělením akce '{original_name}' (část 2/2)")
+    audit("create", "Event", part2.id, f"Akce '{part2.name}' vytvořena rozdělením akce '{original_name}' (část 2/2)")
 
     db.session.commit()
 

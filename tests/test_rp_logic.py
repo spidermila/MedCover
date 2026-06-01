@@ -1,25 +1,20 @@
 """Tests for RP (responsible person) auto-assign/clear logic and set_rp route."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _login
-from tests.conftest import _make_event_with_spot
-from tests.conftest import _make_user
-from tests.conftest import _make_user_with_qual
-
+from tests.conftest import _login, _make_event_with_spot, _make_user, _make_user_with_qual
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_rp_qual(app) -> int:
     with app.app_context():
@@ -41,6 +36,7 @@ def _make_non_rp_qual(app) -> int:
 
 
 # ── is_rp_eligible ────────────────────────────────────────────────────────────
+
 
 class TestIsRpEligible:
     def test_user_with_rp_qual_is_eligible(self, app):
@@ -83,6 +79,7 @@ class TestIsRpEligible:
 
 
 # ── Auto-assign RP on claim ───────────────────────────────────────────────────
+
 
 class TestAutoAssignRpOnClaim:
     def test_first_eligible_claimant_becomes_rp(self, app):
@@ -147,6 +144,7 @@ class TestAutoAssignRpOnClaim:
 
 # ── Auto-clear RP on release ──────────────────────────────────────────────────
 
+
 class TestAutoClearRpOnRelease:
     def test_rp_cleared_when_rp_releases(self, app):
         qual_id = _make_rp_qual(app)
@@ -183,9 +181,7 @@ class TestAutoClearRpOnRelease:
             spot2 = EventSpot(event_id=event_id)
             db.session.add(spot2)
             db.session.flush()
-            nonrp_user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "nonrp_leaves@test.com")
-            )
+            nonrp_user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "nonrp_leaves@test.com"))
             assignment2 = Assignment(spot_id=spot2.id, user_id=nonrp_user.id, assigned_by_id=nonrp_user.id)
             db.session.add(assignment2)
             event = db.session.get(Event, event_id)
@@ -233,6 +229,7 @@ class TestAutoClearRpOnRelease:
 
 # ── set_rp route ──────────────────────────────────────────────────────────────
 
+
 class TestSetRpRoute:
     def _setup(self, app) -> tuple[int, str, str]:
         """Returns (event_id, rp_eligible_user_id, non_eligible_user_id)."""
@@ -250,9 +247,7 @@ class TestSetRpRoute:
 
     def test_member_cannot_set_rp(self, app, member_client):
         event_id, rp_user_id, _ = self._setup(app)
-        response = member_client.post(
-            f"/events/{event_id}/set_rp", data={"user_id": rp_user_id}
-        )
+        response = member_client.post(f"/events/{event_id}/set_rp", data={"user_id": rp_user_id})
         assert response.status_code == 403
 
     def test_admin_can_set_rp(self, app, admin_client):
@@ -292,17 +287,17 @@ class TestSetRpRoute:
     def test_set_rp_404_for_missing_event(self, app, admin_client):
         qual_id = _make_rp_qual(app)
         user_id = _make_user_with_qual(app, "rp_404@test.com", qual_id)
-        response = admin_client.post(
-            "/events/999999/set_rp", data={"user_id": user_id}
-        )
+        response = admin_client.post("/events/999999/set_rp", data={"user_id": user_id})
         assert response.status_code == 404
 
 
 # ── Dashboard RP warning ──────────────────────────────────────────────────────
 
+
 class TestDashboardRpWarning:
     def _make_event_soon_no_rp(self, app) -> int:
         from datetime import timedelta
+
         with app.app_context():
             me = MasterEvent(name="Dashboard RP ME")
             db.session.add(me)
@@ -338,6 +333,7 @@ class TestDashboardRpWarning:
 
 class TestRpElevatedPermissions:
     """Tests for issue #255 — RP-eligible users can manage assignments on events they attend."""
+
     def _setup_event_with_rp_user(self, app) -> tuple[int, int, int, str]:
         """Create event with 2 spots, assign RP-eligible user to spot 1.
 
@@ -531,6 +527,7 @@ class TestRpElevatedPermissions:
 
 # ── Self-claim blocked when ME is coordinated ─────────────────────────────────
 
+
 class TestCoordinatedMeBlocksSelfClaim:
     """When an ME has a coordinator, members cannot claim/release spots themselves."""
 
@@ -605,6 +602,7 @@ class TestCoordinatedMeBlocksSelfClaim:
 
 
 # ── Table Manager assign/unassign ────────────────────────────────────────────
+
 
 class TestTableAssign:
     """Tests for master_events.table_assign route (JSON API)."""
@@ -833,9 +831,7 @@ class TestRpEligibleUsersSorting:
         from app.queries import rp_eligible_users_list
 
         with app.app_context():
-            qual = db.session.scalar(
-                db.select(Qualification).where(Qualification.can_be_rp.is_(True))
-            )
+            qual = db.session.scalar(db.select(Qualification).where(Qualification.can_be_rp.is_(True)))
             if not qual:
                 qual = Qualification(name="RPQual", can_be_rp=True)
                 db.session.add(qual)
@@ -848,7 +844,8 @@ class TestRpEligibleUsersSorting:
             for name in names:
                 u = UserAccount(
                     email=f"{name.split()[0].lower()}@rp.cz",
-                    name=name, is_active=True,
+                    name=name,
+                    is_active=True,
                 )
                 u.set_password("pass")
                 u.roles = [role]

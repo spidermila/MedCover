@@ -22,6 +22,7 @@ Permissions:
   event.cancel       — → Cancelled
   event.restore      — Cancelled → Draft
 """
+
 from __future__ import annotations
 
 from flask import Blueprint
@@ -29,4 +30,4 @@ from flask import Blueprint
 events_bp = Blueprint("events", __name__, url_prefix="/events")
 
 # Import sub-modules so their @events_bp route decorators are registered.
-from . import crud, transitions, spots, equipment  # noqa: E402, F401
+from . import crud, equipment, spots, transitions  # noqa: E402, F401

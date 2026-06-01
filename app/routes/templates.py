@@ -7,33 +7,19 @@ Permissions:
   event_template.edit    — edit templates
   event_template.delete  — delete templates
 """
+
 from __future__ import annotations
 
-from flask import Blueprint
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
+from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import collate
 
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
-from app.models.equipment import EquipmentCategory
-from app.models.equipment import EquipmentType
-from app.models.equipment import EventTemplateEquipmentPlan
-from app.models.event import EventSpotTemplate
-from app.models.event import EventTemplate
-from app.models.event import EventType
+from app.models.equipment import EquipmentCategory, EquipmentType, EventTemplateEquipmentPlan
+from app.models.event import EventSpotTemplate, EventTemplate, EventType
 from app.models.qualification import Qualification
-from app.utils import audit
-from app.utils import check_version_conflict
-from app.utils import CS_COLLATION
-from app.utils import diff_changes
-from app.utils import get_or_404
-from app.utils import require_permission
+from app.utils import CS_COLLATION, audit, check_version_conflict, diff_changes, get_or_404, require_permission
 
 templates_bp = Blueprint("templates", __name__, url_prefix="/templates")
 
@@ -80,8 +66,7 @@ def _rebuild_equipment_plans(template: EventTemplate, form: dict) -> None:
                 db.session.add(ep)
 
 
-def _rebuild_spot_templates(
-        template: EventTemplate, slots: list[tuple[str | None, bool, list[int]]]) -> None:
+def _rebuild_spot_templates(template: EventTemplate, slots: list[tuple[str | None, bool, list[int]]]) -> None:
     """Delete existing spot templates and recreate from slots."""
     for st in list(template.spot_templates):
         db.session.delete(st)
@@ -98,6 +83,7 @@ def _rebuild_spot_templates(
 
 # ── List ──────────────────────────────────────────────────────────────────────
 
+
 @templates_bp.get("/")
 @login_required
 def index() -> str:
@@ -111,13 +97,16 @@ def index() -> str:
 
 # ── Create ────────────────────────────────────────────────────────────────────
 
+
 @templates_bp.route("/create", methods=["GET", "POST"])
 @login_required
 def create() -> str | Response:
     require_permission("event_template.create")
 
     qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))
+        db.select(Qualification)
+        .where(Qualification.is_deleted.is_(False))
+        .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
     equipment_types = db.session.scalars(
         db.select(EquipmentType)
@@ -135,11 +124,23 @@ def create() -> str | Response:
 
         if not name:
             flash("Název šablony je povinný.", "danger")
-            return render_template("templates/form.html", template=None, qualifications=qualifications, equipment_types=equipment_types, EventType=EventType)
+            return render_template(
+                "templates/form.html",
+                template=None,
+                qualifications=qualifications,
+                equipment_types=equipment_types,
+                EventType=EventType,
+            )
 
         if db.session.scalar(db.select(EventTemplate).where(EventTemplate.name == name)):
             flash("Šablona s tímto názvem již existuje.", "danger")
-            return render_template("templates/form.html", template=None, qualifications=qualifications, equipment_types=equipment_types, EventType=EventType)
+            return render_template(
+                "templates/form.html",
+                template=None,
+                qualifications=qualifications,
+                equipment_types=equipment_types,
+                EventType=EventType,
+            )
 
         tmpl = EventTemplate(
             name=name,
@@ -161,10 +162,17 @@ def create() -> str | Response:
         flash(f'Šablona „{tmpl.name}" byla vytvořena.', "success")
         return redirect(url_for("templates.index"))
 
-    return render_template("templates/form.html", template=None, qualifications=qualifications, equipment_types=equipment_types, EventType=EventType)
+    return render_template(
+        "templates/form.html",
+        template=None,
+        qualifications=qualifications,
+        equipment_types=equipment_types,
+        EventType=EventType,
+    )
 
 
 # ── Edit ──────────────────────────────────────────────────────────────────────
+
 
 @templates_bp.route("/<int:template_id>/edit", methods=["GET", "POST"])
 @login_required
@@ -174,7 +182,9 @@ def edit(template_id: int) -> str | Response:
     tmpl = get_or_404(EventTemplate, template_id)
 
     qualifications = db.session.scalars(
-        db.select(Qualification).where(Qualification.is_deleted.is_(False)).order_by(collate(Qualification.name, CS_COLLATION))
+        db.select(Qualification)
+        .where(Qualification.is_deleted.is_(False))
+        .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
     equipment_types = db.session.scalars(
         db.select(EquipmentType)
@@ -185,7 +195,13 @@ def edit(template_id: int) -> str | Response:
     if request.method == "POST":
         if check_version_conflict(tmpl, request.form.get("version")):
             flash(RECORD_MODIFIED_MSG, "danger")
-            return render_template("templates/form.html", template=tmpl, qualifications=qualifications, equipment_types=equipment_types, EventType=EventType)
+            return render_template(
+                "templates/form.html",
+                template=tmpl,
+                qualifications=qualifications,
+                equipment_types=equipment_types,
+                EventType=EventType,
+            )
 
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
@@ -196,16 +212,26 @@ def edit(template_id: int) -> str | Response:
 
         if not name:
             flash("Název šablony je povinný.", "danger")
-            return render_template("templates/form.html", template=tmpl, qualifications=qualifications, equipment_types=equipment_types, EventType=EventType)
+            return render_template(
+                "templates/form.html",
+                template=tmpl,
+                qualifications=qualifications,
+                equipment_types=equipment_types,
+                EventType=EventType,
+            )
 
         conflict = db.session.scalar(
-            db.select(EventTemplate).where(
-                EventTemplate.name == name, EventTemplate.id != template_id
-            )
+            db.select(EventTemplate).where(EventTemplate.name == name, EventTemplate.id != template_id)
         )
         if conflict:
             flash("Šablona s tímto názvem již existuje.", "danger")
-            return render_template("templates/form.html", template=tmpl, qualifications=qualifications, equipment_types=equipment_types, EventType=EventType)
+            return render_template(
+                "templates/form.html",
+                template=tmpl,
+                qualifications=qualifications,
+                equipment_types=equipment_types,
+                EventType=EventType,
+            )
 
         before = {
             "name": tmpl.name,
@@ -248,10 +274,17 @@ def edit(template_id: int) -> str | Response:
         flash(f'Šablona „{tmpl.name}" byla uložena.', "success")
         return redirect(url_for("templates.index"))
 
-    return render_template("templates/form.html", template=tmpl, qualifications=qualifications, equipment_types=equipment_types, EventType=EventType)
+    return render_template(
+        "templates/form.html",
+        template=tmpl,
+        qualifications=qualifications,
+        equipment_types=equipment_types,
+        EventType=EventType,
+    )
 
 
 # ── Delete ────────────────────────────────────────────────────────────────────
+
 
 @templates_bp.post("/<int:template_id>/delete")
 @login_required

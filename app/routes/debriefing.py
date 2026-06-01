@@ -14,39 +14,24 @@ Routes:
   GET/POST /debriefing/<assignment_id>  — submit debriefing (own only)
   GET      /debriefing/manage           — list all records (Debriefing Manager)
 """
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
-from flask import abort
-from flask import Blueprint
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 
 from app.extensions import db
-from app.models.assignment import Assignment
-from app.models.assignment import DebriefingRecord
-from app.models.event import Event
-from app.models.event import EventStatus
-from app.models.event import EventType
-from app.utils import audit
-from app.utils import diff_changes
-from app.utils import get_app_tz
-from app.utils import get_or_404
-from app.utils import quick_date_ranges
-from app.utils import require_permission
+from app.models.assignment import Assignment, DebriefingRecord
+from app.models.event import Event, EventStatus, EventType
+from app.utils import audit, diff_changes, get_app_tz, get_or_404, quick_date_ranges, require_permission
 
 debriefing_bp = Blueprint("debriefing", __name__, url_prefix="/debriefing")
 
 
 # ── Submit a debriefing ───────────────────────────────────────────────────────
+
 
 def _parse_grade(raw: str) -> tuple[int, str | None]:
     """Validate the 1–5 grade. Return (grade, error_message)."""
@@ -60,7 +45,8 @@ def _parse_grade(raw: str) -> tuple[int, str | None]:
 
 
 def _parse_rp_actuals(
-    form: dict, event_type: EventType,
+    form: dict,
+    event_type: EventType,
 ) -> tuple[datetime | None, datetime | None, int | None, list[str]]:
     """Parse and validate the RP-only actual start/end and post-event count.
 
@@ -117,7 +103,10 @@ def _parse_rp_actuals(
 
 
 def _apply_rp_actuals_to_event(
-    event: Event, actual_start: datetime | None, actual_end: datetime | None, post_event_count: int | None,
+    event: Event,
+    actual_start: datetime | None,
+    actual_end: datetime | None,
+    post_event_count: int | None,
 ) -> None:
     """Update event with RP-supplied actuals and write an audit entry."""
     before = {
@@ -129,13 +118,20 @@ def _apply_rp_actuals_to_event(
     event.actual_end_datetime = actual_end
     event.post_event_count = post_event_count
     event.version += 1
-    audit("edit", "Event", str(event.id),
-          f"Aktuální časy a výsledný počet aktualizovány pro akci '{event.name}'",
-          diff_changes(before, {
-              "actual_start_datetime": str(actual_start),
-              "actual_end_datetime": str(actual_end),
-              "post_event_count": post_event_count,
-          }))
+    audit(
+        "edit",
+        "Event",
+        str(event.id),
+        f"Aktuální časy a výsledný počet aktualizovány pro akci '{event.name}'",
+        diff_changes(
+            before,
+            {
+                "actual_start_datetime": str(actual_start),
+                "actual_end_datetime": str(actual_end),
+                "post_event_count": post_event_count,
+            },
+        ),
+    )
 
 
 @debriefing_bp.route("/<int:assignment_id>", methods=["GET", "POST"])
@@ -169,8 +165,12 @@ def submit(assignment_id: int) -> str | Response:
 
     if request.method != "POST":
         return render_template(
-            "debriefing/submit.html", assignment=assignment, event=event,
-            is_rp=is_rp, has_rp_section=has_rp_section, EventType=EventType,
+            "debriefing/submit.html",
+            assignment=assignment,
+            event=event,
+            is_rp=is_rp,
+            has_rp_section=has_rp_section,
+            EventType=EventType,
         )
 
     # ── Validate ──────────────────────────────────────────────────────────────
@@ -194,8 +194,12 @@ def submit(assignment_id: int) -> str | Response:
         for e in errors:
             flash(e, "danger")
         return render_template(
-            "debriefing/submit.html", assignment=assignment, event=event,
-            is_rp=is_rp, has_rp_section=has_rp_section, EventType=EventType,
+            "debriefing/submit.html",
+            assignment=assignment,
+            event=event,
+            is_rp=is_rp,
+            has_rp_section=has_rp_section,
+            EventType=EventType,
         )
 
     # ── Persist confidential record ───────────────────────────────────────────
@@ -209,8 +213,7 @@ def submit(assignment_id: int) -> str | Response:
     )
     db.session.add(record)
     db.session.flush()
-    audit("create", "DebriefingRecord", str(record.id),
-          f"Debriefing odevzdán pro akci '{event.name}'")
+    audit("create", "DebriefingRecord", str(record.id), f"Debriefing odevzdán pro akci '{event.name}'")
 
     # Apply RP actuals when at least start/end are set (all optional for TRAINING)
     if has_rp_section and (actual_start or actual_end or post_event_count is not None):
@@ -223,6 +226,7 @@ def submit(assignment_id: int) -> str | Response:
 
 # ── Debriefing management (Debriefing Manager only) ───────────────────────────
 
+
 @debriefing_bp.get("/manage")
 @login_required
 def manage() -> str:
@@ -231,11 +235,7 @@ def manage() -> str:
     from_date_str = request.args.get("from_date", "").strip()
     to_date_str = request.args.get("to_date", "").strip()
 
-    query = (
-        db.select(Event)
-        .where(Event.status == EventStatus.COMPLETED)
-        .order_by(Event.start_datetime.desc())
-    )
+    query = db.select(Event).where(Event.status == EventStatus.COMPLETED).order_by(Event.start_datetime.desc())
 
     if from_date_str:
         try:
@@ -247,6 +247,7 @@ def manage() -> str:
     if to_date_str:
         try:
             from datetime import timedelta
+
             to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
             query = query.where(Event.start_datetime < to_dt)
         except ValueError:
@@ -264,6 +265,7 @@ def manage() -> str:
 
 
 # ── Event debriefing detail (Debriefing Manager only) ─────────────────────────
+
 
 @debriefing_bp.get("/event/<int:event_id>")
 @login_required

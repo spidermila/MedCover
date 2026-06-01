@@ -12,43 +12,28 @@ All report routes accept ?format=csv to download the data as a CSV file.
 
 Permission: report.view  (users may always view their own per-user report)
 """
+
 from __future__ import annotations
 
 import csv
 import io
 import uuid
-from dataclasses import dataclass
-from dataclasses import field
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import cast
 
-from flask import abort
-from flask import Blueprint
-from flask import make_response
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import Response
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, Response, abort, make_response, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
-from app.utils import czech_sort_key
-from app.utils import get_app_tz
-from app.utils import quick_date_ranges
-from app.utils import require_permission
+from app.utils import czech_sort_key, get_app_tz, quick_date_ranges, require_permission
 
 reports_bp = Blueprint("reports", __name__, url_prefix="/reports")
 
@@ -114,9 +99,7 @@ def _compute_user_stats(pairs: list[tuple[Assignment, Event]], now: datetime) ->
     return stats
 
 
-def _build_user_stat_rows(
-    pairs: list[tuple[Assignment, Event]], now: datetime
-) -> list[tuple[UserAccount, UserStats]]:
+def _build_user_stat_rows(pairs: list[tuple[Assignment, Event]], now: datetime) -> list[tuple[UserAccount, UserStats]]:
     """Group (assignment, event) pairs by user and compute per-user stats."""
     user_pairs: dict[uuid.UUID, list[tuple[Assignment, Event]]] = {}
     users: dict[uuid.UUID, UserAccount] = {}
@@ -132,9 +115,7 @@ def _build_user_stat_rows(
     return result
 
 
-def _resolve_next_shifts(
-    rows: list[tuple[UserAccount, UserStats]], now: datetime
-) -> None:
+def _resolve_next_shifts(rows: list[tuple[UserAccount, UserStats]], now: datetime) -> None:
     """Set ``next_shift`` on each UserStats via a single global query.
 
     ``next_shift`` always reflects the user's true next future assignment,
@@ -146,7 +127,8 @@ def _resolve_next_shifts(
         return
 
     next_shifts: dict[uuid.UUID, datetime] = {
-        row[0]: row[1] for row in db.session.execute(
+        row[0]: row[1]
+        for row in db.session.execute(
             db.select(Assignment.user_id, func.min(Event.start_datetime))
             .join(EventSpot, Assignment.spot_id == EventSpot.id)
             .join(Event, EventSpot.event_id == Event.id)
@@ -197,9 +179,7 @@ def _spot_and_assignment_data(event_ids: list[int], events: list[Event]) -> tupl
         .where(EventSpot.event_id.in_(event_ids))
         .group_by(EventSpot.event_id)
     ).all()
-    spot_map: dict[int, tuple[int, int]] = {
-        row.event_id: (row.total_spots, row.filled_spots) for row in spot_agg
-    }
+    spot_map: dict[int, tuple[int, int]] = {row.event_id: (row.total_spots, row.filled_spots) for row in spot_agg}
 
     asgn_rows = db.session.execute(
         db.select(Assignment, EventSpot.event_id)
@@ -213,7 +193,8 @@ def _spot_and_assignment_data(event_ids: list[int], events: list[Event]) -> tupl
 
 
 def _build_event_rows(
-    events: list[Event], spot_map: dict[int, tuple[int, int]],
+    events: list[Event],
+    spot_map: dict[int, tuple[int, int]],
 ) -> tuple[list[dict], int, int, Decimal, int]:
     """Build per-event row dicts and accumulate grand totals.
 
@@ -230,13 +211,15 @@ def _build_event_rows(
         worked_hours = ev.actual_hours or Decimal("0")
         patients = ev.post_event_count or 0
 
-        rows.append({
-            "event": ev,
-            "total_spots": total_spots,
-            "filled_spots": filled_spots,
-            "worked_hours": worked_hours,
-            "patients": patients,
-        })
+        rows.append(
+            {
+                "event": ev,
+                "total_spots": total_spots,
+                "filled_spots": filled_spots,
+                "worked_hours": worked_hours,
+                "patients": patients,
+            }
+        )
 
         grand_total_spots += total_spots
         grand_filled_spots += filled_spots
@@ -248,38 +231,51 @@ def _build_event_rows(
 
 def _user_stat_csv_rows(user_stat_rows: list[tuple[UserAccount, UserStats]]) -> list[list[str]]:
     """Build CSV rows for the per-user statistics section."""
-    header = ["Účastník", "Směny odsloužené", "Směny plánované",
-              "Hodiny odsloužené", "Hodiny plánované", "Hodiny celkem",
-              "Hodiny zdarma", "Poslední směna", "Příští směna"]
+    header = [
+        "Účastník",
+        "Směny odsloužené",
+        "Směny plánované",
+        "Hodiny odsloužené",
+        "Hodiny plánované",
+        "Hodiny celkem",
+        "Hodiny zdarma",
+        "Poslední směna",
+        "Příští směna",
+    ]
     rows = [header]
     for u, s in user_stat_rows:
-        rows.append([
-            u.name,
-            str(s.shifts_served),
-            str(s.shifts_planned),
-            f"{s.hours_served:.1f}",
-            f"{s.hours_planned:.1f}",
-            f"{s.hours_total:.1f}",
-            f"{s.hours_free:.1f}",
-            s.last_shift.astimezone(get_app_tz()).strftime("%Y-%m-%d") if s.last_shift else "",
-            s.next_shift.astimezone(get_app_tz()).strftime("%Y-%m-%d") if s.next_shift else "",
-        ])
+        rows.append(
+            [
+                u.name,
+                str(s.shifts_served),
+                str(s.shifts_planned),
+                f"{s.hours_served:.1f}",
+                f"{s.hours_planned:.1f}",
+                f"{s.hours_total:.1f}",
+                f"{s.hours_free:.1f}",
+                s.last_shift.astimezone(get_app_tz()).strftime("%Y-%m-%d") if s.last_shift else "",
+                s.next_shift.astimezone(get_app_tz()).strftime("%Y-%m-%d") if s.next_shift else "",
+            ]
+        )
     return rows
 
 
 # ── Index ─────────────────────────────────────────────────────────────────────
+
 
 @reports_bp.get("/")
 @login_required
 def index() -> str:
     require_permission("report.view")
     from app.queries import active_master_events_list, active_users_list
+
     master_events = active_master_events_list()
     all_users = active_users_list() if current_user.has_permission("report.view") else []
     return render_template("reports/index.html", master_events=master_events, all_users=all_users)
 
 
 # ── Per-user report ───────────────────────────────────────────────────────────
+
 
 @reports_bp.get("/user")
 @login_required
@@ -301,14 +297,18 @@ def user_report(user_id: uuid.UUID) -> str | Response:
     now = datetime.now(timezone.utc)
 
     # Load all assignments for this user with eager-loaded spot → event
-    assignments = list(db.session.scalars(
-        db.select(Assignment)
-        .where(Assignment.user_id == user_id)
-        .options(
-            selectinload(Assignment.spot).selectinload(EventSpot.event),  # type: ignore[arg-type]
+    assignments = list(
+        db.session.scalars(
+            db.select(Assignment)
+            .where(Assignment.user_id == user_id)
+            .options(
+                selectinload(Assignment.spot).selectinload(EventSpot.event),  # type: ignore[arg-type]
+            )
+            .order_by(Assignment.assigned_at)
         )
-        .order_by(Assignment.assigned_at)
-    ).unique().all())
+        .unique()
+        .all()
+    )
 
     pairs = [(a, a.spot.event) for a in assignments if a.spot and a.spot.event]
     stats = _compute_user_stats(pairs, now)
@@ -317,11 +317,13 @@ def user_report(user_id: uuid.UUID) -> str | Response:
     # Build per-event rows for the detail table
     rows = []
     for _, ev in pairs:
-        rows.append({
-            "event": ev,
-            "planned_hours": ev.scheduled_hours,
-            "actual_hours": ev.actual_hours,
-        })
+        rows.append(
+            {
+                "event": ev,
+                "planned_hours": ev.scheduled_hours,
+                "actual_hours": ev.actual_hours,
+            }
+        )
 
     if request.args.get("format") == "csv":
         csv_rows: list[list[str]] = [
@@ -333,21 +335,29 @@ def user_report(user_id: uuid.UUID) -> str | Response:
             ["Hodiny plánované", f"{stats.hours_planned:.1f}"],
             ["Hodiny celkem", f"{stats.hours_total:.1f}"],
             ["Hodiny celkem zdarma", f"{stats.hours_free:.1f}"],
-            ["Poslední směna", stats.last_shift.astimezone(get_app_tz()).strftime("%Y-%m-%d") if stats.last_shift else ""],
-            ["Příští směna", stats.next_shift.astimezone(get_app_tz()).strftime("%Y-%m-%d") if stats.next_shift else ""],
+            [
+                "Poslední směna",
+                stats.last_shift.astimezone(get_app_tz()).strftime("%Y-%m-%d") if stats.last_shift else "",
+            ],
+            [
+                "Příští směna",
+                stats.next_shift.astimezone(get_app_tz()).strftime("%Y-%m-%d") if stats.next_shift else "",
+            ],
             [],
             ["Akce", "Začátek", "Konec", "Stav", "Plán (h)", "Skutečnost (h)"],
         ]
         for r in rows:
             ev = r["event"]
-            csv_rows.append([
-                ev.name,
-                ev.start_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
-                ev.end_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
-                ev.status.value,
-                f"{r['planned_hours']:.1f}",
-                f"{r['actual_hours']:.1f}" if r["actual_hours"] is not None else "",
-            ])
+            csv_rows.append(
+                [
+                    ev.name,
+                    ev.start_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
+                    ev.end_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
+                    ev.status.value,
+                    f"{r['planned_hours']:.1f}",
+                    f"{r['actual_hours']:.1f}" if r["actual_hours"] is not None else "",
+                ]
+            )
         safe_name = user.name.replace(" ", "_")
         return _csv_response(csv_rows, f"prehled_{safe_name}.csv")
 
@@ -362,6 +372,7 @@ def user_report(user_id: uuid.UUID) -> str | Response:
 
 # ── Per-Master-Event report ───────────────────────────────────────────────────
 
+
 @reports_bp.get("/master-event/<int:me_id>")
 @login_required
 def me_report(me_id: int) -> str | Response:
@@ -373,11 +384,9 @@ def me_report(me_id: int) -> str | Response:
 
     now = datetime.now(timezone.utc)
 
-    events: list[Event] = list(db.session.scalars(
-        db.select(Event)
-        .where(Event.master_event_id == me_id)
-        .order_by(Event.start_datetime)
-    ).all())
+    events: list[Event] = list(
+        db.session.scalars(db.select(Event).where(Event.master_event_id == me_id).order_by(Event.start_datetime)).all()
+    )
     event_ids = [ev.id for ev in events]
 
     spot_map, pairs = _spot_and_assignment_data(event_ids, events)
@@ -387,23 +396,29 @@ def me_report(me_id: int) -> str | Response:
         key = ev.status.value
         status_counts[key] = status_counts.get(key, 0) + 1
 
-    rows, grand_total_spots, grand_filled_spots, grand_worked_hours, grand_patients = _build_event_rows(events, spot_map)
+    rows, grand_total_spots, grand_filled_spots, grand_worked_hours, grand_patients = _build_event_rows(
+        events, spot_map
+    )
     user_stat_rows = _build_user_stat_rows(pairs, now)
 
     if request.args.get("format") == "csv":
-        csv_rows: list[list[str]] = [["Akce", "Začátek", "Konec", "Stav", "Místa celkem", "Obsazená místa", "Odprac. hodin", "Ošetřených"]]
+        csv_rows: list[list[str]] = [
+            ["Akce", "Začátek", "Konec", "Stav", "Místa celkem", "Obsazená místa", "Odprac. hodin", "Ošetřených"]
+        ]
         for r in rows:
             csv_ev = cast(Event, r["event"])
-            csv_rows.append([
-                csv_ev.name,
-                csv_ev.start_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
-                csv_ev.end_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
-                csv_ev.status.value,
-                str(r["total_spots"]),
-                str(r["filled_spots"]),
-                f"{r['worked_hours']:.1f}",
-                str(r["patients"]),
-            ])
+            csv_rows.append(
+                [
+                    csv_ev.name,
+                    csv_ev.start_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
+                    csv_ev.end_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
+                    csv_ev.status.value,
+                    str(r["total_spots"]),
+                    str(r["filled_spots"]),
+                    f"{r['worked_hours']:.1f}",
+                    str(r["patients"]),
+                ]
+            )
         csv_rows.append([])
         csv_rows.extend(_user_stat_csv_rows(user_stat_rows))
         safe_name = master_event.name.replace(" ", "_")
@@ -424,6 +439,7 @@ def me_report(me_id: int) -> str | Response:
 
 
 # ── Date-range report ─────────────────────────────────────────────────────────
+
 
 def _aggregate_date_range(
     events: list[Event],
@@ -473,22 +489,35 @@ def _date_range_csv(
     user_stat_rows: list[tuple[UserAccount, UserStats]],
 ) -> list[list[str]]:
     """Build CSV rows for the date-range report."""
-    rows: list[list[str]] = [[
-        "Nadřazená akce", "Akce", "Začátek", "Konec",
-        "Stav", "Místa celkem", "Obsazená místa",
-        "Odprac. hodin", "Ošetřených",
-    ]]
+    rows: list[list[str]] = [
+        [
+            "Nadřazená akce",
+            "Akce",
+            "Začátek",
+            "Konec",
+            "Stav",
+            "Místa celkem",
+            "Obsazená místa",
+            "Odprac. hodin",
+            "Ošetřených",
+        ]
+    ]
     for ev in events:
         me_name = ev.master_event.name if ev.master_event else ""
         t_s, f_s = spot_map.get(ev.id, (0, 0))
-        rows.append([
-            me_name, ev.name,
-            ev.start_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
-            ev.end_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
-            ev.status.value, str(t_s), str(f_s),
-            f"{ev.actual_hours or Decimal('0'):.1f}",
-            str(ev.post_event_count or 0),
-        ])
+        rows.append(
+            [
+                me_name,
+                ev.name,
+                ev.start_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
+                ev.end_datetime.astimezone(get_app_tz()).strftime("%Y-%m-%d %H:%M"),
+                ev.status.value,
+                str(t_s),
+                str(f_s),
+                f"{ev.actual_hours or Decimal('0'):.1f}",
+                str(ev.post_event_count or 0),
+            ]
+        )
     rows.append([])
     rows.extend(_user_stat_csv_rows(user_stat_rows))
     return rows
@@ -503,25 +532,37 @@ def date_range_report() -> str | Response:
     to_date_str = request.args.get("to_date", "").strip()
 
     if not from_date_str or not to_date_str:
-        return render_template("reports/date_range.html", results=None,
-                               from_date=from_date_str, to_date=to_date_str,
-                               quick_ranges=_quick_ranges())
+        return render_template(
+            "reports/date_range.html",
+            results=None,
+            from_date=from_date_str,
+            to_date=to_date_str,
+            quick_ranges=_quick_ranges(),
+        )
     try:
         from_dt = datetime.strptime(from_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
     except ValueError:
-        return render_template("reports/date_range.html", results=None,
-                               from_date=from_date_str, to_date=to_date_str,
-                               error="Neplatný formát data.",
-                               quick_ranges=_quick_ranges())
+        return render_template(
+            "reports/date_range.html",
+            results=None,
+            from_date=from_date_str,
+            to_date=to_date_str,
+            error="Neplatný formát data.",
+            quick_ranges=_quick_ranges(),
+        )
 
-    events: list[Event] = list(db.session.scalars(
-        db.select(Event)
-        .where(Event.start_datetime >= from_dt)
-        .where(Event.start_datetime < to_dt)
-        .options(selectinload(Event.master_event))  # type: ignore[arg-type]
-        .order_by(Event.start_datetime)
-    ).unique().all())
+    events: list[Event] = list(
+        db.session.scalars(
+            db.select(Event)
+            .where(Event.start_datetime >= from_dt)
+            .where(Event.start_datetime < to_dt)
+            .options(selectinload(Event.master_event))  # type: ignore[arg-type]
+            .order_by(Event.start_datetime)
+        )
+        .unique()
+        .all()
+    )
 
     spot_map, pairs = _spot_and_assignment_data([ev.id for ev in events], events)
     results = _aggregate_date_range(events, spot_map, pairs)
@@ -530,6 +571,10 @@ def date_range_report() -> str | Response:
         csv_rows = _date_range_csv(events, spot_map, results["user_stat_rows"])
         return _csv_response(csv_rows, f"prehled_{from_date_str}_{to_date_str}.csv")
 
-    return render_template("reports/date_range.html", results=results,
-                           from_date=from_date_str, to_date=to_date_str,
-                           quick_ranges=_quick_ranges())
+    return render_template(
+        "reports/date_range.html",
+        results=results,
+        from_date=from_date_str,
+        to_date=to_date_str,
+        quick_ranges=_quick_ranges(),
+    )

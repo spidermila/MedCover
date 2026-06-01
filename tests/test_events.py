@@ -1,28 +1,26 @@
 """Tests for event CRUD and lifecycle transitions."""
-from datetime import datetime
-from datetime import timezone
+
+from datetime import datetime, timezone
 
 import sqlalchemy as sa
 
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
-from app.models.equipment import EquipmentCategory
-from app.models.equipment import EquipmentItem
-from app.models.equipment import EquipmentType
-from app.models.equipment import EventEquipmentAssignment
-from app.models.equipment import EventEquipmentPlan
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
-from app.models.event import EventType
+from app.models.equipment import (
+    EquipmentCategory,
+    EquipmentItem,
+    EquipmentType,
+    EventEquipmentAssignment,
+    EventEquipmentPlan,
+)
+from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.master_event import MasterEvent
 from app.models.outbox import OutboxEmail
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from tests.conftest import _make_event_in_status
-from tests.conftest import _make_master_event
+from tests.conftest import _make_event_in_status, _make_master_event
 
 
 def _event_form_data(master_event_id: int, name: str = "Test Event") -> dict:
@@ -57,7 +55,7 @@ class TestEventListPermissions:
         admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
         # DRAFT is excluded by default; request it explicitly
         response = admin_client.get("/events/?statuses=DRAFT")
-        assert b'data-me=' in response.data
+        assert b"data-me=" in response.data
 
 
 class TestEventCreate:
@@ -283,8 +281,12 @@ class TestCalendarFeed:
             event = Event(
                 name="Completed Test Event",
                 master_event_id=me.id,
-                start_datetime=__import__("datetime").datetime(2020, 1, 1, 10, 0, tzinfo=__import__("datetime").timezone.utc),
-                end_datetime=__import__("datetime").datetime(2020, 1, 1, 18, 0, tzinfo=__import__("datetime").timezone.utc),
+                start_datetime=__import__("datetime").datetime(
+                    2020, 1, 1, 10, 0, tzinfo=__import__("datetime").timezone.utc
+                ),
+                end_datetime=__import__("datetime").datetime(
+                    2020, 1, 1, 18, 0, tzinfo=__import__("datetime").timezone.utc
+                ),
                 status=EventStatus.COMPLETED,
                 created_by_id=creator.id,
             )
@@ -402,7 +404,9 @@ class TestBulkAction:
         me_id = _make_master_event(app)
         ids = []
         for i in range(count):
-            admin_client.post("/events/create", data=_event_form_data(me_id, name=f"Bulk Event {i}"), follow_redirects=True)
+            admin_client.post(
+                "/events/create", data=_event_form_data(me_id, name=f"Bulk Event {i}"), follow_redirects=True
+            )
         with app.app_context():
             events = db.session.scalars(db.select(Event).where(Event.name.like("Bulk Event%"))).all()
             ids = [e.id for e in events]
@@ -509,6 +513,7 @@ class TestAddSpot:
 
 # ── Edit: extended ────────────────────────────────────────────────────────────
 
+
 class TestEventEditExtended:
     def test_get_returns_200(self, app, admin_client):
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
@@ -541,9 +546,7 @@ class TestEventEditExtended:
         with app.app_context():
             version = db.session.get(Event, event_id).version
         data = {**_event_form_data(me_id), "name": "", "version": str(version)}
-        response = admin_client.post(
-            f"/events/{event_id}/edit", data=data, follow_redirects=True
-        )
+        response = admin_client.post(f"/events/{event_id}/edit", data=data, follow_redirects=True)
         assert response.status_code == 200
         assert "povinný" in response.data.decode()
 
@@ -564,18 +567,15 @@ class TestEventEditExtended:
 
 # ── Transition: edge cases ────────────────────────────────────────────────────
 
+
 class TestEventTransitionExtended:
     def test_transition_404_for_missing_event(self, admin_client):
-        response = admin_client.post(
-            "/events/999999/transition", data={"target_status": "PUBLISHED"}
-        )
+        response = admin_client.post("/events/999999/transition", data={"target_status": "PUBLISHED"})
         assert response.status_code == 404
 
     def test_transition_invalid_status_400(self, app, admin_client):
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
-        response = admin_client.post(
-            f"/events/{event_id}/transition", data={"target_status": "NOT_VALID_STATUS"}
-        )
+        response = admin_client.post(f"/events/{event_id}/transition", data={"target_status": "NOT_VALID_STATUS"})
         assert response.status_code == 400
 
     def test_transition_not_allowed_flashes(self, app, admin_client):
@@ -591,6 +591,7 @@ class TestEventTransitionExtended:
 
 
 # ── Cancel ────────────────────────────────────────────────────────────────────
+
 
 class TestEventCancel:
     def test_member_cannot_cancel(self, app, member_client):
@@ -620,6 +621,7 @@ class TestEventCancel:
 
 # ── Restore ───────────────────────────────────────────────────────────────────
 
+
 class TestEventRestore:
     def test_member_cannot_restore(self, app, member_client):
         event_id = _make_event_in_status(app, EventStatus.CANCELLED)
@@ -648,6 +650,7 @@ class TestEventRestore:
 
 # ── Calendar feed ─────────────────────────────────────────────────────────────
 
+
 class TestCalendarFeedExtended:
     def test_feed_returns_json_for_admin(self, app, admin_client):
         _make_event_in_status(app, EventStatus.PUBLISHED)
@@ -668,6 +671,7 @@ class TestCalendarFeedExtended:
 
 
 # ── Edit spot ─────────────────────────────────────────────────────────────────
+
 
 class TestEditSpot:
     def _create_event_with_spot(self, app) -> tuple[int, int]:
@@ -691,16 +695,12 @@ class TestEditSpot:
 
     def test_member_cannot_edit_spot(self, app, member_client):
         event_id, spot_id = self._create_event_with_spot(app)
-        response = member_client.post(
-            f"/events/{event_id}/spots/{spot_id}/edit", data={}
-        )
+        response = member_client.post(f"/events/{event_id}/spots/{spot_id}/edit", data={})
         assert response.status_code == 403
 
     def test_spot_404_for_missing(self, app, admin_client):
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
-        response = admin_client.post(
-            f"/events/{event_id}/spots/999999/edit", data={"description": "X"}
-        )
+        response = admin_client.post(f"/events/{event_id}/spots/999999/edit", data={"description": "X"})
         assert response.status_code == 404
 
     def test_edit_spot_saves_description(self, app, admin_client):
@@ -717,6 +717,7 @@ class TestEditSpot:
 
 
 # ── Delete spot ───────────────────────────────────────────────────────────────
+
 
 class TestDeleteSpot:
     def _create_event_with_spot(self, app) -> tuple[int, int]:
@@ -750,15 +751,14 @@ class TestDeleteSpot:
 
     def test_delete_spot_succeeds(self, app, admin_client):
         event_id, spot_id = self._create_event_with_spot(app)
-        response = admin_client.post(
-            f"/events/{event_id}/spots/{spot_id}/delete", follow_redirects=False
-        )
+        response = admin_client.post(f"/events/{event_id}/spots/{spot_id}/delete", follow_redirects=False)
         assert response.status_code == 302
         with app.app_context():
             assert db.session.get(EventSpot, spot_id) is None
 
 
 # ── Equipment plan: extended ──────────────────────────────────────────────────
+
 
 class TestEquipmentPlanExtended:
     def _make_event_and_type(self, app):
@@ -812,6 +812,7 @@ class TestEquipmentPlanExtended:
 
 # ── Equipment assign: extended ────────────────────────────────────────────────
 
+
 class TestEquipmentAssignExtended:
     def _make_event_type_item(self, app):
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
@@ -841,9 +842,7 @@ class TestEquipmentAssignExtended:
 
     def test_unassign_no_item_id_flashes(self, app, admin_client):
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
-        response = admin_client.post(
-            f"/events/{event_id}/equipment/unassign", data={}, follow_redirects=True
-        )
+        response = admin_client.post(f"/events/{event_id}/equipment/unassign", data={}, follow_redirects=True)
         assert response.status_code == 200
         assert "Chybí" in response.data.decode() or "položka" in response.data.decode()
 
@@ -923,8 +922,7 @@ class TestEventChangedNotification:
         before_count = 0
         with app.app_context():
             before_count = db.session.scalar(
-                db.select(db.func.count(OutboxEmail.id))
-                .where(OutboxEmail.notification_type == "event_changed")
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
 
         admin_client.post(
@@ -935,8 +933,7 @@ class TestEventChangedNotification:
 
         with app.app_context():
             after_count = db.session.scalar(
-                db.select(db.func.count(OutboxEmail.id))
-                .where(OutboxEmail.notification_type == "event_changed")
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
         assert after_count == before_count + 1
 
@@ -978,8 +975,7 @@ class TestEventChangedNotification:
 
         with app.app_context():
             before_count = db.session.scalar(
-                db.select(db.func.count(OutboxEmail.id))
-                .where(OutboxEmail.notification_type == "event_changed")
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
 
         # Submit with identical data — no real change
@@ -991,8 +987,7 @@ class TestEventChangedNotification:
 
         with app.app_context():
             after_count = db.session.scalar(
-                db.select(db.func.count(OutboxEmail.id))
-                .where(OutboxEmail.notification_type == "event_changed")
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
         assert after_count == before_count  # nothing enqueued
 
@@ -1068,6 +1063,7 @@ class TestEventTypes:
 
 
 # ── Delete draft event ────────────────────────────────────────────────────────
+
 
 class TestDeleteDraftEvent:
     def _create_draft(self, app) -> int:
@@ -1182,9 +1178,7 @@ class TestEventSplit:
             assert part1.end_datetime.hour in (12, 13, 14)  # 14:00 local = 12:00 UTC in summer
 
             # Find part2
-            part2 = db.session.scalar(
-                db.select(Event).where(Event.name.like("%2/2%"))
-            )
+            part2 = db.session.scalar(db.select(Event).where(Event.name.like("%2/2%")))
             assert part2 is not None
             assert part2.status == EventStatus.ASSIGNMENTS_OPEN
             assert part2.start_datetime == part1.end_datetime
@@ -1283,9 +1277,7 @@ class TestUserPickerDuplicateFiltering:
 
             admin_role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
             # Get the admin user (the one admin_client logs in as)
-            admin_user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "admin@test.com")
-            )
+            admin_user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
 
             # Create a second active user
             member = UserAccount(email="member_picker@test.com", name="Member Picker", is_active=True)

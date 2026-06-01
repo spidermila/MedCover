@@ -1,10 +1,15 @@
 """Tests for authentication routes: login, logout, forgot-password, register."""
+
+import secrets
+
+from app.config import LOGIN_MAX_ATTEMPTS, RESET_TOKEN_MINUTES
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db as _db
+from app.models.invite import RegistrationInvite
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _login
-from tests.conftest import _make_user
+from app.routes.auth import _RESET_SALT, _make_signed_token
+from tests.conftest import _login, _make_user
 
 
 class TestLoginPage:
@@ -162,7 +167,7 @@ class TestBruteForceProtection:
 
     def test_account_locked_after_max_attempts(self, app, client):
         """After LOGIN_MAX_ATTEMPTS failures the account is locked."""
-        from app.config import LOGIN_MAX_ATTEMPTS
+
         with app.app_context():
             _make_user("lock@example.com", "Lock User", Role.MEMBER)
 
@@ -176,7 +181,7 @@ class TestBruteForceProtection:
 
     def test_locked_account_rejects_correct_password(self, app, client):
         """Even the correct password is rejected while the account is locked."""
-        from app.config import LOGIN_MAX_ATTEMPTS
+
         with app.app_context():
             _make_user("locked2@example.com", "Lock2 User", Role.MEMBER)
 
@@ -207,9 +212,7 @@ class TestBruteForceProtection:
 
         # Check counter was reset in DB
         with app.app_context():
-            user = _db.session.scalar(
-                _db.select(UserAccount).where(UserAccount.email == "good@example.com")
-            )
+            user = _db.session.scalar(_db.select(UserAccount).where(UserAccount.email == "good@example.com"))
             assert user is not None
             assert user.failed_login_attempts == 0
             assert user.login_locked_until is None
@@ -223,9 +226,7 @@ class TestBruteForceProtection:
         self._post_login(client, "count@example.com", "wrong")
 
         with app.app_context():
-            user = _db.session.scalar(
-                _db.select(UserAccount).where(UserAccount.email == "count@example.com")
-            )
+            user = _db.session.scalar(_db.select(UserAccount).where(UserAccount.email == "count@example.com"))
             assert user is not None
             assert user.failed_login_attempts == 2
 
@@ -241,9 +242,6 @@ class TestRegisterFlow:
 
     def _make_invite(self, app, admin_email: str = "admin@test.com") -> str:
         """Create a valid registration invite and return its token."""
-        from app.models.invite import RegistrationInvite
-        from app.models.role import Role
-        from tests.conftest import _make_user
 
         with app.app_context():
             _make_user(admin_email, "Test Admin", Role.ADMIN)
@@ -321,15 +319,11 @@ class TestResetPassword:
     """Password reset via signed token."""
 
     def _make_reset_token(self, app) -> str:
-        import secrets
-        from app.models.role import Role
-        from tests.conftest import _make_user
 
         with app.app_context():
             _make_user("reset@example.com", "Reset User", Role.MEMBER)
             user = _db.session.scalar(_db.select(UserAccount).where(UserAccount.email == "reset@example.com"))
-            from app.routes.auth import _make_signed_token, _RESET_SALT
-            from app.config import RESET_TOKEN_MINUTES
+
             nonce = secrets.token_hex(16)
             user.password_reset_nonce = nonce
             _db.session.commit()

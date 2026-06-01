@@ -3,27 +3,20 @@ from __future__ import annotations
 import os
 import secrets
 import time as _time
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from itertools import groupby as itertools_groupby
 from operator import attrgetter
 
 import click
-from flask import Flask
-from flask import g
-from flask import redirect
-from flask import request
-from flask import url_for
+from flask import Flask, g, redirect, request, url_for
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from .config import config_by_name
-from .extensions import csrf
-from .extensions import db
-from .extensions import login_manager
+from .extensions import csrf, db, login_manager
 from .extensions import mail as _flask_mail
 from .extensions import migrate
 from .models.assignment import Assignment
+
 # Computed once at import/startup; used as a cache-busting version for static files.
 _STARTUP_TS: str = str(int(_time.time()))
 
@@ -58,6 +51,7 @@ def create_app(
         # a correctly configured Flask-Mail on startup.
         try:
             from .models.settings import get_settings
+
             _settings = get_settings()
             if _settings and _settings.smtp_configured:
                 _settings.apply_to_app(app)
@@ -65,6 +59,7 @@ def create_app(
             pass  # DB not ready yet (first migration run)
 
     from .routes import register_blueprints
+
     register_blueprints(app)
     register_cli_commands(app)
 
@@ -73,6 +68,7 @@ def create_app(
         """Inject app config and feature flags into all templates."""
         try:
             from .models.settings import get_settings as _gs
+
             _s = _gs()
             feedback_enabled = _s.feedback_enabled
         except Exception:
@@ -91,6 +87,7 @@ def create_app(
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         from .utils import get_app_tz  # noqa: PLC0415
+
         return dt.astimezone(get_app_tz()).strftime(fmt)
 
     @app.template_filter("midpoint_iso")
@@ -98,6 +95,7 @@ def create_app(
         """Return the midpoint between event.start_datetime and event.end_datetime
         formatted as 'YYYY-MM-DDTHH:MM' for a datetime-local input."""
         from app.models.event import Event as _Event
+
         if not isinstance(event, _Event):
             return ""
         start = event.start_datetime
@@ -108,6 +106,7 @@ def create_app(
             end = end.replace(tzinfo=timezone.utc)
         mid = start + (end - start) / 2
         from .utils import get_app_tz  # noqa: PLC0415
+
         return mid.astimezone(get_app_tz()).strftime("%Y-%m-%dT%H:%M")
 
     _CZECH_DAY_ABBR = ["po", "út", "st", "čt", "pá", "so", "ne"]
@@ -120,6 +119,7 @@ def create_app(
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         from .utils import get_app_tz  # noqa: PLC0415
+
         return _CZECH_DAY_ABBR[dt.astimezone(get_app_tz()).weekday()]
 
     @app.template_filter("cznum")
@@ -225,9 +225,7 @@ def create_app(
 
         # Allow static files, setup pages, and health probe through unconditionally
         if request.endpoint and (
-            request.endpoint.startswith("setup.")
-            or request.endpoint == "static"
-            or request.endpoint == "main.health"
+            request.endpoint.startswith("setup.") or request.endpoint == "static" or request.endpoint == "main.health"
         ):
             return None
 
@@ -245,8 +243,12 @@ def create_app(
 
         # Keep Flask-Mail config in sync with DB — skip reinit when SMTP settings unchanged.
         fingerprint = (
-            settings.smtp_server, settings.smtp_port, settings.smtp_use_tls,
-            settings.smtp_username, settings.smtp_password_enc, settings.smtp_default_sender,
+            settings.smtp_server,
+            settings.smtp_port,
+            settings.smtp_use_tls,
+            settings.smtp_username,
+            settings.smtp_password_enc,
+            settings.smtp_default_sender,
         )
         if app.config.get("_SMTP_FINGERPRINT") != fingerprint:
             settings.apply_to_app(app)
@@ -269,6 +271,7 @@ def register_cli_commands(app: Flask) -> None:
         Exits non-zero and prints a clear error if anything is missing.
         """
         import sys
+
         from sqlalchemy import inspect as sa_inspect
 
         inspector = sa_inspect(db.engine)
@@ -317,11 +320,13 @@ def register_cli_commands(app: Flask) -> None:
             docker compose exec web flask send-test-email <your-address@domain.com>
         """
         import socket
-        import time
         import sys
+        import time
+
         from flask_mail import Message
-        from app.models.settings import get_settings
+
         from app.extensions import mail as _flask_mail
+        from app.models.settings import get_settings
 
         settings = get_settings()
         if not settings.smtp_configured:

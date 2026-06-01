@@ -9,19 +9,14 @@ Provides:
   GET  /dev/                     — lists available dev accounts
   POST /dev/login-as/<role>      — instantly logs in as the dev account for that role
 """
+
 from __future__ import annotations
 
-from flask import abort
-from flask import Blueprint
-from flask import flash
-from flask import redirect
-from flask import Response
-from flask import url_for
+from flask import Blueprint, Response, abort, flash, redirect, url_for
 from flask_login import login_user
 
 from app.extensions import db
 from app.models.user import UserAccount
-
 
 dev_bp = Blueprint("dev", __name__, url_prefix="/dev")
 
@@ -78,9 +73,7 @@ def login_as(role: str) -> Response:
     if account is None:
         abort(404)
 
-    user = db.session.scalar(
-        db.select(UserAccount).where(UserAccount.email == account["email"])
-    )
+    user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == account["email"]))
     if user is None:
         flash(
             f"Dev account '{account['email']}' not found. Run scripts/seed_dev.py first.",

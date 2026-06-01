@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Mapped
@@ -28,8 +27,12 @@ class Assignment(db.Model):  # type: ignore[misc]
     debriefing_email_sent = db.Column(db.Boolean, default=False, nullable=False)
 
     spot = db.relationship("EventSpot", back_populates="assignment")
-    user: Mapped[UserAccount] = db.relationship("UserAccount", foreign_keys=[user_id], back_populates="assignments", lazy="selectin")
-    assigned_by: Mapped[UserAccount | None] = db.relationship("UserAccount", foreign_keys=[assigned_by_id], back_populates="assignments_made")
+    user: Mapped[UserAccount] = db.relationship(
+        "UserAccount", foreign_keys=[user_id], back_populates="assignments", lazy="selectin"
+    )
+    assigned_by: Mapped[UserAccount | None] = db.relationship(
+        "UserAccount", foreign_keys=[assigned_by_id], back_populates="assignments_made"
+    )
     debriefing: Mapped[DebriefingRecord | None] = db.relationship(
         "DebriefingRecord", back_populates="assignment", uselist=False, cascade="all, delete-orphan"
     )
@@ -44,6 +47,7 @@ class DebriefingRecord(db.Model):  # type: ignore[misc]
     Only users with debriefing.view_all (Debriefing Manager) may read these records.
     Submission is final — no editing after submit.
     """
+
     __tablename__ = "debriefing_record"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -64,7 +68,9 @@ class DebriefingRecord(db.Model):  # type: ignore[misc]
     )
 
     assignment = db.relationship("Assignment", back_populates="debriefing")
-    submitted_by = db.relationship("UserAccount", foreign_keys=[submitted_by_id], back_populates="submitted_debriefings")
+    submitted_by = db.relationship(
+        "UserAccount", foreign_keys=[submitted_by_id], back_populates="submitted_debriefings"
+    )
 
     def __repr__(self) -> str:
         return f"<DebriefingRecord assignment={self.assignment_id} grade={self.grade}>"

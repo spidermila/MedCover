@@ -1,4 +1,5 @@
 """Shared utility helpers for the MedCover application."""
+
 from __future__ import annotations
 
 from typing import TypeVar
@@ -20,7 +21,8 @@ def get_app_tz() -> ZoneInfo:
     initial setup before the DB is seeded, or in CLI commands).
     """
     try:
-        from app.models.settings import get_settings  # noqa: PLC0415
+        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
+
         settings = get_settings()
         if settings and settings.timezone:
             return ZoneInfo(settings.timezone)
@@ -38,11 +40,48 @@ CS_COLLATION = "cs-x-icu"
 
 # Czech alphabet in correct order including digraph 'ch'.
 _CS_ALPHABET: list[str] = [
-    "a", "á", "b", "c", "č", "d", "ď", "e", "é", "ě",
-    "f", "g", "h", "ch", "i", "í", "j", "k", "l", "m",
-    "n", "ň", "o", "ó", "p", "q", "r", "ř", "s", "š",
-    "t", "ť", "u", "ú", "ů", "v", "w", "x", "y", "ý",
-    "z", "ž",
+    "a",
+    "á",
+    "b",
+    "c",
+    "č",
+    "d",
+    "ď",
+    "e",
+    "é",
+    "ě",
+    "f",
+    "g",
+    "h",
+    "ch",
+    "i",
+    "í",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "ň",
+    "o",
+    "ó",
+    "p",
+    "q",
+    "r",
+    "ř",
+    "s",
+    "š",
+    "t",
+    "ť",
+    "u",
+    "ú",
+    "ů",
+    "v",
+    "w",
+    "x",
+    "y",
+    "ý",
+    "z",
+    "ž",
 ]
 _CS_RANK: dict[str, int] = {ch: i for i, ch in enumerate(_CS_ALPHABET)}
 _CS_FALLBACK = len(_CS_ALPHABET)
@@ -107,6 +146,7 @@ def external_url_for(endpoint: str, **values: object) -> str:
 
     try:
         from app.models.settings import get_settings
+
         base: str | None = get_settings().app_base_url
     except Exception:
         base = None
@@ -130,11 +170,7 @@ def diff_changes(before: dict, after: dict) -> dict:
         → {"name": ["Old", "New"]}
     """
     all_keys = set(list(before.keys()) + list(after.keys()))
-    return {
-        k: [before.get(k), after.get(k)]
-        for k in sorted(all_keys)
-        if str(before.get(k)) != str(after.get(k))
-    }
+    return {k: [before.get(k), after.get(k)] for k in sorted(all_keys) if str(before.get(k)) != str(after.get(k))}
 
 
 def audit(
@@ -150,17 +186,20 @@ def audit(
     the audit row is rolled back together with the business change on failure.
     """
     from flask_login import current_user
+
     from app.extensions import db
     from app.models.audit import AuditLogEntry
 
-    db.session.add(AuditLogEntry(
-        actor_id=current_user.id,
-        action_type=action,
-        entity_type=entity_type,
-        entity_id=str(entity_id),
-        summary=summary,
-        changes_json=changes,
-    ))
+    db.session.add(
+        AuditLogEntry(
+            actor_id=current_user.id,
+            action_type=action,
+            entity_type=entity_type,
+            entity_id=str(entity_id),
+            summary=summary,
+            changes_json=changes,
+        )
+    )
 
 
 def get_or_404(model: type[T], pk: object) -> T:
@@ -169,6 +208,7 @@ def get_or_404(model: type[T], pk: object) -> T:
     Standard idiom for view functions to resolve a URL parameter to an entity.
     """
     from flask import abort
+
     from app.extensions import db
 
     obj = db.session.get(model, pk)

@@ -33,8 +33,8 @@ def test_create_event(logged_in_page, base_url):
     page.evaluate("""() => {
         const start = document.querySelector('#start_datetime');
         const end = document.querySelector('#end_datetime');
-        start._flatpickr.setDate('2026-12-01 09:00', true);
-        end._flatpickr.setDate('2026-12-01 17:00', true);
+        if (start._flatpickr) start._flatpickr.setDate('2026-12-01 09:00', true);
+        if (end._flatpickr) end._flatpickr.setDate('2026-12-01 17:00', true);
     }""")
 
     # Verify flatpickr values are committed before submitting
@@ -52,13 +52,11 @@ def test_create_event(logged_in_page, base_url):
 
     # Wait for navigation after form submit; retry click once if webkit doesn't fire
     try:
-        page.wait_for_url(lambda url: "/events/" in url and "/events/create" not in url,
-                          timeout=5000)
+        page.wait_for_url(lambda url: "/events/" in url and "/events/create" not in url, timeout=5000)
     except Exception:
         # Webkit on Linux sometimes misses the first click
         page.locator('button[type="submit"][value="create"]').click()
-        page.wait_for_url(lambda url: "/events/" in url and "/events/create" not in url,
-                          timeout=10000)
+        page.wait_for_url(lambda url: "/events/" in url and "/events/create" not in url, timeout=10000)
 
     # Wait for navigation after form submit
     page.wait_for_load_state("load", timeout=10000)

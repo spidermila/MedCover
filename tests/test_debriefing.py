@@ -1,20 +1,16 @@
 """Tests for the debriefing blueprint — redesigned two-part form, final submission."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from app.extensions import db
-from app.models.assignment import Assignment
-from app.models.assignment import DebriefingRecord
+from app.models.assignment import Assignment, DebriefingRecord
 from app.models.audit import AuditLogEntry
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.master_event import MasterEvent
 from app.models.role import Role
-from tests.conftest import _login
-from tests.conftest import _make_user
+from tests.conftest import _login, _make_user
 
 _ASSIGNED_EMAIL = "assigned_member@test.com"
 _DEBRIEF_MGR_EMAIL = "debrief_manager@test.com"
@@ -87,6 +83,7 @@ _VALID_FORM = {
 
 # ── Access control ────────────────────────────────────────────────────────────
 
+
 class TestDebriefingAccess:
     def test_submit_requires_login(self, app, client):
         _, _, assignment_id = _setup_completed_assignment(app)
@@ -150,6 +147,7 @@ class TestDebriefingAccess:
 
 # ── Submit ────────────────────────────────────────────────────────────────────
 
+
 class TestDebriefingSubmit:
     def test_valid_submission_creates_record(self, app):
         _, _, assignment_id = _setup_completed_assignment(app)
@@ -175,7 +173,8 @@ class TestDebriefingSubmit:
         assert "Hodnocení".encode() in resp.data
         with app.app_context():
             count = db.session.scalar(
-                db.select(db.func.count()).select_from(DebriefingRecord)
+                db.select(db.func.count())
+                .select_from(DebriefingRecord)
                 .where(DebriefingRecord.assignment_id == assignment_id)
             )
             assert count == 0
@@ -189,7 +188,8 @@ class TestDebriefingSubmit:
             assert resp.status_code == 200
             with app.app_context():
                 count = db.session.scalar(
-                    db.select(db.func.count()).select_from(DebriefingRecord)
+                    db.select(db.func.count())
+                    .select_from(DebriefingRecord)
                     .where(DebriefingRecord.assignment_id == assignment_id)
                 )
                 assert count == 0
@@ -250,6 +250,7 @@ class TestDebriefingSubmit:
 
 # ── RP section ────────────────────────────────────────────────────────────────
 
+
 class TestDebriefingRPSection:
     def test_rp_section_visible_for_responsible_person(self, app):
         _, _, assignment_id = _setup_completed_assignment(app, is_rp=True)
@@ -295,7 +296,8 @@ class TestDebriefingRPSection:
         assert resp.status_code == 200
         with app.app_context():
             count = db.session.scalar(
-                db.select(db.func.count()).select_from(DebriefingRecord)
+                db.select(db.func.count())
+                .select_from(DebriefingRecord)
                 .where(DebriefingRecord.assignment_id == assignment_id)
             )
             assert count == 0
@@ -313,13 +315,15 @@ class TestDebriefingRPSection:
         assert resp.status_code == 200
         with app.app_context():
             count = db.session.scalar(
-                db.select(db.func.count()).select_from(DebriefingRecord)
+                db.select(db.func.count())
+                .select_from(DebriefingRecord)
                 .where(DebriefingRecord.assignment_id == assignment_id)
             )
             assert count == 0
 
 
 # ── Manage page (Debriefing Manager only) ─────────────────────────────────────
+
 
 class TestDebriefingManage:
     def test_manage_requires_login(self, client):
@@ -366,7 +370,7 @@ class TestDebriefingEventTypes:
 
     def _setup_training_assignment(self, app, *, is_rp: bool = False):
         """Like _setup_completed_assignment but for a TRAINING event."""
-        from app.models.event import EventType
+
         with app.app_context():
             me = MasterEvent(name="Test ME Training")
             db.session.add(me)
@@ -388,9 +392,7 @@ class TestDebriefingEventTypes:
             spot = EventSpot(event_id=event.id)
             db.session.add(spot)
             db.session.flush()
-            assignment = Assignment(
-                spot_id=spot.id, user_id=assigned.id, assigned_by_id=creator.id
-            )
+            assignment = Assignment(spot_id=spot.id, user_id=assigned.id, assigned_by_id=creator.id)
             db.session.add(assignment)
             db.session.commit()
             return event.id, spot.id, assignment.id
@@ -408,9 +410,7 @@ class TestDebriefingEventTypes:
         assert resp.status_code == 200
         with app.app_context():
             record = db.session.scalar(
-                db.select(DebriefingRecord).where(
-                    DebriefingRecord.assignment_id == assignment_id
-                )
+                db.select(DebriefingRecord).where(DebriefingRecord.assignment_id == assignment_id)
             )
             assert record is not None
             ev = db.session.get(Event, event_id)
@@ -419,7 +419,7 @@ class TestDebriefingEventTypes:
 
     def test_presentation_rp_section_not_shown(self, app):
         """PRESENTATION events: no RP section even for responsible person."""
-        from app.models.event import EventType
+
         with app.app_context():
             me = MasterEvent(name="Pres ME")
             db.session.add(me)
@@ -441,9 +441,7 @@ class TestDebriefingEventTypes:
             spot = EventSpot(event_id=event.id)
             db.session.add(spot)
             db.session.flush()
-            assignment = Assignment(
-                spot_id=spot.id, user_id=assigned.id, assigned_by_id=creator.id
-            )
+            assignment = Assignment(spot_id=spot.id, user_id=assigned.id, assigned_by_id=creator.id)
             db.session.add(assignment)
             db.session.commit()
             assignment_id = assignment.id

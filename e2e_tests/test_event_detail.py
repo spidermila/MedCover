@@ -4,6 +4,7 @@ Regression coverage for:
 - PR #218: label accessibility on detail page
 - PR #210: equipment availability display
 """
+
 import re
 
 
@@ -12,8 +13,7 @@ def test_event_detail_renders_sections(logged_in_page, base_url):
     page = logged_in_page
 
     # Navigate to events list (include all statuses to find seeded events)
-    page.goto(f"{base_url}/events/?statuses=DRAFT,PUBLISHED,ASSIGNMENTS_OPEN,"
-              "ASSIGNMENTS_CLOSED,COMPLETED,CANCELLED")
+    page.goto(f"{base_url}/events/?statuses=DRAFT,PUBLISHED,ASSIGNMENTS_OPEN," "ASSIGNMENTS_CLOSED,COMPLETED,CANCELLED")
 
     # Click the first event link
     first_event = page.locator("table tbody tr td a[href*='/events/']").first
@@ -43,7 +43,4 @@ def test_event_detail_has_action_buttons(logged_in_page, base_url):
 
     # Admin should see the edit link (shown for non-completed, non-cancelled)
     edit_btn = page.locator('a[href*="/edit"]')
-    assert edit_btn.count() > 0, (
-        f"Admin should see 'Upravit' button on DRAFT event detail. "
-        f"URL: {page.url}"
-    )
+    assert edit_btn.count() > 0, f"Admin should see 'Upravit' button on DRAFT event detail. " f"URL: {page.url}"

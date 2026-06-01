@@ -7,27 +7,17 @@ GET  /work-report/           — form + list of already-generated reports
 POST /work-report/generate   — build xlsx, redirect back to index
 GET  /work-report/download   — stream the generated file to the browser
 """
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Blueprint
-from flask import current_app
-from flask import flash
-from flask import redirect
-from flask import render_template
-from flask import request
-from flask import send_from_directory
-from flask import url_for
-from flask_login import current_user
-from flask_login import login_required
+from flask import Blueprint, current_app, flash, redirect, render_template, request, send_from_directory, url_for
+from flask_login import current_user, login_required
 
 from app.utils import require_permission
-from app.work_report_generator import CZ_MONTH_NAMES
-from app.work_report_generator import generate_work_report
+from app.work_report_generator import CZ_MONTH_NAMES, generate_work_report
 
 work_report_bp = Blueprint("work_report", __name__, url_prefix="/work-report")
 
@@ -53,13 +43,15 @@ def _list_reports(user_id: str) -> list[dict]:
         except ValueError:
             continue
         expires_at = mtime + timedelta(hours=_EXPIRY_HOURS)
-        reports.append({
-            "year": year,
-            "month": month,
-            "month_name": CZ_MONTH_NAMES[month],
-            "generated_at": mtime,
-            "expires_at": expires_at,
-        })
+        reports.append(
+            {
+                "year": year,
+                "month": month,
+                "month_name": CZ_MONTH_NAMES[month],
+                "generated_at": mtime,
+                "expires_at": expires_at,
+            }
+        )
     return reports
 
 

@@ -1,15 +1,13 @@
 """Tests for the iCal calendar feed (/calendar/<token>.ics)."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
 from tests.conftest import _make_event_with_spot
@@ -25,6 +23,7 @@ def _make_member(app, email: str = "ical_member@test.com") -> object:
     """Create an active member user with an iCal token; return (id, token)."""
     with app.app_context():
         from app.models.role import Role
+
         role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
         user = UserAccount(email=email, name="iCal Member", is_active=True)
         user.set_password("testpass123")
@@ -35,6 +34,7 @@ def _make_member(app, email: str = "ical_member@test.com") -> object:
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
+
 
 class TestICalFeed:
     def test_invalid_token_returns_404(self, client):
@@ -85,7 +85,9 @@ class TestICalFeed:
 
     def test_location_included_when_set(self, app, client):
         user_id, token = _make_member(app, "ical_loc@test.com")
-        event_id, spot_id = _make_event_with_spot(app, status=EventStatus.ASSIGNMENTS_OPEN, name="Location Event", address="Brno, náměstí Svobody")
+        event_id, spot_id = _make_event_with_spot(
+            app, status=EventStatus.ASSIGNMENTS_OPEN, name="Location Event", address="Brno, náměstí Svobody"
+        )
         _assign_user(app, user_id, spot_id)
 
         resp = client.get(f"/calendar/{token}.ics")
@@ -101,9 +103,7 @@ class TestICalFeed:
 class TestICalRegenerate:
     def test_regenerate_creates_new_token(self, app, member_client):
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "member@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             old_token = user.ical_token
 
         resp = member_client.post(
@@ -116,17 +116,13 @@ class TestICalRegenerate:
         assert "/profile" in resp.headers["Location"]
 
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "member@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             assert user.ical_token != old_token
             assert user.ical_token is not None
 
     def test_old_token_returns_404_after_regenerate(self, app, member_client):
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "member@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             old_token = user.ical_token
 
         member_client.post(
@@ -145,9 +141,7 @@ class TestICalRegenerate:
             follow_redirects=False,
         )
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "member@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             entry = db.session.scalar(
                 db.select(AuditLogEntry).where(
                     AuditLogEntry.entity_type == "UserAccount",
@@ -179,6 +173,7 @@ def _make_member_with_all_token(app, email: str = "ical_all@test.com") -> tuple[
     """Create an active member user with an ical_all_token; return (id, token)."""
     with app.app_context():
         from app.models.role import Role
+
         role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
         user = UserAccount(email=email, name="iCal All Member", is_active=True)
         user.set_password("testpass123")
@@ -199,6 +194,7 @@ class TestICalFeedArchivedExclusion:
             db.session.flush()
 
             from app.models.role import Role
+
             role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
             creator = UserAccount(email="archived_creator@test.com", name="Creator", is_active=True)
             creator.set_password("x")
@@ -275,6 +271,7 @@ class TestICalAllEventsFeed:
             db.session.flush()
 
             from app.models.role import Role
+
             role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
             creator = UserAccount(email="all_archived_creator@test.com", name="Creator", is_active=True)
             creator.set_password("x")
@@ -314,9 +311,7 @@ class TestICalRegenerateAll:
 
     def test_regenerate_all_creates_new_token(self, app, member_client):
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "member@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             user.regenerate_ical_all_token()
             db.session.commit()
             old_token = user.ical_all_token
@@ -330,9 +325,7 @@ class TestICalRegenerateAll:
         assert "/profile" in resp.headers["Location"]
 
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "member@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             assert user.ical_all_token != old_token
             assert user.ical_all_token is not None
 
@@ -356,9 +349,7 @@ class TestArchivedUserFeedAccess:
         """Archived user's personal iCal token should return 404."""
         _, token = _make_member(app, "ical_archived_user@test.com")
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "ical_archived_user@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "ical_archived_user@test.com"))
             user.is_archived = True
             user.is_active = False
             db.session.commit()
@@ -384,9 +375,7 @@ class TestArchivedUserFeedAccess:
         """User archived without is_active=False (hypothetical) is still blocked."""
         _, token = _make_member(app, "ical_archived_active@test.com")
         with app.app_context():
-            user = db.session.scalar(
-                db.select(UserAccount).where(UserAccount.email == "ical_archived_active@test.com")
-            )
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "ical_archived_active@test.com"))
             user.is_archived = True
             # Deliberately leave is_active=True to test the is_archived guard independently
             db.session.commit()

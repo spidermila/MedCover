@@ -1,4 +1,5 @@
 """Tests for the application settings route (/admin/settings/)."""
+
 from __future__ import annotations
 
 import sqlalchemy as sa

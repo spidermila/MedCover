@@ -21,19 +21,16 @@ def test_paid_toggle_switches_label(logged_in_page, base_url):
 
     # Toggle via JS (Playwright click on Bootstrap switch labels is unreliable)
     page.evaluate(
-        'var cb = document.getElementById("paid");'
-        'cb.checked = true;'
-        'cb.dispatchEvent(new Event("change"));'
+        'var cb = document.getElementById("paid");' "cb.checked = true;" 'cb.dispatchEvent(new Event("change"));'
     )
     page.wait_for_timeout(300)
-    assert "is-paid" in (label.get_attribute("class") or ""), \
-        f"Expected is-paid class, got: {label.get_attribute('class')}"
+    assert "is-paid" in (
+        label.get_attribute("class") or ""
+    ), f"Expected is-paid class, got: {label.get_attribute('class')}"
 
     # Toggle back
     page.evaluate(
-        'var cb = document.getElementById("paid");'
-        'cb.checked = false;'
-        'cb.dispatchEvent(new Event("change"));'
+        'var cb = document.getElementById("paid");' "cb.checked = false;" 'cb.dispatchEvent(new Event("change"));'
     )
     page.wait_for_timeout(300)
     assert "is-paid" not in (label.get_attribute("class") or "")
@@ -68,28 +65,21 @@ def test_ted_button_sets_datetime(logged_in_page, base_url):
 
     # Wait for flatpickr to initialize AND fpNow to be available
     page.wait_for_function(
-        'typeof fpNow === "function" '
-        '&& document.getElementById("start_datetime")._flatpickr !== undefined',
+        'typeof fpNow === "function" ' '&& document.getElementById("start_datetime")._flatpickr !== undefined',
         timeout=15000,
     )
 
     # The hidden input should be empty initially
-    initial_val = page.evaluate(
-        "document.getElementById('start_datetime').value"
-    )
+    initial_val = page.evaluate("document.getElementById('start_datetime').value")
     assert initial_val == ""
 
     # Call fpNow directly — Playwright click doesn't reliably trigger
     # the DOMContentLoaded-bound listener across all browsers
-    page.evaluate(
-        'fpNow(document.querySelector(".btn-fpnow"))'
-    )
+    page.evaluate('fpNow(document.querySelector(".btn-fpnow"))')
     page.wait_for_timeout(300)
 
     # flatpickr sets the hidden original input value
-    new_val = page.evaluate(
-        "document.getElementById('start_datetime').value"
-    )
+    new_val = page.evaluate("document.getElementById('start_datetime').value")
     assert new_val != "", "Teď button did not set a datetime value"
 
 

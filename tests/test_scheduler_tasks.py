@@ -1,22 +1,22 @@
 """Additional tests for scheduler_tasks.py (run_send_reminders + no-eligible path)."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 
 from app.extensions import db
+from app.models.assignment import Assignment
 from app.models.digest import get_digest_schedule
-from app.models.event import Event
-from app.models.event import EventSpot
-from app.models.event import EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.outbox import OutboxEmail
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
+from app.scheduler_tasks import run_admin_digest, run_send_reminders
 from tests.conftest import _make_user
 
 
@@ -62,7 +62,6 @@ def _make_open_event_with_rp(app, start_dt: datetime) -> int:
 
 def test_send_reminders_returns_zero_no_events(app):
     """No ASSIGNMENTS_OPEN events → returns 0."""
-    from app.scheduler_tasks import run_send_reminders
 
     with app.app_context():
         now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
@@ -72,7 +71,6 @@ def test_send_reminders_returns_zero_no_events(app):
 
 def test_send_reminders_skips_when_window_not_open(app):
     """Reminder window hasn't opened yet → returns 0."""
-    from app.scheduler_tasks import run_send_reminders
 
     now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
     # Event starts 25h from now, default reminder at 24h → window opens in 1h
@@ -86,8 +84,6 @@ def test_send_reminders_skips_when_window_not_open(app):
 
 def test_send_reminders_sends_when_window_open(app):
     """Reminder window has opened → enqueues reminder email."""
-    from app.scheduler_tasks import run_send_reminders
-    from app.models.outbox import OutboxEmail
 
     now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
     # Event starts 23h from now, default reminder at 24h → window opened 1h ago
@@ -104,7 +100,6 @@ def test_send_reminders_sends_when_window_open(app):
 
 def test_send_reminders_skips_already_sent(app):
     """Reminder already recorded in reminder_sent_json → not sent again."""
-    from app.scheduler_tasks import run_send_reminders
 
     now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
     start = now + timedelta(hours=23)
@@ -122,8 +117,6 @@ def test_send_reminders_skips_already_sent(app):
 
 def test_send_reminders_skips_fully_filled_event(app):
     """All mandatory spots filled → no reminder sent."""
-    from app.scheduler_tasks import run_send_reminders
-    from app.models.assignment import Assignment
 
     now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
     start = now + timedelta(hours=23)
@@ -145,7 +138,6 @@ def test_send_reminders_skips_fully_filled_event(app):
 
 def test_run_admin_digest_no_eligible_recipients(app):
     """When no Admin-role users exist, digest is skipped but last_sent_at is updated."""
-    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         schedule = get_digest_schedule()

@@ -1,11 +1,14 @@
 """Tests for the user feedback feature."""
+
 from __future__ import annotations
 
 import uuid
 
+from flask import current_app
+
 from app.extensions import db
 from app.models.feedback import UserFeedback
-
+from app.models.settings import get_settings
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -167,12 +170,12 @@ class TestCommitHash:
 
     def test_git_commit_config_default(self, app):
         with app.app_context():
-            from flask import current_app
+
             assert current_app.config["GIT_COMMIT"] == "dev"
 
     def test_app_version_config(self, app):
         with app.app_context():
-            from flask import current_app
+
             version = current_app.config["APP_VERSION"]
             assert version and version != "unknown"
             parts = version.split(".")
@@ -202,12 +205,11 @@ class TestFeedbackAppVersion:
 
 class TestFeedbackEnabled:
     def _set_enabled(self, app, enabled: bool) -> None:
-        from app.models.settings import get_settings
-        from app.extensions import db as _db
+
         with app.app_context():
             s = get_settings()
             s.feedback_enabled = enabled
-            _db.session.commit()
+            db.session.commit()
 
     def test_form_accessible_when_enabled(self, app, member_client):
         self._set_enabled(app, True)

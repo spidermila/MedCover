@@ -11,11 +11,10 @@ Usage:
 Or from within the Docker web container:
     docker compose exec web python scripts/seed_dev.py
 """
+
 import os
 import sys
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
 # Allow running from repo root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,20 +22,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Load .env so DATABASE_URL / SECRET_KEY are available when running outside Docker
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass  # dotenv not installed — env vars must be set manually
 
 from app import create_app
 from app.extensions import db
-from app.models.user import UserAccount
-from app.models.role import Role, Permission, ALL_PERMISSIONS, ROLE_PERMISSIONS
-from app.models.master_event import MasterEvent
-from app.models.event import Event, EventStatus, EventSpot
-from app.models.qualification import Qualification
 from app.models.assignment import Assignment, DebriefingRecord
-from app.models.equipment import EquipmentType, EquipmentItem, EquipmentCategory
+from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentType
+from app.models.event import Event, EventSpot, EventStatus
+from app.models.master_event import MasterEvent
+from app.models.qualification import Qualification
+from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS, Permission, Role
 from app.models.settings import AppSettings
+from app.models.user import UserAccount
 from app.routes.dev import DEV_ACCOUNTS
 
 
@@ -168,21 +168,11 @@ def seed() -> None:
         # ── Credentials ───────────────────────────────────────────────────────
         print("Seeding qualifications...")
         c_zdravotnik = _get_or_create_qual(
-            "Zdravotník zotavovacích akcí",
-            "Základní zdravotnická způsobilost pro zotavovací akce."
+            "Zdravotník zotavovacích akcí", "Základní zdravotnická způsobilost pro zotavovací akce."
         )
-        c_zachranar = _get_or_create_qual(
-            "Záchranář",
-            "Zdravotní záchranář — rozšířená způsobilost."
-        )
-        c_lekar = _get_or_create_qual(
-            "Lékař",
-            "Absolvent lékařské fakulty, způsobilý k výkonu povolání lékaře."
-        )
-        c_ridic = _get_or_create_qual(
-            "Řidič sanitky",
-            "Oprávnění řídit sanitní vozidlo, řidičský průkaz sk. B+."
-        )
+        c_zachranar = _get_or_create_qual("Záchranář", "Zdravotní záchranář — rozšířená způsobilost.")
+        c_lekar = _get_or_create_qual("Lékař", "Absolvent lékařské fakulty, způsobilý k výkonu povolání lékaře.")
+        c_ridic = _get_or_create_qual("Řidič sanitky", "Oprávnění řídit sanitní vozidlo, řidičský průkaz sk. B+.")
         # Hierarchy: Záchranář can fill Zdravotník spot; Lékař can fill Záchranář spot
         if c_zachranar not in c_zdravotnik.parents:
             c_zdravotnik.parents.append(c_zachranar)
@@ -246,9 +236,7 @@ def seed() -> None:
             location: str,
             notes: str = "",
         ) -> EquipmentItem:
-            existing = db.session.scalar(
-                db.select(EquipmentItem).where(EquipmentItem.name == name)
-            )
+            existing = db.session.scalar(db.select(EquipmentItem).where(EquipmentItem.name == name))
             if existing:
                 return existing
             item = EquipmentItem(
@@ -411,13 +399,15 @@ def seed() -> None:
             for a in [a1, a2]:
                 if a and not a.debriefing:
                     submitted_by = coordinator_user or member_user
-                    db.session.add(DebriefingRecord(
-                        assignment_id=a.id,
-                        submitted_by_id=submitted_by.id if submitted_by else a.user_id,
-                        actual_hours=hours,
-                        patients_treated=0,
-                        feedback="Výjezd proběhl bez komplikací.",
-                    ))
+                    db.session.add(
+                        DebriefingRecord(
+                            assignment_id=a.id,
+                            submitted_by_id=submitted_by.id if submitted_by else a.user_id,
+                            actual_hours=hours,
+                            patients_treated=0,
+                            feedback="Výjezd proběhl bez komplikací.",
+                        )
+                    )
 
         # 11. Cancelled event
         _get_or_create_event(

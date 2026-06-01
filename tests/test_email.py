@@ -8,24 +8,34 @@ Strategy:
     recipient, body keywords) and that the scheduler's process_email_queue
     function transitions rows through pending → sent / failed correctly.
 """
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
-from typing import TYPE_CHECKING
+from datetime import datetime, timezone
 from unittest.mock import patch
 
+from click.testing import CliRunner
+
 from app.extensions import db
-from app.models.event import Event
-from app.models.event import EventStatus
+from app.mail import (
+    drain_one_outbox_email,
+    send_assignment_confirmed,
+    send_assignment_released,
+    send_assignments_opened,
+    send_event_cancelled,
+    send_event_published,
+    send_unfilled_spots_reminder,
+)
+from app.models.audit import AuditLogEntry
+from app.models.event import Event, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.outbox import OutboxEmail
-
-if TYPE_CHECKING:
-    from app.models.user import UserAccount
-
+from app.models.role import Role
+from app.models.settings import get_settings
+from app.models.user import UserAccount
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_event(name: str = "Testovací akce") -> Event:
     me = MasterEvent(name="Obecné", description="")
@@ -46,8 +56,7 @@ def _make_event(name: str = "Testovací akce") -> Event:
 
 def _make_member_user(email: str = "member@test.cz", name: str = "Test Member") -> UserAccount:
     """Create an active Member user (minimum role for operational emails)."""
-    from app.models.user import UserAccount
-    from app.models.role import Role
+
     role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
     user = UserAccount(email=email, name=name, is_active=True)
     user.set_password("pass")
@@ -59,11 +68,12 @@ def _make_member_user(email: str = "member@test.cz", name: str = "Test Member") 
 
 # ── Outbox enqueue tests ───────────────────────────────────────────────────────
 
+
 class TestOutboxEnqueue:
     """Verify that send_* helpers enqueue the correct OutboxEmail rows."""
 
     def test_send_assignment_confirmed_enqueues_row(self, app):
-        from app.mail import send_assignment_confirmed
+
         with app.app_context():
             event = _make_event("Závody 2026")
             user = _make_member_user("jan@test.cz", "Jan Novák")
@@ -79,7 +89,7 @@ class TestOutboxEnqueue:
             assert "Jan Novák" in row.html_body
 
     def test_send_assignment_released_enqueues_row(self, app):
-        from app.mail import send_assignment_released
+
         with app.app_context():
             event = _make_event("Závody 2026")
             user = _make_member_user("jan@test.cz", "Jan Novák")
@@ -92,7 +102,7 @@ class TestOutboxEnqueue:
             assert row.to_email == "jan@test.cz"
 
     def test_send_event_published_enqueues_row(self, app):
-        from app.mail import send_event_published
+
         with app.app_context():
             event = _make_event("Letní festival")
             user = _make_member_user("petra@test.cz", "Petra Svobodová")
@@ -105,7 +115,7 @@ class TestOutboxEnqueue:
             assert "petra@test.cz" == row.to_email
 
     def test_send_assignments_opened_enqueues_row(self, app):
-        from app.mail import send_assignments_opened
+
         with app.app_context():
             event = _make_event("Maraton")
             user = _make_member_user()
@@ -117,7 +127,7 @@ class TestOutboxEnqueue:
             assert "Otevřeny" in row.subject
 
     def test_send_event_cancelled_enqueues_row(self, app):
-        from app.mail import send_event_cancelled
+
         with app.app_context():
             event = _make_event("Zrušená akce")
             user = _make_member_user()
@@ -129,7 +139,7 @@ class TestOutboxEnqueue:
             assert "zrušena" in row.subject.lower()
 
     def test_send_unfilled_spots_reminder_enqueues_row(self, app):
-        from app.mail import send_unfilled_spots_reminder
+
         with app.app_context():
             event = _make_event("Akce s mezerami")
             user = _make_member_user("coord@test.cz", "Koordinátor")
@@ -143,7 +153,7 @@ class TestOutboxEnqueue:
 
     def test_multiple_enqueues_all_pending(self, app):
         """All enqueued rows start as 'pending'."""
-        from app.mail import send_assignment_confirmed, send_event_cancelled
+
         with app.app_context():
             event = _make_event()
             user_a = _make_member_user("a@test.cz", "A")
@@ -158,9 +168,7 @@ class TestOutboxEnqueue:
 
     def test_viewer_only_does_not_enqueue(self, app):
         """Viewer-only users must not receive operational emails (AD17)."""
-        from app.mail import send_assignment_confirmed, send_event_published
-        from app.models.role import Role
-        from app.models.user import UserAccount
+
         with app.app_context():
             event = _make_event("Test akce")
             viewer_role = db.session.scalar(db.select(Role).where(Role.name == "Viewer"))
@@ -179,9 +187,7 @@ class TestOutboxEnqueue:
 
     def test_viewer_plus_member_receives_emails(self, app):
         """User with Viewer + Member roles must still receive Member emails (AD17)."""
-        from app.mail import send_assignment_confirmed
-        from app.models.role import Role
-        from app.models.user import UserAccount
+
         with app.app_context():
             event = _make_event("Test akce")
             viewer_role = db.session.scalar(db.select(Role).where(Role.name == "Viewer"))
@@ -202,6 +208,7 @@ class TestOutboxEnqueue:
 
 # ── Dev email block tests ─────────────────────────────────────────────────────
 
+
 class TestDevEmailBlock:
     """Verify the dev_email_block + allowlist logic in drain_one_outbox_email."""
 
@@ -214,7 +221,7 @@ class TestDevEmailBlock:
 
     def _set_dev_block(self, app, block: bool, allowlist: str | None = None) -> None:
         with app.app_context():
-            from app.models.settings import get_settings
+
             s = get_settings()
             s.dev_email_block = block
             s.dev_email_allowlist = allowlist
@@ -226,7 +233,7 @@ class TestDevEmailBlock:
         row_id = self._seed_pending(app)
         with app.app_context():
             with patch("flask_mail.Mail.send"):
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
         with app.app_context():
             row = db.session.get(OutboxEmail, row_id)
@@ -238,7 +245,7 @@ class TestDevEmailBlock:
         row_id = self._seed_pending(app)
         with app.app_context():
             with patch("flask_mail.Mail.send") as mock_send:
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
         mock_send.assert_not_called()
         with app.app_context():
@@ -252,7 +259,7 @@ class TestDevEmailBlock:
         row_id = self._seed_pending(app, to="outsider@example.com")
         with app.app_context():
             with patch("flask_mail.Mail.send") as mock_send:
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
         mock_send.assert_not_called()
         with app.app_context():
@@ -265,7 +272,7 @@ class TestDevEmailBlock:
         row_id = self._seed_pending(app, to="tester@example.com")
         with app.app_context():
             with patch("flask_mail.Mail.send"):
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
         with app.app_context():
             row = db.session.get(OutboxEmail, row_id)
@@ -277,7 +284,7 @@ class TestDevEmailBlock:
         row_id = self._seed_pending(app, to="admin@example.com")
         with app.app_context():
             with patch("flask_mail.Mail.send"):
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
         with app.app_context():
             row = db.session.get(OutboxEmail, row_id)
@@ -286,7 +293,7 @@ class TestDevEmailBlock:
     def test_is_email_allowed_helper(self, app):
         """Unit test AppSettings.is_email_allowed() directly."""
         with app.app_context():
-            from app.models.settings import get_settings
+
             s = get_settings()
             s.dev_email_block = False
             assert s.is_email_allowed("anyone@example.com") is True
@@ -303,6 +310,7 @@ class TestDevEmailBlock:
 
 # ── Scheduler queue processing tests ─────────────────────────────────────────
 
+
 class TestProcessEmailQueue:
     """Verify the drain_one_outbox_email function transitions rows correctly."""
 
@@ -318,7 +326,7 @@ class TestProcessEmailQueue:
 
         with app.app_context():
             with patch("flask_mail.Mail.send"):
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
 
         with app.app_context():
@@ -332,7 +340,7 @@ class TestProcessEmailQueue:
 
         with app.app_context():
             with patch("flask_mail.Mail.send", side_effect=Exception("Connection refused")):
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
 
         with app.app_context():
@@ -356,7 +364,7 @@ class TestProcessEmailQueue:
 
         with app.app_context():
             with patch("flask_mail.Mail.send", side_effect=Exception("timeout")):
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
 
         with app.app_context():
@@ -364,7 +372,7 @@ class TestProcessEmailQueue:
             assert row.status == "failed"
             assert row.retry_count == OutboxEmail.MAX_RETRIES
             # Permanent failure should produce an audit log entry
-            from app.models.audit import AuditLogEntry
+
             entry = db.session.scalar(
                 db.select(AuditLogEntry).where(
                     AuditLogEntry.entity_type == "OutboxEmail",
@@ -390,7 +398,7 @@ class TestProcessEmailQueue:
 
         with app.app_context():
             with patch("flask_mail.Mail.send") as mock_send:
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
 
         mock_send.assert_not_called()
@@ -409,7 +417,7 @@ class TestProcessEmailQueue:
 
         with app.app_context():
             with patch("flask_mail.Mail.send") as mock_send:
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()
 
         mock_send.assert_not_called()
@@ -418,7 +426,7 @@ class TestProcessEmailQueue:
         """drain_one_outbox_email on an empty outbox must return False."""
         with app.app_context():
             with patch("flask_mail.Mail.send") as mock_send:
-                from app.mail import drain_one_outbox_email
+
                 result = drain_one_outbox_email()
 
         assert result is False
@@ -428,11 +436,15 @@ class TestProcessEmailQueue:
         """Rows must be delivered in FIFO order (oldest created_at first)."""
         with app.app_context():
             older = OutboxEmail(
-                to_email="older@test.cz", subject="Starší", body="...",
+                to_email="older@test.cz",
+                subject="Starší",
+                body="...",
                 created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
             )
             newer = OutboxEmail(
-                to_email="newer@test.cz", subject="Novější", body="...",
+                to_email="newer@test.cz",
+                subject="Novější",
+                body="...",
                 created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
             )
             db.session.add_all([newer, older])  # insert newer first intentionally
@@ -445,13 +457,14 @@ class TestProcessEmailQueue:
 
         with app.app_context():
             with patch("flask_mail.Mail.send", side_effect=_capture_send):
-                from app.mail import drain_one_outbox_email
+
                 drain_one_outbox_email()  # processes one row per call
 
         assert sent_recipients == ["older@test.cz"]
 
 
 # ── SMTP settings admin route tests ──────────────────────────────────────────
+
 
 class TestSmtpAdminSettings:
     """Verify the admin settings page handles SMTP config correctly."""
@@ -464,9 +477,9 @@ class TestSmtpAdminSettings:
 
     def test_smtp_not_configured_exits_nonzero(self, app):
         """CLI send-test-email must exit 1 when SMTP is not configured."""
-        from click.testing import CliRunner
+
         with app.app_context():
-            from app.models.settings import get_settings
+
             settings = get_settings()
             settings.smtp_server = None
             db.session.commit()
@@ -481,6 +494,7 @@ class TestSmtpAdminSettings:
 
 
 # ── OutboxEmail model unit tests ──────────────────────────────────────────────
+
 
 class TestOutboxEmailModel:
     """Unit tests for the OutboxEmail model itself."""

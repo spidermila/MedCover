@@ -1,16 +1,17 @@
 """Tests for equipment inventory CRUD and permissions."""
+
 import json
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 from app.extensions import db
-from app.models.equipment import EquipmentCategory
-from app.models.equipment import EquipmentItem
-from app.models.equipment import EquipmentItemStatus
-from app.models.equipment import EquipmentType
-from app.models.equipment import EventEquipmentAssignment
-from app.models.event import Event
-from app.models.event import EventStatus
+from app.models.equipment import (
+    EquipmentCategory,
+    EquipmentItem,
+    EquipmentItemStatus,
+    EquipmentType,
+    EventEquipmentAssignment,
+)
+from app.models.event import Event, EventStatus
 from app.models.master_event import MasterEvent
 from tests.conftest import _make_event_in_status
 
@@ -159,6 +160,7 @@ class TestEquipmentItemIssue:
         item_id = _make_item(app, type_id)
         # get user id
         from app.models.user import UserAccount
+
         with app.app_context():
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
             user_id = str(user.id)
@@ -175,8 +177,10 @@ class TestEquipmentItemIssue:
     def test_admin_can_return_item(self, app, admin_client):
         type_id = _make_type(app, category=EquipmentCategory.PERSONAL)
         item_id = _make_item(app, type_id)
-        from app.models.user import UserAccount
         from datetime import datetime, timezone
+
+        from app.models.user import UserAccount
+
         with app.app_context():
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
             item = db.session.get(EquipmentItem, item_id)
@@ -204,6 +208,7 @@ class TestEventEquipmentPlan:
         )
         assert response.status_code == 302
         from app.models.equipment import EventEquipmentPlan
+
         with app.app_context():
             plan = db.session.get(EventEquipmentPlan, (event_id, type_id))
             assert plan is not None
@@ -231,6 +236,7 @@ class TestEventEquipmentAssign:
         )
         assert response.status_code == 302
         from app.models.equipment import EventEquipmentAssignment
+
         with app.app_context():
             ea = db.session.scalar(
                 db.select(EventEquipmentAssignment).where(
@@ -252,6 +258,7 @@ class TestEventEquipmentAssign:
 
 
 # ── Type create: validation edge cases ───────────────────────────────────────
+
 
 class TestEquipmentTypeCreateExtended:
     def test_invalid_category_flashes(self, admin_client):
@@ -275,6 +282,7 @@ class TestEquipmentTypeCreateExtended:
 
 
 # ── Type edit: extended ───────────────────────────────────────────────────────
+
 
 class TestEquipmentTypeEditExtended:
     def test_get_returns_200(self, app, admin_client):
@@ -340,6 +348,7 @@ class TestEquipmentTypeEditExtended:
 
 # ── Type delete: extended ─────────────────────────────────────────────────────
 
+
 class TestEquipmentTypeDeleteExtended:
     def test_delete_404_for_missing(self, admin_client):
         response = admin_client.post("/equipment/types/999999/delete")
@@ -352,6 +361,7 @@ class TestEquipmentTypeDeleteExtended:
 
 
 # ── Items list: filters ───────────────────────────────────────────────────────
+
 
 class TestEquipmentItemsList:
     def test_list_returns_200(self, admin_client):
@@ -378,6 +388,7 @@ class TestEquipmentItemsList:
 
 
 # ── Item create: extended validation ─────────────────────────────────────────
+
 
 class TestEquipmentItemCreateExtended:
     def test_get_returns_200(self, admin_client):
@@ -414,6 +425,7 @@ class TestEquipmentItemCreateExtended:
 
 
 # ── Item edit ─────────────────────────────────────────────────────────────────
+
 
 class TestEquipmentItemEdit:
     def test_get_returns_200(self, app, admin_client):
@@ -481,6 +493,7 @@ class TestEquipmentItemEdit:
 
 # ── Item delete: extended ─────────────────────────────────────────────────────
 
+
 class TestEquipmentItemDeleteExtended:
     def test_delete_success(self, app, admin_client):
         type_id = _make_type(app)
@@ -495,8 +508,10 @@ class TestEquipmentItemDeleteExtended:
         assert response.status_code == 404
 
     def test_delete_issued_item_flashes(self, app, admin_client):
-        from app.models.user import UserAccount
         from datetime import datetime, timezone
+
+        from app.models.user import UserAccount
+
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
         with app.app_context():
@@ -518,10 +533,13 @@ class TestEquipmentItemDeleteExtended:
 
 # ── Item issue/return: extended ───────────────────────────────────────────────
 
+
 class TestEquipmentItemIssueExtended:
     def test_already_issued_flashes(self, app, admin_client):
-        from app.models.user import UserAccount
         from datetime import datetime, timezone
+
+        from app.models.user import UserAccount
+
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
         with app.app_context():
@@ -542,9 +560,7 @@ class TestEquipmentItemIssueExtended:
     def test_no_user_id_flashes(self, app, admin_client):
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
-        response = admin_client.post(
-            f"/equipment/items/{item_id}/issue", data={}, follow_redirects=True
-        )
+        response = admin_client.post(f"/equipment/items/{item_id}/issue", data={}, follow_redirects=True)
         assert response.status_code == 200
         assert "povinný" in response.data.decode() or "uživatel" in response.data.decode().lower()
 
@@ -564,9 +580,7 @@ class TestEquipmentItemReturnExtended:
     def test_not_issued_flashes(self, app, admin_client):
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
-        response = admin_client.post(
-            f"/equipment/items/{item_id}/return", follow_redirects=True
-        )
+        response = admin_client.post(f"/equipment/items/{item_id}/return", follow_redirects=True)
         assert response.status_code == 200
         assert "vydána" in response.data.decode() or "není" in response.data.decode()
 
@@ -669,11 +683,13 @@ class TestEquipmentCheckEndpoint:
         item_id = _make_item(app, type_id, name="Item OK")
         response = admin_client.post(
             "/events/equipment-check",
-            data=json.dumps({
-                "item_ids": [item_id],
-                "start_datetime": "2030-07-01T10:00:00",
-                "end_datetime": "2030-07-01T18:00:00",
-            }),
+            data=json.dumps(
+                {
+                    "item_ids": [item_id],
+                    "start_datetime": "2030-07-01T10:00:00",
+                    "end_datetime": "2030-07-01T18:00:00",
+                }
+            ),
             content_type="application/json",
         )
         assert response.status_code == 200
@@ -691,11 +707,13 @@ class TestEquipmentCheckEndpoint:
 
         response = admin_client.post(
             "/events/equipment-check",
-            data=json.dumps({
-                "item_ids": [item_id],
-                "start_datetime": "2030-07-01T10:00:00",
-                "end_datetime": "2030-07-01T18:00:00",
-            }),
+            data=json.dumps(
+                {
+                    "item_ids": [item_id],
+                    "start_datetime": "2030-07-01T10:00:00",
+                    "end_datetime": "2030-07-01T18:00:00",
+                }
+            ),
             content_type="application/json",
         )
         data = response.get_json()
@@ -718,11 +736,13 @@ class TestEquipmentCheckEndpoint:
         # Check for overlapping window 12:00–16:00 same day
         response = admin_client.post(
             "/events/equipment-check",
-            data=json.dumps({
-                "item_ids": [item_id],
-                "start_datetime": "2030-08-01T12:00:00",
-                "end_datetime": "2030-08-01T16:00:00",
-            }),
+            data=json.dumps(
+                {
+                    "item_ids": [item_id],
+                    "start_datetime": "2030-08-01T12:00:00",
+                    "end_datetime": "2030-08-01T16:00:00",
+                }
+            ),
             content_type="application/json",
         )
         data = response.get_json()
@@ -743,12 +763,14 @@ class TestEquipmentCheckEndpoint:
 
         response = admin_client.post(
             "/events/equipment-check",
-            data=json.dumps({
-                "item_ids": [item_id],
-                "start_datetime": "2030-09-01T10:00:00",
-                "end_datetime": "2030-09-01T18:00:00",
-                "exclude_event_id": event_id,
-            }),
+            data=json.dumps(
+                {
+                    "item_ids": [item_id],
+                    "start_datetime": "2030-09-01T10:00:00",
+                    "end_datetime": "2030-09-01T18:00:00",
+                    "exclude_event_id": event_id,
+                }
+            ),
             content_type="application/json",
         )
         data = response.get_json()
@@ -768,11 +790,13 @@ class TestEquipmentCheckEndpoint:
         # New event starts after existing ends — no overlap
         response = admin_client.post(
             "/events/equipment-check",
-            data=json.dumps({
-                "item_ids": [item_id],
-                "start_datetime": "2030-10-01T15:00:00",
-                "end_datetime": "2030-10-01T20:00:00",
-            }),
+            data=json.dumps(
+                {
+                    "item_ids": [item_id],
+                    "start_datetime": "2030-10-01T15:00:00",
+                    "end_datetime": "2030-10-01T20:00:00",
+                }
+            ),
             content_type="application/json",
         )
         data = response.get_json()
@@ -1009,11 +1033,14 @@ class TestEquipmentCheckEndpointExclusion:
             db.session.commit()
 
         # Check availability for the same time window — should report no conflict
-        resp = admin_client.post("/events/equipment-check", json={
-            "item_ids": [item_id],
-            "start_datetime": "2033-05-01T09:00:00+00:00",
-            "end_datetime": "2033-05-01T20:00:00+00:00",
-        })
+        resp = admin_client.post(
+            "/events/equipment-check",
+            json={
+                "item_ids": [item_id],
+                "start_datetime": "2033-05-01T09:00:00+00:00",
+                "end_datetime": "2033-05-01T20:00:00+00:00",
+            },
+        )
         assert resp.status_code == 200
         data = resp.get_json()
         statuses = [r["status"] for r in data["results"]]
@@ -1041,11 +1068,14 @@ class TestEquipmentCheckEndpointExclusion:
             db.session.add(EventEquipmentAssignment(event_id=archived.id, equipment_item_id=item_id))
             db.session.commit()
 
-        resp = admin_client.post("/events/equipment-check", json={
-            "item_ids": [item_id],
-            "start_datetime": "2033-06-01T09:00:00+00:00",
-            "end_datetime": "2033-06-01T20:00:00+00:00",
-        })
+        resp = admin_client.post(
+            "/events/equipment-check",
+            json={
+                "item_ids": [item_id],
+                "start_datetime": "2033-06-01T09:00:00+00:00",
+                "end_datetime": "2033-06-01T20:00:00+00:00",
+            },
+        )
         assert resp.status_code == 200
         data = resp.get_json()
         statuses = [r["status"] for r in data["results"]]
@@ -1073,11 +1103,14 @@ class TestEquipmentCheckEndpointExclusion:
             db.session.add(EventEquipmentAssignment(event_id=active.id, equipment_item_id=item_id))
             db.session.commit()
 
-        resp = admin_client.post("/events/equipment-check", json={
-            "item_ids": [item_id],
-            "start_datetime": "2033-07-01T09:00:00+00:00",
-            "end_datetime": "2033-07-01T20:00:00+00:00",
-        })
+        resp = admin_client.post(
+            "/events/equipment-check",
+            json={
+                "item_ids": [item_id],
+                "start_datetime": "2033-07-01T09:00:00+00:00",
+                "end_datetime": "2033-07-01T20:00:00+00:00",
+            },
+        )
         assert resp.status_code == 200
         data = resp.get_json()
         statuses = [r["status"] for r in data["results"]]
