@@ -147,8 +147,12 @@
                   title="Upravit název" class="tm-edit-name">✎</button>
           {% endif %}
         </td>
-        <td class="text-nowrap small tm-row-cell"{% if ec %} style="background-color:{{ ec }}"{% endif %}>
-          <span class="badge text-dark" style="background-color: {{ row.color }}">{{ row.qual_name }}</span>
+        <td class="small tm-row-cell"{% if ec %} style="background-color:{{ ec }}"{% endif %}>
+          {% for q in row.qual_objs %}
+            <span class="badge text-dark" style="background-color: {{ row.color }}">{{ q.name }}</span>
+          {% else %}
+            <span class="badge text-dark" style="background-color: {{ row.color }}">—</span>
+          {% endfor %}
         </td>
         <td class="small text-muted tm-row-cell"{% if ec %} style="background-color:{{ ec }}"{% endif %}>{{ spot_descs | join(', ') }}</td>
 
