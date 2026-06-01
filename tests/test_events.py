@@ -1,9 +1,26 @@
 """Tests for event CRUD and lifecycle transitions."""
+from datetime import datetime
+from datetime import timezone
+
+import sqlalchemy as sa
+
 from app.extensions import db
+from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
+from app.models.equipment import EquipmentCategory
+from app.models.equipment import EquipmentItem
+from app.models.equipment import EquipmentType
+from app.models.equipment import EventEquipmentAssignment
+from app.models.equipment import EventEquipmentPlan
 from app.models.event import Event
+from app.models.event import EventSpot
 from app.models.event import EventStatus
+from app.models.event import EventType
 from app.models.master_event import MasterEvent
+from app.models.outbox import OutboxEmail
+from app.models.role import Role
+from app.models.settings import get_settings
+from app.models.user import UserAccount
 
 
 def _make_master_event(app) -> int:
@@ -88,8 +105,6 @@ class TestEventCreate:
 
     def test_create_event_with_responsible_person_uuid(self, app, admin_client):
         """Regression: responsible_person_id is a UUID string — must not be cast to int."""
-        from app.models.role import Role
-        from app.models.user import UserAccount
         me_id = _make_master_event(app)
         with app.app_context():
             role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
@@ -168,9 +183,6 @@ class TestEventLifecycle:
     def test_member_cannot_cancel(self, app, member_client):
         """Create event directly in DB (avoids shared-client conflict) then test permission."""
         with app.app_context():
-            from app.models.role import Role
-            from app.models.user import UserAccount
-            from datetime import datetime, timezone
             me = MasterEvent(name="ME for cancel test")
             db.session.add(me)
             db.session.flush()
@@ -220,9 +232,6 @@ class TestEventEdit:
     def test_member_cannot_edit_event(self, app, member_client):
         """Create event directly in DB then test member cannot access edit page."""
         with app.app_context():
-            from app.models.role import Role
-            from app.models.user import UserAccount
-            from datetime import datetime, timezone
             me = MasterEvent(name="ME for edit test")
             db.session.add(me)
             db.session.flush()
@@ -277,7 +286,6 @@ class TestCalendarFeed:
             me = MasterEvent(name="ME for completed test")
             db.session.add(me)
             db.session.flush()
-            from app.models.user import UserAccount
             creator = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
             event = Event(
                 name="Completed Test Event",
@@ -465,7 +473,6 @@ class TestAddSpot:
             event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             event_id = event.id
 
-        from app.models.event import EventSpot
         response = admin_client.post(
             f"/events/{event_id}/spots/add",
             data={"description": "Zdravotník", "quantity": "1"},
@@ -480,8 +487,6 @@ class TestAddSpot:
 
     def test_member_cannot_add_spot(self, app, member_client):
         with app.app_context():
-            from app.models.role import Role
-            from app.models.user import UserAccount
             me = MasterEvent(name="Spot Test ME")
             db.session.add(me)
             db.session.flush()
@@ -491,7 +496,6 @@ class TestAddSpot:
             creator.roles = [creator_role]
             db.session.add(creator)
             db.session.flush()
-            from datetime import datetime, timezone
             event = Event(
                 name="Spot Test Event",
                 master_event_id=me.id,
@@ -514,7 +518,6 @@ class TestAddSpot:
 
 def _make_event_in_status(app, status: EventStatus) -> int:
     """Create an event in the given status and return its ID."""
-    from datetime import datetime, timezone
     with app.app_context():
         me = MasterEvent(name=f"ME for {status.value}")
         db.session.add(me)
@@ -695,8 +698,6 @@ class TestCalendarFeedExtended:
 
 class TestEditSpot:
     def _create_event_with_spot(self, app) -> tuple[int, int]:
-        from app.models.event import EventSpot
-        from datetime import datetime, timezone
         with app.app_context():
             me = MasterEvent(name="EditSpot ME")
             db.session.add(me)
@@ -730,7 +731,6 @@ class TestEditSpot:
         assert response.status_code == 404
 
     def test_edit_spot_saves_description(self, app, admin_client):
-        from app.models.event import EventSpot
         event_id, spot_id = self._create_event_with_spot(app)
         response = admin_client.post(
             f"/events/{event_id}/spots/{spot_id}/edit",
@@ -747,8 +747,6 @@ class TestEditSpot:
 
 class TestDeleteSpot:
     def _create_event_with_spot(self, app) -> tuple[int, int]:
-        from app.models.event import EventSpot
-        from datetime import datetime, timezone
         with app.app_context():
             me = MasterEvent(name="DelSpot ME")
             db.session.add(me)
@@ -778,7 +776,6 @@ class TestDeleteSpot:
         assert response.status_code == 404
 
     def test_delete_spot_succeeds(self, app, admin_client):
-        from app.models.event import EventSpot
         event_id, spot_id = self._create_event_with_spot(app)
         response = admin_client.post(
             f"/events/{event_id}/spots/{spot_id}/delete", follow_redirects=False
@@ -792,7 +789,6 @@ class TestDeleteSpot:
 
 class TestEquipmentPlanExtended:
     def _make_event_and_type(self, app):
-        from app.models.equipment import EquipmentType, EquipmentCategory
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
         with app.app_context():
             et = EquipmentType(name="Plan Type", category=EquipmentCategory.SHARED)
@@ -801,7 +797,6 @@ class TestEquipmentPlanExtended:
             return event_id, et.id
 
     def test_plan_add_404_for_missing_event(self, app, admin_client):
-        from app.models.equipment import EquipmentType, EquipmentCategory
         with app.app_context():
             et = EquipmentType(name="Plan T2", category=EquipmentCategory.SHARED)
             db.session.add(et)
@@ -824,7 +819,6 @@ class TestEquipmentPlanExtended:
         assert "platný" in response.data.decode() or "typ" in response.data.decode().lower()
 
     def test_plan_remove_works(self, app, admin_client):
-        from app.models.equipment import EventEquipmentPlan
         event_id, type_id = self._make_event_and_type(app)
         # Add a plan entry
         admin_client.post(
@@ -847,7 +841,6 @@ class TestEquipmentPlanExtended:
 
 class TestEquipmentAssignExtended:
     def _make_event_type_item(self, app):
-        from app.models.equipment import EquipmentType, EquipmentCategory, EquipmentItem
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
         with app.app_context():
             et = EquipmentType(name="Assign Type", category=EquipmentCategory.SHARED)
@@ -892,7 +885,6 @@ class TestEquipmentAssignExtended:
         assert "nenalezeno" in response.data.decode() or "přiřazení" in response.data.decode()
 
     def test_unassign_succeeds(self, app, admin_client):
-        from app.models.equipment import EventEquipmentAssignment
         event_id, item_id = self._make_event_type_item(app)
         admin_client.post(
             f"/events/{event_id}/equipment/assign",
@@ -906,7 +898,6 @@ class TestEquipmentAssignExtended:
         )
         assert response.status_code == 302
         with app.app_context():
-            import sqlalchemy as sa
             ea = db.session.scalar(
                 sa.select(EventEquipmentAssignment).where(
                     EventEquipmentAssignment.event_id == event_id,
@@ -920,12 +911,6 @@ class TestEventChangedNotification:
     """Verify that editing an event enqueues notifications to assigned users."""
 
     def test_edit_sends_notification_to_assigned_user(self, app, admin_client):
-        from app.models.assignment import Assignment
-        from app.models.event import EventSpot, EventStatus
-        from app.models.outbox import OutboxEmail
-        from app.models.role import Role
-        from app.models.settings import get_settings
-        from app.models.user import UserAccount
 
         me_id = _make_master_event(app)
         admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
@@ -983,12 +968,6 @@ class TestEventChangedNotification:
         assert after_count == before_count + 1
 
     def test_edit_without_change_sends_no_notification(self, app, admin_client):
-        from app.models.assignment import Assignment
-        from app.models.event import EventSpot, EventStatus
-        from app.models.outbox import OutboxEmail
-        from app.models.role import Role
-        from app.models.settings import get_settings
-        from app.models.user import UserAccount
 
         me_id = _make_master_event(app)
         admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
@@ -1058,7 +1037,6 @@ class TestEventTypes:
         resp = admin_client.post("/events/create", data=data, follow_redirects=False)
         assert resp.status_code == 302
         with app.app_context():
-            from app.models.event import EventType
             ev = db.session.scalar(db.select(Event).where(Event.name == "Training Event"))
             assert ev is not None
             assert ev.event_type == EventType.TRAINING
@@ -1073,7 +1051,6 @@ class TestEventTypes:
         resp = admin_client.post("/events/create", data=data, follow_redirects=False)
         assert resp.status_code == 302
         with app.app_context():
-            from app.models.event import EventType
             ev = db.session.scalar(db.select(Event).where(Event.name == "Presentation Event"))
             assert ev is not None
             assert ev.event_type == EventType.PRESENTATION
@@ -1083,7 +1060,6 @@ class TestEventTypes:
         me_id = _make_master_event(app)
         admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
         with app.app_context():
-            from app.models.event import EventType
             ev = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             assert ev.event_type == EventType.MEDICAL_COVER
 
@@ -1124,7 +1100,6 @@ class TestDeleteDraftEvent:
     def _create_draft(self, app) -> int:
         me_id = _make_master_event(app)
         with app.app_context():
-            from datetime import datetime, timezone
             event = Event(
                 name="Delete Me",
                 master_event_id=me_id,
@@ -1161,7 +1136,6 @@ class TestDeleteDraftEvent:
     def test_cannot_delete_non_draft(self, app, coordinator_client):
         me_id = _make_master_event(app)
         with app.app_context():
-            from datetime import datetime, timezone
             event = Event(
                 name="Published Event",
                 master_event_id=me_id,
@@ -1203,9 +1177,6 @@ class TestEventSplit:
 
     def _create_open_event(self, app) -> int:
         """Create an ASSIGNMENTS_OPEN event and return its id."""
-        from datetime import datetime, timezone
-        from app.models.event import Event, EventStatus, EventType
-        from app.models.master_event import MasterEvent
         with app.app_context():
             me = MasterEvent(name="Split ME")
             db.session.add(me)
@@ -1238,9 +1209,8 @@ class TestEventSplit:
             assert part1.end_datetime.hour in (12, 13, 14)  # 14:00 local = 12:00 UTC in summer
 
             # Find part2
-            from app.models.event import Event as Ev
             part2 = db.session.scalar(
-                db.select(Ev).where(Ev.name.like("%2/2%"))
+                db.select(Event).where(Event.name.like("%2/2%"))
             )
             assert part2 is not None
             assert part2.status == EventStatus.ASSIGNMENTS_OPEN
@@ -1257,9 +1227,6 @@ class TestEventSplit:
         assert "musí být mezi" in resp.data.decode()
 
     def test_split_cancelled_event_redirects_with_error(self, app, admin_client):
-        from datetime import datetime, timezone
-        from app.models.event import Event, EventStatus, EventType
-        from app.models.master_event import MasterEvent
         with app.app_context():
             me = MasterEvent(name="Split ME2")
             db.session.add(me)
@@ -1292,11 +1259,6 @@ class TestEventSplit:
         assert resp.status_code == 403
 
     def test_split_copies_spots_and_assignments(self, app, admin_client):
-        from datetime import datetime, timezone
-        from app.models.event import Event, EventSpot, EventStatus, EventType
-        from app.models.master_event import MasterEvent
-        from app.models.assignment import Assignment
-        from app.models.user import UserAccount
         with app.app_context():
             me = MasterEvent(name="Split ME3")
             db.session.add(me)
@@ -1329,8 +1291,7 @@ class TestEventSplit:
         )
 
         with app.app_context():
-            from app.models.event import Event as Ev
-            part2 = db.session.scalar(db.select(Ev).where(Ev.name.like("%2/2%")))
+            part2 = db.session.scalar(db.select(Event).where(Event.name.like("%2/2%")))
             assert part2 is not None
             assert len(part2.spots) == 1
             assert part2.spots[0].description == "Záchranář"
@@ -1342,11 +1303,6 @@ class TestUserPickerDuplicateFiltering:
     """User picker on event detail should not show already-assigned users."""
 
     def test_assigned_user_excluded_from_picker(self, app, admin_client):
-        from datetime import datetime, timezone
-        from app.models.assignment import Assignment
-        from app.models.event import EventSpot
-        from app.models.role import Role
-        from app.models.user import UserAccount
 
         me_id = _make_master_event(app)
         with app.app_context():
