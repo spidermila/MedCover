@@ -50,7 +50,9 @@ class TestICalFeed:
 
     def test_active_assignment_appears_in_feed(self, app, client):
         user_id, token = _make_member(app, "ical_active@test.com")
-        event_id, spot_id = _make_event_with_spot(app, status=EventStatus.ASSIGNMENTS_OPEN, name="Active Event")
+
+        _, spot_id = _make_event_with_spot(app, status=EventStatus.ASSIGNMENTS_OPEN, name="Active Event")
+
         _assign_user(app, user_id, spot_id)
 
         resp = client.get(f"/calendar/{token}.ics")
@@ -59,7 +61,9 @@ class TestICalFeed:
 
     def test_cancelled_event_excluded_from_feed(self, app, client):
         user_id, token = _make_member(app, "ical_cancelled@test.com")
-        event_id, spot_id = _make_event_with_spot(app, status=EventStatus.CANCELLED, name="Cancelled Event")
+
+        _, spot_id = _make_event_with_spot(app, status=EventStatus.CANCELLED, name="Cancelled Event")
+
         _assign_user(app, user_id, spot_id)
 
         resp = client.get(f"/calendar/{token}.ics")
@@ -68,7 +72,9 @@ class TestICalFeed:
 
     def test_completed_event_excluded_from_feed(self, app, client):
         user_id, token = _make_member(app, "ical_completed@test.com")
-        event_id, spot_id = _make_event_with_spot(app, status=EventStatus.COMPLETED, name="Completed Event")
+
+        _, spot_id = _make_event_with_spot(app, status=EventStatus.COMPLETED, name="Completed Event")
+
         _assign_user(app, user_id, spot_id)
 
         resp = client.get(f"/calendar/{token}.ics")
@@ -85,7 +91,8 @@ class TestICalFeed:
 
     def test_location_included_when_set(self, app, client):
         user_id, token = _make_member(app, "ical_loc@test.com")
-        event_id, spot_id = _make_event_with_spot(
+
+        _, spot_id = _make_event_with_spot(
             app, status=EventStatus.ASSIGNMENTS_OPEN, name="Location Event", address="Brno, náměstí Svobody"
         )
         _assign_user(app, user_id, spot_id)
