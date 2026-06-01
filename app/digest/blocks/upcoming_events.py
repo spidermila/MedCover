@@ -21,9 +21,9 @@ class UpcomingEventsBlock(BaseBlock):
     }
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
-        import sqlalchemy as sa
+        import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
 
-        from app.models.event import Event, EventStatus
+        from app.models.event import Event, EventStatus  # pylint: disable=import-outside-toplevel
 
         now = datetime.now(timezone.utc)
         days_ahead = int(config.get("days_ahead", 7))

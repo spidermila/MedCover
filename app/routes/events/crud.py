@@ -326,7 +326,7 @@ def create() -> str | Response:
                 "event.assignments.open"
             ):
                 abort(403)
-            from datetime import datetime, timezone
+            from datetime import datetime, timezone  # pylint: disable=import-outside-toplevel
 
             event.status = EventStatus.ASSIGNMENTS_OPEN
             event.assignments_open_datetime = datetime.now(timezone.utc)
@@ -561,7 +561,7 @@ def edit(event_id: int) -> str | Response:
         # Notify assigned users about the change (only if something actually changed).
         actual_changes = diff_changes(before, after)
         if actual_changes:
-            from app.utils import external_url_for
+            from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
             event_url = external_url_for("events.detail", event_id=event.id)
             assigned_users = [spot.assignment.user for spot in event.spots if spot.assignment is not None]

@@ -15,8 +15,8 @@ Indexes added:
 Also adds a composite covering index (archived, status, start_datetime) that
 satisfies the events-list hot-path query in a single index-only scan.
 """
-from alembic import op
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "b1c2d3e4f5a6"

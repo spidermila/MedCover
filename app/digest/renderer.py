@@ -12,7 +12,7 @@ from app.digest.registry import BLOCK_REGISTRY
 
 def render_digest(db_session: Any) -> str:
     """Render the full admin digest as an HTML string."""
-    from app.models.digest import get_digest_schedule
+    from app.models.digest import get_digest_schedule  # pylint: disable=import-outside-toplevel
     from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
 
     schedule = get_digest_schedule()
@@ -31,7 +31,7 @@ def render_digest(db_session: Any) -> str:
         try:
             context = instance.collect(db_session, config)
         except Exception:  # noqa: BLE001
-            import logging
+            import logging  # pylint: disable=import-outside-toplevel
 
             logging.getLogger(__name__).exception("Digest block %s collect() failed", db_block.block_type)
             continue

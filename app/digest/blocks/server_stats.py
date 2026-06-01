@@ -29,12 +29,12 @@ class ServerStatsBlock(BaseBlock):
     }
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
-        import sqlalchemy as sa
+        import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
 
-        from app.models.event import Event
-        from app.models.outbox import OutboxEmail
-        from app.models.settings import get_settings
-        from app.models.user import UserAccount
+        from app.models.event import Event  # pylint: disable=import-outside-toplevel
+        from app.models.outbox import OutboxEmail  # pylint: disable=import-outside-toplevel
+        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
+        from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
 
         now = datetime.now(timezone.utc)
         data: dict[str, Any] = {"title": config.get("title", self.default_config["title"])}

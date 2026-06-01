@@ -174,7 +174,7 @@ def done() -> str:
 
 def _ensure_roles() -> None:
     """Idempotently create all permissions and roles (mirrors seed_dev.py logic)."""
-    from app.models.role import ALL_PERMISSIONS
+    from app.models.role import ALL_PERMISSIONS  # pylint: disable=import-outside-toplevel
 
     for perm_data in ALL_PERMISSIONS:
         if not db.session.scalar(db.select(Permission).where(Permission.code == perm_data["code"])):
@@ -197,7 +197,7 @@ def _ensure_roles() -> None:
 
 def _ensure_general_me() -> None:
     """Idempotently create the built-in General master event."""
-    from app.models.master_event import MasterEvent
+    from app.models.master_event import MasterEvent  # pylint: disable=import-outside-toplevel
 
     if not db.session.scalar(db.select(MasterEvent).where(MasterEvent.is_general.is_(True))):
         db.session.add(

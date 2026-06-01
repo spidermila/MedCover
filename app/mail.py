@@ -412,7 +412,7 @@ def _format_event_change_value(field: str, raw: object) -> str:
     # Format ISO datetime strings to Czech local time.
     if "datetime" in field:
         try:
-            from datetime import datetime as _dt
+            from datetime import datetime as _dt  # pylint: disable=import-outside-toplevel
 
             from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
 
@@ -508,7 +508,7 @@ def send_admin_digest(recipient_email: str, subject: str, html_body: str) -> Non
 def _write_failure_audit(row: OutboxEmail) -> None:
     """Write an AuditLogEntry when an outbox email permanently fails.
     Called inside the active DB session — no commit here."""
-    from app.models.audit import AuditLogEntry
+    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
 
     try:
         db.session.add(
@@ -534,9 +534,9 @@ def drain_one_outbox_email() -> bool:
     Returns True if a row was processed (sent or failed), False if the queue
     was empty.  Designed to be called from both the scheduler and tests.
     """
-    from flask_mail import Message
+    from flask_mail import Message  # pylint: disable=import-outside-toplevel
 
-    from app.extensions import mail as _mail
+    from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
 
     row: OutboxEmail | None = db.session.scalars(
         db.select(OutboxEmail)
@@ -553,7 +553,7 @@ def drain_one_outbox_email() -> bool:
         return False
 
     # --- Dev email block check ---
-    from app.models.settings import get_settings as _get_settings
+    from app.models.settings import get_settings as _get_settings  # pylint: disable=import-outside-toplevel
 
     _settings = _get_settings()
     if not _settings.is_email_allowed(row.to_email):
@@ -615,7 +615,7 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
         return
     if not user_can_receive_notification(user, "assignment"):
         return
-    from flask import url_for
+    from flask import url_for  # pylint: disable=import-outside-toplevel
 
     debriefing_url = url_for("debriefing.submit", assignment_id=assignment.id, _external=True)
     html = render_template(

@@ -164,7 +164,7 @@ def delete_confirm(cred_id: int) -> str | Response:
         flash("Tato kvalifikace již byla smazána.", "warning")
         return redirect(url_for("qualifications.index"))
 
-    from app.models.event import (
+    from app.models.event import (  # pylint: disable=import-outside-toplevel
         Event,
         EventSpot,
         EventSpotTemplate,
@@ -227,14 +227,14 @@ def delete(cred_id: int) -> Response:
         flash("Tato kvalifikace již byla smazána.", "warning")
         return redirect(url_for("qualifications.index"))
 
-    from app.models.event import (
+    from app.models.event import (  # pylint: disable=import-outside-toplevel
         Event,
         EventSpot,
         EventStatus,
         spot_qualifications,
         spot_template_qualifications,
     )
-    from app.models.qualification import user_qualifications
+    from app.models.qualification import user_qualifications  # pylint: disable=import-outside-toplevel
 
     _FIXED = (EventStatus.COMPLETED, EventStatus.CANCELLED)
     qual_name = cred.name

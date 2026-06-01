@@ -120,7 +120,7 @@ def safe_next(next_url: str | None, fallback: str | None = None) -> str:
 
     Use this **everywhere** the app redirects to a user-supplied URL.
     """
-    from flask import url_for
+    from flask import url_for  # pylint: disable=import-outside-toplevel
 
     _fallback = fallback or url_for("main.dashboard")
     if not next_url:
@@ -142,10 +142,10 @@ def external_url_for(endpoint: str, **values: object) -> str:
     Falls back to Flask's built-in ``_external=True`` behaviour when no base URL is
     configured so that local / test environments still produce valid links.
     """
-    from flask import url_for
+    from flask import url_for  # pylint: disable=import-outside-toplevel
 
     try:
-        from app.models.settings import get_settings
+        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
         base: str | None = get_settings().app_base_url
     except Exception:
@@ -185,10 +185,10 @@ def audit(
     The caller is responsible for committing. Use within a transaction so that
     the audit row is rolled back together with the business change on failure.
     """
-    from flask_login import current_user
+    from flask_login import current_user  # pylint: disable=import-outside-toplevel
 
-    from app.extensions import db
-    from app.models.audit import AuditLogEntry
+    from app.extensions import db  # pylint: disable=import-outside-toplevel
+    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
 
     db.session.add(
         AuditLogEntry(
@@ -207,9 +207,9 @@ def get_or_404(model: type[T], pk: object) -> T:
 
     Standard idiom for view functions to resolve a URL parameter to an entity.
     """
-    from flask import abort
+    from flask import abort  # pylint: disable=import-outside-toplevel
 
-    from app.extensions import db
+    from app.extensions import db  # pylint: disable=import-outside-toplevel
 
     obj = db.session.get(model, pk)
     if obj is None:
@@ -222,8 +222,8 @@ def require_permission(*codes: str) -> None:
 
     Call inline at the top of view functions that already use ``@login_required``.
     """
-    from flask import abort
-    from flask_login import current_user
+    from flask import abort  # pylint: disable=import-outside-toplevel
+    from flask_login import current_user  # pylint: disable=import-outside-toplevel
 
     if not current_user.has_any_permission(*codes):
         abort(403)
@@ -237,7 +237,7 @@ def check_version_conflict(obj: object, form_value: str | None) -> bool:
     """
     try:
         submitted = int(form_value or 0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         submitted = 0
     current = getattr(obj, "version", None)
     return current is not None and submitted != current
@@ -249,7 +249,7 @@ def parse_enum(enum_class: type[E], value: object, default: E | None = None) -> 
         return default
     try:
         return enum_class(value)  # type: ignore[call-arg]
-    except (ValueError, KeyError):
+    except ValueError, KeyError:
         return default
 
 
@@ -261,8 +261,8 @@ def quick_date_ranges() -> list[tuple[str, str, str]]:
 
     Used by the date-range report and debriefing manage page.
     """
-    from calendar import monthrange
-    from datetime import date
+    from calendar import monthrange  # pylint: disable=import-outside-toplevel
+    from datetime import date  # pylint: disable=import-outside-toplevel
 
     today = date.today()
     tm_from = today.replace(day=1)

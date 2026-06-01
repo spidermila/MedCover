@@ -112,7 +112,7 @@ def _serialize_value(val: Any) -> Any:
     if isinstance(val, (bytes, bytearray)):
         return val.hex()
     # UUID and other types with __str__ that aren't natively JSON-serialisable
-    import uuid
+    import uuid  # pylint: disable=import-outside-toplevel
 
     if isinstance(val, uuid.UUID):
         return str(val)

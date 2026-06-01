@@ -50,8 +50,8 @@ def process_email_queue() -> None:
     the admin settings page take effect without a container restart.
     """
     with app.app_context():
-        from app.mail import drain_one_outbox_email
-        from app.models.settings import get_settings
+        from app.mail import drain_one_outbox_email  # pylint: disable=import-outside-toplevel
+        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
         s = get_settings()
         s.apply_to_app(app)
@@ -61,9 +61,9 @@ def process_email_queue() -> None:
 def open_assignments() -> None:
     """Auto-transition Events from Published → Assignments Open when assignments_open_datetime has passed."""
     with app.app_context():
-        from app.extensions import db
-        from app.models.audit import AuditLogEntry
-        from app.models.event import Event, EventStatus
+        from app.extensions import db  # pylint: disable=import-outside-toplevel
+        from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
+        from app.models.event import Event, EventStatus  # pylint: disable=import-outside-toplevel
 
         now = datetime.now(timezone.utc)
         events = db.session.scalars(
@@ -96,9 +96,9 @@ def open_assignments() -> None:
 def close_completed_events() -> None:
     """Auto-transition Events from Assignments Open/Closed → Completed after end_datetime."""
     with app.app_context():
-        from app.extensions import db
-        from app.models.audit import AuditLogEntry
-        from app.models.event import Event, EventStatus
+        from app.extensions import db  # pylint: disable=import-outside-toplevel
+        from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
+        from app.models.event import Event, EventStatus  # pylint: disable=import-outside-toplevel
 
         now = datetime.now(timezone.utc)
         events = db.session.scalars(
@@ -136,8 +136,8 @@ def send_reminders() -> None:
     that it can be tested without importing this module.
     """
     with app.app_context():
-        from app.extensions import db
-        from app.scheduler_tasks import run_send_reminders
+        from app.extensions import db  # pylint: disable=import-outside-toplevel
+        from app.scheduler_tasks import run_send_reminders  # pylint: disable=import-outside-toplevel
 
         run_send_reminders(db.session)
 
@@ -145,8 +145,8 @@ def send_reminders() -> None:
 def send_admin_digest_task() -> None:
     """Send admin digest if it is due per DigestSchedule."""
     with app.app_context():
-        from app.extensions import db
-        from app.scheduler_tasks import run_admin_digest
+        from app.extensions import db  # pylint: disable=import-outside-toplevel
+        from app.scheduler_tasks import run_admin_digest  # pylint: disable=import-outside-toplevel
 
         run_admin_digest(db.session)
 
@@ -154,8 +154,8 @@ def send_admin_digest_task() -> None:
 def scheduled_backup_task() -> None:
     """Create a daily backup if backup_schedule_enabled is True in AppSettings."""
     with app.app_context():
-        from app.extensions import db
-        from app.scheduler_tasks import run_scheduled_backup
+        from app.extensions import db  # pylint: disable=import-outside-toplevel
+        from app.scheduler_tasks import run_scheduled_backup  # pylint: disable=import-outside-toplevel
 
         run_scheduled_backup(db.session)
 
@@ -163,8 +163,8 @@ def scheduled_backup_task() -> None:
 def record_metrics() -> None:
     """Record outbox queue depth snapshot every 15 minutes."""
     with app.app_context():
-        from app.extensions import db
-        from app.scheduler_tasks import run_record_metrics
+        from app.extensions import db  # pylint: disable=import-outside-toplevel
+        from app.scheduler_tasks import run_record_metrics  # pylint: disable=import-outside-toplevel
 
         run_record_metrics(db.session)
 
@@ -172,7 +172,7 @@ def record_metrics() -> None:
 def cleanup_work_report() -> None:
     """Remove employee work report xlsx files older than 1 day."""
     with app.app_context():
-        from app.scheduler_tasks import cleanup_work_report_files
+        from app.scheduler_tasks import cleanup_work_report_files  # pylint: disable=import-outside-toplevel
 
         cleanup_work_report_files(app.instance_path)
 

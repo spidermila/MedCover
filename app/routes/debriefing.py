@@ -71,7 +71,7 @@ def _parse_rp_actuals(
     if start_str:
         try:
             actual_start = datetime.fromisoformat(start_str).replace(tzinfo=tz).astimezone(timezone.utc)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             errors.append("Zadejte platný skutečný čas začátku.")
     elif not is_training:
         errors.append("Zadejte platný skutečný čas začátku.")
@@ -79,7 +79,7 @@ def _parse_rp_actuals(
     if end_str:
         try:
             actual_end = datetime.fromisoformat(end_str).replace(tzinfo=tz).astimezone(timezone.utc)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             errors.append("Zadejte platný skutečný čas konce.")
     elif not is_training:
         errors.append("Zadejte platný skutečný čas konce.")
@@ -246,7 +246,7 @@ def manage() -> str:
 
     if to_date_str:
         try:
-            from datetime import timedelta
+            from datetime import timedelta  # pylint: disable=import-outside-toplevel
 
             to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
             query = query.where(Event.start_datetime < to_dt)

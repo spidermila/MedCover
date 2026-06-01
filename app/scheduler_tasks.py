@@ -28,8 +28,8 @@ def run_send_reminders(db_session: Any, now: datetime | None = None) -> int:
     Returns:
         Number of reminder emails enqueued.
     """
-    from app.mail import send_unfilled_spots_reminder
-    from app.models.event import Event, EventStatus
+    from app.mail import send_unfilled_spots_reminder  # pylint: disable=import-outside-toplevel
+    from app.models.event import Event, EventStatus  # pylint: disable=import-outside-toplevel
 
     if now is None:
         now = datetime.now(timezone.utc)
@@ -87,8 +87,8 @@ def run_record_metrics(db_session: Any, now: datetime | None = None) -> None:
     Called by the scheduler every ~15 minutes.  Rows older than 30 days
     are pruned in the same call.
     """
-    from app.models.digest import DigestMetricSnapshot
-    from app.models.outbox import OutboxEmail
+    from app.models.digest import DigestMetricSnapshot  # pylint: disable=import-outside-toplevel
+    from app.models.outbox import OutboxEmail  # pylint: disable=import-outside-toplevel
 
     if now is None:
         now = datetime.now(timezone.utc)
@@ -117,11 +117,11 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
 
     Returns True if the digest was enqueued, False if skipped.
     """
-    from app.digest.renderer import render_digest
-    from app.mail import send_admin_digest
-    from app.models.digest import get_digest_schedule
-    from app.models.role import Role
-    from app.models.user import UserAccount
+    from app.digest.renderer import render_digest  # pylint: disable=import-outside-toplevel
+    from app.mail import send_admin_digest  # pylint: disable=import-outside-toplevel
+    from app.models.digest import get_digest_schedule  # pylint: disable=import-outside-toplevel
+    from app.models.role import Role  # pylint: disable=import-outside-toplevel
+    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
 
     if now is None:
         now = datetime.now(timezone.utc)
@@ -202,9 +202,9 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
     Returns:
         True if a backup was created, False otherwise.
     """
-    from app.backup import export_to_zip, list_backups, prune_old_backups
-    from app.models.audit import AuditLogEntry
-    from app.models.settings import get_settings
+    from app.backup import export_to_zip, list_backups, prune_old_backups  # pylint: disable=import-outside-toplevel
+    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
+    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
     if now is None:
         now = datetime.now(timezone.utc)
@@ -271,7 +271,7 @@ def cleanup_work_report_files(instance_path: str, now: datetime | None = None) -
     Files are stored under  <instance_path>/work_report/<user_id>/<year>-<MM>.xlsx.
     Returns the number of files removed.
     """
-    from pathlib import Path
+    from pathlib import Path  # pylint: disable=import-outside-toplevel
 
     if now is None:
         now = datetime.now(timezone.utc)

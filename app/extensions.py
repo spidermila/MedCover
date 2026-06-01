@@ -24,11 +24,11 @@ login_manager.login_message_category = "warning"
 
 @login_manager.user_loader
 def load_user(user_id: str) -> UserAccount | None:
-    import uuid
+    import uuid  # pylint: disable=import-outside-toplevel
 
-    from app.models.user import UserAccount
+    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
 
     try:
         return db.session.get(UserAccount, uuid.UUID(user_id))
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return None

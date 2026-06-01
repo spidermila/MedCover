@@ -49,7 +49,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(calendar_bp)
 
     if app.config.get("DEV_LOGIN_ENABLED"):
-        from .dev import dev_bp
+        from .dev import dev_bp  # pylint: disable=import-outside-toplevel
 
         app.register_blueprint(dev_bp)
 
