@@ -58,7 +58,6 @@ def _my_events_section(now: datetime, horizon: datetime) -> tuple[list[tuple[Eve
             or_(
                 Event.id.in_(assigned_event_id_set),
                 Event.responsible_person_id == current_user.id,
-                Event.created_by_id == current_user.id,
             ),
         )
         .order_by(Event.start_datetime)
@@ -78,8 +77,6 @@ def _my_events_section(now: datetime, horizon: datetime) -> tuple[list[tuple[Eve
             tags.append("Přihlášen")
         if e.responsible_person_id == current_user.id:
             tags.append("Zodpovědná osoba")
-        if e.created_by_id == current_user.id:
-            tags.append("Koordinátor")
         tagged.append((e, tags))
     return tagged, assigned_event_id_set
 
