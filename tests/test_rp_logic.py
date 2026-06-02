@@ -95,6 +95,20 @@ class TestIsRpEligible:
             db.session.commit()
             assert u.is_rp_eligible() is False
 
+    def test_viewer_with_rp_qual_is_not_eligible(self, app):
+        """Viewer role lacks event.assign_own — must not be RP even with the right qualification."""
+        qual_id = _make_rp_qual(app)
+        with app.app_context():
+            qual = db.session.get(Qualification, qual_id)
+            viewer_role = db.session.scalar(db.select(Role).where(Role.name == Role.VIEWER))
+            u = UserAccount(email="viewer_rp@test.com", name="Viewer RP", is_active=True)
+            u.set_password("testpass123")
+            u.roles = [viewer_role]
+            u.qualifications = [qual]
+            db.session.add(u)
+            db.session.commit()
+            assert u.is_rp_eligible() is False
+
 
 # ── Auto-assign RP on claim ───────────────────────────────────────────────────
 
