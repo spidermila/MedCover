@@ -1,6 +1,9 @@
 """Event CRUD routes: index, feed, create, create_from_template, detail, edit, delete."""
 from __future__ import annotations
 
+from datetime import datetime
+from datetime import timezone
+
 from flask import abort
 from flask import flash
 from flask import jsonify
@@ -471,6 +474,7 @@ def detail(event_id: int) -> str | Response:
     return render_template(
         "events/detail.html",
         event=event,
+        now=datetime.now(timezone.utc),
         EventStatus=EventStatus,
         EventType=EventType,
         EquipmentItemStatus=EquipmentItemStatus,
