@@ -200,9 +200,8 @@
           {% if rp_eligible_attendees | length > 1 or (rp_eligible_attendees | length == 1 and event.responsible_person_id != rp_eligible_attendees[0].id) %}
             <form method="post" action="{{ url_for('events.set_rp', event_id=event.id) }}" class="mt-2 d-flex gap-2 align-items-center">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <select name="user_id" class="form-select form-select-sm maxw-220"
-                      data-original="{{ event.responsible_person_id or '' }}"
-                      onchange="this.nextElementSibling.disabled = this.value === this.dataset.original">
+              <select name="user_id" class="form-select form-select-sm maxw-220 rp-select"
+                      data-original="{{ event.responsible_person_id or '' }}">
                 {% for u in rp_eligible_attendees %}
                   <option value="{{ u.id }}" {% if u.id == event.responsible_person_id %}selected{% endif %}>{{ u.name }}</option>
                 {% endfor %}
@@ -616,6 +615,12 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script nonce="{{ g.csp_nonce }}">
+document.querySelectorAll('select.rp-select').forEach(function (sel) {
+  function sync() { sel.nextElementSibling.disabled = sel.value === sel.dataset.original; }
+  sel.addEventListener('change', sync);
+});
+</script>
 <script src="{{ url_for('static', filename='js/events-detail.js') }}?v={{ static_ver }}"></script>
 <div id="event-nav-config" style="display:none" data-event-id="{{ event.id }}"></div>
 <script src="{{ url_for('static', filename='js/events-detail-nav.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
