@@ -87,16 +87,6 @@ def profile() -> str | Response:
         .limit(10)
     ).all()
     from app.utils import external_url_for
-    # Lazy-init iCal tokens on first profile visit.
-    token_created = False
-    if not user.ical_token:
-        user.regenerate_ical_token()
-        token_created = True
-    if not user.ical_all_token:
-        user.regenerate_ical_all_token()
-        token_created = True
-    if token_created:
-        db.session.commit()
     ical_url = external_url_for("calendar.feed", token=user.ical_token)
     ical_all_url = external_url_for("calendar.feed_all", token=user.ical_all_token)
     return render_template(
@@ -107,7 +97,6 @@ def profile() -> str | Response:
         upcoming=upcoming,
         ical_url=ical_url,
         ical_all_url=ical_all_url,
-        token_created=token_created,
         min_password_length=MIN_PASSWORD_LENGTH
     )
 

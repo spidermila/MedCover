@@ -64,11 +64,14 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     # Single-use password reset: nonce is set when a reset link is issued and
     # cleared after successful password change. Old links become invalid immediately.
     password_reset_nonce = db.Column(db.String(64), nullable=True)
-    # iCal subscription token — 64-char hex, public but unguessable.
-    # Regenerating it immediately invalidates any existing calendar subscriptions.
-    ical_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
+    # iCal subscription tokens — 64-char hex, public but unguessable.
+    # Generated automatically on account creation; regenerating invalidates
+    # any existing calendar subscriptions using the old token.
+    ical_token = db.Column(db.String(64), nullable=True, unique=True, index=True,
+                           default=lambda: secrets.token_hex(32))
     # Separate token for the all-events iCal feed.
-    ical_all_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
+    ical_all_token = db.Column(db.String(64), nullable=True, unique=True, index=True,
+                               default=lambda: secrets.token_hex(32))
     # Brute-force protection: track consecutive failed logins per account.
     # After LOGIN_MAX_ATTEMPTS failures the account is locked for LOGIN_LOCKOUT_MINUTES.
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False, server_default="0")
@@ -137,21 +140,9 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         self.ical_token = secrets.token_hex(32)
         return self.ical_token
 
-    def get_or_create_ical_token(self) -> str:
-        """Return existing token or lazily create one on first call."""
-        if not self.ical_token:
-            self.regenerate_ical_token()
-        return self.ical_token
-
     def regenerate_ical_all_token(self) -> str:
         """Generate a new all-events iCal token, invalidating the previous one."""
         self.ical_all_token = secrets.token_hex(32)
-        return self.ical_all_token
-
-    def get_or_create_ical_all_token(self) -> str:
-        """Return existing all-events token or lazily create one on first call."""
-        if not self.ical_all_token:
-            self.regenerate_ical_all_token()
         return self.ical_all_token
 
     def set_password(self, password: str) -> None:
