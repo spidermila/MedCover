@@ -211,7 +211,7 @@ def regenerate() -> Response:
     old_token = current_user.ical_token
     current_user.regenerate_ical_token()
     audit(
-        "update",
+        "edit",
         "UserAccount",
         str(current_user.id),
         f"Uživatel {current_user.email} vygeneroval nový iCal token.",
@@ -230,7 +230,7 @@ def regenerate_all() -> Response:
     old_token = current_user.ical_all_token
     current_user.regenerate_ical_all_token()
     audit(
-        "update",
+        "edit",
         "UserAccount",
         str(current_user.id),
         f"Uživatel {current_user.email} vygeneroval nový iCal token (všechny akce).",
