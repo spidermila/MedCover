@@ -292,21 +292,41 @@ def user_report(user_id: uuid.UUID) -> str | Response:
     if user is None:
         abort(404)
 
+    from_date_str = request.args.get("from_date", "").strip()
+    to_date_str = request.args.get("to_date", "").strip()
+
+    from_dt: datetime | None = None
+    to_dt: datetime | None = None
+    date_error: str | None = None
+
+    if from_date_str or to_date_str:
+        try:
+            if from_date_str:
+                from_dt = datetime.strptime(from_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            if to_date_str:
+                to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+        except ValueError:
+            date_error = "Neplatný formát data."
+
     now = datetime.now(timezone.utc)
 
-    # Load all assignments for this user with eager-loaded spot → event
-    assignments = list(
-        db.session.scalars(
-            db.select(Assignment)
-            .where(Assignment.user_id == user_id)
-            .options(
-                selectinload(Assignment.spot).selectinload(EventSpot.event),  # type: ignore[arg-type]
-            )
-            .order_by(Assignment.assigned_at)
+    # Load assignments for this user with eager-loaded spot → event
+    query = (
+        db.select(Assignment)
+        .where(Assignment.user_id == user_id)
+        .join(Assignment.spot)
+        .join(EventSpot.event)
+        .options(
+            selectinload(Assignment.spot).selectinload(EventSpot.event),  # type: ignore[arg-type]
         )
-        .unique()
-        .all()
+        .order_by(Event.start_datetime)
     )
+    if from_dt:
+        query = query.where(Event.start_datetime >= from_dt)
+    if to_dt:
+        query = query.where(Event.start_datetime < to_dt)
+
+    assignments = list(db.session.scalars(query).unique().all())
 
     pairs = [(a, a.spot.event) for a in assignments if a.spot and a.spot.event]
     stats = _compute_user_stats(pairs, now)
@@ -357,7 +377,8 @@ def user_report(user_id: uuid.UUID) -> str | Response:
                 ]
             )
         safe_name = user.name.replace(" ", "_")
-        return _csv_response(csv_rows, f"prehled_{safe_name}.csv")
+        date_suffix = f"_{from_date_str}_{to_date_str}" if from_date_str or to_date_str else ""
+        return _csv_response(csv_rows, f"prehled_{safe_name}{date_suffix}.csv")
 
     return render_template(
         "reports/user_report.html",
@@ -365,6 +386,10 @@ def user_report(user_id: uuid.UUID) -> str | Response:
         rows=rows,
         stats=stats,
         is_own=is_own,
+        from_date=from_date_str,
+        to_date=to_date_str,
+        date_error=date_error,
+        quick_ranges=_quick_ranges(),
     )
 
 
