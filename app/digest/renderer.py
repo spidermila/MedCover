@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -31,8 +32,6 @@ def render_digest(db_session: Any) -> str:
         try:
             context = instance.collect(db_session, config)
         except Exception:  # noqa: BLE001
-            import logging  # pylint: disable=import-outside-toplevel
-
             logging.getLogger(__name__).exception("Digest block %s collect() failed", db_block.block_type)
             continue
         if context.get("skip"):

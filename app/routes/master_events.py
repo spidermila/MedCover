@@ -15,9 +15,11 @@ Table Manager (/<me_id>/table):
 
 from __future__ import annotations
 
+import json
 import re
-from collections import defaultdict
-from datetime import datetime, timezone
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from flask import Blueprint, Response, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -351,9 +353,7 @@ def table_manager(me_id: int) -> str:
     rows, max_spot_cols = _build_table_rows(list(events))
 
     # Compute how many rows each event occupies (for rowspan in utility column)
-    from collections import Counter as _Counter  # pylint: disable=import-outside-toplevel
-
-    event_row_spans: dict[int, int] = dict(_Counter(r["event"].id for r in rows))
+    event_row_spans: dict[int, int] = dict(Counter(r["event"].id for r in rows))
 
     can_assign = current_user.has_permission("event.assign_other")
     # RP-elevated: user can manage assignments on events they're assigned to
@@ -521,7 +521,6 @@ def _handle_shift_day(event: Event, value: str) -> Response:
         return jsonify({"ok": False, "error": "Neplatná hodnota posunu."}), 400
     if delta_days not in (-1, 1):
         return jsonify({"ok": False, "error": "Povolené hodnoty: -1 nebo 1."}), 400
-    from datetime import timedelta  # pylint: disable=import-outside-toplevel
 
     before = {"start_datetime": event.start_datetime.isoformat(), "end_datetime": event.end_datetime.isoformat()}
     event.start_datetime += timedelta(days=delta_days)
@@ -548,7 +547,6 @@ def _handle_shift_hour(event: Event, value: str) -> Response:
         return jsonify({"ok": False, "error": "Neplatná hodnota posunu hodiny."}), 400
     if which not in ("start", "end") or delta_hours not in (-1, 1):
         return jsonify({"ok": False, "error": "Neplatné parametry posunu hodiny."}), 400
-    from datetime import timedelta  # pylint: disable=import-outside-toplevel
 
     attr = "start_datetime" if which == "start" else "end_datetime"
     before = {attr: getattr(event, attr).isoformat()}
@@ -595,7 +593,6 @@ def _handle_datetime_field(event: Event, field: str, value: str) -> Response:
     display_date = dt.astimezone(get_app_tz()).strftime("%d.%m.")
     _CZECH_DAYS = ["po", "út", "st", "čt", "pá", "so", "ne"]
     display_day = _CZECH_DAYS[dt.astimezone(get_app_tz()).weekday()]
-    from decimal import Decimal  # pylint: disable=import-outside-toplevel
 
     delta = event.end_datetime - event.start_datetime
     hours = Decimal(str(round(delta.total_seconds() / 3600, 1)))
@@ -660,8 +657,6 @@ def table_event_update(me_id: int, event_id: int) -> Response:
 def table_spots_update(me_id: int) -> Response:
     """Add or remove spots for a given (event, qualification) row."""
     require_permission("event.edit")
-
-    import json  # pylint: disable=import-outside-toplevel
 
     from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 

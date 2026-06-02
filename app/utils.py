@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from calendar import monthrange
+from datetime import date
 from typing import TypeVar
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -261,9 +263,6 @@ def quick_date_ranges() -> list[tuple[str, str, str]]:
 
     Used by the date-range report and debriefing manage page.
     """
-    from calendar import monthrange  # pylint: disable=import-outside-toplevel
-    from datetime import date  # pylint: disable=import-outside-toplevel
-
     today = date.today()
     tm_from = today.replace(day=1)
     tm_to = today.replace(day=monthrange(today.year, today.month)[1])

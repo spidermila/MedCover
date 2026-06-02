@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING
 
 from flask_login import LoginManager
@@ -24,8 +25,6 @@ login_manager.login_message_category = "warning"
 
 @login_manager.user_loader
 def load_user(user_id: str) -> UserAccount | None:
-    import uuid  # pylint: disable=import-outside-toplevel
-
     from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
 
     try:

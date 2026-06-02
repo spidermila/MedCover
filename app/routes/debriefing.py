@@ -17,7 +17,7 @@ Routes:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -246,8 +246,6 @@ def manage() -> str:
 
     if to_date_str:
         try:
-            from datetime import timedelta  # pylint: disable=import-outside-toplevel
-
             to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
             query = query.where(Event.start_datetime < to_dt)
         except ValueError:

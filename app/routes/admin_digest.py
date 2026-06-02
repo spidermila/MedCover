@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from typing import Any
 
@@ -304,14 +305,13 @@ def reorder_blocks() -> dict[str, bool]:
 @login_required
 def preview() -> Response:
     _require_digest_perm()
-    import html as _html  # pylint: disable=import-outside-toplevel
 
     from app.digest.renderer import render_digest  # pylint: disable=import-outside-toplevel
 
     digest_html = render_digest(db.session)
     # Sandbox the digest content in an iframe to prevent XSS from admin-controlled
     # free_text / header_html / footer_html fields executing in the browser context.
-    escaped = _html.escape(digest_html, quote=True)
+    escaped = html.escape(digest_html, quote=True)
     wrapper = (
         '<!DOCTYPE html><html><body style="margin:0">'
         f'<iframe srcdoc="{escaped}"'

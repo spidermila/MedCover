@@ -33,6 +33,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -112,8 +113,6 @@ def _serialize_value(val: Any) -> Any:
     if isinstance(val, (bytes, bytearray)):
         return val.hex()
     # UUID and other types with __str__ that aren't natively JSON-serialisable
-    import uuid  # pylint: disable=import-outside-toplevel
-
     if isinstance(val, uuid.UUID):
         return str(val)
     return val
