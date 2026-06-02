@@ -99,7 +99,7 @@ def test_known_form_pages_have_csrf_token(logged_in_page, base_url, path):
         form = forms.nth(i)
         csrf = form.locator('input[name="csrf_token"]')
         assert csrf.count() > 0, (
-            f"Form #{i} on {path} has no csrf_token input. " f"Action: {form.get_attribute('action')}"
+            f"Form #{i} on {path} has no csrf_token input. Action: {form.get_attribute('action')}"
         )
 
 
