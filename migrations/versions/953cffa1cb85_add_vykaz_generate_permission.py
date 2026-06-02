@@ -8,13 +8,12 @@ Inserts the new 'work_report.generate' permission and assigns it to the
 Admin, Coordinator, and Member roles.  Viewer and Debriefing Manager
 roles do NOT receive this permission.
 """
-
 import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "953cffa1cb85"
-down_revision = "20dbd30fbcfe"
+revision = '953cffa1cb85'
+down_revision = '20dbd30fbcfe'
 branch_labels = None
 depends_on = None
 
@@ -26,7 +25,9 @@ def upgrade() -> None:
     conn = op.get_bind()
 
     # Insert permission (idempotent: skip if already present)
-    existing = conn.execute(sa.text("SELECT id FROM permission WHERE code = 'work_report.generate'")).fetchone()
+    existing = conn.execute(
+        sa.text("SELECT id FROM permission WHERE code = 'work_report.generate'")
+    ).fetchone()
 
     if existing is None:
         conn.execute(
@@ -37,7 +38,9 @@ def upgrade() -> None:
         )
 
     # Assign permission to allowed roles
-    perm_row = conn.execute(sa.text("SELECT id FROM permission WHERE code = 'work_report.generate'")).fetchone()
+    perm_row = conn.execute(
+        sa.text("SELECT id FROM permission WHERE code = 'work_report.generate'")
+    ).fetchone()
     perm_id = perm_row[0]
 
     for role_name in _ALLOWED_ROLES:
@@ -49,19 +52,27 @@ def upgrade() -> None:
             continue
         role_id = role_row[0]
         already = conn.execute(
-            sa.text("SELECT 1 FROM role_permissions " "WHERE role_id = :rid AND permission_id = :pid"),
+            sa.text(
+                "SELECT 1 FROM role_permissions "
+                "WHERE role_id = :rid AND permission_id = :pid"
+            ),
             {"rid": role_id, "pid": perm_id},
         ).fetchone()
         if already is None:
             conn.execute(
-                sa.text("INSERT INTO role_permissions (role_id, permission_id) " "VALUES (:rid, :pid)"),
+                sa.text(
+                    "INSERT INTO role_permissions (role_id, permission_id) "
+                    "VALUES (:rid, :pid)"
+                ),
                 {"rid": role_id, "pid": perm_id},
             )
 
 
 def downgrade() -> None:
     conn = op.get_bind()
-    perm_row = conn.execute(sa.text("SELECT id FROM permission WHERE code = 'work_report.generate'")).fetchone()
+    perm_row = conn.execute(
+        sa.text("SELECT id FROM permission WHERE code = 'work_report.generate'")
+    ).fetchone()
     if perm_row is None:
         return
     perm_id = perm_row[0]

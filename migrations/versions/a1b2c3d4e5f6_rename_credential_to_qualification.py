@@ -5,35 +5,34 @@ Revises: f8edde653722
 Create Date: 2026-05-07 20:00:00.000000
 
 """
-
 from alembic import op
 
-revision = "a1b2c3d4e5f6"
-down_revision = "5bf568d4f009"
+revision = 'a1b2c3d4e5f6'
+down_revision = '5bf568d4f009'
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
     # Rename tables
-    op.rename_table("credential", "qualification")
-    op.rename_table("credential_parents", "qualification_parents")
-    op.rename_table("user_credentials", "user_qualifications")
-    op.rename_table("spot_credentials", "spot_qualifications")
-    op.rename_table("spot_template_credentials", "spot_template_qualifications")
+    op.rename_table('credential', 'qualification')
+    op.rename_table('credential_parents', 'qualification_parents')
+    op.rename_table('user_credentials', 'user_qualifications')
+    op.rename_table('spot_credentials', 'spot_qualifications')
+    op.rename_table('spot_template_credentials', 'spot_template_qualifications')
 
     # Fix foreign key column names inside renamed tables
-    with op.batch_alter_table("qualification_parents") as batch_op:
-        batch_op.alter_column("credential_id", new_column_name="qualification_id")
+    with op.batch_alter_table('qualification_parents') as batch_op:
+        batch_op.alter_column('credential_id', new_column_name='qualification_id')
 
-    with op.batch_alter_table("user_qualifications") as batch_op:
-        batch_op.alter_column("credential_id", new_column_name="qualification_id")
+    with op.batch_alter_table('user_qualifications') as batch_op:
+        batch_op.alter_column('credential_id', new_column_name='qualification_id')
 
-    with op.batch_alter_table("spot_qualifications") as batch_op:
-        batch_op.alter_column("credential_id", new_column_name="qualification_id")
+    with op.batch_alter_table('spot_qualifications') as batch_op:
+        batch_op.alter_column('credential_id', new_column_name='qualification_id')
 
-    with op.batch_alter_table("spot_template_qualifications") as batch_op:
-        batch_op.alter_column("credential_id", new_column_name="qualification_id")
+    with op.batch_alter_table('spot_template_qualifications') as batch_op:
+        batch_op.alter_column('credential_id', new_column_name='qualification_id')
 
     # Rename permission codes
     op.execute("""
@@ -62,17 +61,17 @@ def downgrade() -> None:
         UPDATE permission SET code = 'user.assign_credential' WHERE code = 'user.assign_qualification';
     """)
 
-    with op.batch_alter_table("spot_template_qualifications") as batch_op:
-        batch_op.alter_column("qualification_id", new_column_name="credential_id")
-    with op.batch_alter_table("spot_qualifications") as batch_op:
-        batch_op.alter_column("qualification_id", new_column_name="credential_id")
-    with op.batch_alter_table("user_qualifications") as batch_op:
-        batch_op.alter_column("qualification_id", new_column_name="credential_id")
-    with op.batch_alter_table("qualification_parents") as batch_op:
-        batch_op.alter_column("qualification_id", new_column_name="credential_id")
+    with op.batch_alter_table('spot_template_qualifications') as batch_op:
+        batch_op.alter_column('qualification_id', new_column_name='credential_id')
+    with op.batch_alter_table('spot_qualifications') as batch_op:
+        batch_op.alter_column('qualification_id', new_column_name='credential_id')
+    with op.batch_alter_table('user_qualifications') as batch_op:
+        batch_op.alter_column('qualification_id', new_column_name='credential_id')
+    with op.batch_alter_table('qualification_parents') as batch_op:
+        batch_op.alter_column('qualification_id', new_column_name='credential_id')
 
-    op.rename_table("spot_template_qualifications", "spot_template_credentials")
-    op.rename_table("spot_qualifications", "spot_credentials")
-    op.rename_table("user_qualifications", "user_credentials")
-    op.rename_table("qualification_parents", "credential_parents")
-    op.rename_table("qualification", "credential")
+    op.rename_table('spot_template_qualifications', 'spot_template_credentials')
+    op.rename_table('spot_qualifications', 'spot_credentials')
+    op.rename_table('user_qualifications', 'user_credentials')
+    op.rename_table('qualification_parents', 'credential_parents')
+    op.rename_table('qualification', 'credential')
