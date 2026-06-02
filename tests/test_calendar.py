@@ -69,7 +69,6 @@ def _make_member(app, email: str = "ical_member@test.com") -> object:
         user = UserAccount(email=email, name="iCal Member", is_active=True)
         user.set_password("testpass123")
         user.roles = [role]
-        user.regenerate_ical_token()
         db.session.add(user)
         db.session.commit()
         return user.id, user.ical_token
@@ -145,8 +144,6 @@ class TestICalRegenerate:
             user = db.session.scalar(
                 db.select(UserAccount).where(UserAccount.email == "member@test.com")
             )
-            old_token = user.ical_token or user.regenerate_ical_token()
-            db.session.commit()
             old_token = user.ical_token
 
         resp = member_client.post(
@@ -170,9 +167,6 @@ class TestICalRegenerate:
             user = db.session.scalar(
                 db.select(UserAccount).where(UserAccount.email == "member@test.com")
             )
-            if not user.ical_token:
-                user.regenerate_ical_token()
-                db.session.commit()
             old_token = user.ical_token
 
         member_client.post(
@@ -229,7 +223,6 @@ def _make_member_with_all_token(app, email: str = "ical_all@test.com") -> tuple[
         user = UserAccount(email=email, name="iCal All Member", is_active=True)
         user.set_password("testpass123")
         user.roles = [role]
-        user.regenerate_ical_all_token()
         db.session.add(user)
         db.session.commit()
         return user.id, user.ical_all_token
