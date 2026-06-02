@@ -156,7 +156,11 @@
         <p class="mb-1"><strong>Plánovaný začátek:</strong> {{ event.start_datetime | localdt }}</p>
         <p class="mb-0"><strong>Plánovaný konec:</strong> {{ event.end_datetime | localdt }}</p>
         {% if event.assignments_open_datetime %}
-          <p class="mb-0 mt-1 small text-muted">Přihlášky se otevřou: {{ event.assignments_open_datetime | localdt }}</p>
+          {% if event.assignments_open_datetime <= now %}
+            <p class="mb-0 mt-1 small text-muted">Přihlášky otevřeny: {{ event.assignments_open_datetime | localdt }}</p>
+          {% else %}
+            <p class="mb-0 mt-1 small text-muted">Přihlášky se otevřou: {{ event.assignments_open_datetime | localdt }}</p>
+          {% endif %}
         {% endif %}
         {% if event.actual_start_datetime %}
         <p class="mb-1 mt-2"><strong>Skutečný začátek:</strong> {{ event.actual_start_datetime | localdt }}</p>
