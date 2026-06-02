@@ -236,6 +236,101 @@ class TestUserReport:
         assert "—" in tfoot_html
 
 
+class TestUserReportDateFilter:
+    """Date range filter on the per-user report."""
+
+    def _setup(self, app, email_suffix: str) -> tuple[str, str]:
+        """Create admin + member users and return (admin_email, member_id)."""
+        with app.app_context():
+            _make_user(f"admin_dr_{email_suffix}@test.com", "Admin DR", Role.ADMIN)
+            member = _make_user(f"member_dr_{email_suffix}@test.com", "Member DR", Role.MEMBER)
+            return f"admin_dr_{email_suffix}@test.com", str(member.id)
+
+    def test_from_date_excludes_earlier_events(self, app, client):
+        admin_email, member_id = self._setup(app, "from")
+        with app.app_context():
+            admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == admin_email))
+            member = db.session.get(UserAccount, member_id)
+            me = _make_me("DR From ME")
+            early = _make_event(me, "Early Event", start=datetime(2025, 1, 10, 10, 0, tzinfo=timezone.utc),
+                                end=datetime(2025, 1, 10, 18, 0, tzinfo=timezone.utc))
+            later = _make_event(me, "Later Event", start=datetime(2025, 3, 10, 10, 0, tzinfo=timezone.utc),
+                                end=datetime(2025, 3, 10, 18, 0, tzinfo=timezone.utc))
+            _make_assignment(_make_spot(early), member, admin)
+            _make_assignment(_make_spot(later), member, admin)
+
+        _login(client, admin_email)
+        resp = client.get(f"/reports/user/{member_id}?from_date=2025-02-01")
+        assert resp.status_code == 200
+        assert b"Early Event" not in resp.data
+        assert b"Later Event" in resp.data
+
+    def test_to_date_excludes_later_events(self, app, client):
+        admin_email, member_id = self._setup(app, "to")
+        with app.app_context():
+            admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == admin_email))
+            member = db.session.get(UserAccount, member_id)
+            me = _make_me("DR To ME")
+            early = _make_event(me, "Early Event", start=datetime(2025, 1, 10, 10, 0, tzinfo=timezone.utc),
+                                end=datetime(2025, 1, 10, 18, 0, tzinfo=timezone.utc))
+            later = _make_event(me, "Later Event", start=datetime(2025, 3, 10, 10, 0, tzinfo=timezone.utc),
+                                end=datetime(2025, 3, 10, 18, 0, tzinfo=timezone.utc))
+            _make_assignment(_make_spot(early), member, admin)
+            _make_assignment(_make_spot(later), member, admin)
+
+        _login(client, admin_email)
+        resp = client.get(f"/reports/user/{member_id}?to_date=2025-02-01")
+        assert resp.status_code == 200
+        assert b"Early Event" in resp.data
+        assert b"Later Event" not in resp.data
+
+    def test_both_dates_show_only_events_in_range(self, app, client):
+        admin_email, member_id = self._setup(app, "both")
+        with app.app_context():
+            admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == admin_email))
+            member = db.session.get(UserAccount, member_id)
+            me = _make_me("DR Both ME")
+            before = _make_event(me, "Before Range", start=datetime(2025, 1, 5, 10, 0, tzinfo=timezone.utc),
+                                 end=datetime(2025, 1, 5, 18, 0, tzinfo=timezone.utc))
+            inside = _make_event(me, "Inside Range", start=datetime(2025, 2, 15, 10, 0, tzinfo=timezone.utc),
+                                 end=datetime(2025, 2, 15, 18, 0, tzinfo=timezone.utc))
+            after = _make_event(me, "After Range", start=datetime(2025, 4, 1, 10, 0, tzinfo=timezone.utc),
+                                end=datetime(2025, 4, 1, 18, 0, tzinfo=timezone.utc))
+            for ev in [before, inside, after]:
+                _make_assignment(_make_spot(ev), member, admin)
+
+        _login(client, admin_email)
+        resp = client.get(f"/reports/user/{member_id}?from_date=2025-02-01&to_date=2025-03-01")
+        assert resp.status_code == 200
+        assert b"Before Range" not in resp.data
+        assert b"Inside Range" in resp.data
+        assert b"After Range" not in resp.data
+
+    def test_to_date_is_inclusive_of_end_day(self, app, client):
+        """An event starting on to_date itself must be included (+1 day boundary)."""
+        admin_email, member_id = self._setup(app, "inc")
+        with app.app_context():
+            admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == admin_email))
+            member = db.session.get(UserAccount, member_id)
+            me = _make_me("DR Inc ME")
+            on_boundary = _make_event(me, "Boundary Event",
+                                      start=datetime(2025, 3, 31, 10, 0, tzinfo=timezone.utc),
+                                      end=datetime(2025, 3, 31, 18, 0, tzinfo=timezone.utc))
+            _make_assignment(_make_spot(on_boundary), member, admin)
+
+        _login(client, admin_email)
+        resp = client.get(f"/reports/user/{member_id}?from_date=2025-01-01&to_date=2025-03-31")
+        assert resp.status_code == 200
+        assert b"Boundary Event" in resp.data
+
+    def test_invalid_date_shows_error(self, app, client):
+        admin_email, member_id = self._setup(app, "err")
+        _login(client, admin_email)
+        resp = client.get(f"/reports/user/{member_id}?from_date=not-a-date")
+        assert resp.status_code == 200
+        assert "Neplatný formát data".encode() in resp.data
+
+
 # ── Per-ME report ─────────────────────────────────────────────────────────────
 
 

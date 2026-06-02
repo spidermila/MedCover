@@ -10,9 +10,45 @@
   </h2>
   <div>
     <a href="{{ url_for('reports.index') }}" class="btn btn-outline-secondary btn-sm">← Zpět na přehledy</a>
-    <a href="{{ url_for('reports.user_report', user_id=report_user.id, format='csv') }}" class="btn btn-outline-success btn-sm ms-1">⬇ Stáhnout CSV</a>
+    <a href="{{ url_for('reports.user_report', user_id=report_user.id, from_date=from_date, to_date=to_date, format='csv') }}"
+       class="btn btn-outline-success btn-sm ms-1">⬇ Stáhnout CSV</a>
   </div>
 </div>
+
+{# Date-range filter #}
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('reports.user_report', user_id=report_user.id) }}" class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label for="from_date" class="form-label">Od data</label>
+        <input type="text" class="form-control flatpickr-date" id="from_date" name="from_date"
+               value="{{ from_date }}">
+      </div>
+      <div class="col-md-4">
+        <label for="to_date" class="form-label">Do data</label>
+        <input type="text" class="form-control flatpickr-date" id="to_date" name="to_date"
+               value="{{ to_date }}">
+      </div>
+      <div class="col-md-4">
+        <button type="submit" class="btn btn-danger w-100">Filtrovat</button>
+      </div>
+    </form>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      {% for label, fd, td in quick_ranges %}
+      <a href="{{ url_for('reports.user_report', user_id=report_user.id, from_date=fd, to_date=td) }}"
+         class="btn btn-outline-secondary btn-sm">{{ label }}</a>
+      {% endfor %}
+      {% if from_date or to_date %}
+      <a href="{{ url_for('reports.user_report', user_id=report_user.id) }}"
+         class="btn btn-outline-secondary btn-sm">× Zrušit filtr</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if date_error %}
+<div class="alert alert-danger">{{ date_error }}</div>
+{% endif %}
 
 {# User info #}
 <div class="card mb-4">
