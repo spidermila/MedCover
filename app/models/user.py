@@ -155,8 +155,15 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         return bool(owned & set(codes))
 
     def is_rp_eligible(self) -> bool:
-        """Return True if the user holds any qualification with can_be_rp=True."""
-        return any(q.can_be_rp for q in self.qualifications)
+        """Return True if the user can be a responsible person.
+
+        Requires both a qualification with can_be_rp=True and the
+        event.assign_own permission (excludes Viewers and inactive roles).
+        """
+        return (
+            self.has_permission("event.assign_own")
+            and any(q.can_be_rp for q in self.qualifications)
+        )
 
     # Flask-Login: use str(uuid) as session token
     def get_id(self) -> str:
