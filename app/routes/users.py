@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -249,8 +250,6 @@ def index() -> str:
 def create_user() -> str | Response:
     """Manually create a new active user account (no invite required)."""
     require_permission("user.create")
-
-    import secrets  # pylint: disable=import-outside-toplevel
 
     from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 

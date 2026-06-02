@@ -412,11 +412,9 @@ def _format_event_change_value(field: str, raw: object) -> str:
     # Format ISO datetime strings to Czech local time.
     if "datetime" in field:
         try:
-            from datetime import datetime as _dt  # pylint: disable=import-outside-toplevel
-
             from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
 
-            parsed = _dt.fromisoformat(val)
+            parsed = datetime.fromisoformat(val)
             local = parsed.astimezone(get_app_tz())
             return local.strftime("%d.%m.%Y %H:%M")
         except Exception:

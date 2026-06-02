@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -126,8 +128,6 @@ def forgot_password() -> str | Response:
         # Always show the same message to prevent user enumeration.
         flash("Pokud je e-mail registrován, byl odeslán odkaz pro obnovení hesla.", "info")
         if user and not user.is_archived:
-            import secrets  # pylint: disable=import-outside-toplevel
-
             from app.config import RESET_TOKEN_MINUTES  # pylint: disable=import-outside-toplevel
 
             nonce = secrets.token_hex(16)
@@ -159,8 +159,6 @@ def forgot_password() -> str | Response:
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token: str) -> str | Response:
-    import uuid as _uuid  # pylint: disable=import-outside-toplevel
-
     from app.config import RESET_TOKEN_MINUTES  # pylint: disable=import-outside-toplevel
 
     payload = _load_signed_token(token, _RESET_SALT, RESET_TOKEN_MINUTES * 60)
@@ -168,7 +166,7 @@ def reset_password(token: str) -> str | Response:
         return render_template("auth/reset_invalid.html"), 400
 
     user_id_str, nonce = payload.split(":", 1)
-    user = db.session.get(UserAccount, _uuid.UUID(user_id_str))
+    user = db.session.get(UserAccount, uuid.UUID(user_id_str))
 
     # Invalid if user not found, nonce already cleared (used), or nonce mismatch
     if not user or not user.password_reset_nonce or user.password_reset_nonce != nonce:

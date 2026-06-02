@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from flask import Response, abort, flash, redirect, request, url_for
 from flask_login import current_user, login_required
 
@@ -232,10 +234,8 @@ def set_rp(event_id: int) -> Response:
         flash("Vyberte zodpovědnou osobu.", "warning")
         return redirect(url_for("events.detail", event_id=event_id))
 
-    import uuid as _uuid  # pylint: disable=import-outside-toplevel
-
     try:
-        user_id = _uuid.UUID(user_id_str)
+        user_id = uuid.UUID(user_id_str)
     except ValueError:
         abort(400)
 

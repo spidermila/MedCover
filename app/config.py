@@ -1,5 +1,6 @@
 import os
 import pathlib
+import warnings
 
 RESET_TOKEN_MINUTES = 10
 INVITE_TOKEN_HOURS = 72
@@ -85,8 +86,6 @@ class ProductionConfig(Config):
     def init_app(cls, app: object) -> None:  # type: ignore[override]
         db_url = os.environ.get("DATABASE_URL", "")
         if db_url and "sslmode" not in db_url:
-            import warnings  # pylint: disable=import-outside-toplevel
-
             warnings.warn(
                 "DATABASE_URL does not include sslmode=require. " "Add ?sslmode=require for production security.",
                 stacklevel=2,
