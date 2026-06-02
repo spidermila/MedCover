@@ -197,7 +197,7 @@ class TestICalRegenerate:
             entry = db.session.scalar(
                 db.select(AuditLogEntry).where(
                     AuditLogEntry.entity_type == "UserAccount",
-                    AuditLogEntry.action_type == "update",
+                    AuditLogEntry.action_type == "edit",
                     AuditLogEntry.entity_id == str(user.id),
                 )
             )
