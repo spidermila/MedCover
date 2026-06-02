@@ -384,3 +384,52 @@ class TestICalRegenerateAll:
         )
         assert resp.status_code == 302
         assert "login" in resp.headers["Location"]
+
+
+# ── Archived user — feed access (issue #233) ──────────────────────────────────
+
+
+class TestArchivedUserFeedAccess:
+    """Archived users must not be able to access any iCal feed (issue #233)."""
+
+    def test_archived_user_personal_feed_returns_404(self, app, client):
+        """Archived user's personal iCal token should return 404."""
+        _, token = _make_member(app, "ical_archived_user@test.com")
+        with app.app_context():
+            user = db.session.scalar(
+                db.select(UserAccount).where(UserAccount.email == "ical_archived_user@test.com")
+            )
+            user.is_archived = True
+            user.is_active = False
+            db.session.commit()
+
+        resp = client.get(f"/calendar/{token}.ics")
+        assert resp.status_code == 404
+
+    def test_archived_user_all_events_feed_returns_404(self, app, client):
+        """Archived user's all-events iCal token should return 404."""
+        _, token = _make_member_with_all_token(app, "ical_archived_user_all@test.com")
+        with app.app_context():
+            user = db.session.scalar(
+                db.select(UserAccount).where(UserAccount.email == "ical_archived_user_all@test.com")
+            )
+            user.is_archived = True
+            user.is_active = False
+            db.session.commit()
+
+        resp = client.get(f"/calendar/all/{token}.ics")
+        assert resp.status_code == 404
+
+    def test_archived_but_active_user_personal_feed_returns_404(self, app, client):
+        """User archived without is_active=False (hypothetical) is still blocked."""
+        _, token = _make_member(app, "ical_archived_active@test.com")
+        with app.app_context():
+            user = db.session.scalar(
+                db.select(UserAccount).where(UserAccount.email == "ical_archived_active@test.com")
+            )
+            user.is_archived = True
+            # Deliberately leave is_active=True to test the is_archived guard independently
+            db.session.commit()
+
+        resp = client.get(f"/calendar/{token}.ics")
+        assert resp.status_code == 404
