@@ -79,7 +79,7 @@ def feed(token: str) -> Response:
     user: UserAccount | None = db.session.scalar(
         sa.select(UserAccount).where(UserAccount.ical_token == token)
     )
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.is_archived:
         abort(404)
 
     assignments = db.session.scalars(
@@ -137,7 +137,7 @@ def feed_all(token: str) -> Response:
     user: UserAccount | None = db.session.scalar(
         sa.select(UserAccount).where(UserAccount.ical_all_token == token)
     )
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.is_archived:
         abort(404)
 
     events = db.session.scalars(
