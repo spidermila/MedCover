@@ -398,7 +398,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <select name="user_id" class="form-select form-select-sm" required>
                 <option value="">— vyberte uživatele —</option>
-                {% for u in eligible_users if spot.is_eligible(u) and u.id not in assigned_user_ids %}
+                {% for u in eligible_users if u.id not in assigned_user_ids and spot.is_eligible(u) %}
                   <option value="{{ u.id }}">{{ u.name }}</option>
                 {% else %}
                   <option disabled>Žádní kvalifikovaní uživatelé</option>
