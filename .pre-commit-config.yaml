@@ -4,6 +4,16 @@ repos:
     hooks:
     -   id: reorder-python-imports
 
+  - repo: local
+    hooks:
+      - id: no-inline-event-handlers
+        name: No inline event handlers in templates
+        language: pygrep
+        entry: '\bon(click|submit|change|input|mouseover|keydown|keyup|focus|blur)\s*='
+        types: [file]
+        files: ^app/templates/.*\.html$
+        args: [--multiline]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
