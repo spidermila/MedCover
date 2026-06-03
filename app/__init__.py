@@ -93,16 +93,6 @@ def create_app(
         from .utils import get_app_tz  # noqa: PLC0415
         return dt.astimezone(get_app_tz()).strftime(fmt)
 
-    @app.template_filter("datetimelocal")
-    def datetimelocal_filter(dt: datetime | None) -> str:
-        """Format a tz-aware datetime as 'YYYY-MM-DDTHH:MM' for datetime-local inputs."""
-        if dt is None:
-            return ""
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        from .utils import get_app_tz  # noqa: PLC0415
-        return dt.astimezone(get_app_tz()).strftime("%Y-%m-%dT%H:%M")
-
     @app.template_filter("midpoint_iso")
     def midpoint_iso_filter(event: object) -> str:
         """Return the midpoint between event.start_datetime and event.end_datetime
