@@ -21,15 +21,8 @@ from app.models.outbox import OutboxEmail
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-
-
-def _make_master_event(app) -> int:
-    """Create a master event and return its ID."""
-    with app.app_context():
-        me = MasterEvent(name="Test ME")
-        db.session.add(me)
-        db.session.commit()
-        return me.id
+from tests.conftest import _make_event_in_status
+from tests.conftest import _make_master_event
 
 
 def _event_form_data(master_event_id: int, name: str = "Test Event") -> dict:
@@ -512,26 +505,6 @@ class TestAddSpot:
             data={"description": "Zdravotník", "quantity": "1"},
         )
         assert response.status_code == 403
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _make_event_in_status(app, status: EventStatus) -> int:
-    """Create an event in the given status and return its ID."""
-    with app.app_context():
-        me = MasterEvent(name=f"ME for {status.value}")
-        db.session.add(me)
-        db.session.flush()
-        event = Event(
-            name=f"Event {status.value}",
-            master_event_id=me.id,
-            status=status,
-            start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
-            end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
-        )
-        db.session.add(event)
-        db.session.commit()
-        return event.id
 
 
 # ── Edit: extended ────────────────────────────────────────────────────────────

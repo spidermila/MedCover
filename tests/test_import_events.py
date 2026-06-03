@@ -3,15 +3,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 from pathlib import Path
 
 from app.extensions import db
 from app.models.event import Event
-from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
+from tests.conftest import _get_csrf
+from tests.conftest import _make_master_event
 
 
 # ── Load the extraction script without adding it to the package ────────────────
@@ -58,23 +58,6 @@ class TestIsValidNameHelper:
 # ── Route helpers ─────────────────────────────────────────────────────────────
 
 
-def _get_csrf(client) -> str:
-    """Extract CSRF token from the import paste page."""
-    resp = client.get("/import/events/")
-    assert resp.status_code == 200
-    m = re.search(r'name="csrf_token" value="([^"]+)"', resp.data.decode())
-    assert m, "CSRF token not found"
-    return m.group(1)
-
-
-def _make_master_event(app, name: str = "Test ME") -> int:
-    with app.app_context():
-        me = MasterEvent(name=name)
-        db.session.add(me)
-        db.session.commit()
-        return me.id
-
-
 def _make_user(app, name: str, email: str, is_zdravotnik: bool = False) -> str:
     """Create an active Member user and return its UUID string."""
     from tests.conftest import _make_user as _conftest_make_user
@@ -112,7 +95,7 @@ def _post_confirm(
     """Build and POST the import confirm form; return the Flask response."""
     if users is None:
         users = []
-    csrf = _get_csrf(admin_client)
+    csrf = _get_csrf(admin_client, "/import/events/")
 
     data: dict[str, str] = {
         "csrf_token": csrf,
@@ -178,7 +161,7 @@ class TestImportPastePage:
 class TestImportPreview:
     def test_accepts_v1_flat_list(self, app, admin_client):
         _make_master_event(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/import/events/")
         payload = [_minimal_event()]
         resp = admin_client.post(
             "/import/events/preview",
@@ -189,7 +172,7 @@ class TestImportPreview:
 
     def test_accepts_v2_dict_with_users(self, app, admin_client):
         _make_master_event(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/import/events/")
         payload = {
             "version": 2,
             "users": [{
@@ -211,7 +194,7 @@ class TestImportPreview:
 
     def test_marks_existing_user_by_name(self, app, admin_client):
         _make_user(app, "Adam Gajda", "adam_existing@test.com")
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/import/events/")
         payload = {
             "version": 2,
             "users": [{"gs_name": "Gajda Adam", "name": "Adam Gajda",
@@ -227,7 +210,7 @@ class TestImportPreview:
 
     def test_marks_existing_user_by_email(self, app, admin_client):
         _make_user(app, "Different Name", "adam@test.com")
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/import/events/")
         payload = {
             "version": 2,
             "users": [{"gs_name": "Gajda Adam", "name": "Adam Gajda",
@@ -242,7 +225,7 @@ class TestImportPreview:
         assert b"Existuje" in resp.data
 
     def test_invalid_json_shows_error(self, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/import/events/")
         resp = admin_client.post(
             "/import/events/preview",
             data={"json_data": "not json", "csrf_token": csrf},
@@ -564,7 +547,7 @@ class TestImportConfirmAssignments:
         assert resp.status_code == 302
 
         # Re-submit the same event but with include=0 (unchecked by admin)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/import/events/")
         data = {
             "csrf_token": csrf,
             "event_count": "1",

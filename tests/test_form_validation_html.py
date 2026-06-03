@@ -10,14 +10,9 @@ server-side (that would auto-green all filled fields via CSS :valid).
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
 
 from app.extensions import db
-from app.models.event import Event
-from app.models.event import EventStatus
-from app.models.master_event import MasterEvent
+from tests.conftest import _make_event_in_status
 
 
 # Matches any <input>, <textarea>, or <select> that already carries is-valid
@@ -40,27 +35,6 @@ def _assert_no_preinjected_validity(html: str, page: str) -> None:
     )
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _make_event(app) -> int:
-    with app.app_context():
-        me = MasterEvent(name="Validation Test ME")
-        db.session.add(me)
-        db.session.flush()
-        now = datetime.now(timezone.utc)
-        ev = Event(
-            name="Validation Test Event",
-            master_event_id=me.id,
-            status=EventStatus.DRAFT,
-            start_datetime=now + timedelta(days=1),
-            end_datetime=now + timedelta(days=1, hours=4),
-            version=1,
-        )
-        db.session.add(ev)
-        db.session.commit()
-        return ev.id
-
-
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 class TestNoPreinjectedValidity:
@@ -71,7 +45,7 @@ class TestNoPreinjectedValidity:
         _assert_no_preinjected_validity(resp.data.decode(), "event create")
 
     def test_event_edit_form(self, app, admin_client):
-        eid = _make_event(app)
+        eid = _make_event_in_status(app)
         resp = admin_client.get(f"/events/{eid}/edit")
         assert resp.status_code == 200
         _assert_no_preinjected_validity(resp.data.decode(), "event edit")

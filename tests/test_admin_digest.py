@@ -1,7 +1,6 @@
 """Tests for the admin digest feature."""
 from __future__ import annotations
 
-import re
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
@@ -12,6 +11,7 @@ from app.models.digest import DigestMetricSnapshot
 from app.models.digest import DigestSchedule
 from app.models.digest import get_digest_schedule
 from app.models.settings import get_settings
+from tests.conftest import _get_csrf
 
 
 def _local_tz(app_ctx) -> ZoneInfo:
@@ -20,12 +20,6 @@ def _local_tz(app_ctx) -> ZoneInfo:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _get_csrf(client) -> str:
-    """Extract CSRF token from the digest settings page."""
-    resp = client.get("/admin/digest/")
-    m = re.search(rb'name="csrf_token" value="([^"]+)"', resp.data)
-    return m.group(1).decode() if m else ""
 
 
 def _seed_schedule(app) -> None:
@@ -279,7 +273,7 @@ def test_digest_save_persists(app: object, admin_client: object) -> None:
         schedule = get_digest_schedule()
         version = schedule.version
 
-    csrf = _get_csrf(admin_client)
+    csrf = _get_csrf(admin_client, "/admin/digest/")
     resp = admin_client.post("/admin/digest/save", data={
         "csrf_token": csrf,
         "enabled": "1",
@@ -308,7 +302,7 @@ def test_digest_requires_permission(app: object, member_client: object) -> None:
 def test_save_stale_version_flashes_danger(app, admin_client):
     """POST /admin/digest/save with wrong version → flash + redirect."""
     _seed_schedule(app)
-    csrf = _get_csrf(admin_client)
+    csrf = _get_csrf(admin_client, "/admin/digest/")
     resp = admin_client.post("/admin/digest/save", data={
         "csrf_token": csrf,
         "enabled": "1",
@@ -328,7 +322,7 @@ class TestAddBlock:
     def test_add_valid_block_type(self, app, admin_client):
         """Adding a valid extra block creates a new DigestBlock row."""
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         with app.app_context():
             before = db.session.scalar(
                 sa.select(sa.func.count()).select_from(DigestBlock)
@@ -345,7 +339,7 @@ class TestAddBlock:
     def test_add_invalid_block_type_flashes_danger(self, app, admin_client):
         """An unknown block_type should flash an error and not add a row."""
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         with app.app_context():
             before = db.session.scalar(sa.select(sa.func.count()).select_from(DigestBlock))
         resp = admin_client.post("/admin/digest/blocks/add", data={
@@ -360,7 +354,7 @@ class TestAddBlock:
     def test_add_block_at_max_flashes_danger(self, app, admin_client):
         """Adding a 6th block of the same type should flash an error."""
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         # Add 4 more free_text blocks (there is already 1 seeded → total 5 = max)
         for _ in range(4):
             admin_client.post("/admin/digest/blocks/add", data={
@@ -392,7 +386,7 @@ class TestSaveBlock:
             block = db.session.get(DigestBlock, block_id)
             version = block.version
 
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post(f"/admin/digest/blocks/{block_id}/save", data={
             "csrf_token": csrf,
             "title": "Moje Zpráva",
@@ -409,7 +403,7 @@ class TestSaveBlock:
     def test_save_block_stale_version_flashes(self, app, admin_client):
         _seed_schedule(app)
         block_id = _first_block_id(app, "free_text")
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post(f"/admin/digest/blocks/{block_id}/save", data={
             "csrf_token": csrf,
             "title": "X",
@@ -420,7 +414,7 @@ class TestSaveBlock:
 
     def test_save_block_404_on_missing(self, app, admin_client):
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post("/admin/digest/blocks/99999/save", data={
             "csrf_token": csrf,
             "title": "X",
@@ -441,7 +435,7 @@ class TestDeleteBlock:
         """Deleting a block removes it from the database."""
         _seed_schedule(app)
         # Add a fresh free_text block to delete (avoid deleting the seeded one)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         admin_client.post("/admin/digest/blocks/add", data={
             "csrf_token": csrf,
             "block_type": "free_text",
@@ -462,7 +456,7 @@ class TestDeleteBlock:
 
     def test_delete_block_404_on_missing(self, app, admin_client):
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post("/admin/digest/blocks/99999/delete", data={
             "csrf_token": csrf,
         })
@@ -484,7 +478,7 @@ class TestToggleBlock:
         with app.app_context():
             original = db.session.get(DigestBlock, block_id).enabled
 
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post(f"/admin/digest/blocks/{block_id}/toggle", data={
             "csrf_token": csrf,
         }, content_type="application/x-www-form-urlencoded")
@@ -498,7 +492,7 @@ class TestToggleBlock:
 
     def test_toggle_block_404_on_missing(self, app, admin_client):
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post("/admin/digest/blocks/99999/toggle", data={
             "csrf_token": csrf,
         })
@@ -523,7 +517,7 @@ class TestReorderBlocks:
             ids = [b.id for b in blocks]
 
         reversed_ids = list(reversed(ids))
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post(
             "/admin/digest/blocks/reorder",
             json=reversed_ids,
@@ -549,7 +543,7 @@ class TestSendTest:
     def test_no_email_flashes_danger(self, app, admin_client):
         """POSTing with empty test_email should flash a danger message."""
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post("/admin/digest/send-test", data={
             "csrf_token": csrf,
             "test_email": "",
@@ -562,7 +556,7 @@ class TestSendTest:
         from app.models.outbox import OutboxEmail
 
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post("/admin/digest/send-test", data={
             "csrf_token": csrf,
             "test_email": "test@example.com",
@@ -590,7 +584,7 @@ class TestSendNow:
         from app.models.outbox import OutboxEmail
 
         _seed_schedule(app)
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/digest/")
         resp = admin_client.post("/admin/digest/send-now", data={
             "csrf_token": csrf,
         }, follow_redirects=True)
@@ -619,7 +613,7 @@ class TestMergeBlockConfig:
         block_id = _first_block_id(app, block_type)
         with app.app_context():
             version = db.session.get(DigestBlock, block_id).version
-        csrf = _get_csrf(client)
+        csrf = _get_csrf(client, "/admin/digest/")
         data = {"csrf_token": csrf, "title": "T", "version": str(version)}
         data.update(extra)
         resp = client.post(

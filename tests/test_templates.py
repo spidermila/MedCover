@@ -6,16 +6,8 @@ from app.models.audit import AuditLogEntry
 from app.models.event import Event
 from app.models.event import EventSpotTemplate
 from app.models.event import EventTemplate
-from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
-
-
-def _make_master_event(app) -> int:
-    with app.app_context():
-        me = MasterEvent(name="Templates Test ME")
-        db.session.add(me)
-        db.session.commit()
-        return me.id
+from tests.conftest import _make_master_event
 
 
 def _make_template(app, name: str = "Test Template", paid: bool = False, spot_count: int = 0) -> int:

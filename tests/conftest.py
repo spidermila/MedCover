@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import re
+from datetime import datetime
+from datetime import timezone
 from typing import TYPE_CHECKING
 
 import pytest
@@ -9,6 +12,10 @@ from sqlalchemy import text
 
 from app import create_app
 from app.extensions import db as _db
+from app.models.event import Event
+from app.models.event import EventSpot
+from app.models.event import EventStatus
+from app.models.master_event import MasterEvent
 from app.models.role import ALL_PERMISSIONS
 from app.models.role import Permission
 from app.models.role import Role
@@ -329,6 +336,92 @@ def _make_user(
     _db.session.add(user)
     _db.session.commit()
     return user
+
+
+def _get_csrf(client, url: str) -> str:
+    """Fetch a page and extract the CSRF token from a hidden input."""
+    resp = client.get(url)
+    m = re.search(rb'name="csrf_token" value="([^"]+)"', resp.data)
+    return m.group(1).decode() if m else ""
+
+
+def _make_master_event(app, name: str = "Test ME", **kwargs) -> int:
+    """Create a MasterEvent and return its ID."""
+    with app.app_context():
+        me = MasterEvent(name=name, **kwargs)
+        _db.session.add(me)
+        _db.session.commit()
+        return me.id
+
+
+def _make_event_with_spot(
+    app,
+    status: EventStatus = EventStatus.ASSIGNMENTS_OPEN,
+    name: str = "Test Event",
+    me_id: int | None = None,
+    address: str | None = None,
+) -> tuple[int, int]:
+    """Create ME → Event → EventSpot and return (event_id, spot_id)."""
+    with app.app_context():
+        if me_id is None:
+            me = MasterEvent(name=f"ME for {name}")
+            _db.session.add(me)
+            _db.session.flush()
+            me_id = me.id
+        event = Event(
+            name=name,
+            master_event_id=me_id,
+            status=status,
+            start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            address=address,
+        )
+        _db.session.add(event)
+        _db.session.flush()
+        spot = EventSpot(event_id=event.id)
+        _db.session.add(spot)
+        _db.session.commit()
+        return event.id, spot.id
+
+
+def _make_event_in_status(
+    app,
+    status: EventStatus = EventStatus.DRAFT,
+    name: str = "Test Event",
+    start: datetime | None = None,
+    end: datetime | None = None,
+    address: str | None = None,
+    me_id: int | None = None,
+) -> int:
+    """Create ME → Event (no spot) and return event_id."""
+    with app.app_context():
+        if me_id is None:
+            me = MasterEvent(name=f"ME for {name}")
+            _db.session.add(me)
+            _db.session.flush()
+            me_id = me.id
+        event = Event(
+            name=name,
+            master_event_id=me_id,
+            status=status,
+            start_datetime=start or datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=end or datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            address=address,
+        )
+        _db.session.add(event)
+        _db.session.commit()
+        return event.id
+
+
+def _make_user_with_qual(app, email: str, qual_id: int) -> str:
+    """Create a Member user with the given qualification; return str(user.id)."""
+    from app.models.qualification import Qualification
+    with app.app_context():
+        qual = _db.session.get(Qualification, qual_id)
+        u = _make_user(email, "Test User", Role.MEMBER)
+        u.qualifications = [qual]
+        _db.session.commit()
+        return str(u.id)
 
 
 def _login(client, email: str, password: str = "testpass123") -> None:
