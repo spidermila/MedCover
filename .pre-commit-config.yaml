@@ -12,7 +12,7 @@ repos:
         entry: '\bon(click|submit|change|input|mouseover|keydown|keyup|focus|blur)\s*='
         types: [file]
         files: ^app/templates/.*\.html$
-        args: [--multiline]
+        args: [--multiline, --ignore-case]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
