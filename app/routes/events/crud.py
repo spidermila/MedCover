@@ -96,7 +96,11 @@ def _parse_index_filters() -> dict:
     }
 
 
-def _apply_index_order(query: db.select, sort_col: str, sort_dir: str) -> db.select:  # type: ignore[name-defined, type-arg]
+def _apply_index_order(
+    query: db.select,  # type: ignore[name-defined, type-arg]
+    sort_col: str,
+    sort_dir: str,
+) -> db.select:  # type: ignore[name-defined, type-arg]
     """Apply ORDER BY clause to the event list query."""
     _asc = sort_dir == "asc"
     if sort_col == "name":
