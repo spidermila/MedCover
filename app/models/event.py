@@ -251,7 +251,15 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
             return "Neobsazeno"
         if mandatory_filled < mandatory_total:
             return "Částečně obsazeno"
-        return "Plně obsazeno"
+        if self.filled_spots == self.total_spots:
+            return "Plně obsazena"
+        return "Dostatečně obsazena"
+
+    @property
+    def is_sufficiently_staffed(self) -> bool:
+        """True when all mandatory spots are filled (event can proceed)."""
+        mandatory_total = self.mandatory_total_spots
+        return mandatory_total > 0 and self.mandatory_filled_spots == mandatory_total
 
     @property
     def is_centrally_coordinated(self) -> bool:

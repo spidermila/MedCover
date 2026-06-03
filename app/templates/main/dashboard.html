@@ -176,7 +176,7 @@
           <span class="badge bg-primary">Neplacená</span>
           {% endif %}
           {% if event.total_spots > 0 %}
-          <span class="badge bg-{{ 'success' if fully_staffed else 'warning' }}">
+          <span class="badge bg-{{ 'success' if event.is_sufficiently_staffed else 'warning' }}">
             {{ event.staffing_status }}
           </span>
           {% endif %}

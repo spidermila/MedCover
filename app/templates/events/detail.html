@@ -24,7 +24,7 @@
         <span class="badge bg-secondary ms-1 fs-6">{{ event.event_type.value }}</span>
       {% endif %}
       {% if event.paid %}<span class="badge bg-success ms-1 fs-6">Placená</span>{% else %}<span class="badge bg-primary ms-1 fs-6">Neplacená</span>{% endif %}
-      <span class="badge bg-{{ 'success' if event.filled_spots == event.total_spots and event.total_spots > 0 else 'warning' }} ms-1 fs-6">{{ event.staffing_status }}</span>
+      <span class="badge bg-{{ 'success' if event.is_sufficiently_staffed else 'warning' }} ms-1 fs-6">{{ event.staffing_status }}</span>
     </h2>
     <p class="text-muted mb-0">
       <a href="{{ url_for('master_events.detail', me_id=event.master_event_id) }}" class="text-decoration-none">
