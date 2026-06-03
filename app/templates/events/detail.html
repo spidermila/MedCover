@@ -416,7 +416,7 @@
           {% if current_user.has_permission('event.edit') and event.status not in [EventStatus.COMPLETED, EventStatus.CANCELLED] %}
           <div class="collapse mt-2 spot-edit-panel" id="edit-spot-{{ spot.id }}"
                data-spot-id="{{ spot.id }}"
-               {% if spot.assignment %}data-user-cred-ids="{{ spot.assignment.user.qualifications | map(attribute='id') | list | tojson | e }}"{% endif %}>
+               {% if spot.assignment %}data-user-cred-ids='{{ spot.assignment.user.qualifications | map(attribute="id") | list | tojson }}'{% endif %}>
             <form method="POST" action="{{ url_for('events.edit_spot', event_id=event.id, spot_id=spot.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <div class="mb-2">
@@ -610,7 +610,7 @@
   {% endif %}
 </div>
 
-<div id="fillers-map-data" data-fillers-map="{{ fillers_map | tojson | e }}" hidden></div>
+<div id="fillers-map-data" data-fillers-map='{{ fillers_map | tojson }}' hidden></div>
 
 {% endblock %}
 
