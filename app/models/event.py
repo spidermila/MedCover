@@ -273,21 +273,6 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
             for s in self.spots
         )
 
-    def eligible_unfilled_spots_for(
-        self, user: UserAccount, excluded_spot_ids: set[int] | None = None,
-    ) -> list[EventSpot]:
-        """Return the spots that are still empty and that *user* may claim.
-
-        A spot is eligible when it has no assignment, the user does not already
-        hold one of *excluded_spot_ids* (typically: their existing assignments),
-        and the user satisfies the spot's qualification requirements.
-        """
-        excluded = excluded_spot_ids or set()
-        return [
-            s for s in self.spots
-            if s.assignment is None and s.id not in excluded and s.is_eligible(user)
-        ]
-
     def __repr__(self) -> str:
         return f"<Event {self.id}: {self.name} [{self.status}]>"
 
