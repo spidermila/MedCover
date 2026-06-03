@@ -14,7 +14,9 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _login
+from tests.conftest import _make_event_with_spot
 from tests.conftest import _make_user
+from tests.conftest import _make_user_with_qual
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -36,36 +38,6 @@ def _make_non_rp_qual(app) -> int:
         db.session.add(q)
         db.session.commit()
         return q.id
-
-
-def _make_user_with_qual(app, email: str, qual_id: int) -> str:
-    with app.app_context():
-        qual = db.session.get(Qualification, qual_id)
-        u = _make_user(email, "Test User", Role.MEMBER)
-        u.qualifications = [qual]
-        db.session.commit()
-        return str(u.id)
-
-
-def _make_open_event(app) -> tuple[int, int]:
-    """Return (event_id, spot_id) for an ASSIGNMENTS_OPEN event."""
-    with app.app_context():
-        me = MasterEvent(name="RP Test ME")
-        db.session.add(me)
-        db.session.flush()
-        event = Event(
-            name="RP Test Event",
-            master_event_id=me.id,
-            status=EventStatus.ASSIGNMENTS_OPEN,
-            start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
-            end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
-        )
-        db.session.add(event)
-        db.session.flush()
-        spot = EventSpot(event_id=event.id)
-        db.session.add(spot)
-        db.session.commit()
-        return event.id, spot.id
 
 
 # ── is_rp_eligible ────────────────────────────────────────────────────────────
@@ -116,7 +88,7 @@ class TestAutoAssignRpOnClaim:
     def test_first_eligible_claimant_becomes_rp(self, app):
         qual_id = _make_rp_qual(app)
         user_id = _make_user_with_qual(app, "claimer_rp@test.com", qual_id)
-        event_id, spot_id = _make_open_event(app)
+        event_id, spot_id = _make_event_with_spot(app)
 
         client = app.test_client()
         _login(client, "claimer_rp@test.com")
@@ -129,7 +101,7 @@ class TestAutoAssignRpOnClaim:
     def test_non_eligible_claimant_does_not_become_rp(self, app):
         qual_id = _make_non_rp_qual(app)
         _make_user_with_qual(app, "claimer_nonrp@test.com", qual_id)
-        event_id, spot_id = _make_open_event(app)
+        event_id, spot_id = _make_event_with_spot(app)
 
         client = app.test_client()
         _login(client, "claimer_nonrp@test.com")
@@ -144,7 +116,7 @@ class TestAutoAssignRpOnClaim:
         qual_id = _make_rp_qual(app)
         user1_id = _make_user_with_qual(app, "claimer_rp1@test.com", qual_id)
         _make_user_with_qual(app, "claimer_rp2@test.com", qual_id)
-        event_id, _ = _make_open_event(app)
+        event_id, _ = _make_event_with_spot(app)
 
         # Add second spot
         with app.app_context():
@@ -179,7 +151,7 @@ class TestAutoClearRpOnRelease:
     def test_rp_cleared_when_rp_releases(self, app):
         qual_id = _make_rp_qual(app)
         user_id = _make_user_with_qual(app, "rp_release@test.com", qual_id)
-        event_id, spot_id = _make_open_event(app)
+        event_id, spot_id = _make_event_with_spot(app)
 
         # Assign user and set them as RP
         with app.app_context():
@@ -204,7 +176,7 @@ class TestAutoClearRpOnRelease:
         non_rp_qual_id = _make_non_rp_qual(app)
         rp_user_id = _make_user_with_qual(app, "rp_stays@test.com", rp_qual_id)
         _make_user_with_qual(app, "nonrp_leaves@test.com", non_rp_qual_id)
-        event_id, _spot_id = _make_open_event(app)
+        event_id, _spot_id = _make_event_with_spot(app)
 
         with app.app_context():
             # Add second spot for non-rp user
@@ -234,7 +206,7 @@ class TestAutoClearRpOnRelease:
         qual_id = _make_rp_qual(app)
         rp1_id = _make_user_with_qual(app, "rp_leaving@test.com", qual_id)
         rp2_id = _make_user_with_qual(app, "rp_staying@test.com", qual_id)
-        event_id, spot_id = _make_open_event(app)
+        event_id, spot_id = _make_event_with_spot(app)
 
         with app.app_context():
             # Add second spot and assign both RP-eligible users
@@ -268,7 +240,7 @@ class TestSetRpRoute:
         non_rp_qual_id = _make_non_rp_qual(app)
         rp_user_id = _make_user_with_qual(app, "set_rp_eligible@test.com", rp_qual_id)
         non_rp_id = _make_user_with_qual(app, "set_rp_noneligible@test.com", non_rp_qual_id)
-        event_id, spot_id = _make_open_event(app)
+        event_id, spot_id = _make_event_with_spot(app)
         # Assign rp user to spot
         with app.app_context():
             assignment = Assignment(spot_id=spot_id, user_id=rp_user_id, assigned_by_id=rp_user_id)

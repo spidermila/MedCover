@@ -1,20 +1,12 @@
 """Tests for the application settings route (/admin/settings/)."""
 from __future__ import annotations
 
-import re
-
 import sqlalchemy as sa
 
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.settings import AppSettings
-
-
-def _get_csrf(client) -> str:
-    """Extract CSRF token from the settings page."""
-    resp = client.get("/admin/settings/")
-    m = re.search(rb'name="csrf_token" value="([^"]+)"', resp.data)
-    return m.group(1).decode() if m else ""
+from tests.conftest import _get_csrf
 
 
 def _form(csrf: str, **overrides) -> dict:
@@ -54,26 +46,26 @@ class TestAppSettingsGet:
 
 class TestAppSettingsSave:
     def test_valid_save_redirects(self, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         resp = admin_client.post("/admin/settings/", data=_form(csrf), follow_redirects=False)
         assert resp.status_code == 302
 
     def test_valid_save_persists_org_name(self, app, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         admin_client.post("/admin/settings/", data=_form(csrf, org_name="Nová Org"), follow_redirects=True)
         with app.app_context():
             settings = db.session.get(AppSettings, 1)
             assert settings.org_name == "Nová Org"
 
     def test_valid_save_persists_timezone(self, app, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         admin_client.post("/admin/settings/", data=_form(csrf, timezone="UTC"), follow_redirects=True)
         with app.app_context():
             settings = db.session.get(AppSettings, 1)
             assert settings.timezone == "UTC"
 
     def test_valid_save_writes_audit_log(self, app, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         admin_client.post("/admin/settings/", data=_form(csrf), follow_redirects=True)
         with app.app_context():
             entry = db.session.scalar(
@@ -85,7 +77,7 @@ class TestAppSettingsSave:
         assert entry is not None
 
     def test_invalid_timezone_stays_on_page(self, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         resp = admin_client.post(
             "/admin/settings/",
             data=_form(csrf, timezone="Not/ATimezone"),
@@ -94,7 +86,7 @@ class TestAppSettingsSave:
         assert resp.status_code == 200
 
     def test_smtp_password_saved_encrypted(self, app, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         admin_client.post(
             "/admin/settings/",
             data=_form(csrf, smtp_password="supersecret"),
@@ -107,7 +99,7 @@ class TestAppSettingsSave:
             assert settings.get_smtp_password() == "supersecret"
 
     def test_feedback_enabled_checkbox_persists(self, app, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         admin_client.post("/admin/settings/", data=_form(csrf, feedback_enabled="1"), follow_redirects=True)
         with app.app_context():
             settings = db.session.get(AppSettings, 1)
@@ -118,7 +110,7 @@ class TestAppSettingsSave:
         with app.app_context():
             db.session.get(AppSettings, 1).feedback_enabled = True
             db.session.commit()
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         # feedback_enabled key absent → checkbox unchecked
         admin_client.post("/admin/settings/", data=_form(csrf), follow_redirects=True)
         with app.app_context():
@@ -135,7 +127,7 @@ class TestAppSettingsSave:
 
 class TestAppSettingsTestEmail:
     def test_no_smtp_configured_flashes_warning(self, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         resp = admin_client.post(
             "/admin/settings/",
             data=_form(csrf, action="test"),
@@ -154,7 +146,7 @@ class TestAppSettingsTestEmail:
             settings.set_smtp_password("somepass")
             db.session.commit()
 
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         with patch("app.routes.app_settings.mail.send") as mock_send:
             resp = admin_client.post(
                 "/admin/settings/",
@@ -179,7 +171,7 @@ class TestAppSettingsTestEmail:
             settings.set_smtp_password("somepass")
             db.session.commit()
 
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/settings/")
         with patch("app.routes.app_settings.mail.send", side_effect=Exception("conn refused")):
             resp = admin_client.post(
                 "/admin/settings/",

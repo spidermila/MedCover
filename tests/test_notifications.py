@@ -1,19 +1,12 @@
 """Tests for the notification catalog and toggle route (/admin/notifications/)."""
 from __future__ import annotations
 
-import re
-
 from app.extensions import db
 from app.mail import _is_notify_enabled
 from app.mail import NOTIFICATION_CATALOG
 from app.models.settings import AppSettings
 from app.models.settings import get_settings
-
-
-def _get_csrf(client) -> str:
-    resp = client.get("/admin/notifications/")
-    m = re.search(rb'name="csrf_token" value="([^"]+)"', resp.data)
-    return m.group(1).decode() if m else ""
+from tests.conftest import _get_csrf
 
 
 # ── Catalog structure ─────────────────────────────────────────────────────────
@@ -82,7 +75,7 @@ class TestNotificationsGet:
 
 class TestNotificationsToggle:
     def test_disable_assignment_notifications(self, app, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/notifications/")
         # POST without notify_assignment → it should be set to False
         resp = admin_client.post(
             "/admin/notifications/",
@@ -105,7 +98,7 @@ class TestNotificationsToggle:
             assert settings.notify_event_published is True
 
     def test_enable_all_succeeds(self, app, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/notifications/")
         resp = admin_client.post(
             "/admin/notifications/",
             data={
@@ -127,7 +120,7 @@ class TestNotificationsToggle:
             assert settings.notify_debriefing is True
 
     def test_save_flashes_success(self, admin_client):
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/notifications/")
         resp = admin_client.post(
             "/admin/notifications/",
             data={"csrf_token": csrf},
@@ -137,7 +130,7 @@ class TestNotificationsToggle:
 
     def test_toggle_creates_audit_log(self, app, admin_client):
         from app.models.audit import AuditLogEntry
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/admin/notifications/")
         admin_client.post(
             "/admin/notifications/",
             data={"csrf_token": csrf},

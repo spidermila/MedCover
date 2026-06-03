@@ -12,6 +12,7 @@ from app.models.equipment import EventEquipmentAssignment
 from app.models.event import Event
 from app.models.event import EventStatus
 from app.models.master_event import MasterEvent
+from tests.conftest import _make_event_in_status
 
 
 def _make_type(app, name: str = "Test Type", category: EquipmentCategory = EquipmentCategory.SHARED) -> int:
@@ -28,23 +29,6 @@ def _make_item(app, type_id: int, name: str = "Test Item") -> int:
         db.session.add(item)
         db.session.commit()
         return item.id
-
-
-def _make_event(app) -> int:
-    with app.app_context():
-        me = MasterEvent(name="Test ME")
-        db.session.add(me)
-        db.session.flush()
-        event = Event(
-            name="Test Event",
-            master_event_id=me.id,
-            status=EventStatus.DRAFT,
-            start_datetime=__import__('datetime').datetime(2030, 6, 1, 10, 0, tzinfo=__import__('datetime').timezone.utc),
-            end_datetime=__import__('datetime').datetime(2030, 6, 1, 18, 0, tzinfo=__import__('datetime').timezone.utc),
-        )
-        db.session.add(event)
-        db.session.commit()
-        return event.id
 
 
 class TestEquipmentTypeList:
@@ -212,7 +196,7 @@ class TestEquipmentItemIssue:
 class TestEventEquipmentPlan:
     def test_admin_can_add_plan_entry(self, app, admin_client):
         type_id = _make_type(app)
-        event_id = _make_event(app)
+        event_id = _make_event_in_status(app)
         response = admin_client.post(
             f"/events/{event_id}/equipment/plan",
             data={"type_id": str(type_id), "quantity": "2"},
@@ -227,7 +211,7 @@ class TestEventEquipmentPlan:
 
     def test_member_cannot_add_plan_entry(self, app, member_client):
         type_id = _make_type(app)
-        event_id = _make_event(app)
+        event_id = _make_event_in_status(app)
         response = member_client.post(
             f"/events/{event_id}/equipment/plan",
             data={"type_id": str(type_id), "quantity": "1"},
@@ -239,7 +223,7 @@ class TestEventEquipmentAssign:
     def test_admin_can_assign_item(self, app, admin_client):
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
-        event_id = _make_event(app)
+        event_id = _make_event_in_status(app)
         response = admin_client.post(
             f"/events/{event_id}/equipment/assign",
             data={"item_id": str(item_id)},
@@ -259,7 +243,7 @@ class TestEventEquipmentAssign:
     def test_member_cannot_assign_item(self, app, member_client):
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
-        event_id = _make_event(app)
+        event_id = _make_event_in_status(app)
         response = member_client.post(
             f"/events/{event_id}/equipment/assign",
             data={"item_id": str(item_id)},
@@ -589,23 +573,6 @@ class TestEquipmentItemReturnExtended:
 
 # ── Availability ──────────────────────────────────────────────────────────────
 
-def _make_event_with_times(app, start: datetime, end: datetime, name: str = "Test Event") -> int:
-    """Create a published event with the given time window."""
-    with app.app_context():
-        me = MasterEvent(name="Test ME avail")
-        db.session.add(me)
-        db.session.flush()
-        event = Event(
-            name=name,
-            master_event_id=me.id,
-            status=EventStatus.PUBLISHED,
-            start_datetime=start,
-            end_datetime=end,
-        )
-        db.session.add(event)
-        db.session.commit()
-        return event.id
-
 
 def _assign_item_to_event(app, event_id: int, item_id: int) -> None:
     with app.app_context():
@@ -739,11 +706,12 @@ class TestEquipmentCheckEndpoint:
         type_id = _make_type(app, name="Typ conflict")
         item_id = _make_item(app, type_id, name="Item Conflict")
         # Existing event: 10:00–18:00 on 2030-08-01
-        existing_event_id = _make_event_with_times(
+        existing_event_id = _make_event_in_status(
             app,
-            datetime(2030, 8, 1, 10, 0, tzinfo=timezone.utc),
-            datetime(2030, 8, 1, 18, 0, tzinfo=timezone.utc),
+            EventStatus.PUBLISHED,
             name="Existing Event",
+            start=datetime(2030, 8, 1, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2030, 8, 1, 18, 0, tzinfo=timezone.utc),
         )
         _assign_item_to_event(app, existing_event_id, item_id)
 
@@ -765,10 +733,11 @@ class TestEquipmentCheckEndpoint:
         """When editing an event, its own assignment should not be a conflict."""
         type_id = _make_type(app, name="Typ self excl")
         item_id = _make_item(app, type_id, name="Item Self")
-        event_id = _make_event_with_times(
+        event_id = _make_event_in_status(
             app,
-            datetime(2030, 9, 1, 10, 0, tzinfo=timezone.utc),
-            datetime(2030, 9, 1, 18, 0, tzinfo=timezone.utc),
+            EventStatus.PUBLISHED,
+            start=datetime(2030, 9, 1, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2030, 9, 1, 18, 0, tzinfo=timezone.utc),
         )
         _assign_item_to_event(app, event_id, item_id)
 
@@ -788,10 +757,11 @@ class TestEquipmentCheckEndpoint:
     def test_no_conflict_for_non_overlapping(self, app, admin_client):
         type_id = _make_type(app, name="Typ no ovlp")
         item_id = _make_item(app, type_id, name="Item NoOvlp")
-        existing_event_id = _make_event_with_times(
+        existing_event_id = _make_event_in_status(
             app,
-            datetime(2030, 10, 1, 10, 0, tzinfo=timezone.utc),
-            datetime(2030, 10, 1, 14, 0, tzinfo=timezone.utc),
+            EventStatus.PUBLISHED,
+            start=datetime(2030, 10, 1, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2030, 10, 1, 14, 0, tzinfo=timezone.utc),
         )
         _assign_item_to_event(app, existing_event_id, item_id)
 
@@ -812,10 +782,11 @@ class TestEquipmentCheckEndpoint:
         """Assigning an unavailable item to an event should be blocked."""
         type_id = _make_type(app, name="Typ block assign")
         item_id = _make_item(app, type_id, name="Blocked Item")
-        event_id = _make_event_with_times(
+        event_id = _make_event_in_status(
             app,
-            datetime(2030, 11, 1, 10, 0, tzinfo=timezone.utc),
-            datetime(2030, 11, 1, 18, 0, tzinfo=timezone.utc),
+            EventStatus.PUBLISHED,
+            start=datetime(2030, 11, 1, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2030, 11, 1, 18, 0, tzinfo=timezone.utc),
         )
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)

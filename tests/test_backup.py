@@ -11,18 +11,9 @@ import pytest
 from app.extensions import db as _db
 from app.models.role import Role
 from app.models.settings import get_settings
+from tests.conftest import _get_csrf
 from tests.conftest import _login
 from tests.conftest import _make_user
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _get_csrf(client, url: str) -> str:
-    """Fetch a page and extract the CSRF token from a hidden input."""
-    resp = client.get(url)
-    import re
-    m = re.search(rb'name="csrf_token" value="([^"]+)"', resp.data)
-    return m.group(1).decode() if m else ""
 
 
 # ── Core engine tests ─────────────────────────────────────────────────────────
