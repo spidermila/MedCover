@@ -129,7 +129,9 @@ def feed_all(token: str) -> Response:
             Event.status != EventStatus.CANCELLED,
         )
         .options(
-            selectinload(Event.spots).selectinload(EventSpot.assignment).selectinload(Assignment.user),  # type: ignore[arg-type]
+            selectinload(Event.spots)  # type: ignore[arg-type]
+            .selectinload(EventSpot.assignment)
+            .selectinload(Assignment.user),
             selectinload(Event.spots).selectinload(EventSpot.required_qualifications),  # type: ignore[arg-type]
             selectinload(Event.responsible_person),  # type: ignore[arg-type]
         )
