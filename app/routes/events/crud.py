@@ -139,7 +139,7 @@ def _apply_index_order(
     return query.order_by(Event.start_datetime.asc() if _asc else Event.start_datetime.desc())
 
 
-def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, str | None, list[str]]]]:
+def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, str | None, list[str], bool]]]:
     """For each event on the current page, find spots the user can claim."""
     if not current_user.has_permission("event.assign_own"):
         return {}
@@ -148,7 +148,7 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
         db.session.scalars(db.select(Assignment.spot_id).where(Assignment.user_id == current_user.id)).all()
     )
     fillable_ids = user_fillable_qual_ids(current_user)
-    result: dict[int, list[tuple[int, str | None, list[str]]]] = {}
+    result: dict[int, list[tuple[int, str | None, list[str], bool]]] = {}
     for e in events:
         if e.status != EventStatus.ASSIGNMENTS_OPEN:
             continue
@@ -157,6 +157,7 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
                 s.id,
                 s.description,
                 [q.name for q in s.required_qualifications if not q.is_deleted],
+                s.is_optional,
             )
             for s in e.spots
             if s.assignment is None and s.id not in user_assigned_spot_ids and s.is_eligible_for(fillable_ids)
