@@ -8,8 +8,6 @@ Routes:
   POST /admin/feedback/<uuid>/delete  delete a feedback entry (admin.view required)
 """
 
-from __future__ import annotations
-
 from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 

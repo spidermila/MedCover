@@ -1,7 +1,5 @@
 """Tests for the reports blueprint."""
 
-from __future__ import annotations
-
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal

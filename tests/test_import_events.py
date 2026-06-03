@@ -1,7 +1,5 @@
 """Tests for the import feature (v2: events + users + dynamic spots + assignments)."""
 
-from __future__ import annotations
-
 import importlib.util
 import json
 from pathlib import Path

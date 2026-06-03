@@ -1,7 +1,5 @@
 """Event CRUD routes: index, feed, create, create_from_template, detail, edit, delete."""
 
-from __future__ import annotations
-
 from datetime import datetime, timezone
 
 from flask import Response, abort, flash, jsonify, redirect, render_template, request, url_for

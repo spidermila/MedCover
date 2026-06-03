@@ -23,8 +23,6 @@ Permissions:
   event.restore      — Cancelled → Draft
 """
 
-from __future__ import annotations
-
 from flask import Blueprint
 
 events_bp = Blueprint("events", __name__, url_prefix="/events")

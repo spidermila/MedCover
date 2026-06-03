@@ -1,7 +1,5 @@
 """Tests for Master Event CRUD: list, create, detail, edit, archive."""
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 from app.extensions import db

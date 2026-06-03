@@ -83,8 +83,6 @@ Notes
   Duplicate detection is handled by the web app at import time.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

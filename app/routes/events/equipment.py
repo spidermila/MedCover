@@ -1,7 +1,5 @@
 """Event equipment routes: plan add/remove, assign/unassign, availability check."""
 
-from __future__ import annotations
-
 from datetime import datetime, timezone
 
 from flask import Response, flash, jsonify, redirect, request, url_for

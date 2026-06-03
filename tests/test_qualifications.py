@@ -1,7 +1,5 @@
 """Tests for the qualifications blueprint (CRUD + permission enforcement)."""
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 from app.extensions import db

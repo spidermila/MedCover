@@ -13,8 +13,6 @@ All report routes accept ?format=csv to download the data as a CSV file.
 Permission: report.view  (users may always view their own per-user report)
 """
 
-from __future__ import annotations
-
 import csv
 import io
 import uuid

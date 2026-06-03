@@ -7,8 +7,6 @@ Routes:
   POST /import/events/confirm    create events in one transaction
 """
 
-from __future__ import annotations
-
 import json
 import secrets
 from datetime import datetime, timedelta, timezone

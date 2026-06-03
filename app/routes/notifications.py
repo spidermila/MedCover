@@ -5,8 +5,6 @@ Provides a catalog of all email notification types defined in NOTIFICATION_CATAL
 and allows admins to toggle each configurable type on/off via AppSettings.
 """
 
-from __future__ import annotations
-
 from flask import Blueprint, Response, flash, g, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 

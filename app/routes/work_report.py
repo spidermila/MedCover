@@ -8,8 +8,6 @@ POST /work-report/generate   — build xlsx, redirect back to index
 GET  /work-report/download   — stream the generated file to the browser
 """
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 

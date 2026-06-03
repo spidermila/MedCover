@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import re
 import secrets
 import uuid
@@ -87,6 +85,7 @@ def profile() -> str | Response:
         db.session.commit()
         token_created = True
     ical_url = external_url_for("calendar.feed", token=user.ical_token)
+    ical_all_url = external_url_for("calendar.feed_all", token=user.ical_all_token)
     return render_template(
         "users/profile.html",
         user=user,

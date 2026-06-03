@@ -1,7 +1,5 @@
 """Tests for the debriefing blueprint — redesigned two-part form, final submission."""
 
-from __future__ import annotations
-
 from datetime import datetime, timezone
 
 from app.extensions import db

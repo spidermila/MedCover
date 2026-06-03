@@ -27,8 +27,6 @@ When adding a new send_* function:
   5. Update DEVOPS.md and CHANGELOG.md.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from datetime import datetime, timezone

@@ -1,7 +1,5 @@
 """Shared helpers for the events blueprint sub-modules."""
 
-from __future__ import annotations
-
 from datetime import datetime, timezone
 
 from flask import url_for

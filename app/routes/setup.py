@@ -6,8 +6,6 @@ After completion, redirects all further /setup/* requests to the dashboard.
 Step 3 creates the first admin account (no auth required — no users exist yet).
 """
 
-from __future__ import annotations
-
 import pytz
 from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_user

@@ -1,7 +1,5 @@
 """Tests for the notification catalog and toggle route (/admin/notifications/)."""
 
-from __future__ import annotations
-
 from app.extensions import db
 from app.mail import NOTIFICATION_CATALOG, _is_notify_enabled
 from app.models.settings import AppSettings, get_settings

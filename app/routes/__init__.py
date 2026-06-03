@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from flask import Flask, Response, redirect, url_for
 
 from .admin import admin_bp

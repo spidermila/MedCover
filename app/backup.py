@@ -28,8 +28,6 @@ extra columns from an older or newer backup.  This means:
   fail at the DB level — the restore routine surfaces this as an error.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import logging

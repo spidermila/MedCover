@@ -5,8 +5,6 @@ multiple route modules.  Keeping them here makes it easier to reason about
 performance (eager-load shapes, ordering) and to apply changes in one place.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 from sqlalchemy import collate

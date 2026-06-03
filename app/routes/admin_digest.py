@@ -1,7 +1,5 @@
 """Admin digest configuration, preview and send routes."""
 
-from __future__ import annotations
-
 import html
 import logging
 from typing import Any

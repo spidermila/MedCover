@@ -3,8 +3,6 @@
 Import order determines the default sort order when blocks are first seeded.
 """
 
-from __future__ import annotations
-
 from app.digest.base import BaseBlock
 from app.digest.blocks.audit_log import AuditLogBlock
 from app.digest.blocks.backup_status import BackupStatusBlock

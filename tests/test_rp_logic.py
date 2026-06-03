@@ -1,7 +1,5 @@
 """Tests for RP (responsible person) auto-assign/clear logic and set_rp route."""
 
-from __future__ import annotations
-
 from datetime import datetime, timezone
 
 from app.extensions import db
