@@ -180,7 +180,11 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     )
     created_by = db.relationship("UserAccount", foreign_keys=[created_by_id], back_populates="created_events")
     spots: Mapped[list[EventSpot]] = db.relationship(
-        "EventSpot", back_populates="event", cascade="all, delete-orphan", lazy="selectin"
+        "EventSpot",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="EventSpot.is_optional, EventSpot.id",
     )
     equipment_plans = db.relationship("EventEquipmentPlan", back_populates="event", cascade="all, delete-orphan")
     equipment_assignments = db.relationship(
