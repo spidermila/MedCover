@@ -10,8 +10,6 @@ Provides:
   POST /dev/login-as/<role>      — instantly logs in as the dev account for that role
 """
 
-from __future__ import annotations
-
 from flask import Blueprint, Response, abort, flash, redirect, url_for
 from flask_login import login_user
 

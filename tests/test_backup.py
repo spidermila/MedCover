@@ -1,7 +1,5 @@
 """Tests for backup/restore engine and backup management routes."""
 
-from __future__ import annotations
-
 import json
 import zipfile
 from datetime import datetime, timezone

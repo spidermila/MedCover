@@ -1,7 +1,5 @@
 """Tests for the iCal calendar feed (/calendar/<token>.ics)."""
 
-from __future__ import annotations
-
 from datetime import datetime, timezone
 
 from app.extensions import db

@@ -1,7 +1,5 @@
 """Tests for the admin digest feature."""
 
-from __future__ import annotations
-
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa

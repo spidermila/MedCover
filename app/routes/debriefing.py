@@ -15,8 +15,6 @@ Routes:
   GET      /debriefing/manage           — list all records (Debriefing Manager)
 """
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for

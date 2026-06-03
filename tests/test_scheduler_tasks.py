@@ -1,7 +1,5 @@
 """Additional tests for scheduler_tasks.py (run_send_reminders + no-eligible path)."""
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 

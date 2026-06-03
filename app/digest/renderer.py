@@ -1,7 +1,5 @@
 """Digest renderer — collects data from all enabled blocks and renders the HTML email."""
 
-from __future__ import annotations
-
 import logging
 from datetime import datetime
 from typing import Any

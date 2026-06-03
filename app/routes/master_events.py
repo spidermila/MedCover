@@ -13,8 +13,6 @@ Table Manager (/<me_id>/table):
   Event time editing requires event.edit
 """
 
-from __future__ import annotations
-
 import json
 import re
 from collections import Counter, defaultdict

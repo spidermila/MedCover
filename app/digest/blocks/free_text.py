@@ -1,7 +1,5 @@
 """Free text digest block — admin-authored HTML/text content."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from app.digest.base import BaseBlock

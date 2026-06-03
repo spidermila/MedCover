@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from sqlalchemy.orm import Mapped
 
 from app.extensions import db

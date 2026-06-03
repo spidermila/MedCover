@@ -1,7 +1,5 @@
 """Shared utility helpers for the MedCover application."""
 
-from __future__ import annotations
-
 from calendar import monthrange
 from datetime import date
 from typing import TypeVar

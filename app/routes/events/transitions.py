@@ -1,7 +1,5 @@
 """Event lifecycle transition routes: transition, cancel, restore, split."""
 
-from __future__ import annotations
-
 from datetime import datetime
 
 from flask import Response, abort, flash, redirect, request, url_for

@@ -1,7 +1,5 @@
 """User activity digest block — audit log entries per user."""
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 from typing import Any
 

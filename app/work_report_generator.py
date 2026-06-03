@@ -14,8 +14,6 @@ and is overwritten on each call.  Callers are responsible for serving
 the file and scheduling cleanup (files older than 1 day should be removed).
 """
 
-from __future__ import annotations
-
 import calendar
 from datetime import date, datetime, timezone
 from decimal import Decimal

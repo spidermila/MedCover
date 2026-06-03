@@ -1,7 +1,5 @@
 """Tests for the user feedback feature."""
 
-from __future__ import annotations
-
 import uuid
 
 from flask import current_app

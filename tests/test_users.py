@@ -1,7 +1,5 @@
 """Tests for user profile and admin user-management routes."""
 
-from __future__ import annotations
-
 import uuid
 
 import pytest

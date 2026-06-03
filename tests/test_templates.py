@@ -1,7 +1,5 @@
 """Tests for the Event Templates CRUD feature."""
 
-from __future__ import annotations
-
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpotTemplate, EventTemplate

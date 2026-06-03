@@ -3,8 +3,6 @@ Admin application settings route — lets admins edit org info and SMTP config
 after the initial setup wizard has completed.
 """
 
-from __future__ import annotations
-
 import pytz
 from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_required

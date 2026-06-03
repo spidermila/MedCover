@@ -4,8 +4,6 @@ All routes are under /admin/backup and require the admin.view permission as a
 baseline, with more specific backup.* permissions per action.
 """
 
-from __future__ import annotations
-
 import io
 import logging
 import re

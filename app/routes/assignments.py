@@ -17,8 +17,6 @@ Service functions (shared with master_events table manager):
   do_unassign_user() — validate, delete assignment, commit
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from flask import Blueprint, Response, abort, flash, redirect, request, url_for

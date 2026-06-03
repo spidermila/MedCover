@@ -6,8 +6,6 @@ tests can call these functions directly with the test app context, without
 importing or patching the scheduler module itself.
 """
 
-from __future__ import annotations
-
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any

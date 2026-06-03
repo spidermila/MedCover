@@ -1,7 +1,5 @@
 """Tests for the main dashboard: event sort order (#113) and user-name links (#105)."""
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 from app.extensions import db

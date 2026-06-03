@@ -6,8 +6,6 @@ POST /calendar/regenerate       — regenerate personal iCal token.
 POST /calendar/regenerate-all   — regenerate all-events iCal token.
 """
 
-from __future__ import annotations
-
 import logging
 from datetime import datetime, timezone
 

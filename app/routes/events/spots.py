@@ -1,7 +1,5 @@
 """Event spot management routes: add, edit, delete spots; set RP; bulk actions."""
 
-from __future__ import annotations
-
 import uuid
 
 from flask import Response, abort, flash, redirect, request, url_for

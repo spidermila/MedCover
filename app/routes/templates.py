@@ -8,8 +8,6 @@ Permissions:
   event_template.delete  — delete templates
 """
 
-from __future__ import annotations
-
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import collate

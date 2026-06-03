@@ -8,8 +8,6 @@ Permissions:
   equipment_item.issue_personal     — admin only
 """
 
-from __future__ import annotations
-
 from datetime import datetime, timezone
 
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for

@@ -8,8 +8,6 @@ These tests also verify that the Bootstrap "was-validated" class is never pre-ap
 server-side (that would auto-green all filled fields via CSS :valid).
 """
 
-from __future__ import annotations
-
 import re
 
 from app.extensions import db

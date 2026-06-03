@@ -1,7 +1,5 @@
 """Tests for the safe_next URL validation helper."""
 
-from __future__ import annotations
-
 import pytest
 
 from app.utils import safe_next
