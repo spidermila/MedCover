@@ -184,12 +184,13 @@
       var body = document.getElementById('spotPickBody');
       body.innerHTML = '';
       spots.forEach(function (s) {
-        var spotId = s[0], desc = s[1], quals = s[2] || [];
+        var spotId = s[0], desc = s[1], quals = s[2] || [], optional = s[3];
         var label = desc || '';
         if (quals.length > 0) {
           label += (label ? ' — ' : '') + quals.join(', ');
         }
         if (!label) { label = 'Nespecifikovaná pozice'; }
+        if (optional) { label += ' (volitelná)'; }
         var csrfInput = document.createElement('input');
         csrfInput.type = 'hidden';
         csrfInput.name = 'csrf_token';
