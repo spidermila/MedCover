@@ -1,12 +1,14 @@
 """Tests for spot assignment: claim, release, permissions."""
 
+from datetime import datetime, timezone
+
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _make_event_with_spot, _make_user
+from tests.conftest import _login, _make_event_with_spot, _make_user
 
 
 class TestAssignmentClaim:
@@ -53,8 +55,6 @@ class TestAssignmentClaim:
             creator.roles = [role]
             db.session.add(creator)
             db.session.flush()
-
-            from datetime import datetime, timezone
 
             event = Event(
                 name="Draft Event",
@@ -138,8 +138,6 @@ class TestAdminAssignment:
         with app.app_context():
             _make_user("member2@test.com", "Second Member", Role.MEMBER)
 
-        from tests.conftest import _login
-
         second_client = app.test_client()
         _login(second_client, "member2@test.com")
         response = second_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
@@ -166,7 +164,6 @@ class TestAssignmentReleaseOwnership:
         # Second member (fresh client — separate session) tries to release it
         with app.app_context():
             _make_user("member2@test.com", "Second Member", Role.MEMBER)
-        from tests.conftest import _login
 
         second_client = app.test_client()
         _login(second_client, "member2@test.com")
@@ -184,7 +181,6 @@ class TestAdminUnassign:
         # Create a member and have them claim the spot via a fresh client
         with app.app_context():
             _make_user("claimer@test.com", "Claimer", Role.MEMBER)
-        from tests.conftest import _login
 
         claimer = app.test_client()
         _login(claimer, "claimer@test.com")
@@ -221,7 +217,6 @@ class TestAdminUnassign:
         # A plain member (not target, not admin) tries to unassign via fresh client
         with app.app_context():
             _make_user("attacker@test.com", "Attacker", Role.MEMBER)
-        from tests.conftest import _login
 
         attacker = app.test_client()
         _login(attacker, "attacker@test.com")
@@ -239,7 +234,6 @@ class TestAdminUnassign:
 class TestClaimEdgeCases:
     def test_viewer_cannot_claim(self, app):
         """A Viewer user (no event.assign_own) gets 403."""
-        from tests.conftest import _login
 
         event_id, spot_id = _make_event_with_spot(app)
         with app.app_context():
@@ -265,7 +259,6 @@ class TestClaimEdgeCases:
             creator.roles = [role]
             db.session.add(creator)
             db.session.flush()
-            from datetime import datetime, timezone
 
             event = Event(
                 name="Published Event",
@@ -395,7 +388,6 @@ class TestAssignOtherEdgeCases:
             creator.roles = [role]
             db.session.add(creator)
             db.session.flush()
-            from datetime import datetime, timezone
 
             event = Event(
                 name="Draft Ev",

@@ -9,8 +9,12 @@ server-side (that would auto-green all filled fields via CSS :valid).
 """
 
 import re
+from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
+from app.models.invite import RegistrationInvite
+from app.models.role import Role
+from app.models.user import UserAccount
 from tests.conftest import _make_event_in_status
 
 # Matches any <input>, <textarea>, or <select> that already carries is-valid
@@ -55,11 +59,6 @@ class TestNoPreinjectedValidity:
         _assert_no_preinjected_validity(resp.data.decode(), "login")
 
     def test_register_form(self, app, client):
-        from datetime import datetime, timedelta, timezone
-
-        from app.models.invite import RegistrationInvite
-        from app.models.role import Role
-        from app.models.user import UserAccount
 
         with app.app_context():
             role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
@@ -101,7 +100,6 @@ class TestNoPreinjectedValidity:
         _assert_no_preinjected_validity(resp.data.decode(), "equipment type create")
 
     def test_user_detail_form(self, app, admin_client):
-        from app.models.user import UserAccount
 
         with app.app_context():
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))

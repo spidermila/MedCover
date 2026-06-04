@@ -10,9 +10,12 @@ from app.models.equipment import (
     EquipmentItemStatus,
     EquipmentType,
     EventEquipmentAssignment,
+    EventEquipmentPlan,
 )
 from app.models.event import Event, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.user import UserAccount
+from app.routes.events._helpers import equipment_warnings_for_event
 from tests.conftest import _make_event_in_status
 
 
@@ -159,7 +162,6 @@ class TestEquipmentItemIssue:
         type_id = _make_type(app, category=EquipmentCategory.PERSONAL)
         item_id = _make_item(app, type_id)
         # get user id
-        from app.models.user import UserAccount
 
         with app.app_context():
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
@@ -177,9 +179,6 @@ class TestEquipmentItemIssue:
     def test_admin_can_return_item(self, app, admin_client):
         type_id = _make_type(app, category=EquipmentCategory.PERSONAL)
         item_id = _make_item(app, type_id)
-        from datetime import datetime, timezone
-
-        from app.models.user import UserAccount
 
         with app.app_context():
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
@@ -207,7 +206,6 @@ class TestEventEquipmentPlan:
             follow_redirects=False,
         )
         assert response.status_code == 302
-        from app.models.equipment import EventEquipmentPlan
 
         with app.app_context():
             plan = db.session.get(EventEquipmentPlan, (event_id, type_id))
@@ -235,7 +233,6 @@ class TestEventEquipmentAssign:
             follow_redirects=False,
         )
         assert response.status_code == 302
-        from app.models.equipment import EventEquipmentAssignment
 
         with app.app_context():
             ea = db.session.scalar(
@@ -508,9 +505,6 @@ class TestEquipmentItemDeleteExtended:
         assert response.status_code == 404
 
     def test_delete_issued_item_flashes(self, app, admin_client):
-        from datetime import datetime, timezone
-
-        from app.models.user import UserAccount
 
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
@@ -536,9 +530,6 @@ class TestEquipmentItemDeleteExtended:
 
 class TestEquipmentItemIssueExtended:
     def test_already_issued_flashes(self, app, admin_client):
-        from datetime import datetime, timezone
-
-        from app.models.user import UserAccount
 
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
@@ -924,7 +915,6 @@ class TestEquipmentConflictExclusion:
     """Cancelled/archived events should not cause equipment conflicts."""
 
     def test_cancelled_event_does_not_cause_conflict(self, app, admin_client):
-        from app.routes.events._helpers import equipment_warnings_for_event
 
         type_id = _make_type(app, "Conflict Type")
         item_id = _make_item(app, type_id, "Conflict Item")
@@ -966,7 +956,6 @@ class TestEquipmentConflictExclusion:
             assert "Cancelled Event" not in conflict_names
 
     def test_archived_event_does_not_cause_conflict(self, app, admin_client):
-        from app.routes.events._helpers import equipment_warnings_for_event
 
         type_id = _make_type(app, "Archived Type")
         item_id = _make_item(app, type_id, "Archived Item")
