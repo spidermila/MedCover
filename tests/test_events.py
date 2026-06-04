@@ -24,7 +24,8 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from tests.conftest import _login, _make_event_in_status, _make_master_event
+from app.routes.events.crud import _has_valid_eligibility
+from tests.conftest import _login, _make_event_in_status, _make_master_event, _make_user
 
 
 def _event_form_data(master_event_id: int, name: str = "Test Event") -> dict:
@@ -1397,3 +1398,455 @@ def test_spot_map_includes_description_and_qualifications(
     assert test_entry[1] == expected_desc
     assert test_entry[2] == expected_quals
     assert test_entry[3] is False  # mandatory spot
+
+
+class TestHasValidEligibility:
+    """Tests for _has_valid_eligibility helper."""
+
+    def test_spot_no_requirements_is_eligible(self, app):
+        """Spot with no requirements at all — everyone is eligible."""
+        with app.app_context():
+            me = MasterEvent(name="ME Elig Test")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Elig Event",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.commit()
+
+            assert _has_valid_eligibility(spot, set()) is True
+            assert _has_valid_eligibility(spot, {999}) is True
+
+    def test_spot_with_active_requirement_user_has(self, app):
+        """Spot with active requirement that user can fill."""
+        with app.app_context():
+            qual = Qualification(name="Test Qual Elig")
+            db.session.add(qual)
+            db.session.flush()
+
+            me = MasterEvent(name="ME Elig2")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Elig Event 2",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            spot.required_qualifications.append(qual)
+            db.session.add(spot)
+            db.session.commit()
+
+            assert _has_valid_eligibility(spot, {qual.id}) is True
+            assert _has_valid_eligibility(spot, set()) is False
+            assert _has_valid_eligibility(spot, {999}) is False
+
+    def test_spot_with_only_deleted_requirement_not_eligible(self, app):
+        """Spot whose only requirements are deleted — not eligible for anyone."""
+        with app.app_context():
+            qual = Qualification(name="Deleted Qual Elig", is_deleted=True)
+            db.session.add(qual)
+            db.session.flush()
+
+            me = MasterEvent(name="ME Elig3")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Elig Event 3",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            spot.required_qualifications.append(qual)
+            db.session.add(spot)
+            db.session.commit()
+
+            # Even with the qual ID, spot has only deleted reqs → False
+            assert _has_valid_eligibility(spot, {qual.id}) is False
+            assert _has_valid_eligibility(spot, set()) is False
+
+    def test_spot_with_mixed_active_and_deleted_requirements(self, app):
+        """Spot with one active + one deleted req — only active matters."""
+        with app.app_context():
+            active_qual = Qualification(name="Active Qual Mixed")
+            deleted_qual = Qualification(name="Deleted Qual Mixed", is_deleted=True)
+            db.session.add_all([active_qual, deleted_qual])
+            db.session.flush()
+
+            me = MasterEvent(name="ME Elig4")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Elig Event 4",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            spot.required_qualifications.extend([active_qual, deleted_qual])
+            db.session.add(spot)
+            db.session.commit()
+
+            # User has the active qual → eligible
+            assert _has_valid_eligibility(spot, {active_qual.id}) is True
+            # User doesn't have active qual → not eligible
+            assert _has_valid_eligibility(spot, {deleted_qual.id}) is False
+            assert _has_valid_eligibility(spot, set()) is False
+
+
+class TestEligibleFilter:
+    """Tests for the server-side 'pro mě' (elig=1) filter on event list."""
+
+    def test_elig_filter_shows_only_qualifying_events(self, app):
+        """With elig=1, only events with a spot matching user quals are shown."""
+        with app.app_context():
+            # Create a qualification
+            qual = Qualification(name="Elig Filter Qual")
+            db.session.add(qual)
+            db.session.flush()
+
+            # Create a member user with that qualification
+            user = _make_user("eligtest@test.com", "Elig Tester", Role.MEMBER)
+            user.qualifications = [qual]
+            db.session.commit()
+
+            me = MasterEvent(name="ME EligFilter")
+            db.session.add(me)
+            db.session.flush()
+
+            # Event 1: spot requires qual user has → should appear
+            ev1 = Event(
+                name="Elig Event Yes",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev1)
+            db.session.flush()
+            spot1 = EventSpot(event_id=ev1.id)
+            spot1.required_qualifications.append(qual)
+            db.session.add(spot1)
+
+            # Event 2: spot requires a different qual → should NOT appear
+            other_qual = Qualification(name="Other Qual Elig")
+            db.session.add(other_qual)
+            db.session.flush()
+
+            ev2 = Event(
+                name="Elig Event No",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 6, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev2)
+            db.session.flush()
+            spot2 = EventSpot(event_id=ev2.id)
+            spot2.required_qualifications.append(other_qual)
+            db.session.add(spot2)
+            db.session.commit()
+
+        client = app.test_client()
+        _login(client, "eligtest@test.com")
+
+        # Without filter — both events appear
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN")
+        assert b"Elig Event Yes" in resp.data
+        assert b"Elig Event No" in resp.data
+
+        # With elig=1 — only the matching event appears
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&elig=1")
+        assert b"Elig Event Yes" in resp.data
+        assert b"Elig Event No" not in resp.data
+
+    def test_elig_filter_works_on_completed_events(self, app):
+        """elig=1 also filters completed events (not just ASSIGNMENTS_OPEN)."""
+        with app.app_context():
+            qual = Qualification(name="Elig Completed Qual")
+            db.session.add(qual)
+            db.session.flush()
+
+            user = _make_user("eligcomp@test.com", "Elig Comp", Role.MEMBER)
+            user.qualifications = [qual]
+            db.session.commit()
+
+            me = MasterEvent(name="ME EligComp")
+            db.session.add(me)
+            db.session.flush()
+
+            # Completed event with matching spot
+            ev1 = Event(
+                name="Completed Elig Yes",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev1)
+            db.session.flush()
+            spot1 = EventSpot(event_id=ev1.id)
+            spot1.required_qualifications.append(qual)
+            db.session.add(spot1)
+
+            # Completed event with non-matching spot
+            other_qual = Qualification(name="Other Completed Qual")
+            db.session.add(other_qual)
+            db.session.flush()
+
+            ev2 = Event(
+                name="Completed Elig No",
+                master_event_id=me.id,
+                status=EventStatus.COMPLETED,
+                start_datetime=datetime(2030, 6, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev2)
+            db.session.flush()
+            spot2 = EventSpot(event_id=ev2.id)
+            spot2.required_qualifications.append(other_qual)
+            db.session.add(spot2)
+            db.session.commit()
+
+        client = app.test_client()
+        _login(client, "eligcomp@test.com")
+
+        resp = client.get("/events/?statuses=COMPLETED&elig=1")
+        assert b"Completed Elig Yes" in resp.data
+        assert b"Completed Elig No" not in resp.data
+
+    def test_elig_filter_excludes_filled_spots_for_open_events(self, app):
+        """For ASSIGNMENTS_OPEN, spots already assigned don't count."""
+        with app.app_context():
+            qual = Qualification(name="Elig Filled Qual")
+            db.session.add(qual)
+            db.session.flush()
+
+            user = _make_user("eligfilled@test.com", "Elig Filled", Role.MEMBER)
+            user.qualifications = [qual]
+            db.session.commit()
+
+            other_user = _make_user("other@test.com", "Other User", Role.MEMBER)
+            db.session.commit()
+
+            me = MasterEvent(name="ME EligFilled")
+            db.session.add(me)
+            db.session.flush()
+
+            # Event with one spot already assigned
+            ev = Event(
+                name="Filled Spot Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev)
+            db.session.flush()
+            spot = EventSpot(event_id=ev.id)
+            spot.required_qualifications.append(qual)
+            db.session.add(spot)
+            db.session.flush()
+            # Assign the spot to another user
+            assignment = Assignment(spot_id=spot.id, user_id=other_user.id)
+            db.session.add(assignment)
+            db.session.commit()
+
+        client = app.test_client()
+        _login(client, "eligfilled@test.com")
+
+        # Spot is filled, so elig filter should exclude this event
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&elig=1")
+        assert b"Filled Spot Event" not in resp.data
+
+    def test_elig_filter_no_param_shows_all(self, app, member_client):
+        """Without elig=1, all events are shown regardless of qualifications."""
+        resp = member_client.get("/events/?statuses=ASSIGNMENTS_OPEN,COMPLETED")
+        assert resp.status_code == 200
+
+    def test_elig_filter_excludes_event_user_already_assigned(self, app):
+        """For ASSIGNMENTS_OPEN, events where user is already assigned are excluded."""
+        with app.app_context():
+            qual = Qualification(name="Elig Already Qual")
+            db.session.add(qual)
+            db.session.flush()
+
+            user = _make_user("eligalready@test.com", "Elig Already", Role.MEMBER)
+            user.qualifications = [qual]
+            db.session.commit()
+
+            me = MasterEvent(name="ME EligAlready")
+            db.session.add(me)
+            db.session.flush()
+
+            # Event with two spots — user assigned to one, other still open
+            ev = Event(
+                name="Already Assigned Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev)
+            db.session.flush()
+            spot1 = EventSpot(event_id=ev.id)
+            spot1.required_qualifications.append(qual)
+            db.session.add(spot1)
+            db.session.flush()
+            # Assign user to spot1
+            assignment = Assignment(spot_id=spot1.id, user_id=user.id)
+            db.session.add(assignment)
+            # spot2 is open and user qualifies
+            spot2 = EventSpot(event_id=ev.id)
+            spot2.required_qualifications.append(qual)
+            db.session.add(spot2)
+            db.session.commit()
+
+        client = app.test_client()
+        _login(client, "eligalready@test.com")
+
+        # User already assigned → event excluded from elig filter
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&elig=1")
+        assert b"Already Assigned Event" not in resp.data
+
+
+class TestEventListFilters:
+    """Tests for event list filtering and sorting parameters."""
+
+    def test_invalid_sort_col_defaults_to_start(self, app, admin_client):
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "Sort Test", me_id=me_id)
+        resp = admin_client.get("/events/?sort=invalid&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+        assert b"Sort Test" in resp.data
+
+    def test_invalid_sort_dir_defaults_to_desc(self, app, admin_client):
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "Dir Test", me_id=me_id)
+        resp = admin_client.get("/events/?dir=invalid&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+
+    def test_sort_by_name(self, app, admin_client):
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "AAA Event", me_id=me_id)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "ZZZ Event", me_id=me_id)
+        resp = admin_client.get("/events/?sort=name&dir=asc&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+
+    def test_sort_by_status(self, app, admin_client):
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "Status Sort", me_id=me_id)
+        resp = admin_client.get("/events/?sort=status&dir=desc&statuses=ASSIGNMENTS_OPEN,DRAFT")
+        assert resp.status_code == 200
+
+    def test_sort_by_me_name(self, app, admin_client):
+        me_id = _make_master_event(app, name="Alpha ME")
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "ME Sort", me_id=me_id)
+        resp = admin_client.get("/events/?sort=me_name&dir=asc&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+
+    def test_sort_by_total(self, app, admin_client):
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "Total Sort", me_id=me_id)
+        resp = admin_client.get("/events/?sort=total&dir=desc&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+
+    def test_sort_by_rp(self, app, admin_client):
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "RP Sort", me_id=me_id)
+        resp = admin_client.get("/events/?sort=rp&dir=asc&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+
+    def test_me_filter_with_valid_id(self, app, admin_client):
+        me_id = _make_master_event(app, name="Filter ME")
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "ME Filter Event", me_id=me_id)
+        resp = admin_client.get(f"/events/?me_id={me_id}&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+        assert b"ME Filter Event" in resp.data
+
+    def test_me_filter_with_archived_me_ignored(self, app, admin_client):
+        me_id = _make_master_event(app, name="Archived ME", archived=True)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "Archived ME Event", me_id=me_id)
+        # Archived ME should be ignored as filter
+        resp = admin_client.get(f"/events/?me_id={me_id}&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+
+    def test_empty_types_filter_shows_nothing(self, app, admin_client):
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "Type Filter", me_id=me_id)
+        resp = admin_client.get("/events/?types=&statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+        assert b"Type Filter" not in resp.data
+
+    def test_empty_statuses_filter_shows_nothing(self, app, admin_client):
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "Status Empty", me_id=me_id)
+        resp = admin_client.get("/events/?statuses=")
+        assert resp.status_code == 200
+        assert b"Status Empty" not in resp.data
+
+    def test_viewer_cannot_see_drafts(self, app):
+        """Viewer role lacks event.view_draft so DRAFT events are excluded."""
+        with app.app_context():
+            user = _make_user("viewer@test.com", "Test Viewer", Role.VIEWER)  # noqa: F841
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.DRAFT, "Secret Draft", me_id=me_id)
+
+        client = app.test_client()
+        _login(client, "viewer@test.com")
+        resp = client.get("/events/?statuses=DRAFT,ASSIGNMENTS_OPEN")
+        assert b"Secret Draft" not in resp.data
+
+    def test_show_archived_param(self, app, admin_client):
+        me_id = _make_master_event(app)
+        with app.app_context():
+            event = Event(
+                name="Archived Event",
+                master_event_id=me_id,
+                status=EventStatus.COMPLETED,
+                archived=True,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.commit()
+
+        # Without archived=1, archived event not shown
+        resp = admin_client.get("/events/?statuses=COMPLETED")
+        assert b"Archived Event" not in resp.data
+
+        # With archived=1, archived event shown
+        resp = admin_client.get("/events/?statuses=COMPLETED&archived=1")
+        assert b"Archived Event" in resp.data
+
+    def test_elig_filter_ignored_for_viewer(self, app):
+        """Viewer lacks event.assign_own, so elig=1 is a no-op."""
+        with app.app_context():
+            _make_user("viewer2@test.com", "Viewer2", Role.VIEWER)
+        me_id = _make_master_event(app)
+        _make_event_in_status(app, EventStatus.ASSIGNMENTS_OPEN, "Viewer Elig", me_id=me_id)
+
+        client = app.test_client()
+        _login(client, "viewer2@test.com")
+        # Should still see events even with elig=1 (filter is no-op)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&elig=1")
+        assert b"Viewer Elig" in resp.data

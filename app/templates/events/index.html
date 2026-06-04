@@ -4,7 +4,7 @@
 {% block title %}Akce — MedCover{% endblock %}
 
 {# ── Helper macro: generate events.index URL preserving all active filters ── #}
-{% macro filter_url(page=None, archived=None) %}
+{% macro filter_url(page=None, archived=None, elig=None) %}
   {{- url_for('events.index',
     page=page,
     statuses=active_statuses|join(','),
@@ -13,6 +13,7 @@
     sort=sort_col if sort_col != 'start' else None,
     dir=sort_dir if sort_col != 'start' or sort_dir != 'asc' else None,
     archived=1 if (archived if archived is not none else show_archived) else None,
+    elig=1 if (elig if elig is not none else elig_filter) else None,
   ) -}}
 {%- endmacro %}
 
@@ -68,7 +69,7 @@
   {%- else -%}
     {%- set new_statuses = active_statuses + [toggle_status] -%}
   {%- endif -%}
-  {{ url_for('events.index', statuses=new_statuses|join(','), types=active_types|join(',') if active_types|length < all_event_types|length else None, me_id=active_me.id if active_me else None, archived=1 if show_archived else None) }}
+  {{ url_for('events.index', statuses=new_statuses|join(','), types=active_types|join(',') if active_types|length < all_event_types|length else None, me_id=active_me.id if active_me else None, archived=1 if show_archived else None, elig=1 if elig_filter else None) }}
 {%- endmacro %}
 
 {# Type filter toggle macro #}
@@ -79,7 +80,7 @@
   {%- else -%}
     {%- set new_types = active_types + [toggle_type] -%}
   {%- endif -%}
-  {{ url_for('events.index', types=new_types|join(',') if new_types|length < all_event_types|length else None, statuses=active_statuses|join(','), me_id=active_me.id if active_me else None, archived=1 if show_archived else None) }}
+  {{ url_for('events.index', types=new_types|join(',') if new_types|length < all_event_types|length else None, statuses=active_statuses|join(','), me_id=active_me.id if active_me else None, archived=1 if show_archived else None, elig=1 if elig_filter else None) }}
 {%- endmacro %}
 
 {# Sort URL: preserve statuses + types + me_id + archived, toggle sort col/dir #}
@@ -108,7 +109,7 @@
   <a href="{{ status_url('COMPLETED') }}" class="btn btn-sm filter-btn-neutral filter-btn {{ 'active' if 'COMPLETED' in active_statuses }}">Dokončena</a>
   <a href="{{ status_url('CANCELLED') }}" class="btn btn-sm btn-outline-secondary filter-btn {{ 'active' if 'CANCELLED' in active_statuses }}">Zrušena</a>
   {% if current_user.has_permission('event.assign_own') %}
-  <button type="button" class="btn btn-sm btn-outline-info filter-btn ms-2" id="btn-elig-filter">Pro mě</button>
+  <a href="{{ filter_url(elig=not elig_filter) }}" class="btn btn-sm btn-outline-info filter-btn ms-2 {{ 'active' if elig_filter }}" id="btn-elig-filter">Pro mě</a>
   {% endif %}
   <select id="me-filter-select" class="form-select form-select-sm ms-2 maxw-250 {{ 'd-none' if not active_named_mes }}"
           title="Filtrovat podle nadřazené akce" id="me-filter-select">
@@ -174,6 +175,7 @@
 {# ── Table view ─────────────────────────────────────────────────────────── #}
 <div id="view-table">
   {% if events %}
+  <p class="text-muted small mb-1">Zobrazeno: <strong>{{ events | length }}</strong> z {{ pagination.total }}</p>
   <div class="table-responsive">
     <table class="table table-hover align-middle" id="events-table">
       <thead class="table-light">
@@ -205,7 +207,6 @@
         {% set staffing_ratio = (mand_filled / mand_total) if mand_total > 0 else 0 %}
         <tr class="{{ 'text-muted' if event.status == EventStatus.CANCELLED or event.archived }}"
             data-status="{{ event.status.name }}"
-            data-eligible="{{ '1' if eligible_spot_map.get(event.id) else '0' }}"
             data-me="{{ '' if event.master_event.is_general else event.master_event.name }}"
             data-event-id="{{ event.id }}">
           <td class="px-2">
@@ -250,7 +251,7 @@
           <td>{% if not event.master_event.is_general %}{{ event.master_event.name }}{% else %}—{% endif %}</td>
           <td class="text-end">
             {% set eligible_spots = eligible_spot_map.get(event.id) %}
-            {% if eligible_spots %}
+            {% if eligible_spots and event.status == EventStatus.ASSIGNMENTS_OPEN %}
               {% if eligible_spots | length == 1 %}
               <form method="POST" action="{{ url_for('assignments.claim', spot_id=eligible_spots[0][0]) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

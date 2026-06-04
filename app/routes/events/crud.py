@@ -93,6 +93,7 @@ def _parse_index_filters() -> dict:
         "sort_dir": sort_dir,
         "active_me": active_me,
         "active_types": active_types,
+        "elig": request.args.get("elig") == "1",
     }
 
 
@@ -140,7 +141,11 @@ def _apply_index_order(
 
 
 def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, str | None, list[str], bool]]]:
-    """For each event on the current page, find spots the user can claim."""
+    """For each event on the current page, find spots the user can claim.
+
+    For ASSIGNMENTS_OPEN events: only unfilled spots the user can claim.
+    Spots whose only requirements are deleted qualifications are excluded.
+    """
     if not current_user.has_permission("event.assign_own"):
         return {}
 
@@ -164,6 +169,49 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
         ]
         if eligible:
             result[e.id] = eligible
+    return result
+
+
+def _has_valid_eligibility(spot: EventSpot, fillable_ids: set[int]) -> bool:
+    """Check eligibility excluding spots with only deleted requirements."""
+    all_reqs = spot.required_qualifications
+    active_reqs = [q for q in all_reqs if not q.is_deleted]
+    if not active_reqs:
+        # No active requirements — only eligible if spot never had any requirements
+        # (spots with only deleted reqs are not meaningful for filtering)
+        if all_reqs:
+            return False
+        return True
+    return all(q.id in fillable_ids for q in active_reqs)
+
+
+def _eligible_event_ids_for_user() -> set[int]:
+    """Return IDs of all events the current user is eligible for."""
+    fillable_ids = user_fillable_qual_ids(current_user)
+    # Events where user already holds an assignment (one-per-event rule)
+    user_assigned_event_ids = set(
+        db.session.scalars(
+            db.select(EventSpot.event_id)
+            .join(Assignment, Assignment.spot_id == EventSpot.id)
+            .where(Assignment.user_id == current_user.id)
+        ).all()
+    )
+    all_events = db.session.scalars(
+        db.select(Event).options(db.selectinload(Event.spots).selectinload(EventSpot.required_qualifications))
+    ).all()
+    result: set[int] = set()
+    for e in all_events:
+        if e.status == EventStatus.ASSIGNMENTS_OPEN and e.id in user_assigned_event_ids:
+            continue  # user already assigned to this event
+        for s in e.spots:
+            if e.status == EventStatus.ASSIGNMENTS_OPEN:
+                if s.assignment is None and _has_valid_eligibility(s, fillable_ids):
+                    result.add(e.id)
+                    break
+            else:
+                if _has_valid_eligibility(s, fillable_ids):
+                    result.add(e.id)
+                    break
     return result
 
 
@@ -199,6 +247,11 @@ def index() -> str:
     else:
         query = query.where(db.false())
 
+    # Apply "pro mě" eligibility filter (server-side)
+    if f["elig"] and current_user.has_permission("event.assign_own"):
+        eligible_event_ids = _eligible_event_ids_for_user()
+        query = query.where(Event.id.in_(eligible_event_ids))
+
     query = _apply_index_order(query, f["sort_col"], f["sort_dir"])
     pagination = db.paginate(query, page=f["page"], per_page=PER_PAGE, error_out=False)
     events = pagination.items
@@ -232,6 +285,7 @@ def index() -> str:
         event_templates=event_templates,
         eligible_spot_map=_build_eligible_spot_map(events),
         active_named_mes=active_named_mes,
+        elig_filter=f["elig"],
     )
 
 
