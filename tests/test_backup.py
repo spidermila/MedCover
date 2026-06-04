@@ -1,14 +1,20 @@
 """Tests for backup/restore engine and backup management routes."""
 
 import json
+import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.backup import export_to_zip, list_backups, prune_old_backups, restore_from_zip
 from app.extensions import db as _db
+from app.models.event import Event
+from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.settings import get_settings
+from app.models.user import UserAccount
+from app.scheduler_tasks import run_scheduled_backup
 from tests.conftest import _get_csrf, _login, _make_user
 
 # ── Core engine tests ─────────────────────────────────────────────────────────
@@ -17,7 +23,6 @@ from tests.conftest import _get_csrf, _login, _make_user
 class TestExportToZip:
     def test_creates_zip_file(self, app, tmp_path):
         with app.app_context():
-            from app.backup import export_to_zip
 
             path = export_to_zip(tmp_path)
         assert path.exists()
@@ -26,7 +31,6 @@ class TestExportToZip:
 
     def test_zip_contains_backup_json(self, app, tmp_path):
         with app.app_context():
-            from app.backup import export_to_zip
 
             path = export_to_zip(tmp_path)
         with zipfile.ZipFile(path) as zf:
@@ -34,7 +38,6 @@ class TestExportToZip:
 
     def test_backup_json_structure(self, app, tmp_path):
         with app.app_context():
-            from app.backup import export_to_zip
 
             path = export_to_zip(tmp_path)
         with zipfile.ZipFile(path) as zf:
@@ -46,7 +49,6 @@ class TestExportToZip:
 
     def test_app_settings_excluded(self, app, tmp_path):
         with app.app_context():
-            from app.backup import export_to_zip
 
             path = export_to_zip(tmp_path)
         with zipfile.ZipFile(path) as zf:
@@ -57,7 +59,6 @@ class TestExportToZip:
     def test_user_table_included(self, app, tmp_path):
         with app.app_context():
             _make_user("backup_test@example.com", "Backup User", Role.MEMBER)
-            from app.backup import export_to_zip
 
             path = export_to_zip(tmp_path)
         with zipfile.ZipFile(path) as zf:
@@ -69,7 +70,6 @@ class TestExportToZip:
     def test_creates_backup_dir_if_missing(self, app, tmp_path):
         new_dir = tmp_path / "nested" / "backups"
         with app.app_context():
-            from app.backup import export_to_zip
 
             path = export_to_zip(new_dir)
         assert path.exists()
@@ -79,12 +79,10 @@ class TestRestoreFromZip:
     def test_restore_reloads_user(self, app, tmp_path):
         with app.app_context():
             _make_user("restore_target@example.com", "Restore Target", Role.MEMBER)
-            from app.backup import export_to_zip
 
             zip_path = export_to_zip(tmp_path)
 
             # Delete the user and verify they're gone
-            from app.models.user import UserAccount
 
             u = _db.session.scalars(
                 _db.select(UserAccount).where(UserAccount.email == "restore_target@example.com")
@@ -99,7 +97,6 @@ class TestRestoreFromZip:
             )
 
             # Restore and verify user is back
-            from app.backup import restore_from_zip
 
             restore_from_zip(zip_path)
             restored = _db.session.scalars(
@@ -113,7 +110,6 @@ class TestRestoreFromZip:
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("readme.txt", "not a backup")
         with app.app_context():
-            from app.backup import restore_from_zip
 
             with pytest.raises(ValueError, match="backup.json"):
                 restore_from_zip(zip_path)
@@ -124,8 +120,6 @@ class TestRestoreFromZip:
             settings = get_settings()
             settings.org_name = "Pre-restore org"
             _db.session.commit()
-
-            from app.backup import export_to_zip, restore_from_zip
 
             zip_path = export_to_zip(tmp_path)
             settings.org_name = "Changed after backup"
@@ -140,11 +134,6 @@ class TestRestoreFromZip:
 
     def test_restore_handles_json_columns(self, app, tmp_path):
         """Rows with dict/list JSON columns (e.g. reminder_sent_json) must restore without error."""
-        from datetime import timedelta
-
-        from app.backup import export_to_zip, restore_from_zip
-        from app.models.event import Event
-        from app.models.master_event import MasterEvent
 
         with app.app_context():
             me = MasterEvent(name="JSON Test ME")
@@ -175,7 +164,6 @@ class TestRestoreFromZip:
 class TestPruneOldBackups:
     def test_prune_keeps_n_files(self, app, tmp_path):
         with app.app_context():
-            from app.backup import export_to_zip, prune_old_backups
 
             # Create 5 backup files
             for i in range(5):
@@ -190,7 +178,6 @@ class TestPruneOldBackups:
 
     def test_prune_does_nothing_when_within_limit(self, app, tmp_path):
         with app.app_context():
-            from app.backup import export_to_zip, prune_old_backups
 
             export_to_zip(tmp_path)
             deleted = prune_old_backups(tmp_path, keep_count=7)
@@ -198,7 +185,6 @@ class TestPruneOldBackups:
 
     def test_prune_nonexistent_dir_is_safe(self, app, tmp_path):
         with app.app_context():
-            from app.backup import prune_old_backups
 
             deleted = prune_old_backups(tmp_path / "missing", keep_count=3)
             assert deleted == []
@@ -206,10 +192,8 @@ class TestPruneOldBackups:
 
 class TestListBackups:
     def test_list_returns_newest_first(self, app, tmp_path):
-        import time
 
         with app.app_context():
-            from app.backup import export_to_zip, list_backups
 
             p1 = export_to_zip(tmp_path)
             time.sleep(0.05)
@@ -220,7 +204,6 @@ class TestListBackups:
 
     def test_list_includes_size_and_date(self, app, tmp_path):
         with app.app_context():
-            from app.backup import export_to_zip, list_backups
 
             export_to_zip(tmp_path)
             listing = list_backups(tmp_path)
@@ -237,7 +220,6 @@ class TestRunScheduledBackup:
             settings = get_settings()
             settings.backup_schedule_enabled = False
             _db.session.commit()
-            from app.scheduler_tasks import run_scheduled_backup
 
             result = run_scheduled_backup(_db.session)
             assert result is False
@@ -249,7 +231,6 @@ class TestRunScheduledBackup:
             settings.backup_schedule_hour = 3
             settings.backup_dir = str(tmp_path)
             _db.session.commit()
-            from app.scheduler_tasks import run_scheduled_backup
 
             # Pass a time that is NOT hour 3
             fake_now = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
@@ -264,7 +245,6 @@ class TestRunScheduledBackup:
             settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
-            from app.scheduler_tasks import run_scheduled_backup
 
             # January: Europe/Prague = UTC+1, so 01:00 UTC = 02:00 local
             fake_now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc)
@@ -280,7 +260,6 @@ class TestRunScheduledBackup:
             settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
-            from app.scheduler_tasks import run_scheduled_backup
 
             # January: Europe/Prague = UTC+1, so 01:00 UTC = 02:00 local
             fake_now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc)

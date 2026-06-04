@@ -1,6 +1,6 @@
 """Tests for RP (responsible person) auto-assign/clear logic and set_rp route."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
@@ -9,6 +9,7 @@ from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.queries import rp_eligible_users_list
 from tests.conftest import _login, _make_event_with_spot, _make_user, _make_user_with_qual
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -294,7 +295,6 @@ class TestSetRpRoute:
 
 class TestDashboardRpWarning:
     def _make_event_soon_no_rp(self, app) -> int:
-        from datetime import timedelta
 
         with app.app_context():
             me = MasterEvent(name="Dashboard RP ME")
@@ -826,7 +826,6 @@ class TestRpEligibleUsersSorting:
 
     def test_rp_eligible_users_sorted_czech(self, app):
         """Users with RP qualification are returned sorted by Czech collation."""
-        from app.queries import rp_eligible_users_list
 
         with app.app_context():
             qual = db.session.scalar(db.select(Qualification).where(Qualification.can_be_rp.is_(True)))

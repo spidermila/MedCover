@@ -84,7 +84,7 @@ def create_app(
             return "—"
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        from .utils import get_app_tz  # noqa: PLC0415
+        from .utils import get_app_tz  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return dt.astimezone(get_app_tz()).strftime(fmt)
 
@@ -103,7 +103,7 @@ def create_app(
         if end.tzinfo is None:
             end = end.replace(tzinfo=timezone.utc)
         mid = start + (end - start) / 2
-        from .utils import get_app_tz  # noqa: PLC0415
+        from .utils import get_app_tz  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return mid.astimezone(get_app_tz()).strftime("%Y-%m-%dT%H:%M")
 
@@ -116,7 +116,7 @@ def create_app(
             return ""
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        from .utils import get_app_tz  # noqa: PLC0415
+        from .utils import get_app_tz  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return _CZECH_DAY_ABBR[dt.astimezone(get_app_tz()).weekday()]
 

@@ -5,11 +5,13 @@ import json
 from pathlib import Path
 
 from app.extensions import db
-from app.models.event import Event
+from app.models.assignment import DebriefingRecord
+from app.models.event import Event, EventStatus
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _get_csrf, _make_master_event
+from tests.conftest import _make_user as _conftest_make_user
 
 # ── Load the extraction script without adding it to the package ────────────────
 
@@ -58,7 +60,6 @@ class TestIsValidNameHelper:
 
 def _make_user(app, name: str, email: str, is_zdravotnik: bool = False) -> str:
     """Create an active Member user and return its UUID string."""
-    from tests.conftest import _make_user as _conftest_make_user
 
     with app.app_context():
         u = _conftest_make_user(email, name, Role.MEMBER)
@@ -455,7 +456,6 @@ class TestImportConfirmSpots:
 
 class TestImportCancelledEvents:
     def test_cancelled_event_gets_cancelled_status(self, app, admin_client):
-        from app.models.event import EventStatus
 
         me_id = _make_master_event(app)
         ev = _minimal_event(name="Zrušená akce", date="2030-06-01")
@@ -481,7 +481,6 @@ class TestImportCancelledEvents:
 
     def test_past_cancelled_event_stays_cancelled(self, app, admin_client):
         """A past event that is cancelled should not be overridden to COMPLETED."""
-        from app.models.event import EventStatus
 
         me_id = _make_master_event(app)
         ev = _minimal_event(name="Stará zrušená akce", date="2020-01-01")
@@ -494,7 +493,6 @@ class TestImportCancelledEvents:
             assert event.status == EventStatus.CANCELLED
 
     def test_non_cancelled_event_unaffected(self, app, admin_client):
-        from app.models.event import EventStatus
 
         me_id = _make_master_event(app)
         ev = _minimal_event(name="Normální akce")
@@ -581,7 +579,6 @@ class TestImportConfirmAssignments:
 
     def test_past_event_gets_auto_debriefing(self, app, admin_client):
         """Past events (end < now) should automatically receive DebriefingRecord rows."""
-        from app.models.assignment import DebriefingRecord
 
         me_id = _make_master_event(app)
         uid = _make_user(app, "Eva Nováková", "eva@test.com")

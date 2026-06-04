@@ -1,5 +1,8 @@
 """Tests for the Event Templates CRUD feature."""
 
+import re
+from pathlib import Path
+
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpotTemplate, EventTemplate
@@ -394,7 +397,6 @@ class TestTemplateLint:
 
     def _strip_quoted(self, s: str) -> str:
         """Remove quoted attribute values so > inside values don't fool the parser."""
-        import re
 
         s = re.sub(r'"[^"]*"', '""', s)
         s = re.sub(r"'[^']*'", "''", s)
@@ -407,8 +409,6 @@ class TestTemplateLint:
         csrf_token inputs) as malformed attributes, silently dropping them.
         This was the root cause of the digest-block delete CSRF 400 (PR #179).
         """
-        import re
-        from pathlib import Path
 
         template_dir = Path(__file__).parent.parent / "app" / "templates"
         issues = []
@@ -451,8 +451,6 @@ class TestTemplateLint:
         they reach production. Complements the dynamic CSRF validation
         done by Flask-WTF at request time.
         """
-        import re
-        from pathlib import Path
 
         template_dir = Path(__file__).parent.parent / "app" / "templates"
         issues = []

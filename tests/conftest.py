@@ -10,6 +10,7 @@ from app import create_app
 from app.extensions import db as _db
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.qualification import Qualification
 from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS, Permission, Role
 from app.models.settings import AppSettings
 from app.models.user import UserAccount
@@ -73,7 +74,7 @@ def pytest_configure(config: pytest.Config) -> None:
         _check_db_reachable(os.environ["TEST_DATABASE_URL"])
         return
 
-    from testcontainers.postgres import PostgresContainer  # type: ignore[import-untyped]
+    from testcontainers.postgres import PostgresContainer  # pylint: disable=import-outside-toplevel
 
     container = PostgresContainer(
         image="postgres:17",
@@ -91,7 +92,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def _check_db_reachable(url: str) -> None:
     """Exit immediately with a clear message if the DB is not reachable."""
-    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import OperationalError  # pylint: disable=import-outside-toplevel
 
     try:
         engine = create_engine(url, connect_args={"connect_timeout": 5})
@@ -408,7 +409,6 @@ def _make_event_in_status(
 
 def _make_user_with_qual(app, email: str, qual_id: int) -> str:
     """Create a Member user with the given qualification; return str(user.id)."""
-    from app.models.qualification import Qualification
 
     with app.app_context():
         qual = _db.session.get(Qualification, qual_id)

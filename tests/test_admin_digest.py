@@ -1,12 +1,16 @@
 """Tests for the admin digest feature."""
 
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 
+from app.digest.renderer import render_digest
 from app.extensions import db
 from app.models.digest import DigestBlock, DigestMetricSnapshot, DigestSchedule, get_digest_schedule
+from app.models.outbox import OutboxEmail
 from app.models.settings import get_settings
+from app.scheduler_tasks import run_admin_digest, run_record_metrics
 from tests.conftest import _get_csrf
 
 
@@ -43,7 +47,6 @@ def _first_block_id(app, block_type: str) -> int:
 
 def test_render_digest_returns_html(app: object) -> None:
     """render_digest should return non-empty HTML with the outer frame."""
-    from app.digest.renderer import render_digest
 
     with app.app_context():
         schedule = get_digest_schedule()
@@ -55,7 +58,6 @@ def test_render_digest_returns_html(app: object) -> None:
 
 def test_render_digest_includes_enabled_blocks(app: object) -> None:
     """Enabled blocks should appear in the rendered digest."""
-    from app.digest.renderer import render_digest
 
     with app.app_context():
         schedule = get_digest_schedule()
@@ -76,7 +78,6 @@ def test_render_digest_includes_enabled_blocks(app: object) -> None:
 
 def test_render_digest_skips_disabled_blocks(app: object) -> None:
     """Disabled blocks should not appear in the rendered digest."""
-    from app.digest.renderer import render_digest
 
     with app.app_context():
         schedule = get_digest_schedule()
@@ -100,9 +101,6 @@ def test_render_digest_skips_disabled_blocks(app: object) -> None:
 
 def test_run_record_metrics_inserts_snapshot(app: object) -> None:
     """run_record_metrics should insert a DigestMetricSnapshot row."""
-    from datetime import datetime, timezone
-
-    from app.scheduler_tasks import run_record_metrics
 
     with app.app_context():
         now = datetime.now(timezone.utc)
@@ -119,9 +117,6 @@ def test_run_record_metrics_inserts_snapshot(app: object) -> None:
 
 def test_run_record_metrics_prunes_old_rows(app: object) -> None:
     """run_record_metrics should delete snapshots older than 30 days."""
-    from datetime import datetime, timedelta, timezone
-
-    from app.scheduler_tasks import run_record_metrics
 
     with app.app_context():
         old_time = datetime.now(timezone.utc) - timedelta(days=31)
@@ -145,9 +140,6 @@ def test_run_record_metrics_prunes_old_rows(app: object) -> None:
 
 def test_run_admin_digest_skips_when_disabled(app: object) -> None:
     """run_admin_digest should return False when schedule.enabled is False."""
-    from datetime import datetime, timezone
-
-    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         schedule = get_digest_schedule()
@@ -161,9 +153,6 @@ def test_run_admin_digest_skips_when_disabled(app: object) -> None:
 
 def test_run_admin_digest_skips_wrong_hour(app: object) -> None:
     """run_admin_digest should skip if current local hour != preferred_hour."""
-    from datetime import datetime
-
-    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         tz = _local_tz(app)
@@ -181,9 +170,6 @@ def test_run_admin_digest_skips_wrong_hour(app: object) -> None:
 
 def test_run_admin_digest_skips_already_sent_today(app: object) -> None:
     """run_admin_digest should skip if already sent today (same local calendar date)."""
-    from datetime import datetime
-
-    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         tz = _local_tz(app)
@@ -201,10 +187,6 @@ def test_run_admin_digest_skips_already_sent_today(app: object) -> None:
 
 def test_run_admin_digest_enqueues_on_new_day(app: object, admin_client: object) -> None:
     """run_admin_digest should fire if last_sent_at was a previous local day."""
-    from datetime import datetime
-
-    from app.models.outbox import OutboxEmail
-    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         tz = _local_tz(app)
@@ -225,10 +207,6 @@ def test_run_admin_digest_enqueues_on_new_day(app: object, admin_client: object)
 
 def test_run_admin_digest_enqueues_when_due(app: object, admin_client: object) -> None:
     """run_admin_digest should enqueue emails when schedule is enabled and due."""
-    from datetime import datetime
-
-    from app.models.outbox import OutboxEmail
-    from app.scheduler_tasks import run_admin_digest
 
     with app.app_context():
         tz = _local_tz(app)
@@ -608,7 +586,6 @@ class TestSendTest:
 
     def test_valid_email_enqueues_to_outbox(self, app, admin_client):
         """A valid test_email address should create an OutboxEmail row."""
-        from app.models.outbox import OutboxEmail
 
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")
@@ -638,7 +615,6 @@ class TestSendTest:
 class TestSendNow:
     def test_send_now_enqueues_for_admin(self, app, admin_client):
         """POST /admin/digest/send-now should enqueue at least one OutboxEmail."""
-        from app.models.outbox import OutboxEmail
 
         _seed_schedule(app)
         csrf = _get_csrf(admin_client, "/admin/digest/")

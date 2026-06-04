@@ -1,5 +1,7 @@
 """Tests for the application settings route (/admin/settings/)."""
 
+from unittest.mock import patch
+
 import sqlalchemy as sa
 
 from app.extensions import db
@@ -136,7 +138,6 @@ class TestAppSettingsTestEmail:
         assert b"SMTP" in resp.data or b"smtp" in resp.data.lower()
 
     def test_smtp_configured_sends_email(self, app, admin_client):
-        from unittest.mock import patch
 
         with app.app_context():
             settings = db.session.get(AppSettings, 1)
@@ -161,7 +162,6 @@ class TestAppSettingsTestEmail:
         assert mock_send.called
 
     def test_smtp_send_failure_flashes_danger(self, app, admin_client):
-        from unittest.mock import patch
 
         with app.app_context():
             settings = db.session.get(AppSettings, 1)

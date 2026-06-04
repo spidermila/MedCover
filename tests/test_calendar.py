@@ -7,6 +7,7 @@ from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _make_event_with_spot
 
@@ -20,7 +21,6 @@ def _assign_user(app, user_id, spot_id: int) -> None:
 def _make_member(app, email: str = "ical_member@test.com") -> object:
     """Create an active member user with an iCal token; return (id, token)."""
     with app.app_context():
-        from app.models.role import Role
 
         role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
         user = UserAccount(email=email, name="iCal Member", is_active=True)
@@ -177,7 +177,6 @@ class TestICalRegenerate:
 def _make_member_with_all_token(app, email: str = "ical_all@test.com") -> tuple[int, str]:
     """Create an active member user with an ical_all_token; return (id, token)."""
     with app.app_context():
-        from app.models.role import Role
 
         role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
         user = UserAccount(email=email, name="iCal All Member", is_active=True)
@@ -197,8 +196,6 @@ class TestICalFeedArchivedExclusion:
             me = MasterEvent(name="Archived ME")
             db.session.add(me)
             db.session.flush()
-
-            from app.models.role import Role
 
             role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
             creator = UserAccount(email="archived_creator@test.com", name="Creator", is_active=True)
@@ -274,8 +271,6 @@ class TestICalAllEventsFeed:
             me = MasterEvent(name="All Archived ME")
             db.session.add(me)
             db.session.flush()
-
-            from app.models.role import Role
 
             role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
             creator = UserAccount(email="all_archived_creator@test.com", name="Creator", is_active=True)
