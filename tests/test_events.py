@@ -1,8 +1,8 @@
 """Tests for event CRUD and lifecycle transitions."""
+
 import json
 import re
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 
 import pytest
 import sqlalchemy as sa
@@ -24,9 +24,7 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from tests.conftest import _login
-from tests.conftest import _make_event_in_status
-from tests.conftest import _make_master_event
+from tests.conftest import _login, _make_event_in_status, _make_master_event
 
 
 def _event_form_data(master_event_id: int, name: str = "Test Event") -> dict:
