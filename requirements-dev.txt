@@ -593,9 +593,9 @@ gunicorn==26.0.0 \
     --hash=sha256:40233d26a5f0d1872916188c276e21641155111c2853f0c2cd55260aec0d24fc \
     --hash=sha256:ca9346f85e3a4aeeb64d491045c16b9a35647abd37ea15efe53080eb8b090baf
     # via -r requirements.in
-holidays==0.97 \
-    --hash=sha256:0bcd55e64abddce2f9aa9224d68afe87acdd7eac7c2aef251b0ef7986bb5220b \
-    --hash=sha256:8fe491270bd4aeed6f9584d459d5df506a414727ba76fdd9ebd6323def606935
+holidays==0.98 \
+    --hash=sha256:09b078a4695d53a35ea01517b331942f3232b3b7e3877f74f6d5227adbedc76e \
+    --hash=sha256:65c9ba3402f1d10cc715af0510cdc847e60d8854df640515d546748ca4a24e60
     # via -r requirements.in
 icalendar==7.1.2 \
     --hash=sha256:01c76243c76c549f58bb51510a8f0a4edb7c539726adda1356dfd0dc04fb7a53 \
