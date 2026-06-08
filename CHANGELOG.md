@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-08
+
+### Added
+- Spot assignment modal: shows spot description, required qualifications, and optional flag for each available spot (#354)
+- Spots in assignment modal sorted by optional-last then by description (#354)
+- All-events iCal feed: new `/ical/all/<token>` endpoint for subscribing to all published events; link shown on profile page (#339)
+- Personal iCal feed now excludes archived events (#339)
+- iCal tokens generated automatically when a user is created (#359)
+- Admin menu restructured: Uživatelé moved to top navbar; admin-only links consolidated under single dropdown (#329)
+- Import akcí link gated behind `admin.manage_settings` permission (#329)
+- Event status badges improved with clearer colours and icons (#366)
+- Linting overhaul: isort + black formatting, E501 enforcement, pylint C0415 on tests (#351)
+- Pre-commit hook: detect inline JS event handlers in templates (#360)
+- Podman support for e2e tests on macOS (#325)
+- Separate Docker entrypoints for web and scheduler containers (#348)
+- `safe_next` helper for return_url validation with fallback (#328)
+
+### Fixed
+- False qualification warnings on spot edit caused by broken JSON in data attributes (#370)
+- "Přihlášky otevřeny" / "Přihlášky se otevřou" label logic on event detail page (#355)
+- Event filters lost on pagination, archived toggle, and bulk actions (#328)
+- Reject scheme-relative URLs in bulk action return_url (security hardening) (#328)
+- Archived users can no longer access iCal exports (#358)
+- Filter already-assigned users from spot assignment picker and Table Manager picker (#332)
+- Do not allow submitting the same RP on event detail page (#349)
+- Don't copy responsible_person_id when cloning an event in Table Manager (#333)
+- Include general ME in the ME filter dropdown on events page (#343)
+- Exclude cancelled/archived events from equipment conflict checks (#331)
+- Malformed `<form>` tags causing CSRF errors in some browsers (#353)
+- Only RP-eligible users shown in RP picker (#357)
+- Cancel button on feedback page now returns to previous page (#342)
+- Fix enum filter: pass members not `.value` to status comparisons
+- Fix e2e entrypoint: use psycopg2 instead of psycopg
+
+### Changed
+- Removed dead unused code and de-duplicated test helpers (#367)
+- Assignment audit summaries now include actor and event names (#319)
+- Extracted shared `do_assign_user` / `do_unassign_user` service functions (#319)
+- Split combined qualification badges in table manager for better wrapping (#352)
+- Removed Koordinátor badge from events created by current user (#346)
+- Added missing `back_populates` on UserAccount relationships (#330)
+
 ## [0.15.0] - 2026-05-29
 
 ### Added
@@ -246,7 +288,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/spidermila/MedCover/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/spidermila/MedCover/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/spidermila/MedCover/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/spidermila/MedCover/compare/v0.13.1...v0.13.2
