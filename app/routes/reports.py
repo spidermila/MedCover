@@ -307,6 +307,8 @@ def user_report(user_id: uuid.UUID) -> str | Response:
                 to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
         except ValueError:
             date_error = "Neplatný formát data."
+            from_date_str = ""
+            to_date_str = ""
 
     now = datetime.now(timezone.utc)
 
