@@ -252,10 +252,18 @@ class TestUserReportDateFilter:
             admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == admin_email))
             member = db.session.get(UserAccount, member_id)
             me = _make_me("DR From ME")
-            early = _make_event(me, "Early Event", start=datetime(2025, 1, 10, 10, 0, tzinfo=timezone.utc),
-                                end=datetime(2025, 1, 10, 18, 0, tzinfo=timezone.utc))
-            later = _make_event(me, "Later Event", start=datetime(2025, 3, 10, 10, 0, tzinfo=timezone.utc),
-                                end=datetime(2025, 3, 10, 18, 0, tzinfo=timezone.utc))
+            early = _make_event(
+                me,
+                "Early Event",
+                start=datetime(2025, 1, 10, 10, 0, tzinfo=timezone.utc),
+                end=datetime(2025, 1, 10, 18, 0, tzinfo=timezone.utc),
+            )
+            later = _make_event(
+                me,
+                "Later Event",
+                start=datetime(2025, 3, 10, 10, 0, tzinfo=timezone.utc),
+                end=datetime(2025, 3, 10, 18, 0, tzinfo=timezone.utc),
+            )
             _make_assignment(_make_spot(early), member, admin)
             _make_assignment(_make_spot(later), member, admin)
 
@@ -271,10 +279,18 @@ class TestUserReportDateFilter:
             admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == admin_email))
             member = db.session.get(UserAccount, member_id)
             me = _make_me("DR To ME")
-            early = _make_event(me, "Early Event", start=datetime(2025, 1, 10, 10, 0, tzinfo=timezone.utc),
-                                end=datetime(2025, 1, 10, 18, 0, tzinfo=timezone.utc))
-            later = _make_event(me, "Later Event", start=datetime(2025, 3, 10, 10, 0, tzinfo=timezone.utc),
-                                end=datetime(2025, 3, 10, 18, 0, tzinfo=timezone.utc))
+            early = _make_event(
+                me,
+                "Early Event",
+                start=datetime(2025, 1, 10, 10, 0, tzinfo=timezone.utc),
+                end=datetime(2025, 1, 10, 18, 0, tzinfo=timezone.utc),
+            )
+            later = _make_event(
+                me,
+                "Later Event",
+                start=datetime(2025, 3, 10, 10, 0, tzinfo=timezone.utc),
+                end=datetime(2025, 3, 10, 18, 0, tzinfo=timezone.utc),
+            )
             _make_assignment(_make_spot(early), member, admin)
             _make_assignment(_make_spot(later), member, admin)
 
@@ -290,12 +306,24 @@ class TestUserReportDateFilter:
             admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == admin_email))
             member = db.session.get(UserAccount, member_id)
             me = _make_me("DR Both ME")
-            before = _make_event(me, "Before Range", start=datetime(2025, 1, 5, 10, 0, tzinfo=timezone.utc),
-                                 end=datetime(2025, 1, 5, 18, 0, tzinfo=timezone.utc))
-            inside = _make_event(me, "Inside Range", start=datetime(2025, 2, 15, 10, 0, tzinfo=timezone.utc),
-                                 end=datetime(2025, 2, 15, 18, 0, tzinfo=timezone.utc))
-            after = _make_event(me, "After Range", start=datetime(2025, 4, 1, 10, 0, tzinfo=timezone.utc),
-                                end=datetime(2025, 4, 1, 18, 0, tzinfo=timezone.utc))
+            before = _make_event(
+                me,
+                "Before Range",
+                start=datetime(2025, 1, 5, 10, 0, tzinfo=timezone.utc),
+                end=datetime(2025, 1, 5, 18, 0, tzinfo=timezone.utc),
+            )
+            inside = _make_event(
+                me,
+                "Inside Range",
+                start=datetime(2025, 2, 15, 10, 0, tzinfo=timezone.utc),
+                end=datetime(2025, 2, 15, 18, 0, tzinfo=timezone.utc),
+            )
+            after = _make_event(
+                me,
+                "After Range",
+                start=datetime(2025, 4, 1, 10, 0, tzinfo=timezone.utc),
+                end=datetime(2025, 4, 1, 18, 0, tzinfo=timezone.utc),
+            )
             for ev in [before, inside, after]:
                 _make_assignment(_make_spot(ev), member, admin)
 
@@ -313,9 +341,12 @@ class TestUserReportDateFilter:
             admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == admin_email))
             member = db.session.get(UserAccount, member_id)
             me = _make_me("DR Inc ME")
-            on_boundary = _make_event(me, "Boundary Event",
-                                      start=datetime(2025, 3, 31, 10, 0, tzinfo=timezone.utc),
-                                      end=datetime(2025, 3, 31, 18, 0, tzinfo=timezone.utc))
+            on_boundary = _make_event(
+                me,
+                "Boundary Event",
+                start=datetime(2025, 3, 31, 10, 0, tzinfo=timezone.utc),
+                end=datetime(2025, 3, 31, 18, 0, tzinfo=timezone.utc),
+            )
             _make_assignment(_make_spot(on_boundary), member, admin)
 
         _login(client, admin_email)
