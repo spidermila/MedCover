@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import sys
+from datetime import date, datetime, time
 from pathlib import Path
 
 import openpyxl
@@ -57,6 +59,310 @@ class TestIsValidNameHelper:
         assert not _script._is_valid_name(".")
         assert not _script._is_valid_name("123")
         assert not _script._is_valid_name("")
+
+
+class TestFmtTimeHelper:
+    """Unit tests for _fmt_time()."""
+
+    def test_normal_time(self):
+
+        assert _script._fmt_time(time(10, 30)) == "10:30"
+
+    def test_midnight(self):
+
+        assert _script._fmt_time(time(0, 0)) == "00:00"
+
+    def test_none_returns_none(self):
+        assert _script._fmt_time(None) is None
+
+    def test_non_time_returns_none(self):
+        assert _script._fmt_time("10:30") is None
+        assert _script._fmt_time(1030) is None
+
+
+class TestFmtDateHelper:
+    """Unit tests for _fmt_date()."""
+
+    def test_datetime_object(self):
+
+        assert _script._fmt_date(datetime(2026, 5, 15)) == "2026-05-15"
+
+    def test_none_returns_none(self):
+        assert _script._fmt_date(None) is None
+
+    def test_string_returns_none(self):
+        assert _script._fmt_date("2026-05-15") is None
+
+    def test_date_object_returns_none(self):
+
+        # _fmt_date expects datetime, not date
+        assert _script._fmt_date(date(2026, 5, 15)) is None
+
+
+class TestBuildDescription:
+    """Unit tests for _build_description()."""
+
+    def test_all_fields(self):
+        result = _script._build_description(
+            vehicle="Sanitka",
+            event_type="zdravotní dozor",
+            contact="Jan Novák 123",
+            signups=["Petr", "Marie"],
+            time_missing=False,
+        )
+        assert "Typ: zdravotní dozor" in result
+        assert "Vozidlo/stan: Sanitka" in result
+        assert "Kontakt pořadatel: Jan Novák 123" in result
+        assert "Přihlášení (import z GS): Petr, Marie" in result
+
+    def test_time_missing_warning(self):
+        result = _script._build_description(
+            vehicle=None,
+            event_type=None,
+            contact=None,
+            signups=[],
+            time_missing=True,
+        )
+        assert "UPOZORNĚNÍ" in result
+        assert "Čas akce" in result
+
+    def test_empty_inputs(self):
+        result = _script._build_description(vehicle=None, event_type=None, contact=None, signups=[], time_missing=False)
+        assert result == ""
+
+    def test_signups_with_empty_strings_filtered(self):
+        result = _script._build_description(
+            vehicle=None, event_type=None, contact=None, signups=["Jan", "", "  "], time_missing=False
+        )
+        assert "Jan" in result
+        assert result.count(",") == 0  # only one valid name
+
+
+class TestIsRowCancelled:
+    """Unit tests for _is_row_cancelled()."""
+
+    def test_normal_row_not_cancelled(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture))
+        ws = wb["Dozory"]
+        # Row 3 is a normal event
+        row = list(ws.iter_rows(min_row=3, max_row=3))[0]
+        assert _script._is_row_cancelled(row) is False
+
+
+class TestExtractFunction:
+    """Unit tests for extract() using the test fixture."""
+
+    def test_extracts_all_events(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        assert len(events) == 9
+
+    def test_event_basic_fields(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        first = events[0]
+        assert first["name"] == "Sportovní závody"
+        assert first["date"] == "2026-07-15"
+        assert first["start_time"] == "10:00"
+        assert first["end_time"] == "14:00"
+        assert first["location"] == "Sportovní hala Testov"
+        assert first["paid"] is False
+        assert first["cancelled"] is False
+        assert first["time_missing"] is False
+
+    def test_paid_event(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        # Hasičský ples (row 4) is paid=True
+        ples = next(e for e in events if "Hasičský ples" in e["name"])
+        assert ples["paid"] is True
+
+    def test_time_missing_event(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        # Kulturní festival (row 6) has start_time=None
+        festival = next(e for e in events if "Kulturní festival" in e["name"])
+        assert festival["time_missing"] is True
+        assert festival["start_time"] is None
+        assert "UPOZORNĚNÍ" in festival["description"]
+
+    def test_duplicate_names_get_date_suffix(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        # Fotbalový turnaj appears twice (rows 7, 8) — should get date suffix
+        fotbal = [e for e in events if "Fotbalový turnaj" in e["name"]]
+        assert len(fotbal) == 2
+        assert fotbal[0]["name"] != fotbal[1]["name"]
+        # Should have date suffixes
+        assert "1.10." in fotbal[0]["name"] or "15.10." in fotbal[0]["name"]
+
+    def test_midnight_end_time_treated_as_null(self):
+        """Issue #340: midnight (00:00) end time is treated as unspecified."""
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        # Noční akce (row 11) has end_time=time(0,0)
+        nocni = next(e for e in events if "Noční akce" in e["name"])
+        assert nocni["start_time"] == "20:00"
+        # Current code converts midnight to None — this tests the CURRENT behavior
+        assert nocni["end_time"] is None
+
+    def test_cutoff_filters_events(self):
+
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        # Only events on or after 2026-10-01
+        events = _script.extract(wb, cutoff=date(2026, 10, 1))
+        dates = [e["date"] for e in events]
+        assert all(d >= "2026-10-01" for d in dates)
+        # Should exclude July, August, September events
+        assert not any(d.startswith("2026-07") for d in dates)
+
+    def test_responsible_person_extracted(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        first = events[0]
+        assert first["responsible_person"] == "Novák Jan"
+
+    def test_signups_extracted(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        # Hasičský ples has multiple signups (cols N+)
+        ples = next(e for e in events if "Hasičský ples" in e["name"])
+        assert len(ples["signups"]) >= 2
+
+    def test_description_includes_event_type(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        events = _script.extract(wb)
+        first = events[0]
+        assert "zdravotní dozor" in first["description"]
+
+
+class TestExtractUsersFunction:
+    """Unit tests for extract_users() using the test fixture."""
+
+    def test_extracts_users(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        users = _script.extract_users(wb)
+        assert len(users) > 0
+        # Users should be sorted by name
+        names = [u["name"] for u in users]
+        assert names == sorted(names)
+
+    def test_user_has_expected_fields(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        users = _script.extract_users(wb)
+        for u in users:
+            assert "gs_name" in u
+            assert "name" in u
+            assert "email" in u
+            assert "phone" in u
+            assert "is_zdravotnik" in u
+            assert "is_ridic" in u
+
+    def test_cutoff_filters_users(self):
+
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        all_users = _script.extract_users(wb)
+        filtered_users = _script.extract_users(wb, cutoff=date(2026, 10, 1))
+        # Filtered should be a subset
+        assert len(filtered_users) <= len(all_users)
+
+
+class TestLoadLidiLookup:
+    """Unit tests for _load_lidi_lookup()."""
+
+    def test_loads_lidi_data(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        lookup = _script._load_lidi_lookup(wb)
+        assert len(lookup) > 0
+        # Check a known entry
+        assert "Kratochvíl Tomáš" in lookup
+        info = lookup["Kratochvíl Tomáš"]
+        assert info["is_zdravotnik"] is True
+        assert info["is_ridic"] is True
+
+    def test_ridic_false_when_not_set(self):
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        wb = openpyxl.load_workbook(str(fixture), data_only=True)
+        lookup = _script._load_lidi_lookup(wb)
+        # Svoboda Petr: zdravotník=False, ridic=False
+        assert "Svoboda Petr" in lookup
+        assert lookup["Svoboda Petr"]["is_ridic"] is False
+
+
+class TestMainCli:
+    """Unit tests for main() CLI entry point."""
+
+    def test_main_file_not_found(self, capsys):
+
+        with pytest.raises(SystemExit) as exc_info:
+            sys.argv = ["import_events.py", "--input", "/nonexistent/file.xlsx"]
+            _script.main()
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "ERROR" in captured.err
+
+    def test_main_invalid_cutoff(self, capsys):
+
+        with pytest.raises(SystemExit) as exc_info:
+            sys.argv = ["import_events.py", "--input", "x.xlsx", "--cutoff", "not-a-date"]
+            _script.main()
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Invalid --cutoff" in captured.err
+
+    def test_main_stdout_output(self, capsys, tmp_path):
+
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        sys.argv = ["import_events.py", "--input", str(fixture), "--output", "-"]
+        _script.main()
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["version"] == 2
+        assert "users" in data
+        assert "events" in data
+
+    def test_main_file_output(self, tmp_path):
+
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        out = tmp_path / "out.json"
+        sys.argv = ["import_events.py", "--input", str(fixture), "--output", str(out)]
+        _script.main()
+        assert out.exists()
+        data = json.loads(out.read_text())
+        assert data["version"] == 2
+        assert len(data["events"]) == 9
+
+    def test_main_with_cutoff(self, tmp_path):
+
+        fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
+        out = tmp_path / "out.json"
+        sys.argv = [
+            "import_events.py",
+            "--input",
+            str(fixture),
+            "--output",
+            str(out),
+            "--cutoff",
+            "2026-10-01",
+        ]
+        _script.main()
+        data = json.loads(out.read_text())
+        assert all(e["date"] >= "2026-10-01" for e in data["events"])
 
 
 # ── Route helpers ─────────────────────────────────────────────────────────────
