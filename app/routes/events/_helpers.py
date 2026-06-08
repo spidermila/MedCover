@@ -22,7 +22,7 @@ TRANSITIONS: list[tuple[EventStatus, EventStatus, str]] = [
 ]
 
 # Maps action name → (target_status, required_permission, valid_from_statuses)
-BULK_ACTIONS: dict[str, tuple[EventStatus, str, set[EventStatus]]] = {
+BULK_STATE_ACTIONS: dict[str, tuple[EventStatus, str, set[EventStatus]]] = {
     "publish": (
         EventStatus.PUBLISHED,
         "event.publish",
