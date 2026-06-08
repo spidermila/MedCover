@@ -289,6 +289,37 @@ class TestSetRpRoute:
         response = admin_client.post("/events/999999/set_rp", data={"user_id": user_id})
         assert response.status_code == 404
 
+    def test_set_rp_without_user_id_flashes_warning(self, app, admin_client):
+        """Submitting set_rp with no user_id selected shows a warning."""
+        event_id, _spot_id = _make_event_with_spot(app)
+        response = admin_client.post(
+            f"/events/{event_id}/set_rp",
+            data={"user_id": ""},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Vyberte zodpovědnou osobu".encode() in response.data
+
+    def test_set_rp_with_inactive_user_flashes_error(self, app, admin_client):
+        """Setting RP to an inactive user is rejected."""
+        qual_id = _make_rp_qual(app)
+        event_id, spot_id = _make_event_with_spot(app)
+        with app.app_context():
+            inactive = _make_user("inactive_rp@test.com", "Inactive RP", Role.MEMBER)
+            qual = db.session.get(Qualification, qual_id)
+            inactive.qualifications = [qual]
+            inactive.is_active = False
+            db.session.commit()
+            inactive_id = str(inactive.id)
+
+        response = admin_client.post(
+            f"/events/{event_id}/set_rp",
+            data={"user_id": inactive_id},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "nenalezen nebo není aktivní".encode() in response.data
+
 
 # ── Dashboard RP warning ──────────────────────────────────────────────────────
 

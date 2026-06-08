@@ -84,6 +84,16 @@ class TestEventCreate:
             assert event is not None
             assert event.status == EventStatus.DRAFT
 
+    def test_create_event_end_before_start_returns_error(self, app, admin_client):
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id)
+        data["start_datetime"] = "2030-06-01T18:00"
+        data["end_datetime"] = "2030-06-01T10:00"
+        response = admin_client.post("/events/create", data=data, follow_redirects=True)
+        assert response.status_code == 200
+        with app.app_context():
+            assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
+
     def test_create_event_missing_name_returns_error(self, app, admin_client):
         me_id = _make_master_event(app)
         data = _event_form_data(me_id)
@@ -146,6 +156,35 @@ class TestEventLifecycle:
         with app.app_context():
             event = db.session.get(Event, event_id)
             assert event.status == EventStatus.PUBLISHED
+
+    def test_published_to_assignments_open(self, app, admin_client):
+        """PUBLISHED → ASSIGNMENTS_OPEN via /transition covers the email notification path."""
+        event_id = self._create_event(app, admin_client)
+        # First transition to PUBLISHED
+        admin_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Zveřejněná"},
+            follow_redirects=False,
+        )
+        # Then to ASSIGNMENTS_OPEN
+        response = admin_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Přihlášky otevřeny"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.status == EventStatus.ASSIGNMENTS_OPEN
+
+    def test_transition_forbidden_without_permission(self, app, member_client):
+        """Member lacks event.publish — valid transition but no permission → 403."""
+        event_id = _make_event_in_status(app, EventStatus.DRAFT)
+        response = member_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Zveřejněná"},
+        )
+        assert response.status_code == 403
 
     def test_cannot_skip_status(self, app, admin_client):
         event_id = self._create_event(app, admin_client)
@@ -452,6 +491,20 @@ class TestBulkAction:
         )
         assert response.status_code == 400
 
+    def test_bulk_action_skips_events_in_wrong_status(self, app, admin_client):
+        """Events not in valid_from statuses are skipped; only valid ones are changed."""
+        ids = self._create_multiple_events(app, admin_client)
+        # publish the first event so it can't be published again
+        admin_client.post("/events/bulk", data={"action": "publish", "event_ids": [str(ids[0])]})
+        # now try to publish both — the already-published one should be skipped
+        resp = admin_client.post(
+            "/events/bulk",
+            data={"action": "publish", "event_ids": [str(i) for i in ids]},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Přeskočeno".encode() in resp.data
+
     def test_bulk_empty_selection_flashes_warning(self, admin_client):
         response = admin_client.post(
             "/events/bulk",
@@ -476,7 +529,6 @@ class TestBulkAction:
     def test_bulk_set_unpaid_marks_events_as_unpaid(self, app, admin_client):
         me_id = _make_master_event(app)
         with app.app_context():
-            from datetime import datetime, timezone
             events = [
                 Event(
                     name=f"Paid Event {i}",
@@ -505,7 +557,6 @@ class TestBulkAction:
     def test_bulk_set_paid_skips_already_paid(self, app, admin_client):
         me_id = _make_master_event(app)
         with app.app_context():
-            from datetime import datetime, timezone
             already_paid = Event(
                 name="Already Paid",
                 master_event_id=me_id,
@@ -552,11 +603,9 @@ class TestBulkAction:
             follow_redirects=True,
         )
         with app.app_context():
-            from app.models.audit import AuditLogEntry
             entries = db.session.scalars(
                 db.select(AuditLogEntry)
-                .where(AuditLogEntry.entity_type == "Event",
-                       AuditLogEntry.action_type == "edit")
+                .where(AuditLogEntry.entity_type == "Event", AuditLogEntry.action_type == "edit")
                 .order_by(AuditLogEntry.timestamp.desc())
             ).all()
             paid_entries = [e for e in entries if "označena jako placená" in e.summary]
@@ -804,6 +853,60 @@ class TestEditSpot:
         response = admin_client.post(f"/events/{event_id}/spots/999999/edit", data={"description": "X"})
         assert response.status_code == 404
 
+    def test_edit_spot_with_ineligible_user_blocked_without_confirm(self, app, admin_client):
+        """Changing qualifications on an occupied spot is blocked if confirm checkbox is missing."""
+        event_id, spot_id = self._create_event_with_spot(app)
+        with app.app_context():
+            qual = Qualification(name="RequiredQual")
+            db.session.add(qual)
+            db.session.flush()
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            member = UserAccount(email="ineligible_member@test.com", name="Ineligible", is_active=True)
+            member.set_password("testpass123")
+            member.roles = [role]
+            db.session.add(member)
+            db.session.flush()
+            spot = db.session.get(EventSpot, spot_id)
+            spot.assignment = Assignment(user_id=member.id, assigned_by_id=member.id)
+            db.session.commit()
+            qual_id = qual.id
+
+        resp = admin_client.post(
+            f"/events/{event_id}/spots/{spot_id}/edit",
+            data={"description": "Updated", "qualification_ids": [str(qual_id)]},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Pozice nezměněna".encode() in resp.data
+
+    def test_edit_spot_with_ineligible_user_and_confirm_unassigns(self, app, admin_client):
+        """Changing qualifications with confirm checkbox triggers automatic unassign."""
+        event_id, spot_id = self._create_event_with_spot(app)
+        with app.app_context():
+            qual = Qualification(name="RequiredQual2")
+            db.session.add(qual)
+            db.session.flush()
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            member = UserAccount(email="ineligible_member2@test.com", name="Ineligible2", is_active=True)
+            member.set_password("testpass123")
+            member.roles = [role]
+            db.session.add(member)
+            db.session.flush()
+            spot = db.session.get(EventSpot, spot_id)
+            spot.assignment = Assignment(user_id=member.id, assigned_by_id=member.id)
+            db.session.commit()
+            qual_id = qual.id
+
+        resp = admin_client.post(
+            f"/events/{event_id}/spots/{spot_id}/edit",
+            data={"description": "Updated", "qualification_ids": [str(qual_id)], "confirm_unassign": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            spot = db.session.get(EventSpot, spot_id)
+            assert spot.assignment is None
+
     def test_edit_spot_saves_description(self, app, admin_client):
         event_id, spot_id = self._create_event_with_spot(app)
         response = admin_client.post(
@@ -849,6 +952,26 @@ class TestDeleteSpot:
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
         response = admin_client.post(f"/events/{event_id}/spots/999999/delete")
         assert response.status_code == 404
+
+    def test_delete_occupied_spot_is_blocked(self, app, admin_client):
+        """Cannot delete a spot that has an assignment."""
+        event_id, spot_id = self._create_event_with_spot(app)
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            member = UserAccount(email="occupied_member@test.com", name="Occupied", is_active=True)
+            member.set_password("testpass123")
+            member.roles = [role]
+            db.session.add(member)
+            db.session.flush()
+            spot = db.session.get(EventSpot, spot_id)
+            spot.assignment = Assignment(user_id=member.id, assigned_by_id=member.id)
+            db.session.commit()
+
+        resp = admin_client.post(f"/events/{event_id}/spots/{spot_id}/delete", follow_redirects=True)
+        assert resp.status_code == 200
+        assert b"Obsazenou pozici nelze smazat" in resp.data
+        with app.app_context():
+            assert db.session.get(EventSpot, spot_id) is not None
 
     def test_delete_spot_succeeds(self, app, admin_client):
         event_id, spot_id = self._create_event_with_spot(app)
@@ -1283,6 +1406,26 @@ class TestEventSplit:
             assert part2 is not None
             assert part2.status == EventStatus.ASSIGNMENTS_OPEN
             assert part2.start_datetime == part1.end_datetime
+
+    def test_split_without_datetime_flashes_error(self, app, admin_client):
+        event_id = self._create_open_event(app)
+        resp = admin_client.post(
+            f"/events/{event_id}/split",
+            data={"split_datetime": ""},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"Zadejte datum" in resp.data
+
+    def test_split_invalid_datetime_flashes_error(self, app, admin_client):
+        event_id = self._create_open_event(app)
+        resp = admin_client.post(
+            f"/events/{event_id}/split",
+            data={"split_datetime": "not-a-date"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Neplatný formát".encode() in resp.data
 
     def test_split_time_out_of_bounds_flashes_error(self, app, admin_client):
         event_id = self._create_open_event(app)
