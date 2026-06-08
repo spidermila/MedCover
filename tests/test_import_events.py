@@ -4,14 +4,13 @@ import importlib.util
 import json
 from pathlib import Path
 
+import openpyxl
 import pytest
 
 from app.extensions import db
 from app.models.assignment import DebriefingRecord
 from app.models.audit import AuditLogEntry
-from app.models.event import Event
-from app.models.event import EventStatus
-from app.models.master_event import MasterEvent
+from app.models.event import Event, EventStatus
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
@@ -695,9 +694,7 @@ def ensure_ridic_qual(app):
     Function-scoped because clean_db truncates the qualification table after each test.
     """
     with app.app_context():
-        exists = db.session.scalar(
-            db.select(Qualification).where(Qualification.name == "Řidič sanitky")
-        )
+        exists = db.session.scalar(db.select(Qualification).where(Qualification.name == "Řidič sanitky"))
         if not exists:
             db.session.add(Qualification(name="Řidič sanitky"))
             db.session.commit()
@@ -710,9 +707,7 @@ def ensure_zelenac_qual(app):
     Function-scoped because clean_db truncates the qualification table after each test.
     """
     with app.app_context():
-        exists = db.session.scalar(
-            db.select(Qualification).where(Qualification.name == "Zelenáč")
-        )
+        exists = db.session.scalar(db.select(Qualification).where(Qualification.name == "Zelenáč"))
         if not exists:
             db.session.add(Qualification(name="Zelenáč"))
             db.session.commit()
@@ -723,7 +718,7 @@ class TestImportScriptIsRidic:
 
     def test_extract_users_includes_is_ridic(self):
         """extract_users() returns is_ridic from Lidi column F."""
-        import openpyxl
+
         fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
         wb = openpyxl.load_workbook(str(fixture), data_only=True)
         users = _script.extract_users(wb)
@@ -740,7 +735,7 @@ class TestImportScriptIsRidic:
 
     def test_extract_users_ridic_false_by_default_when_not_in_lidi(self):
         """Person not in Lidi gets is_ridic=False."""
-        import openpyxl
+
         fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
         wb = openpyxl.load_workbook(str(fixture), data_only=True)
         users = _script.extract_users(wb)
@@ -752,14 +747,25 @@ class TestImportScriptIsRidic:
 class TestImportConfirmRidic:
     """Integration tests for is_ridic support in the import confirm route."""
 
-    def test_creates_ridic_only_user_with_ridic_and_zelenac(self, app, admin_client, ensure_ridic_qual, ensure_zelenac_qual):
+    def test_creates_ridic_only_user_with_ridic_and_zelenac(
+        self, app, admin_client, ensure_ridic_qual, ensure_zelenac_qual
+    ):
         """User with is_ridic=True, is_zdravotnik=False gets Řidič sanitky + Zelenáč."""
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"gs_name": "Horáková Marie", "name": "Marie Horáková",
-                    "email": "marie@test.com", "phone": "", "is_zdravotnik": False, "is_ridic": True}],
+            users=[
+                {
+                    "gs_name": "Horáková Marie",
+                    "name": "Marie Horáková",
+                    "email": "marie@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                    "is_ridic": True,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -779,10 +785,19 @@ class TestImportConfirmRidic:
                 db.session.add(Qualification(name="Zdravotník"))
                 db.session.commit()
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"gs_name": "Kratochvíl Tomáš", "name": "Tomáš Kratochvíl",
-                    "email": "tomas@test.com", "phone": "", "is_zdravotnik": True, "is_ridic": True}],
+            users=[
+                {
+                    "gs_name": "Kratochvíl Tomáš",
+                    "name": "Tomáš Kratochvíl",
+                    "email": "tomas@test.com",
+                    "phone": "",
+                    "is_zdravotnik": True,
+                    "is_ridic": True,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -797,10 +812,19 @@ class TestImportConfirmRidic:
         """User with is_zdravotnik=False, is_ridic=False gets Zelenáč."""
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"gs_name": "Svoboda Petr", "name": "Petr Svoboda",
-                    "email": "petr@test.com", "phone": "", "is_zdravotnik": False, "is_ridic": False}],
+            users=[
+                {
+                    "gs_name": "Svoboda Petr",
+                    "name": "Petr Svoboda",
+                    "email": "petr@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                    "is_ridic": False,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -823,10 +847,20 @@ class TestImportConfirmRidic:
             user_id = str(u.id)
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"db_id": user_id, "gs_name": "Řidič Jan", "name": "Jan Řidič",
-                    "email": "existing_ridic@test.com", "phone": "", "is_zdravotnik": False, "is_ridic": True}],
+            users=[
+                {
+                    "db_id": user_id,
+                    "gs_name": "Řidič Jan",
+                    "name": "Jan Řidič",
+                    "email": "existing_ridic@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                    "is_ridic": True,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -850,10 +884,20 @@ class TestImportConfirmRidic:
             user_id = str(u.id)
         me_id = _make_master_event(app)
         resp = _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"db_id": user_id, "gs_name": "Zelenáčová Jana", "name": "Jana Zelenáčová",
-                    "email": "was_zelenac@test.com", "phone": "", "is_zdravotnik": True, "is_ridic": False}],
+            users=[
+                {
+                    "db_id": user_id,
+                    "gs_name": "Zelenáčová Jana",
+                    "name": "Jana Zelenáčová",
+                    "email": "was_zelenac@test.com",
+                    "phone": "",
+                    "is_zdravotnik": True,
+                    "is_ridic": False,
+                }
+            ],
             master_event_id=me_id,
         )
         assert resp.status_code == 302
@@ -873,23 +917,29 @@ class TestImportConfirmRidic:
             db.session.commit()
             user_id = str(u.id)
             initial_audit_count = db.session.scalar(
-                db.select(db.func.count()).select_from(AuditLogEntry).where(
-                    AuditLogEntry.entity_id == str(u.id)
-                )
+                db.select(db.func.count()).select_from(AuditLogEntry).where(AuditLogEntry.entity_id == str(u.id))
             )
         me_id = _make_master_event(app)
         _post_confirm(
-            app, admin_client,
+            app,
+            admin_client,
             events=[_minimal_event()],
-            users=[{"db_id": user_id, "gs_name": "Driver Already", "name": "Already Driver",
-                    "email": "already_ridic@test.com", "phone": "", "is_zdravotnik": False, "is_ridic": True}],
+            users=[
+                {
+                    "db_id": user_id,
+                    "gs_name": "Driver Already",
+                    "name": "Already Driver",
+                    "email": "already_ridic@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                    "is_ridic": True,
+                }
+            ],
             master_event_id=me_id,
         )
         with app.app_context():
             final_audit_count = db.session.scalar(
-                db.select(db.func.count()).select_from(AuditLogEntry).where(
-                    AuditLogEntry.entity_id == user_id
-                )
+                db.select(db.func.count()).select_from(AuditLogEntry).where(AuditLogEntry.entity_id == user_id)
             )
             assert final_audit_count == initial_audit_count  # no new audit entry
 
@@ -899,12 +949,19 @@ class TestImportPreviewRidic:
 
     def test_preview_shows_ridic_badge_for_ridic_user(self, app, admin_client):
         """Preview shows 'Řidič sanitky' badge when is_ridic=True."""
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/import/events/")
         payload = {
             "version": 2,
-            "users": [{"gs_name": "Horáková Marie", "name": "Marie Horáková",
-                       "email": "marie@test.com", "phone": None,
-                       "is_zdravotnik": False, "is_ridic": True}],
+            "users": [
+                {
+                    "gs_name": "Horáková Marie",
+                    "name": "Marie Horáková",
+                    "email": "marie@test.com",
+                    "phone": None,
+                    "is_zdravotnik": False,
+                    "is_ridic": True,
+                }
+            ],
             "events": [],
         }
         resp = admin_client.post(
@@ -914,7 +971,9 @@ class TestImportPreviewRidic:
         assert resp.status_code == 200
         assert "Řidič sanitky".encode() in resp.data
 
-    def test_preview_shows_qual_update_badge_for_existing_user(self, app, admin_client, ensure_zelenac_qual, ensure_ridic_qual):
+    def test_preview_shows_qual_update_badge_for_existing_user(
+        self, app, admin_client, ensure_zelenac_qual, ensure_ridic_qual
+    ):
         """Preview shows 'Aktualizace kvalifikací' when existing user's quals differ."""
         with app.app_context():
             zelenac = db.session.scalar(db.select(Qualification).where(Qualification.name == "Zelenáč"))
@@ -922,12 +981,19 @@ class TestImportPreviewRidic:
             if zelenac:
                 u.qualifications = [zelenac]
             db.session.commit()
-        csrf = _get_csrf(admin_client)
+        csrf = _get_csrf(admin_client, "/import/events/")
         payload = {
             "version": 2,
-            "users": [{"gs_name": "User Preview", "name": "Preview User",
-                       "email": "preview_qual@test.com", "phone": None,
-                       "is_zdravotnik": False, "is_ridic": True}],
+            "users": [
+                {
+                    "gs_name": "User Preview",
+                    "name": "Preview User",
+                    "email": "preview_qual@test.com",
+                    "phone": None,
+                    "is_zdravotnik": False,
+                    "is_ridic": True,
+                }
+            ],
             "events": [],
         }
         resp = admin_client.post(

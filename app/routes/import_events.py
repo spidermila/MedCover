@@ -114,8 +114,11 @@ def _process_import_users(
         is_ridic = form.get(f"{uprefix}is_ridic") == "1"
 
         target_quals = _import_managed_quals(
-            is_zdravotnik, is_ridic,
-            user_zdravotnik_qual, user_ridic_qual, user_zelenac_qual,
+            is_zdravotnik,
+            is_ridic,
+            user_zdravotnik_qual,
+            user_ridic_qual,
+            user_zelenac_qual,
         )
 
         if db_id:
@@ -123,18 +126,18 @@ def _process_import_users(
             existing = db.session.get(UserAccount, db_id)
             if existing:
                 current_managed = {
-                    q.name for q in existing.qualifications
-                    if q.name.lower() in _IMPORT_MANAGED_QUAL_NAMES
+                    q.name for q in existing.qualifications if q.name.lower() in _IMPORT_MANAGED_QUAL_NAMES
                 }
                 target_names = {q.name for q in target_quals}
                 if current_managed != target_names:
                     non_managed = [
-                        q for q in existing.qualifications
-                        if q.name.lower() not in _IMPORT_MANAGED_QUAL_NAMES
+                        q for q in existing.qualifications if q.name.lower() not in _IMPORT_MANAGED_QUAL_NAMES
                     ]
                     existing.qualifications = non_managed + target_quals
                     audit(
-                        "import", "UserAccount", existing.id,
+                        "import",
+                        "UserAccount",
+                        existing.id,
                         f"Kvalifikace aktualizovány při importu: {', '.join(sorted(target_names))}",
                         None,
                     )
@@ -355,26 +358,27 @@ def _build_users_preview(payload_users: list[Any], all_users: list[UserAccount])
         qual_changes: dict[str, list[str]] | None = None
         if existing_user:
             current_managed = {
-                q.name for q in existing_user.qualifications
-                if q.name.lower() in _IMPORT_MANAGED_QUAL_NAMES
+                q.name for q in existing_user.qualifications if q.name.lower() in _IMPORT_MANAGED_QUAL_NAMES
             }
             to_add = sorted(import_qual_names - current_managed)
             to_remove = sorted(current_managed - import_qual_names)
             if to_add or to_remove:
                 qual_changes = {"add": to_add, "remove": to_remove}
 
-        rows.append({
-            "gs_name": gs_name,
-            "name": name,
-            "email": email,
-            "phone": phone,
-            "is_zdravotnik": is_zdravotnik,
-            "is_ridic": is_ridic,
-            "existing": existing_user,
-            "match_reason": match_reason,
-            "is_archived": existing_user.is_archived if existing_user else False,
-            "qual_changes": qual_changes,
-        })
+        rows.append(
+            {
+                "gs_name": gs_name,
+                "name": name,
+                "email": email,
+                "phone": phone,
+                "is_zdravotnik": is_zdravotnik,
+                "is_ridic": is_ridic,
+                "existing": existing_user,
+                "match_reason": match_reason,
+                "is_archived": existing_user.is_archived if existing_user else False,
+                "qual_changes": qual_changes,
+            }
+        )
     return rows
 
 
@@ -402,9 +406,7 @@ def _import_managed_quals(
 
 
 # Names of qualifications managed (i.e. potentially modified) by the import pipeline.
-_IMPORT_MANAGED_QUAL_NAMES: frozenset[str] = frozenset(
-    {"zdravotník", "řidič sanitky", "zelenáč"}
-)
+_IMPORT_MANAGED_QUAL_NAMES: frozenset[str] = frozenset({"zdravotník", "řidič sanitky", "zelenáč"})
 
 
 def _existing_event_pairs() -> set[tuple[str, str]]:
