@@ -384,14 +384,16 @@ def extract_users(wb: Any, cutoff: date | None = None) -> list[dict[str, Any]]:
             seen.add(gs_name)
 
             lidi_info = lidi.get(gs_name)
-            users.append({
-                "gs_name": gs_name,
-                "name": gs_name,  # GS stores Lastname Firstname — keep that convention
-                "email": lidi_info["email"] if lidi_info else None,
-                "phone": lidi_info["phone"] if lidi_info else None,
-                "is_zdravotnik": lidi_info["is_zdravotnik"] if lidi_info else False,
-                "is_ridic": lidi_info["is_ridic"] if lidi_info else False,
-            })
+            users.append(
+                {
+                    "gs_name": gs_name,
+                    "name": gs_name,  # GS stores Lastname Firstname — keep that convention
+                    "email": lidi_info["email"] if lidi_info else None,
+                    "phone": lidi_info["phone"] if lidi_info else None,
+                    "is_zdravotnik": lidi_info["is_zdravotnik"] if lidi_info else False,
+                    "is_ridic": lidi_info["is_ridic"] if lidi_info else False,
+                }
+            )
 
     users.sort(key=lambda u: u["name"])
     return users
