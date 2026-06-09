@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.16.0] - 2026-06-08
+## [0.16.0] - 2026-06-09
 
 ### Added
 - Spot assignment modal: shows spot description, required qualifications, and optional flag for each available spot (#354)
@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin menu restructured: Uživatelé moved to top navbar; admin-only links consolidated under single dropdown (#329)
 - Import akcí link gated behind `admin.manage_settings` permission (#329)
 - Event status badges improved with clearer colours and icons (#366)
+- Bulk actions to mark events as paid or unpaid (#344)
+- Date-range filtering on user-based reports with quick-range buttons and CSV filename includes range (#356)
 - Linting overhaul: isort + black formatting, E501 enforcement, pylint C0415 on tests (#351)
 - Pre-commit hook: detect inline JS event handlers in templates (#360)
 - Podman support for e2e tests on macOS (#325)
@@ -48,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Split combined qualification badges in table manager for better wrapping (#352)
 - Removed Koordinátor badge from events created by current user (#346)
 - Added missing `back_populates` on UserAccount relationships (#330)
+- Bump holidays from 0.97 to 0.98 (#374)
+- Bump faker from 40.19.1 to 40.21.0 (#373)
 
 ## [0.15.0] - 2026-05-29
 
