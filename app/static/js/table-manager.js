@@ -387,14 +387,7 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.ok) {
-          document.querySelectorAll('.tm-event-name-display[data-event-id="' + eventId + '"]').forEach(function (el) {
-            el.textContent = data.display;
-          });
-          document.querySelectorAll('.tm-name-edit-btn[data-event-id="' + eventId + '"]').forEach(function (el) {
-            el.dataset.value = data.display;
-          });
-          closeNameEdit();
-          flashRows(eventId);
+          reloadWithHighlight(eventId);
         } else {
           nameError.textContent = data.error || "Chyba p\u0159i ulo\u017een\u00ed.";
           nameError.style.display = "block";
