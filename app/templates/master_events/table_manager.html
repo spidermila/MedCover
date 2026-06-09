@@ -66,7 +66,6 @@
         <th class="text-nowrap">Datum</th>
         <th class="tm-event-col">Akce</th>
         <th class="text-nowrap">Kvalifikace</th>
-        <th>Popis</th>
         <th class="text-nowrap">Od</th>
         <th class="text-nowrap">Do</th>
         <th class="text-nowrap" title="Počet hodin">Hod.</th>
@@ -81,7 +80,6 @@
       {% for row in rows %}
       {% set event = row.event %}
       {% set row_date = event.start_datetime | localdt('%Y-%m-%d') %}
-      {% set spot_descs = row.spots | map(attribute='description') | select | unique | list %}
       {% if ns.prev_date is not none and row_date != ns.prev_date %}
         {% set row_class = "tm-sep-day" %}
       {% elif ns.prev_event_id is not none and event.id != ns.prev_event_id %}
@@ -154,7 +152,6 @@
             <span class="badge text-dark" style="background-color: {{ row.color }}">—</span>
           {% endfor %}
         </td>
-        <td class="small text-muted tm-row-cell"{% if ec %} style="background-color:{{ ec }}"{% endif %}>{{ spot_descs | join(', ') }}</td>
 
         {# ── Od ── #}
         <td class="text-nowrap small tm-time-cell tm-row-cell"
