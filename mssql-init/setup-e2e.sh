@@ -11,14 +11,21 @@ SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
 SA_PASSWORD="E2e_Password1!"
 
 echo "Waiting for SQL Server to be ready..."
+READY=false
 for i in $(seq 1 30); do
     if $SQLCMD -S localhost -U sa -P "$SA_PASSWORD" -C -Q "SELECT 1" &>/dev/null; then
         echo "SQL Server is ready."
+        READY=true
         break
     fi
     echo "  Attempt $i/30 — not ready yet..."
     sleep 2
 done
+
+if [ "$READY" = "false" ]; then
+    echo "ERROR: SQL Server did not become ready within 60 seconds. Exiting."
+    exit 1
+fi
 
 echo "Creating database medcover_e2e..."
 $SQLCMD -S localhost -U sa -P "$SA_PASSWORD" -C -Q "
