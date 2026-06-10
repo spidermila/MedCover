@@ -11,9 +11,11 @@ case "${DATABASE_URL}" in
     DB_CHECK_FILE=$(mktemp)
     # Wait for MSSQL server (connect to master — target DB may not exist yet)
     cat > "$DB_CHECK_FILE" << 'PYEOF'
-import os, pyodbc, re
-url = os.environ["DATABASE_URL"]
+import os, pyodbc, re, sys
+url = os.environ.get("DATABASE_URL", "")
 m = re.match(r"mssql\+pyodbc://([^:]+):([^@]+)@([^:]+):(\d+)/([^?]+)", url)
+if not m:
+    sys.exit(f"Cannot parse MSSQL DATABASE_URL: {url}")
 user, pwd, host, port, db = m.groups()
 sa_pwd = os.environ.get("MSSQL_SA_PASSWORD", pwd)
 pyodbc.connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};DATABASE=master;UID=sa;PWD={sa_pwd};Encrypt=no;TrustServerCertificate=yes", timeout=5).close()
@@ -45,16 +47,26 @@ case "${DATABASE_URL}" in
     # Create DB and user via sa account, then stamp+migrate
     echo "  Creating MSSQL database (if not exists)..."
     python << 'PYEOF'
-import os, pyodbc, re
-url = os.environ["DATABASE_URL"]
+import os, pyodbc, re, sys
+url = os.environ.get("DATABASE_URL", "")
 m = re.match(r"mssql\+pyodbc://([^:]+):([^@]+)@([^:]+):(\d+)/([^?]+)", url)
+if not m:
+    sys.exit(f"Cannot parse MSSQL DATABASE_URL: {url}")
 user, pwd, host, port, db = m.groups()
+# Validate identifiers to prevent SQL injection accidents
+ident_re = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+if not ident_re.fullmatch(db):
+    sys.exit(f"Invalid database name: {db}")
+if not ident_re.fullmatch(user):
+    sys.exit(f"Invalid username: {user}")
 sa_pwd = os.environ.get("MSSQL_SA_PASSWORD", pwd)
 conn = pyodbc.connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};DATABASE=master;UID=sa;PWD={sa_pwd};Encrypt=no;TrustServerCertificate=yes", autocommit=True)
 c = conn.cursor()
 c.execute(f"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name='{db}') CREATE DATABASE [{db}] COLLATE Czech_100_CI_AS_SC_UTF8")
 c.execute(f"ALTER DATABASE [{db}] SET READ_COMMITTED_SNAPSHOT ON")
-c.execute(f"IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name='{user}') CREATE LOGIN [{user}] WITH PASSWORD='{pwd}'")
+# Escape single quotes in password for SQL literal
+safe_pwd = pwd.replace("'", "''")
+c.execute(f"IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name='{user}') CREATE LOGIN [{user}] WITH PASSWORD='{safe_pwd}'")
 conn.close()
 conn2 = pyodbc.connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};DATABASE={db};UID=sa;PWD={sa_pwd};Encrypt=no;TrustServerCertificate=yes", autocommit=True)
 c2 = conn2.cursor()
