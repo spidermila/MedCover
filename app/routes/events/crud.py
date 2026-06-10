@@ -219,8 +219,6 @@ def index() -> str:
         pagination=pagination,
         show_archived=f["show_archived"],
         active_statuses=f["active_statuses"],
-        default_statuses=_DEFAULT_STATUSES,
-        all_statuses=_ALL_STATUSES,
         active_types=f["active_types"],
         all_event_types=_ALL_EVENT_TYPES,
         sort_col=f["sort_col"],
