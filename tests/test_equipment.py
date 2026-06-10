@@ -16,7 +16,7 @@ from app.models.event import Event, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
 from app.routes.events._helpers import equipment_warnings_for_event
-from tests.conftest import _make_event_in_status
+from tests.conftest import _make_event_in_status, _make_rp_qual
 
 
 def _make_type(app, name: str = "Test Type", category: EquipmentCategory = EquipmentCategory.SHARED) -> int:
@@ -840,6 +840,7 @@ class TestEventCreateWithEquipment:
     def test_create_event_with_equipment_assigns_items(self, app, admin_client):
         type_id = _make_type(app, name="Typ pre-assign")
         item_id = _make_item(app, type_id, name="Item pre-assign")
+        rp_qual_id = _make_rp_qual(app, name="RP Qual equipment pre-assign")
         with app.app_context():
             me = MasterEvent(name="ME pre-assign")
             db.session.add(me)
@@ -854,7 +855,9 @@ class TestEventCreateWithEquipment:
                 "master_event_id": str(me_id),
                 "start_datetime": "2035-07-01T10:00",
                 "end_datetime": "2035-07-01T18:00",
-                "spot_count": "0",
+                "spot_total": "1",
+                "spot_desc_0": "Zdravotník",
+                "spot_cred_0": str(rp_qual_id),
                 "action": "create",
                 "equipment_item_ids": str(item_id),
             },
@@ -875,6 +878,7 @@ class TestEventCreateWithEquipment:
     def test_create_event_skips_unavailable_equipment(self, app, admin_client):
         type_id = _make_type(app, name="Typ unavail create")
         item_id = _make_item(app, type_id, name="Item unavail create")
+        rp_qual_id = _make_rp_qual(app, name="RP Qual equipment unavail")
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)
             item.status = EquipmentItemStatus.UNAVAILABLE
@@ -892,7 +896,9 @@ class TestEventCreateWithEquipment:
                 "master_event_id": str(me_id),
                 "start_datetime": "2035-08-01T10:00",
                 "end_datetime": "2035-08-01T18:00",
-                "spot_count": "0",
+                "spot_total": "1",
+                "spot_desc_0": "Zdravotník",
+                "spot_cred_0": str(rp_qual_id),
                 "action": "create",
                 "equipment_item_ids": str(item_id),
             },

@@ -511,6 +511,15 @@ def _make_user_with_qual(app, email: str, qual_id: int) -> str:
         return str(u.id)
 
 
+def _make_rp_qual(app, name: str = "RP Qualification") -> int:
+    """Create a Qualification with can_be_rp=True and return its ID."""
+    with app.app_context():
+        qual = Qualification(name=name, can_be_rp=True)
+        _db.session.add(qual)
+        _db.session.commit()
+        return qual.id
+
+
 def _login(client, email: str, password: str = "testpass123") -> None:
     """Log in via the auth endpoint."""
     client.post(

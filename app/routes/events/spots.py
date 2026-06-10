@@ -15,7 +15,7 @@ from app.models.user import UserAccount
 from app.utils import audit, get_or_404, require_permission, safe_next
 
 from . import events_bp
-from ._helpers import BULK_STATE_ACTIONS
+from ._helpers import BULK_STATE_ACTIONS, validate_event_spots_config
 
 # ── Bulk lifecycle actions ────────────────────────────────────────────────────
 
@@ -126,6 +126,14 @@ def add_spot(event_id: int) -> Response:
         spot.required_qualifications = list(qualifications)
         db.session.add(spot)
 
+    db.session.flush()
+    remaining = db.session.scalars(db.select(EventSpot).where(EventSpot.event_id == event_id)).all()
+    spot_error = validate_event_spots_config(list(remaining))
+    if spot_error:
+        db.session.rollback()
+        flash(spot_error, "danger")
+        return redirect(url_for("events.detail", event_id=event_id))
+
     event.version += 1
     opt_flag = " (volitelná)" if is_optional else ""
     qual_names = ", ".join(c.name for c in qualifications) if qualifications else "žádná"
@@ -188,6 +196,15 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
     spot.description = description
     spot.is_optional = request.form.get("is_optional") == "1"
     spot.required_qualifications = list(qualifications)
+
+    db.session.flush()
+    remaining = db.session.scalars(db.select(EventSpot).where(EventSpot.event_id == event_id)).all()
+    spot_error = validate_event_spots_config(list(remaining))
+    if spot_error:
+        db.session.rollback()
+        flash(spot_error, "danger")
+        return redirect(url_for("events.detail", event_id=event_id))
+
     event.version += 1
     opt_flag = " (volitelná)" if spot.is_optional else ""
     qual_names = ", ".join(c.name for c in qualifications) if qualifications else "žádná"
@@ -231,6 +248,15 @@ def delete_spot(event_id: int, spot_id: int) -> Response:
 
     db.session.delete(spot)
     event = get_or_404(Event, event_id)
+
+    db.session.flush()
+    remaining = db.session.scalars(db.select(EventSpot).where(EventSpot.event_id == event_id)).all()
+    spot_error = validate_event_spots_config(list(remaining))
+    if spot_error:
+        db.session.rollback()
+        flash(spot_error, "danger")
+        return redirect(url_for("events.detail", event_id=event_id))
+
     event.version += 1
     audit("edit", "Event", event.id, f"Odstraněna pozice z akce '{event.name}'")
     db.session.commit()

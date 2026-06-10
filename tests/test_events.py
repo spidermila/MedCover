@@ -24,17 +24,22 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from tests.conftest import _login, _make_event_in_status, _make_master_event
+from tests.conftest import _login, _make_event_in_status, _make_master_event, _make_rp_qual
 
 
-def _event_form_data(master_event_id: int, name: str = "Test Event") -> dict:
-    return {
+def _event_form_data(master_event_id: int, name: str = "Test Event", rp_qual_id: int | None = None) -> dict:
+    data: dict = {
         "name": name,
         "master_event_id": str(master_event_id),
         "start_datetime": "2030-06-01T10:00",
         "end_datetime": "2030-06-01T18:00",
         "spot_count": "0",
     }
+    if rp_qual_id is not None:
+        data["spot_total"] = "1"
+        data["spot_desc_0"] = "Zdravotník"
+        data["spot_cred_0"] = str(rp_qual_id)
+    return data
 
 
 class TestEventListPermissions:
@@ -56,7 +61,8 @@ class TestEventListPermissions:
 
     def test_event_row_has_data_me_attribute(self, app, admin_client):
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         # DRAFT is excluded by default; request it explicitly
         response = admin_client.get("/events/?statuses=DRAFT")
         assert b"data-me=" in response.data
@@ -73,9 +79,10 @@ class TestEventCreate:
 
     def test_admin_can_create_event(self, app, admin_client):
         me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
         response = admin_client.post(
             "/events/create",
-            data=_event_form_data(me_id),
+            data=_event_form_data(me_id, rp_qual_id=rp_qual_id),
             follow_redirects=False,
         )
         assert response.status_code == 302
@@ -120,7 +127,8 @@ class TestEventCreate:
             db.session.commit()
             rp_id = str(rp.id)
 
-        data = _event_form_data(me_id)
+        rp_qual_id = _make_rp_qual(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
         data["responsible_person_id"] = rp_id
         response = admin_client.post("/events/create", data=data, follow_redirects=False)
         assert response.status_code == 302  # not 500
@@ -129,7 +137,8 @@ class TestEventCreate:
 class TestEventDetail:
     def test_event_detail_loads(self, app, admin_client):
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             event_id = event.id
@@ -140,7 +149,8 @@ class TestEventDetail:
 class TestEventLifecycle:
     def _create_event(self, app, admin_client):
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             return event.id
@@ -244,7 +254,8 @@ class TestEventLifecycle:
 class TestEventEdit:
     def test_admin_can_edit_event(self, app, admin_client):
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             event_id = event.id
@@ -303,7 +314,8 @@ class TestCalendarFeed:
 
     def test_feed_excludes_archived_events_by_default(self, app, admin_client):
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             event_id = event.id
@@ -347,7 +359,8 @@ class TestAuditChangeTracking:
 
     def test_event_edit_records_changes(self, app, admin_client):
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             event_id = event.id
@@ -379,7 +392,8 @@ class TestAuditChangeTracking:
     def test_event_edit_no_change_produces_empty_changes(self, app, admin_client):
         """When nothing changes, changes_json should be None or empty dict."""
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             event_id = event.id
@@ -441,10 +455,13 @@ class TestAuditChangeTracking:
 class TestBulkAction:
     def _create_multiple_events(self, app, admin_client, count: int = 2) -> list[int]:
         me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
         ids = []
         for i in range(count):
             admin_client.post(
-                "/events/create", data=_event_form_data(me_id, name=f"Bulk Event {i}"), follow_redirects=True
+                "/events/create",
+                data=_event_form_data(me_id, name=f"Bulk Event {i}", rp_qual_id=rp_qual_id),
+                follow_redirects=True,
             )
         with app.app_context():
             events = db.session.scalars(db.select(Event).where(Event.name.like("Bulk Event%"))).all()
@@ -615,7 +632,8 @@ class TestBulkAction:
 class TestAddSpot:
     def test_admin_can_add_spot(self, app, admin_client):
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             event_id = event.id
@@ -825,9 +843,17 @@ class TestCalendarFeedExtended:
 
 class TestEditSpot:
     def _create_event_with_spot(self, app) -> tuple[int, int]:
+        """Create an event with two spots: one mandatory RP-capable anchor spot, and one test spot.
+
+        The anchor spot ensures the RP constraint is satisfied even when the test spot is modified.
+        Returns (event_id, test_spot_id).
+        """
         with app.app_context():
             me = MasterEvent(name="EditSpot ME")
             db.session.add(me)
+            db.session.flush()
+            rp_qual = Qualification(name="EditSpot RP Qual", can_be_rp=True)
+            db.session.add(rp_qual)
             db.session.flush()
             event = Event(
                 name="EditSpot Event",
@@ -838,6 +864,11 @@ class TestEditSpot:
             )
             db.session.add(event)
             db.session.flush()
+            # Anchor spot: mandatory + RP-capable qual (ensures RP constraint is met)
+            anchor = EventSpot(event_id=event.id, description="Anchor RP Spot", is_optional=False)
+            anchor.required_qualifications = [rp_qual]
+            db.session.add(anchor)
+            # Test spot: mandatory, no qual — the one used by tests
             spot = EventSpot(event_id=event.id, description="Old Desc")
             db.session.add(spot)
             db.session.commit()
@@ -925,9 +956,17 @@ class TestEditSpot:
 
 class TestDeleteSpot:
     def _create_event_with_spot(self, app) -> tuple[int, int]:
+        """Create an event with two spots: one mandatory RP-capable anchor spot, and one test spot.
+
+        The anchor spot ensures the RP constraint is satisfied even when the test spot is deleted.
+        Returns (event_id, test_spot_id).
+        """
         with app.app_context():
             me = MasterEvent(name="DelSpot ME")
             db.session.add(me)
+            db.session.flush()
+            rp_qual = Qualification(name="DelSpot RP Qual", can_be_rp=True)
+            db.session.add(rp_qual)
             db.session.flush()
             event = Event(
                 name="DelSpot Event",
@@ -938,6 +977,11 @@ class TestDeleteSpot:
             )
             db.session.add(event)
             db.session.flush()
+            # Anchor spot: mandatory + RP-capable qual (ensures RP constraint is met after test spot deletion)
+            anchor = EventSpot(event_id=event.id, description="Anchor RP Spot", is_optional=False)
+            anchor.required_qualifications = [rp_qual]
+            db.session.add(anchor)
+            # Test spot: mandatory, no qual — the one used by tests
             spot = EventSpot(event_id=event.id)
             db.session.add(spot)
             db.session.commit()
@@ -1109,7 +1153,8 @@ class TestEventChangedNotification:
     def test_edit_sends_notification_to_assigned_user(self, app, admin_client):
 
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
 
         with app.app_context():
             settings = get_settings()
@@ -1164,7 +1209,8 @@ class TestEventChangedNotification:
     def test_edit_without_change_sends_no_notification(self, app, admin_client):
 
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
 
         with app.app_context():
             settings = get_settings()
@@ -1221,8 +1267,9 @@ class TestEventTypes:
 
     def test_create_training_event(self, app, admin_client):
         me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
         data = {
-            **_event_form_data(me_id, "Training Event"),
+            **_event_form_data(me_id, "Training Event", rp_qual_id=rp_qual_id),
             "event_type": "TRAINING",
             "planned_participants_count": "20",
         }
@@ -1236,8 +1283,9 @@ class TestEventTypes:
 
     def test_create_presentation_event(self, app, admin_client):
         me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
         data = {
-            **_event_form_data(me_id, "Presentation Event"),
+            **_event_form_data(me_id, "Presentation Event", rp_qual_id=rp_qual_id),
             "event_type": "PRESENTATION",
         }
         resp = admin_client.post("/events/create", data=data, follow_redirects=False)
@@ -1250,21 +1298,23 @@ class TestEventTypes:
 
     def test_default_event_type_is_medical_cover(self, app, admin_client):
         me_id = _make_master_event(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id), follow_redirects=True)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
             ev = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
             assert ev.event_type == EventType.MEDICAL_COVER
 
     def test_type_filter_returns_only_matching_events(self, app, admin_client):
         me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
         admin_client.post(
             "/events/create",
-            data={**_event_form_data(me_id, "MC Event"), "event_type": "MEDICAL_COVER"},
+            data={**_event_form_data(me_id, "MC Event", rp_qual_id=rp_qual_id), "event_type": "MEDICAL_COVER"},
             follow_redirects=True,
         )
         admin_client.post(
             "/events/create",
-            data={**_event_form_data(me_id, "Training Event"), "event_type": "TRAINING"},
+            data={**_event_form_data(me_id, "Training Event", rp_qual_id=rp_qual_id), "event_type": "TRAINING"},
             follow_redirects=True,
         )
         # Filter for TRAINING only (include DRAFT so newly created events appear)
@@ -1275,9 +1325,10 @@ class TestEventTypes:
 
     def test_type_badge_shown_in_event_list(self, app, admin_client):
         me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
         admin_client.post(
             "/events/create",
-            data={**_event_form_data(me_id, "Badge Training"), "event_type": "TRAINING"},
+            data={**_event_form_data(me_id, "Badge Training", rp_qual_id=rp_qual_id), "event_type": "TRAINING"},
             follow_redirects=True,
         )
         resp = admin_client.get("/events/?statuses=DRAFT")
@@ -1741,3 +1792,194 @@ class TestAssignmentsOpenDatetimeValidation:
         with app.app_context():
             event = db.session.get(Event, event_id)
             assert event.assignments_open_datetime is not None
+
+
+# ── RP spot constraint ────────────────────────────────────────────────────────
+
+
+class TestEventSpotRpConstraint:
+    """Verify that create/edit/delete spot routes enforce the RP-capable spot constraint."""
+
+    def _make_event_with_rp_spot(self, app) -> tuple[int, int, int]:
+        """Create an event with a mandatory RP-capable spot. Returns (event_id, spot_id, rp_qual_id)."""
+        with app.app_context():
+            me = MasterEvent(name="RP Constraint ME")
+            db.session.add(me)
+            db.session.flush()
+            rp_qual = Qualification(name="RP Qual Constraint", can_be_rp=True)
+            db.session.add(rp_qual)
+            db.session.flush()
+            event = Event(
+                name="RP Constraint Event",
+                master_event_id=me.id,
+                status=EventStatus.DRAFT,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id, description="RP Spot", is_optional=False)
+            spot.required_qualifications = [rp_qual]
+            db.session.add(spot)
+            db.session.commit()
+            return event.id, spot.id, rp_qual.id
+
+    def test_create_event_no_spots_rejected(self, app, admin_client):
+        """POST to create with no spots must be rejected with a flash error."""
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id)
+        # No spot data — spot_total defaults to 0
+        response = admin_client.post("/events/create", data=data, follow_redirects=True)
+        assert response.status_code == 200
+        assert "Akce musí mít alespoň jednu pozici".encode() in response.data
+        with app.app_context():
+            assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
+
+    def test_create_event_all_optional_spots_rejected(self, app, admin_client):
+        """POST to create where all spots are optional must be rejected."""
+        me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
+        data = _event_form_data(me_id)
+        data["spot_total"] = "1"
+        data["spot_desc_0"] = "Volitelná pozice"
+        data["spot_cred_0"] = str(rp_qual_id)
+        data["spot_optional_0"] = "1"
+        response = admin_client.post("/events/create", data=data, follow_redirects=True)
+        assert response.status_code == 200
+        assert "Akce musí mít alespoň jednu povinnou pozici".encode() in response.data
+        with app.app_context():
+            assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
+
+    def test_create_event_mandatory_spot_no_rp_qual_rejected(self, app, admin_client):
+        """POST to create with a mandatory spot but no RP-capable qual must be rejected."""
+        me_id = _make_master_event(app)
+        with app.app_context():
+            non_rp_qual = Qualification(name="Non RP Qual", can_be_rp=False)
+            db.session.add(non_rp_qual)
+            db.session.commit()
+            qual_id = non_rp_qual.id
+        data = _event_form_data(me_id)
+        data["spot_total"] = "1"
+        data["spot_desc_0"] = "Povinná pozice"
+        data["spot_cred_0"] = str(qual_id)
+        response = admin_client.post("/events/create", data=data, follow_redirects=True)
+        assert response.status_code == 200
+        assert "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci".encode() in response.data
+        with app.app_context():
+            assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
+
+    def test_create_event_with_rp_qual_mandatory_spot_succeeds(self, app, admin_client):
+        """POST to create with a mandatory spot with RP-capable qual must succeed."""
+        me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        response = admin_client.post("/events/create", data=data, follow_redirects=False)
+        assert response.status_code == 302
+        with app.app_context():
+            assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 1
+
+    def test_add_spot_blocked_when_no_rp_spot_would_remain(self, app, admin_client):
+        """Adding a non-RP-capable spot when no other RP-capable mandatory spot exists is blocked.
+
+        Note: adding a spot never removes existing spots, so this tests the case where
+        the event already has no RP-capable mandatory spots and we try to add a non-RP one.
+        In practice, the event itself was bypassed (created directly in DB).
+        We directly create an event without a valid RP spot and then verify add_spot validates.
+        """
+        with app.app_context():
+            me = MasterEvent(name="Add Spot Block ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Add Spot Block Event",
+                master_event_id=me.id,
+                status=EventStatus.DRAFT,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.commit()
+            event_id = event.id
+
+        # Add a non-RP optional spot — event has no spots yet, so constraint will fail
+        response = admin_client.post(
+            f"/events/{event_id}/spots/add",
+            data={"description": "Pomocník", "quantity": "1", "is_optional": "1"},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Akce musí mít alespoň jednu povinnou pozici".encode() in response.data
+        with app.app_context():
+            count = db.session.scalar(
+                db.select(db.func.count()).select_from(EventSpot).where(EventSpot.event_id == event_id)
+            )
+            assert count == 0
+
+    def test_delete_last_rp_capable_mandatory_spot_blocked(self, app, admin_client):
+        """Deleting the only mandatory RP-capable spot must be blocked with a flash error."""
+        event_id, spot_id, _rp_qual_id = self._make_event_with_rp_spot(app)
+
+        response = admin_client.post(
+            f"/events/{event_id}/spots/{spot_id}/delete",
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Akce musí mít alespoň jednu pozici".encode() in response.data
+        with app.app_context():
+            assert db.session.get(EventSpot, spot_id) is not None
+
+    def test_edit_spot_removing_last_rp_qual_blocked(self, app, admin_client):
+        """Editing a spot to remove the only RP-capable qual must be blocked."""
+        event_id, spot_id, _rp_qual_id = self._make_event_with_rp_spot(app)
+
+        # Edit the spot to have no qualifications
+        response = admin_client.post(
+            f"/events/{event_id}/spots/{spot_id}/edit",
+            data={"description": "RP Spot"},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci".encode() in response.data
+
+    def test_edit_spot_making_only_mandatory_rp_spot_optional_blocked(self, app, admin_client):
+        """Editing the only mandatory RP spot to be optional must be blocked."""
+        event_id, spot_id, rp_qual_id = self._make_event_with_rp_spot(app)
+
+        # Edit the spot to be optional (keeping the RP qual)
+        response = admin_client.post(
+            f"/events/{event_id}/spots/{spot_id}/edit",
+            data={"description": "RP Spot", "qualification_ids": [str(rp_qual_id)], "is_optional": "1"},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Akce musí mít alespoň jednu povinnou pozici".encode() in response.data
+
+    def test_create_event_mandatory_spot_no_qualifications_rejected(self, app, admin_client):
+        """POST to create with a mandatory spot that has no spot_cred_* at all must be rejected."""
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id)
+        data["spot_total"] = "1"
+        data["spot_desc_0"] = "Povinná pozice bez kvalifikace"
+        # spot_cred_0 is intentionally absent — no qualification at all
+        response = admin_client.post("/events/create", data=data, follow_redirects=True)
+        assert response.status_code == 200
+        assert "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci".encode() in response.data
+        with app.app_context():
+            assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
+
+    def test_add_spot_to_event_with_rp_spot_succeeds(self, app, admin_client):
+        """Adding a non-RP optional spot to an event that already has a valid mandatory RP spot must succeed."""
+        event_id, _spot_id, _rp_qual_id = self._make_event_with_rp_spot(app)
+
+        # Add a second optional spot (no RP qual needed — the existing mandatory RP spot satisfies the constraint)
+        response = admin_client.post(
+            f"/events/{event_id}/spots/add",
+            data={"description": "Pomocník", "quantity": "1", "is_optional": "1"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        with app.app_context():
+            count = db.session.scalar(
+                db.select(db.func.count()).select_from(EventSpot).where(EventSpot.event_id == event_id)
+            )
+            assert count == 2
