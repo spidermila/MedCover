@@ -534,7 +534,7 @@ def drain_one_outbox_email() -> bool:
 
     from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
 
-    row: OutboxEmail | None = db.session.scalars(
+    query = (
         db.select(OutboxEmail)
         .where(
             OutboxEmail.status == "pending",
@@ -542,8 +542,14 @@ def drain_one_outbox_email() -> bool:
         )
         .order_by(OutboxEmail.created_at.asc())
         .limit(1)
-        .with_for_update(skip_locked=True)
-    ).first()
+    )
+    if db.engine.dialect.name == "mssql":
+        # MSSQL: UPDLOCK + READPAST = skip locked rows (equivalent of skip_locked)
+        query = query.with_hint(OutboxEmail, "WITH (UPDLOCK, ROWLOCK, READPAST)")
+    else:
+        query = query.with_for_update(skip_locked=True)
+
+    row: OutboxEmail | None = db.session.scalars(query).first()
 
     if row is None:
         return False
