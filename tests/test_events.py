@@ -1641,3 +1641,103 @@ def test_spot_map_includes_description_and_qualifications(
     assert test_entry[1] == expected_desc
     assert test_entry[2] == expected_quals
     assert test_entry[3] is False  # mandatory spot
+
+
+class TestAssignmentsOpenDatetimeValidation:
+    def test_create_rejects_open_equal_to_start(self, app, admin_client):
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id)
+        data["start_datetime"] = "2030-06-01T10:00"
+        data["end_datetime"] = "2030-06-01T18:00"
+        data["assignments_open_datetime"] = "2030-06-01T10:00"
+        response = admin_client.post("/events/create", data=data)
+        assert response.status_code == 200
+        assert "Datum otevření přihlášek musí být před začátkem akce.".encode() in response.data
+        with app.app_context():
+            assert db.session.query(Event).count() == 0
+
+    def test_create_rejects_open_after_start(self, app, admin_client):
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id)
+        data["start_datetime"] = "2030-06-01T10:00"
+        data["end_datetime"] = "2030-06-01T18:00"
+        data["assignments_open_datetime"] = "2030-06-01T11:00"
+        response = admin_client.post("/events/create", data=data)
+        assert response.status_code == 200
+        assert "Datum otevření přihlášek musí být před začátkem akce.".encode() in response.data
+        with app.app_context():
+            assert db.session.query(Event).count() == 0
+
+    def test_create_accepts_open_before_start(self, app, admin_client):
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id)
+        data["start_datetime"] = "2030-06-01T10:00"
+        data["end_datetime"] = "2030-06-01T18:00"
+        data["assignments_open_datetime"] = "2030-06-01T09:00"
+        response = admin_client.post("/events/create", data=data, follow_redirects=False)
+        assert response.status_code == 302
+        with app.app_context():
+            event = db.session.query(Event).first()
+            assert event is not None
+            assert event.assignments_open_datetime is not None
+
+    def test_create_accepts_missing_open_datetime(self, app, admin_client):
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id)
+        data.pop("assignments_open_datetime", None)
+        response = admin_client.post("/events/create", data=data, follow_redirects=False)
+        assert response.status_code == 302
+        with app.app_context():
+            event = db.session.query(Event).first()
+            assert event is not None
+            assert event.assignments_open_datetime is None
+
+    def test_edit_rejects_open_equal_to_start(self, app, admin_client):
+        me_id = _make_master_event(app)
+        event_id = _make_event_in_status(app, EventStatus.DRAFT)
+        with app.app_context():
+            version = db.session.get(Event, event_id).version
+        data = {
+            **_event_form_data(me_id),
+            "start_datetime": "2030-06-01T10:00",
+            "end_datetime": "2030-06-01T18:00",
+            "assignments_open_datetime": "2030-06-01T10:00",
+            "version": str(version),
+        }
+        response = admin_client.post(f"/events/{event_id}/edit", data=data)
+        assert response.status_code == 200
+        assert "Datum otevření přihlášek musí být před začátkem akce.".encode() in response.data
+
+    def test_edit_rejects_open_after_start(self, app, admin_client):
+        me_id = _make_master_event(app)
+        event_id = _make_event_in_status(app, EventStatus.DRAFT)
+        with app.app_context():
+            version = db.session.get(Event, event_id).version
+        data = {
+            **_event_form_data(me_id),
+            "start_datetime": "2030-06-01T10:00",
+            "end_datetime": "2030-06-01T18:00",
+            "assignments_open_datetime": "2030-06-01T11:00",
+            "version": str(version),
+        }
+        response = admin_client.post(f"/events/{event_id}/edit", data=data)
+        assert response.status_code == 200
+        assert "Datum otevření přihlášek musí být před začátkem akce.".encode() in response.data
+
+    def test_edit_accepts_open_before_start(self, app, admin_client):
+        me_id = _make_master_event(app)
+        event_id = _make_event_in_status(app, EventStatus.DRAFT)
+        with app.app_context():
+            version = db.session.get(Event, event_id).version
+        data = {
+            **_event_form_data(me_id),
+            "start_datetime": "2030-06-01T10:00",
+            "end_datetime": "2030-06-01T18:00",
+            "assignments_open_datetime": "2030-06-01T09:00",
+            "version": str(version),
+        }
+        response = admin_client.post(f"/events/{event_id}/edit", data=data, follow_redirects=False)
+        assert response.status_code == 302
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.assignments_open_datetime is not None

@@ -112,6 +112,23 @@
     // after all cross-field checks pass.
   }
 
+  // ── Assignments open: must be before event start ─────────────────────────
+
+  function validateAssignmentsOpenRange(form) {
+    var startEl = form.querySelector("[name='start_datetime']");
+    var openEl  = form.querySelector("[name='assignments_open_datetime']");
+    if (!startEl || !openEl) return true;
+    if (!openEl.value.trim()) return true;
+    var startVal = startEl._flatpickr ? startEl._flatpickr.selectedDates[0] : new Date(startEl.value);
+    var openVal  = openEl._flatpickr  ? openEl._flatpickr.selectedDates[0]  : new Date(openEl.value);
+    if (!startVal || !openVal) return true;
+    if (openVal >= startVal) {
+      setInvalid(openEl, "Otevření přihlášek musí být před začátkem akce.");
+      return false;
+    }
+    return true;
+  }
+
   // ── Password confirmation ─────────────────────────────────────────────────
 
   function validatePasswordConfirm(form) {
@@ -137,6 +154,7 @@
     var endEl   = form.querySelector("[name='end_datetime']");
     var pwEl    = form.querySelector("[name='new_password']");
     var confEl  = form.querySelector("[name='confirm_password']");
+    var openAssignEl = form.querySelector("[name='assignments_open_datetime']");
 
     form.querySelectorAll("input, textarea, select").forEach(function (el) {
       if (el.disabled || el.type === "hidden") return;
@@ -161,6 +179,7 @@
     });
 
     ok = validateDateRange(form) && ok;
+    ok = validateAssignmentsOpenRange(form) && ok;
     ok = validatePasswordConfirm(form) && ok;
 
     // Only mark fields green when the ENTIRE form passes all checks.
@@ -173,6 +192,7 @@
       if (endEl   && endEl.value.trim())   setValid(endEl);
       if (pwEl    && pwEl.value)           setValid(pwEl);
       if (confEl  && confEl.value)         setValid(confEl);
+      if (openAssignEl && openAssignEl.value.trim()) setValid(openAssignEl);
     }
 
     return ok;
@@ -255,6 +275,20 @@
         }
         startEl.addEventListener("change", checkDateRange);
         endEl.addEventListener("change", checkDateRange);
+      }
+
+      // Live cross-field: assignments open datetime vs event start
+      var openAssignEl = form.querySelector("[name='assignments_open_datetime']");
+      if (startEl && openAssignEl) {
+        function checkOpenRange() {
+          if (startEl.value && openAssignEl.value) {
+            clearValidity(openAssignEl);
+            if (!validateAssignmentsOpenRange(form)) return;
+            validateField(openAssignEl);
+          }
+        }
+        startEl.addEventListener("change", checkOpenRange);
+        openAssignEl.addEventListener("change", checkOpenRange);
       }
 
       // Live cross-field: password confirmation
