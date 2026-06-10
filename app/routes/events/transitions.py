@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+import sqlalchemy as sa
 from flask import Response, abort, flash, redirect, request, url_for
 from flask_login import current_user, login_required
 
@@ -57,13 +58,17 @@ def transition(event_id: int) -> Response:
     # Email notifications
     if target_status == EventStatus.PUBLISHED:
         active_users = db.session.scalars(
-            db.select(UserAccount).where(UserAccount.is_active.is_(True)).where(UserAccount.is_archived.is_(False))
+            db.select(UserAccount)
+            .where(UserAccount.is_active == sa.true())
+            .where(UserAccount.is_archived == sa.false())
         ).all()
         for u in active_users:
             mailer.send_event_published(u, event)
     elif target_status == EventStatus.ASSIGNMENTS_OPEN:
         active_users = db.session.scalars(
-            db.select(UserAccount).where(UserAccount.is_active.is_(True)).where(UserAccount.is_archived.is_(False))
+            db.select(UserAccount)
+            .where(UserAccount.is_active == sa.true())
+            .where(UserAccount.is_archived == sa.false())
         ).all()
         for u in active_users:
             mailer.send_assignments_opened(u, event)

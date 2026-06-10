@@ -1,0 +1,103 @@
+# docker-compose.mssql-dev.yml
+#
+# Self-contained dev stack with MSSQL Server 2022 (LOCAL DEV ONLY).
+# Production in Azure uses Azure SQL Database as a managed service.
+#
+# Usage:
+#   podman compose -f docker-compose.mssql-dev.yml up -d --build
+#   # or: docker compose -f docker-compose.mssql-dev.yml up -d --build
+#
+# After first startup, create the database:
+#   podman exec medcover-mssql-db-1 /docker-entrypoint-initdb.d/setup.sh
+#
+# .env must contain:
+#   DATABASE_URL=mssql+pyodbc://medcover:Dev_Password1!@db:1433/medcover_dev?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes
+
+services:
+  web:
+    platform: linux/amd64
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+    command: flask run --host=0.0.0.0 --debug
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file: .env
+    ports:
+      - "5000:5000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "7"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  scheduler:
+    platform: linux/amd64
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+    entrypoint: ["/docker-entrypoint-scheduler.sh"]
+    command: python scheduler/main.py
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file: .env
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      web:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "7"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import os, time; f='/tmp/scheduler_heartbeat'; assert os.path.exists(f) and time.time()-os.path.getmtime(f)<30"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "DevPassword123!"
+      MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
+      MSSQL_MEMORY_LIMIT_MB: "512"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - ./mssql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "DevPassword123!", "-C", "-Q", "SELECT 1", "-b"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  mssql_data:

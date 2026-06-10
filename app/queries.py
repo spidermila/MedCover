@@ -7,6 +7,7 @@ performance (eager-load shapes, ordering) and to apply changes in one place.
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from sqlalchemy import collate
 
 from app.extensions import db
@@ -23,8 +24,8 @@ def active_users_query():  # type: ignore[no-untyped-def]
     """
     return (
         db.select(UserAccount)
-        .where(UserAccount.is_active.is_(True))
-        .where(UserAccount.is_archived.is_(False))
+        .where(UserAccount.is_active == sa.true())
+        .where(UserAccount.is_archived == sa.false())
         .order_by(collate(UserAccount.name, CS_COLLATION))
     )
 
@@ -45,9 +46,9 @@ def rp_eligible_users_list() -> list[UserAccount]:
         .join(uq_table, UserAccount.id == uq_table.c.user_id)
         .join(Qualification, Qualification.id == uq_table.c.qualification_id)
         .where(
-            UserAccount.is_active.is_(True),
-            UserAccount.is_archived.is_(False),
-            Qualification.can_be_rp.is_(True),
+            UserAccount.is_active == sa.true(),
+            UserAccount.is_archived == sa.false(),
+            Qualification.can_be_rp == sa.true(),
         )
         .distinct()
         .subquery()
@@ -64,7 +65,7 @@ def active_master_events_list() -> Sequence[MasterEvent]:
     """Return non-archived master events ordered (general first, then by name)."""
     return db.session.scalars(
         db.select(MasterEvent)
-        .where(MasterEvent.archived.is_(False))
+        .where(MasterEvent.archived == sa.false())
         .order_by(MasterEvent.is_general.desc(), collate(MasterEvent.name, CS_COLLATION))
     ).all()
 
@@ -84,7 +85,7 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
     from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
     all_quals: list[Qualification] = list(
-        db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False))).all()
+        db.session.scalars(db.select(Qualification).where(Qualification.is_deleted == sa.false())).all()
     )
 
     user_qual_ids = {q.id for q in user.qualifications if not q.is_deleted}

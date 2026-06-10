@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import sqlalchemy as sa
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import collate
@@ -90,7 +91,7 @@ def _process_import_users(
         kw = keyword.lower()
         return db.session.scalars(
             db.select(Qualification).where(
-                Qualification.is_deleted.is_(False),
+                Qualification.is_deleted == sa.false(),
                 db.func.lower(Qualification.name).contains(kw),
             )
         ).first()
@@ -515,7 +516,7 @@ def events_preview() -> str | Response:
     qualifications = list(
         db.session.scalars(
             db.select(Qualification)
-            .where(Qualification.is_deleted.is_(False))
+            .where(Qualification.is_deleted == sa.false())
             .order_by(collate(Qualification.name, CS_COLLATION))
         ).all()
     )

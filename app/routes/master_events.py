@@ -19,6 +19,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import sqlalchemy as sa
 from flask import Blueprint, Response, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import collate
@@ -54,7 +55,7 @@ def index() -> str:
     show_archived = request.args.get("archived") == "1"
     query = db.select(MasterEvent)
     if not show_archived:
-        query = query.where(MasterEvent.archived.is_(False))
+        query = query.where(MasterEvent.archived == sa.false())
     query = query.order_by(MasterEvent.is_general.desc(), collate(MasterEvent.name, CS_COLLATION))
     master_events = db.session.scalars(query).all()
 
@@ -292,7 +293,7 @@ def _compute_eligible_users(rows: list[dict], all_users: list) -> None:
     """Annotate each row with ``eligible_users`` list (users who can fill those spots)."""
     from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
-    all_quals = db.session.scalars(db.select(Qualification).where(Qualification.is_deleted.is_(False))).all()
+    all_quals = db.session.scalars(db.select(Qualification).where(Qualification.is_deleted == sa.false())).all()
     parents_map: dict[int, list[int]] = {q.id: [p.id for p in q.parents] for q in all_quals}
 
     def _can_fill(uq_ids: set[int], target: int, visited: frozenset[int]) -> bool:
@@ -482,7 +483,7 @@ def _handle_advance_status(event: Event) -> Response:
     from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
 
     active_users = db.session.scalars(
-        db.select(UserAccount).where(UserAccount.is_active.is_(True)).where(UserAccount.is_archived.is_(False))
+        db.select(UserAccount).where(UserAccount.is_active == sa.true()).where(UserAccount.is_archived == sa.false())
     ).all()
     if target_status == EventStatus.PUBLISHED:
         for u in active_users:
@@ -677,7 +678,7 @@ def table_spots_update(me_id: int) -> Response:
     if new_count > current_count:
         qualifications = (
             db.session.scalars(
-                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
+                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted == sa.false())
             ).all()
             if qual_ids
             else []

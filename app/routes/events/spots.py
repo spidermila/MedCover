@@ -2,6 +2,7 @@
 
 import uuid
 
+import sqlalchemy as sa
 from flask import Response, abort, flash, redirect, request, url_for
 from flask_login import current_user, login_required
 
@@ -114,7 +115,7 @@ def add_spot(event_id: int) -> Response:
     qual_ids = [int(c) for c in request.form.getlist("qualification_ids") if c.isdigit()]
     qualifications = (
         db.session.scalars(
-            db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
+            db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted == sa.false())
         ).all()
         if qual_ids
         else []
@@ -156,7 +157,7 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
     qual_ids = [int(c) for c in request.form.getlist("qualification_ids") if c.isdigit()]
     qualifications = (
         db.session.scalars(
-            db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
+            db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted == sa.false())
         ).all()
         if qual_ids
         else []

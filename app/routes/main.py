@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+import sqlalchemy as sa
 from flask import Blueprint, Response, jsonify, render_template
 from flask_login import current_user, login_required
 from sqlalchemy import or_
@@ -43,7 +44,7 @@ def _my_events_section(now: datetime, horizon: datetime) -> tuple[list[tuple[Eve
     my_events_query = (
         db.select(Event)
         .where(
-            Event.archived.is_(False),
+            Event.archived == sa.false(),
             Event.end_datetime >= now,
             Event.start_datetime <= horizon,
             Event.status != EventStatus.CANCELLED,
@@ -108,7 +109,7 @@ def _attention_events_section(now: datetime, horizon: datetime) -> list[Event]:
         db.session.scalars(
             db.select(Event)
             .where(
-                Event.archived.is_(False),
+                Event.archived == sa.false(),
                 Event.status.in_([EventStatus.DRAFT, EventStatus.PUBLISHED, EventStatus.ASSIGNMENTS_OPEN]),
                 Event.start_datetime <= horizon,
                 Event.end_datetime >= now,
@@ -133,7 +134,7 @@ def _missing_rp_events_section(now: datetime) -> list[Event]:
         db.session.scalars(
             db.select(Event)
             .where(
-                Event.archived.is_(False),
+                Event.archived == sa.false(),
                 Event.status.notin_([EventStatus.DRAFT, EventStatus.CANCELLED]),
                 Event.responsible_person_id == None,  # noqa: E711
                 Event.start_datetime >= now,
@@ -180,8 +181,8 @@ def dashboard() -> str:
         pending_activations = list(
             db.session.scalars(
                 db.select(UserAccount)
-                .where(UserAccount.is_active.is_(False))
-                .where(UserAccount.is_archived.is_(False))
+                .where(UserAccount.is_active == sa.false())
+                .where(UserAccount.is_archived == sa.false())
                 .order_by(UserAccount.created_at)
             ).all()
         )

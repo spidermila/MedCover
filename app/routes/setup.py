@@ -7,6 +7,7 @@ Step 3 creates the first admin account (no auth required — no users exist yet)
 """
 
 import pytz
+import sqlalchemy as sa
 from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_user
 from flask_mail import Message
@@ -197,7 +198,7 @@ def _ensure_general_me() -> None:
     """Idempotently create the built-in General master event."""
     from app.models.master_event import MasterEvent  # pylint: disable=import-outside-toplevel
 
-    if not db.session.scalar(db.select(MasterEvent).where(MasterEvent.is_general.is_(True))):
+    if not db.session.scalar(db.select(MasterEvent).where(MasterEvent.is_general == sa.true())):
         db.session.add(
             MasterEvent(
                 name="Obecné",

@@ -8,6 +8,7 @@ Permissions:
   qualification.delete  — delete (only if no users or spots hold it)
 """
 
+import sqlalchemy as sa
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import collate
@@ -28,7 +29,7 @@ def index() -> str:
     require_permission("qualification.view")
     qualifications = db.session.scalars(
         db.select(Qualification)
-        .where(Qualification.is_deleted.is_(False))
+        .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
     return render_template("qualifications/index.html", qualifications=qualifications)
@@ -44,7 +45,7 @@ def create() -> str | Response:
 
     all_qualifications = db.session.scalars(
         db.select(Qualification)
-        .where(Qualification.is_deleted.is_(False))
+        .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
 
@@ -58,7 +59,7 @@ def create() -> str | Response:
             return render_template("qualifications/create.html", all_qualifications=all_qualifications)
 
         if db.session.scalar(
-            db.select(Qualification).where(Qualification.name == name, Qualification.is_deleted.is_(False))
+            db.select(Qualification).where(Qualification.name == name, Qualification.is_deleted == sa.false())
         ):
             flash("Kvalifikace s tímto názvem již existuje.", "danger")
             return render_template("qualifications/create.html", all_qualifications=all_qualifications)
@@ -92,7 +93,7 @@ def edit(cred_id: int) -> str | Response:
 
     all_qualifications = db.session.scalars(
         db.select(Qualification)
-        .where(Qualification.id != cred_id, Qualification.is_deleted.is_(False))
+        .where(Qualification.id != cred_id, Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
 
@@ -107,7 +108,7 @@ def edit(cred_id: int) -> str | Response:
 
         conflict = db.session.scalar(
             db.select(Qualification).where(
-                Qualification.name == name, Qualification.id != cred_id, Qualification.is_deleted.is_(False)
+                Qualification.name == name, Qualification.id != cred_id, Qualification.is_deleted == sa.false()
             )
         )
         if conflict:
