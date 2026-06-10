@@ -94,7 +94,10 @@ def _get_alembic_head() -> str:
     """
     try:
         with db.engine.connect() as conn:
-            row = conn.execute(sa.text("SELECT version_num FROM alembic_version LIMIT 1")).fetchone()
+            if db.engine.dialect.name == "mssql":
+                row = conn.execute(sa.text("SELECT TOP 1 version_num FROM alembic_version")).fetchone()
+            else:
+                row = conn.execute(sa.text("SELECT version_num FROM alembic_version LIMIT 1")).fetchone()
             return str(row[0]) if row else "unknown"
     except Exception:
         return "unknown"
@@ -222,8 +225,17 @@ def restore_from_zip(zip_path: str | Path) -> None:
         }
 
         if tables_to_clear:
-            quoted = ", ".join(f'"{t}"' for t in tables_to_clear)
-            conn.execute(sa.text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+            if db.engine.dialect.name == "mssql":
+                # MSSQL: disable FK checks, delete all rows, re-enable
+                for t in tables_to_clear:
+                    conn.execute(sa.text(f"ALTER TABLE [{t}] NOCHECK CONSTRAINT ALL"))
+                for t in tables_to_clear:
+                    conn.execute(sa.text(f"DELETE FROM [{t}]"))
+                for t in tables_to_clear:
+                    conn.execute(sa.text(f"ALTER TABLE [{t}] CHECK CONSTRAINT ALL"))
+            else:
+                quoted = ", ".join(f'"{t}"' for t in tables_to_clear)
+                conn.execute(sa.text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
 
         # Re-insert rows, skipping columns that no longer exist in the schema.
         for table_name in restore_sequence:
@@ -250,19 +262,32 @@ def restore_from_zip(zip_path: str | Path) -> None:
         conn.commit()
 
         # Reset sequences so future INSERTs don't collide with restored IDs.
-        # Each table is in its own commit so a failure on one doesn't affect others.
+        # PostgreSQL uses sequences; MSSQL uses IDENTITY — reseed via DBCC.
         for table_name in tables_to_clear:
             try:
-                pk_cols = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
-                for pk in pk_cols:
-                    seq = conn.execute(sa.text(f"SELECT pg_get_serial_sequence('{table_name}', '{pk}')")).scalar()
-                    if seq:
-                        next_id = conn.execute(
-                            sa.text(f'SELECT COALESCE(MAX("{pk}"), 0) + 1 FROM "{table_name}"')
-                        ).scalar()
-                        if next_id is not None:
-                            conn.execute(sa.text(f"SELECT setval('{seq}', {int(next_id)}, false)"))
-                conn.commit()
+                if db.engine.dialect.name == "mssql":
+                    # Reseed IDENTITY columns to max(pk)+1 (or 0 if table is empty)
+                    pk_cols = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
+                    for pk in pk_cols:
+                        col_info = next((c for c in inspector.get_columns(table_name) if c["name"] == pk), None)
+                        if col_info and col_info.get("autoincrement", False):
+                            max_id = conn.execute(
+                                sa.text(f"SELECT COALESCE(MAX([{pk}]), 0) FROM [{table_name}]")
+                            ).scalar()
+                            if max_id is not None:
+                                conn.execute(sa.text(f"DBCC CHECKIDENT('[{table_name}]', RESEED, {int(max_id)})"))
+                    conn.commit()
+                else:
+                    pk_cols = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
+                    for pk in pk_cols:
+                        seq = conn.execute(sa.text(f"SELECT pg_get_serial_sequence('{table_name}', '{pk}')")).scalar()
+                        if seq:
+                            next_id = conn.execute(
+                                sa.text(f'SELECT COALESCE(MAX("{pk}"), 0) + 1 FROM "{table_name}"')
+                            ).scalar()
+                            if next_id is not None:
+                                conn.execute(sa.text(f"SELECT setval('{seq}', {int(next_id)}, false)"))
+                    conn.commit()
             except Exception as exc:
                 conn.rollback()
                 log.debug("Could not reset sequence for %s: %s", table_name, exc)
