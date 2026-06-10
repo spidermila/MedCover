@@ -68,7 +68,7 @@
   {%- else -%}
     {%- set new_statuses = active_statuses + [toggle_status] -%}
   {%- endif -%}
-  {{ url_for('events.index', statuses=new_statuses|join(','), types=active_types|join(',') if active_types|length < all_event_types|length else None, me_id=active_me.id if active_me else None, archived=1 if show_archived else None) }}
+  {{ url_for('events.index', statuses=new_statuses|join(','), types=active_types|join(',') if active_types|length < all_event_types|length else None, me_id=active_me.id if active_me else None, sort=sort_col if sort_col != 'start' else None, dir=sort_dir if sort_col != 'start' or sort_dir != 'asc' else None, archived=1 if show_archived else None) }}
 {%- endmacro %}
 
 {# Type filter toggle macro #}
@@ -79,7 +79,7 @@
   {%- else -%}
     {%- set new_types = active_types + [toggle_type] -%}
   {%- endif -%}
-  {{ url_for('events.index', types=new_types|join(',') if new_types|length < all_event_types|length else None, statuses=active_statuses|join(','), me_id=active_me.id if active_me else None, archived=1 if show_archived else None) }}
+  {{ url_for('events.index', types=new_types|join(',') if new_types|length < all_event_types|length else None, statuses=active_statuses|join(','), me_id=active_me.id if active_me else None, sort=sort_col if sort_col != 'start' else None, dir=sort_dir if sort_col != 'start' or sort_dir != 'asc' else None, archived=1 if show_archived else None) }}
 {%- endmacro %}
 
 {# Sort URL: preserve statuses + types + me_id + archived, toggle sort col/dir #}
