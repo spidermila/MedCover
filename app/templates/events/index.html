@@ -111,7 +111,7 @@
   <button type="button" class="btn btn-sm btn-outline-info filter-btn ms-2" id="btn-elig-filter">Pro mě</button>
   {% endif %}
   <select id="me-filter-select" class="form-select form-select-sm ms-2 maxw-250 {{ 'd-none' if not active_named_mes }}"
-          title="Filtrovat podle nadřazené akce" id="me-filter-select">
+          title="Filtrovat podle nadřazené akce">
     <option value="">Všechny nadřazené akce</option>
     {% for me in active_named_mes %}
     <option value="{{ me.id }}" {% if active_me and active_me.id == me.id %}selected{% endif %}>{{ me.name }}</option>
