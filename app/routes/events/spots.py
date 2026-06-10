@@ -38,10 +38,7 @@ def bulk_action() -> Response:
             abort(403)
 
     raw_ids = request.form.getlist("event_ids")
-    try:
-        event_ids = [int(x) for x in raw_ids if x.isdigit()]
-    except ValueError:
-        abort(400)
+    event_ids = [int(x) for x in raw_ids if x.isdigit()]
 
     return_url = safe_next(request.form.get("return_url"), url_for("events.index"))
 
