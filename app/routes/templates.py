@@ -80,6 +80,37 @@ def _rebuild_spot_templates(template: EventTemplate, slots: list[tuple[str | Non
         db.session.add(st)
 
 
+def _validate_template_slots(slots: list[tuple[str | None, bool, list[int]]]) -> str | None:
+    """Validate that template slot configuration satisfies the RP-capable spot constraint.
+
+    Operates on raw slot data (before DB objects are created). Checks against
+    DB-loaded qualification IDs with can_be_rp=True.
+
+    Returns an error message string if the configuration is invalid, or None if valid.
+    """
+    if not slots:
+        return "Šablona musí mít alespoň jednu pozici."
+
+    mandatory_slots = [s for s in slots if not s[1]]
+    if not mandatory_slots:
+        return "Šablona musí mít alespoň jednu povinnou pozici."
+
+    qual_can_be_rp_ids = set(
+        db.session.scalars(
+            db.select(Qualification.id).where(
+                Qualification.can_be_rp == sa.true(),
+                Qualification.is_deleted == sa.false(),
+            )
+        ).all()
+    )
+
+    for _desc, _is_optional, qual_ids in mandatory_slots:
+        if any(qid in qual_can_be_rp_ids for qid in qual_ids):
+            return None
+
+    return "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci umožňující roli zodpovědné osoby."
+
+
 # ── List ──────────────────────────────────────────────────────────────────────
 
 
@@ -141,6 +172,18 @@ def create() -> str | Response:
                 EventType=EventType,
             )
 
+        slots = _parse_spot_slots(request.form)
+        slot_error = _validate_template_slots(slots)
+        if slot_error:
+            flash(slot_error, "danger")
+            return render_template(
+                "templates/form.html",
+                template=None,
+                qualifications=qualifications,
+                equipment_types=equipment_types,
+                EventType=EventType,
+            )
+
         tmpl = EventTemplate(
             name=name,
             description=description,
@@ -151,7 +194,6 @@ def create() -> str | Response:
         db.session.add(tmpl)
         db.session.flush()
 
-        slots = _parse_spot_slots(request.form)
         _rebuild_spot_templates(tmpl, slots)
         _rebuild_equipment_plans(tmpl, request.form)
 
@@ -241,6 +283,18 @@ def edit(template_id: int) -> str | Response:
             "spot_count": len(tmpl.spot_templates),
         }
 
+        slots = _parse_spot_slots(request.form)
+        slot_error = _validate_template_slots(slots)
+        if slot_error:
+            flash(slot_error, "danger")
+            return render_template(
+                "templates/form.html",
+                template=tmpl,
+                qualifications=qualifications,
+                equipment_types=equipment_types,
+                EventType=EventType,
+            )
+
         tmpl.name = name
         tmpl.description = description
         tmpl.paid = paid
@@ -248,7 +302,6 @@ def edit(template_id: int) -> str | Response:
         tmpl.event_type = event_type
         tmpl.version += 1
 
-        slots = _parse_spot_slots(request.form)
         _rebuild_spot_templates(tmpl, slots)
         _rebuild_equipment_plans(tmpl, request.form)
 

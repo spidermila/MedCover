@@ -357,3 +357,23 @@ def copy_equipment(source: Event, target: Event) -> None:
                 equipment_item_id=ea.equipment_item_id,
             )
         )
+
+
+def validate_event_spots_config(spots: list[EventSpot]) -> str | None:
+    """Validate that the spot configuration satisfies the RP-capable spot constraint.
+
+    Returns an error message string if the configuration is invalid, or None if valid.
+    """
+    if not spots:
+        return "Akce musí mít alespoň jednu pozici."
+
+    mandatory_spots = [s for s in spots if not s.is_optional]
+    if not mandatory_spots:
+        return "Akce musí mít alespoň jednu povinnou pozici."
+
+    for spot in mandatory_spots:
+        active_required_quals = [q for q in spot.required_qualifications if not q.is_deleted]
+        if any(q.can_be_rp for q in active_required_quals):
+            return None
+
+    return "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci umožňující roli zodpovědné osoby."

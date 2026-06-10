@@ -44,6 +44,7 @@ from ._helpers import (
     can_view,
     equipment_warnings_for_event,
     parse_event_form,
+    validate_event_spots_config,
 )
 
 # ── List helpers ──────────────────────────────────────────────────────────────
@@ -353,6 +354,20 @@ def create() -> str | Response:
                 build_spots(event, request.form)
         else:
             build_spots(event, request.form)
+
+        db.session.flush()
+        spot_error = validate_event_spots_config(list(event.spots))
+        if spot_error:
+            db.session.rollback()
+            flash(spot_error, "danger")
+            return render_template(
+                "events/create.html",
+                master_events=master_events,
+                users=users,
+                all_qualifications=all_qualifications,
+                equipment_groups=equipment_groups,
+                EventType=EventType,
+            )
 
         if current_user.has_permission("event.equipment.assign"):
             selected_ids = request.form.getlist("equipment_item_ids", type=int)
