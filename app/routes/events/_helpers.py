@@ -50,6 +50,16 @@ STATUS_COLORS: dict[str, str] = {
     "Zrušena": "#adb5bd",
 }
 
+# Bootstrap badge colour class names by status value (used in event list template)
+STATUS_BADGE_COLORS: dict[str, str] = {
+    "Koncept": "secondary",
+    "Zveřejněná": "primary",
+    "Přihlášky otevřeny": "success",
+    "Přihlášky uzavřeny": "warning",
+    "Dokončena": "dark",
+    "Zrušena": "secondary",
+}
+
 PER_PAGE = 75
 
 

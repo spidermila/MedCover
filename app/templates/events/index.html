@@ -129,15 +129,6 @@
   <a href="{{ type_url('PRESENTATION') }}" class="btn btn-sm btn-outline-secondary filter-btn {{ 'active' if 'PRESENTATION' in active_types }}">Prezentační akce</a>
 </div>
 
-{% set status_colors = {
-  'Koncept': 'secondary',
-  'Zveřejněná': 'primary',
-  'Přihlášky otevřeny': 'success',
-  'Přihlášky uzavřeny': 'warning',
-  'Dokončena': 'dark',
-  'Zrušena': 'secondary'
-} %}
-
 {# ── Bulk action toolbar (hidden until rows are selected) ───────────────── #}
 {% if current_user.has_any_permission('event.publish', 'event.assignments.open', 'event.cancel', 'event.edit') %}
 <div id="bulk-toolbar" class="d-none mb-3">

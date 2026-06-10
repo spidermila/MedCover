@@ -35,6 +35,7 @@ from app.utils import (
 from . import events_bp
 from ._helpers import (
     PER_PAGE,
+    STATUS_BADGE_COLORS,
     STATUS_COLORS,
     build_equipment_assignments,
     build_spots,
@@ -230,6 +231,7 @@ def index() -> str:
         event_templates=event_templates,
         eligible_spot_map=_build_eligible_spot_map(events),
         active_named_mes=active_named_mes,
+        status_colors=STATUS_BADGE_COLORS,
     )
 
 
