@@ -75,7 +75,7 @@ def feed(token: str) -> Response:
         .where(
             Assignment.user_id == user.id,
             Event.status.notin_(_PERSONAL_EXCLUDED_STATUSES),
-            Event.archived.is_(False),
+            Event.archived == sa.false(),
         )
         .options(selectinload(Assignment.spot).selectinload(EventSpot.event))  # type: ignore[arg-type]
     ).all()
@@ -125,7 +125,7 @@ def feed_all(token: str) -> Response:
     events = db.session.scalars(
         sa.select(Event)
         .where(
-            Event.archived.is_(False),
+            Event.archived == sa.false(),
             Event.status != EventStatus.CANCELLED,
         )
         .options(

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+import sqlalchemy as sa
 from flask import Response, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import case, collate, func
@@ -111,7 +112,7 @@ def _apply_index_order(
         return query.order_by(Event.status.asc() if _asc else Event.status.desc())
     if sort_col == "me_name":
         me_name_expr = (
-            db.select(case((MasterEvent.is_general.is_(True), None), else_=MasterEvent.name))
+            db.select(case((MasterEvent.is_general == sa.true(), None), else_=MasterEvent.name))
             .where(MasterEvent.id == Event.master_event_id)
             .correlate(Event)
             .scalar_subquery()
@@ -121,7 +122,7 @@ def _apply_index_order(
     if sort_col == "total":
         spot_count_sq = (
             db.select(func.count(EventSpot.id))
-            .where(EventSpot.event_id == Event.id, EventSpot.is_optional.is_(False))
+            .where(EventSpot.event_id == Event.id, EventSpot.is_optional == sa.false())
             .correlate(Event)
             .scalar_subquery()
         )
@@ -181,7 +182,7 @@ def index() -> str:
     if not current_user.has_permission("event.view_draft"):
         query = query.where(Event.status != EventStatus.DRAFT)
     if not f["show_archived"]:
-        query = query.where(Event.archived.is_(False))
+        query = query.where(Event.archived == sa.false())
     if f["active_me"]:
         query = query.where(Event.master_event_id == f["active_me"].id)
 
@@ -204,7 +205,9 @@ def index() -> str:
     events = pagination.items
 
     active_named_mes = db.session.scalars(
-        db.select(MasterEvent).where(MasterEvent.archived.is_(False)).order_by(collate(MasterEvent.name, CS_COLLATION))
+        db.select(MasterEvent)
+        .where(MasterEvent.archived == sa.false())
+        .order_by(collate(MasterEvent.name, CS_COLLATION))
     ).all()
 
     event_templates: list[EventTemplate] = []
@@ -250,7 +253,7 @@ def feed() -> Response:
     if not current_user.has_permission("event.view_draft"):
         query = query.where(Event.status != EventStatus.DRAFT)
     if not show_archived:
-        query = query.where(Event.archived.is_(False))
+        query = query.where(Event.archived == sa.false())
 
     events = db.session.scalars(query).all()
 
@@ -309,7 +312,7 @@ def create() -> str | Response:
     users = rp_eligible_users_list()
     all_qualifications = db.session.scalars(
         db.select(Qualification)
-        .where(Qualification.is_deleted.is_(False))
+        .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
     equipment_groups = assignable_equipment_items() if current_user.has_permission("event.equipment.assign") else []
@@ -387,7 +390,7 @@ def create_from_template(template_id: int) -> str | Response:
     users = rp_eligible_users_list()
     all_qualifications = db.session.scalars(
         db.select(Qualification)
-        .where(Qualification.is_deleted.is_(False))
+        .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
     equipment_groups = assignable_equipment_items() if current_user.has_permission("event.equipment.assign") else []
@@ -454,7 +457,7 @@ def detail(event_id: int) -> str | Response:
 
     all_qualifications = db.session.scalars(
         db.select(Qualification)
-        .where(Qualification.is_deleted.is_(False))
+        .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
 

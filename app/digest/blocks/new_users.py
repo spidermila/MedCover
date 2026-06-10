@@ -30,7 +30,7 @@ class NewUsersBlock(BaseBlock):
 
         q = sa.select(UserAccount).where(UserAccount.created_at >= since)
         if pending_only:
-            q = q.where(UserAccount.is_active.is_(False))
+            q = q.where(UserAccount.is_active == sa.false())
         q = q.order_by(UserAccount.created_at.desc()).limit(max_rows)
 
         users = db_session.scalars(q).all()

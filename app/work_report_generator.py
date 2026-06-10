@@ -283,7 +283,7 @@ def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tu
             .where(
                 Assignment.user_id == user_id,
                 Event.status == EventStatus.COMPLETED,
-                Event.paid.is_(True),
+                Event.paid == sa.true(),
                 Event.start_datetime >= period_start,
                 Event.start_datetime <= period_end,
             )

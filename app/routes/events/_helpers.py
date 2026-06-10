@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+import sqlalchemy as sa
 from flask import url_for
 from flask_login import current_user
 
@@ -197,7 +198,7 @@ def build_spots(event: Event, form: dict) -> None:
         qual_ids = [int(c) for c in form.getlist(f"spot_cred_{i}") if str(c).isdigit()]
         qualifications = (
             db.session.scalars(
-                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted.is_(False))
+                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted == sa.false())
             ).all()
             if qual_ids
             else []
@@ -272,7 +273,7 @@ def equipment_warnings_for_event(event: Event) -> list[dict]:
                 EventEquipmentAssignment.equipment_item_id.in_(available_ids),
                 EventEquipmentAssignment.event_id != event.id,
                 Event.status != EventStatus.CANCELLED,
-                Event.archived.is_(False),
+                Event.archived == sa.false(),
                 Event.start_datetime < event.end_datetime,
                 Event.end_datetime > event.start_datetime,
             )

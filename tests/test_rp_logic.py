@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+import sqlalchemy as sa
+
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
@@ -859,7 +861,7 @@ class TestRpEligibleUsersSorting:
         """Users with RP qualification are returned sorted by Czech collation."""
 
         with app.app_context():
-            qual = db.session.scalar(db.select(Qualification).where(Qualification.can_be_rp.is_(True)))
+            qual = db.session.scalar(db.select(Qualification).where(Qualification.can_be_rp == sa.true()))
             if not qual:
                 qual = Qualification(name="RPQual", can_be_rp=True)
                 db.session.add(qual)

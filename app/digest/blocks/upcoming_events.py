@@ -41,7 +41,7 @@ class UpcomingEventsBlock(BaseBlock):
                         EventStatus.ASSIGNMENTS_CLOSED,
                     ]
                 ),
-                Event.archived.is_(False),
+                Event.archived == sa.false(),
             )
             .order_by(Event.start_datetime.asc())
             .limit(max_rows)

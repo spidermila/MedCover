@@ -5,6 +5,7 @@ Provides a catalog of all email notification types defined in NOTIFICATION_CATAL
 and allows admins to toggle each configurable type on/off via AppSettings.
 """
 
+import sqlalchemy as sa
 from flask import Blueprint, Response, flash, g, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
@@ -74,7 +75,7 @@ def index() -> str | Response:
 def _recent_events() -> list[Event]:
     """Return the 20 most recently created non-archived events for the test dropdown."""
     return db.session.scalars(
-        db.select(Event).where(Event.archived.is_(False)).order_by(Event.start_datetime.desc()).limit(20)
+        db.select(Event).where(Event.archived == sa.false()).order_by(Event.start_datetime.desc()).limit(20)
     ).all()
 
 
@@ -106,7 +107,7 @@ def test_notification(code: str) -> Response:
             event = None
     if event is None:
         event = db.session.scalar(
-            db.select(Event).where(Event.archived.is_(False)).order_by(Event.start_datetime.desc())
+            db.select(Event).where(Event.archived == sa.false()).order_by(Event.start_datetime.desc())
         )
     if event is None:
         flash("Nepodařilo se najít žádnou akci pro zkušební oznámení.", "warning")

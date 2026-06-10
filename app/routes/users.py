@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import sqlalchemy as sa
 from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import collate
@@ -208,9 +209,9 @@ def index() -> str:
 
     query = db.select(UserAccount).order_by(order)
     if not show_archived:
-        query = query.where(UserAccount.is_archived.is_(False))
+        query = query.where(UserAccount.is_archived == sa.false())
     else:
-        query = query.where(UserAccount.is_archived.is_(True))
+        query = query.where(UserAccount.is_archived == sa.true())
     if q:
         query = query.where(
             db.or_(
@@ -255,7 +256,7 @@ def create_user() -> str | Response:
     all_roles = db.session.scalars(db.select(Role).order_by(collate(Role.name, CS_COLLATION))).all()
     all_qualifications = db.session.scalars(
         db.select(Qualification)
-        .where(Qualification.is_deleted.is_(False))
+        .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
 
@@ -316,7 +317,7 @@ def detail(user_id: uuid.UUID) -> str:
 
     qualifications = db.session.scalars(
         db.select(Qualification)
-        .where(Qualification.is_deleted.is_(False))
+        .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
     return render_template(
@@ -363,7 +364,7 @@ def _apply_qualification_update(user: UserAccount, qual_ids: list[int]) -> bool:
         db.session.scalars(
             db.select(Qualification).where(
                 Qualification.id.in_(qual_ids),
-                Qualification.is_deleted.is_(False),
+                Qualification.is_deleted == sa.false(),
             )
         ).all()
         if qual_ids

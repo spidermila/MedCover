@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+import sqlalchemy as sa
 from flask import Response, flash, jsonify, redirect, request, url_for
 from flask_login import login_required
 
@@ -220,7 +221,7 @@ def equipment_check() -> Response:
         conflict_filter = [
             EventEquipmentAssignment.equipment_item_id.in_(available_ids),
             Event.status != EventStatus.CANCELLED,
-            Event.archived.is_(False),
+            Event.archived == sa.false(),
             Event.start_datetime < end_dt,
             Event.end_datetime > start_dt,
         ]

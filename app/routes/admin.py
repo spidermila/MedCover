@@ -2,6 +2,7 @@ import socket
 import time
 from datetime import datetime, timedelta, timezone
 
+import sqlalchemy as sa
 from flask import Blueprint, render_template, request
 from flask_login import login_required
 from sqlalchemy import collate
@@ -79,12 +80,12 @@ def _admin_statistics(now: datetime) -> dict:
     from app.models.outbox import OutboxEmail  # pylint: disable=import-outside-toplevel
 
     user_total = db.session.scalar(
-        db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived.is_(False))
+        db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived == sa.false())
     )
     user_active = db.session.scalar(
         db.select(db.func.count())
         .select_from(UserAccount)
-        .where(UserAccount.is_active.is_(True), UserAccount.is_archived.is_(False))
+        .where(UserAccount.is_active == sa.true(), UserAccount.is_archived == sa.false())
     )
 
     event_counts = {
@@ -122,7 +123,7 @@ def _admin_statistics(now: datetime) -> dict:
         "user_active": user_active,
         "user_pending": user_total - user_active,
         "user_archived": db.session.scalar(
-            db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived.is_(True))
+            db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived == sa.true())
         ),
         "event_total": sum(event_counts.values()),
         "event_counts": event_counts,

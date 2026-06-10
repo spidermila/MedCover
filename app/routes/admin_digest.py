@@ -361,7 +361,7 @@ def send_now() -> Response:
     html = render_digest(db.session)
 
     recipients = db.session.scalars(
-        sa.select(UserAccount).where(UserAccount.is_active.is_(True)).where(UserAccount.is_archived.is_(False))
+        sa.select(UserAccount).where(UserAccount.is_active == sa.true()).where(UserAccount.is_archived == sa.false())
     ).all()
 
     count = 0
