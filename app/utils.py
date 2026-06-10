@@ -1,5 +1,6 @@
 """Shared utility helpers for the MedCover application."""
 
+import os
 from calendar import monthrange
 from datetime import date
 from typing import TypeVar
@@ -33,10 +34,9 @@ def get_app_tz() -> ZoneInfo:
 
 # ── Czech locale-aware sorting ────────────────────────────────────────────────
 
-# PostgreSQL ICU collation name to use in all order_by() calls where
-# user-visible names are sorted.  cs-x-icu provides proper Czech alphabet
-# ordering (a á b c č d ď e é ě … ch … ř š … ž) within the DB engine.
-CS_COLLATION = "cs-x-icu"
+# Collation name for ORDER BY on user-visible text columns.
+# PostgreSQL uses ICU collation "cs-x-icu"; MSSQL uses "Czech_100_CI_AS_SC_UTF8".
+CS_COLLATION: str = "Czech_100_CI_AS_SC_UTF8" if os.environ.get("DATABASE_URL", "").startswith("mssql") else "cs-x-icu"
 
 # Czech alphabet in correct order including digraph 'ch'.
 _CS_ALPHABET: list[str] = [
