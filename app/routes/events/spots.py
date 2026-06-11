@@ -79,11 +79,14 @@ def bulk_action() -> Response:
             if target_status == EventStatus.CANCELLED:
                 event.archived = True
             event.version += 1
+            note = f"Hromadná akce: stav akce '{event.name}' změněn na '{target_status.value}'"
+            if target_status == EventStatus.CANCELLED:
+                note += " (archivováno)"
             audit(
                 "status_change",
                 "Event",
                 event.id,
-                f"Hromadná akce: stav akce '{event.name}' změněn na '{target_status.value}'",
+                note,
                 {"before": {"status": prev_status}, "after": {"status": target_status.value}},
             )
             changed += 1

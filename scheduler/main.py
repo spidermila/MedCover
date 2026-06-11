@@ -111,7 +111,6 @@ def close_completed_events() -> None:
 
         for event in events:
             event.status = EventStatus.COMPLETED
-            event.archived = True
             event.version += 1
             db.session.add(
                 AuditLogEntry(

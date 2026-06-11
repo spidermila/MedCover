@@ -8,7 +8,7 @@
  *        data-can-assign="1|0"
  *        data-can-edit-event="1|0"
  *        data-can-create-event="1|0"
- *        data-can-delete-draft="1|0"
+ *        data-can-archive-draft="1|0"
  *        data-can-publish="1|0"
  *        data-can-open-assignments="1|0">
  *   </div>
@@ -26,7 +26,7 @@
   var canAssign          = cfg.dataset.canAssign === "1";
   var canEditEvent       = cfg.dataset.canEditEvent === "1";
   var canCreateEvent     = cfg.dataset.canCreateEvent === "1";
-  var canDeleteDraft     = cfg.dataset.canDeleteDraft === "1";
+  var canArchiveDraft      = cfg.dataset.canArchiveDraft === "1";
   var canPublish         = cfg.dataset.canPublish === "1";
   var canOpenAssignments = cfg.dataset.canOpenAssignments === "1";
 
@@ -530,12 +530,12 @@
   }
 
   // ── Delete draft event ──────────────────────────────────────────────────────
-  if (canDeleteDraft) {
+  if (canArchiveDraft) {
     document.querySelectorAll(".tm-delete-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var eventId = this.dataset.eventId;
         var eventName = this.dataset.eventName;
-        if (!confirm('Opravdu smazat akci \u201E' + eventName + '\u201C? Tato akce je nevratn\u00e1.')) return;
+        if (!confirm('Archivovat akci \u201E' + eventName + '\u201C?')) return;
         csrfFetch("/events/" + eventId + "/delete", {
           method: "POST",
           headers: { "Accept": "application/json" },

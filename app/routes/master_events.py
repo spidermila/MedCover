@@ -200,9 +200,37 @@ def archive(me_id: int) -> Response:
         flash("Výchozí nadřazenou akci nelze archivovat.", "danger")
         return redirect(url_for("master_events.detail", me_id=me_id))
 
+    affected_events = db.session.scalars(
+        db.select(Event).where(
+            Event.master_event_id == me_id,
+            Event.archived == sa.false(),
+        )
+    ).all()
+
     me.archived = True
     me.version += 1
-    audit("archive", "MasterEvent", me.id, f"Nadřazená akce '{me.name}' byla archivována")
+
+    affected_ids = []
+    for event in affected_events:
+        event.archived = True
+        event.version += 1
+        affected_ids.append(event.id)
+
+    audit(
+        "archive",
+        "MasterEvent",
+        me.id,
+        f"Nadřazená akce '{me.name}' archivována. Archivováno {len(affected_ids)} akcí: {affected_ids}",
+        {"affected_event_ids": affected_ids},
+    )
+    for event in affected_events:
+        audit(
+            "archive",
+            "Event",
+            event.id,
+            f"Akce '{event.name}' archivována (kaskáda archivace NA '{me.name}')",
+        )
+
     db.session.commit()
 
     flash(f'Nadřazená akce „{me.name}" byla archivována.', "success")
@@ -375,7 +403,7 @@ def table_manager(me_id: int) -> str:
 
     can_edit_event = current_user.has_permission("event.edit")
     can_create_event = current_user.has_permission("event.create")
-    can_delete_draft = current_user.has_permission("event.delete_draft")
+    can_archive_draft = current_user.has_permission("event.archive_draft")
     can_publish = current_user.has_permission("event.publish")
     can_open_assignments = current_user.has_permission("event.assignments.open")
 
@@ -388,7 +416,7 @@ def table_manager(me_id: int) -> str:
         can_assign=can_assign_any,
         can_edit_event=can_edit_event,
         can_create_event=can_create_event,
-        can_delete_draft=can_delete_draft,
+        can_archive_draft=can_archive_draft,
         can_publish=can_publish,
         can_open_assignments=can_open_assignments,
     )

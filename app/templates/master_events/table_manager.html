@@ -97,11 +97,11 @@
                   data-event-id="{{ event.id }}"
                   title="Klonovat akci" class="tm-icon-btn">👥</button>
           {% endif %}
-          {% if can_delete_draft and event.status.name == 'DRAFT' %}
+          {% if can_archive_draft and event.status.name == 'DRAFT' %}
           <button class="btn btn-link btn-sm p-0 ms-1 tm-delete-btn text-danger"
                   data-event-id="{{ event.id }}"
                   data-event-name="{{ event.name | e }}"
-                  title="Smazat akci" class="tm-icon-btn">🗑</button>
+                  title="Archivovat" class="tm-icon-btn">🗑</button>
           {% endif %}
           {% if can_edit_event %}
           <button class="btn btn-link btn-sm p-0 ms-1 tm-color-btn"
@@ -336,7 +336,7 @@
      data-can-assign="{{ '1' if can_assign else '0' }}"
      data-can-edit-event="{{ '1' if can_edit_event else '0' }}"
      data-can-create-event="{{ '1' if can_create_event else '0' }}"
-     data-can-delete-draft="{{ '1' if can_delete_draft else '0' }}"
+     data-can-archive-draft="{{ '1' if can_archive_draft else '0' }}"
      data-can-publish="{{ '1' if can_publish else '0' }}"
      data-can-open-assignments="{{ '1' if can_open_assignments else '0' }}">
 </div>

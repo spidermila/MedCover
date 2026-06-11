@@ -604,32 +604,37 @@ def edit(event_id: int) -> str | Response:
     )
 
 
-# ── Delete ────────────────────────────────────────────────────────────────────
+# ── Delete (soft-archive) ─────────────────────────────────────────────────────
 
 
 @events_bp.post("/<int:event_id>/delete")
 @login_required
 def delete_event(event_id: int) -> Response:
-    require_permission("event.delete_draft")
-
     is_ajax = request.headers.get("X-CSRFToken") and request.accept_mimetypes.accept_json
 
     event = get_or_404(Event, event_id)
-    if event.status != EventStatus.DRAFT:
+
+    if event.status == EventStatus.DRAFT:
+        require_permission("event.archive_draft")
+    else:
+        require_permission("event.archive")
+
+    if event.archived:
         if is_ajax:
-            return jsonify({"ok": False, "error": "Smazat lze pouze akce ve stavu Koncept."}), 400
-        flash("Smazat lze pouze akce ve stavu Koncept.", "danger")
+            return jsonify({"ok": False, "error": "Akce je již archivována."}), 400
+        flash("Akce je již archivována.", "warning")
         return redirect(url_for("events.detail", event_id=event_id))
 
     me_id = event.master_event_id
     name = event.name
-    audit("delete", "Event", event.id, f"Akce '{name}' smazána (byla ve stavu Koncept)")
-    db.session.delete(event)
+    event.archived = True
+    event.version += 1
+    audit("archive", "Event", event.id, f"Akce '{name}' archivována")
     db.session.commit()
 
     if is_ajax:
         return jsonify({"ok": True})
-    flash(f"Akce \u201e{name}\u201c byla smazána.", "success")
+    flash(f'Akce „{name}" byla archivována.', "success")
     if me_id:
         return redirect(url_for("master_events.detail", me_id=me_id))
     return redirect(url_for("events.index"))
@@ -685,3 +690,27 @@ def events_printout() -> Response:
     response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     response.headers["Content-Disposition"] = 'attachment; filename="sestava_vybrane.xlsx"'
     return response
+
+
+# ── Unarchive (restore from archive) ─────────────────────────────────────────
+
+
+@events_bp.post("/<int:event_id>/unarchive")
+@login_required
+def unarchive_event(event_id: int) -> Response:
+    require_permission("event.unarchive")
+
+    event = get_or_404(Event, event_id)
+
+    if not event.archived:
+        flash("Akce není archivována.", "warning")
+        return redirect(url_for("events.detail", event_id=event_id))
+
+    name = event.name
+    event.archived = False
+    event.version += 1
+    audit("unarchive", "Event", event.id, f"Akce '{name}' obnovena z archivu")
+    db.session.commit()
+
+    flash(f'Akce „{name}" byla obnovena z archivu.', "success")
+    return redirect(url_for("events.detail", event_id=event_id))

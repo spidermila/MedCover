@@ -644,3 +644,129 @@ class TestTableEventClone:
             assert clone.responsible_person_id is None
             assert clone.name == "Source Event kopie"
             assert len(clone.spots) == 1
+
+
+# ── Master Event Archive Cascade ─────────────────────────────────────────────
+
+
+class TestMasterEventArchiveCascade:
+    def _make_me_with_events(self, app, count: int = 2) -> tuple[int, list[int]]:
+        """Create a ME with `count` PUBLISHED events. Returns (me_id, [event_ids])."""
+        with app.app_context():
+            me = MasterEvent(name=f"Cascade ME {count}")
+            db.session.add(me)
+            db.session.flush()
+            event_ids = []
+            for i in range(count):
+                event = Event(
+                    name=f"Cascade Event {i + 1}",
+                    master_event_id=me.id,
+                    status=EventStatus.PUBLISHED,
+                    start_datetime=datetime(2030, 9, i + 1, 8, 0, tzinfo=timezone.utc),
+                    end_datetime=datetime(2030, 9, i + 1, 16, 0, tzinfo=timezone.utc),
+                )
+                db.session.add(event)
+                db.session.flush()
+                event_ids.append(event.id)
+            db.session.commit()
+            return me.id, event_ids
+
+    def test_archiving_me_trashes_all_events(self, app, admin_client):
+        me_id, event_ids = self._make_me_with_events(app, count=2)
+        admin_client.post(f"/master-events/{me_id}/archive", follow_redirects=False)
+        with app.app_context():
+            for eid in event_ids:
+                event = db.session.get(Event, eid)
+                assert event is not None
+                assert event.archived is True, f"Event {eid} should be archived"
+
+    def test_archiving_me_trashes_only_non_previously_trashed_events(self, app, admin_client):
+        with app.app_context():
+            me = MasterEvent(name="Partial Cascade ME")
+            db.session.add(me)
+            db.session.flush()
+            # Event already archived
+            ev_already_trashed = Event(
+                name="Already Archived",
+                master_event_id=me.id,
+                status=EventStatus.PUBLISHED,
+                archived=True,
+                start_datetime=datetime(2030, 10, 1, 8, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 10, 1, 16, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev_already_trashed)
+            # Event not archived
+            ev_active = Event(
+                name="Active Event",
+                master_event_id=me.id,
+                status=EventStatus.PUBLISHED,
+                archived=False,
+                start_datetime=datetime(2030, 10, 2, 8, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 10, 2, 16, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev_active)
+            db.session.commit()
+            me_id = me.id
+            ev_already_id = ev_already_trashed.id
+            ev_active_id = ev_active.id
+
+        admin_client.post(f"/master-events/{me_id}/archive", follow_redirects=False)
+        with app.app_context():
+            # Both should be archived
+            assert db.session.get(Event, ev_already_id).archived is True
+            assert db.session.get(Event, ev_active_id).archived is True
+
+    def test_archiving_me_audit_log_contains_affected_event_ids(self, app, admin_client):
+        me_id, event_ids = self._make_me_with_events(app, count=2)
+        admin_client.post(f"/master-events/{me_id}/archive", follow_redirects=False)
+        with app.app_context():
+            me_entry = db.session.scalar(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.entity_type == "MasterEvent")
+                .where(AuditLogEntry.action_type == "archive")
+                .where(AuditLogEntry.entity_id == str(me_id))
+            )
+            assert me_entry is not None
+            assert me_entry.changes_json is not None
+            affected = me_entry.changes_json.get("affected_event_ids", [])
+            for eid in event_ids:
+                assert eid in affected
+
+    def test_archiving_me_with_no_events_succeeds(self, app, admin_client):
+        with app.app_context():
+            me = MasterEvent(name="Empty Cascade ME")
+            db.session.add(me)
+            db.session.commit()
+            me_id = me.id
+        response = admin_client.post(f"/master-events/{me_id}/archive", follow_redirects=False)
+        assert response.status_code == 302
+        with app.app_context():
+            me = db.session.get(MasterEvent, me_id)
+            assert me.archived is True
+
+    def test_archiving_me_writes_per_event_audit_log_entries(self, app, admin_client):
+        me_id, event_ids = self._make_me_with_events(app, count=2)
+        admin_client.post(f"/master-events/{me_id}/archive", follow_redirects=False)
+        with app.app_context():
+            for eid in event_ids:
+                entry = db.session.scalar(
+                    db.select(AuditLogEntry)
+                    .where(AuditLogEntry.entity_type == "Event")
+                    .where(AuditLogEntry.action_type == "archive")
+                    .where(AuditLogEntry.entity_id == str(eid))
+                )
+                assert entry is not None, f"Expected an AuditLog 'archive' entry for Event id={eid} but none was found"
+
+    def test_unarchiving_me_does_not_restore_events(self, app, admin_client):
+        me_id, event_ids = self._make_me_with_events(app, count=1)
+        # Archive the ME (cascades to events)
+        admin_client.post(f"/master-events/{me_id}/archive", follow_redirects=False)
+        # Unarchive the ME
+        admin_client.post(f"/master-events/{me_id}/unarchive", follow_redirects=False)
+        with app.app_context():
+            me = db.session.get(MasterEvent, me_id)
+            assert me.archived is False
+            # Events remain archived
+            for eid in event_ids:
+                event = db.session.get(Event, eid)
+                assert event.archived is True, f"Event {eid} should remain archived"

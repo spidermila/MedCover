@@ -1355,56 +1355,39 @@ class TestDeleteDraftEvent:
             db.session.commit()
             return event.id
 
-    def test_coordinator_can_delete_draft(self, app, coordinator_client):
+    def test_coordinator_can_trash_draft(self, app, coordinator_client):
         event_id = self._create_draft(app)
         response = coordinator_client.post(
             f"/events/{event_id}/delete",
             follow_redirects=False,
         )
         assert response.status_code in (200, 302)
+        # Event should still exist in DB but be archived (soft-delete)
         with app.app_context():
-            assert db.session.get(Event, event_id) is None
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.archived is True
 
-    def test_delete_draft_audited(self, app, coordinator_client):
+    def test_trash_draft_audited(self, app, coordinator_client):
         event_id = self._create_draft(app)
         coordinator_client.post(f"/events/{event_id}/delete")
         with app.app_context():
             entry = db.session.scalar(
                 db.select(AuditLogEntry)
                 .where(AuditLogEntry.entity_type == "Event")
-                .where(AuditLogEntry.action_type == "delete")
+                .where(AuditLogEntry.action_type == "archive")
                 .where(AuditLogEntry.entity_id == str(event_id))
             )
             assert entry is not None
 
-    def test_cannot_delete_non_draft(self, app, coordinator_client):
-        me_id = _make_master_event(app)
-        with app.app_context():
-            event = Event(
-                name="Published Event",
-                master_event_id=me_id,
-                start_datetime=datetime(2030, 9, 2, 8, 0, tzinfo=timezone.utc),
-                end_datetime=datetime(2030, 9, 2, 16, 0, tzinfo=timezone.utc),
-                status=EventStatus.PUBLISHED,
-            )
-            db.session.add(event)
-            db.session.commit()
-            event_id = event.id
-        response = coordinator_client.post(
-            f"/events/{event_id}/delete",
-            follow_redirects=False,
-        )
-        # Redirected back to detail with error flash
-        assert response.status_code == 302
-        with app.app_context():
-            assert db.session.get(Event, event_id) is not None
-
-    def test_member_cannot_delete_draft(self, app, member_client):
+    def test_member_cannot_trash_draft(self, app, member_client):
         event_id = self._create_draft(app)
         response = member_client.post(f"/events/{event_id}/delete")
         assert response.status_code == 403
         with app.app_context():
-            assert db.session.get(Event, event_id) is not None
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.archived is False
 
     def test_delete_ajax_returns_json(self, app, coordinator_client):
         event_id = self._create_draft(app)
@@ -2053,3 +2036,131 @@ class TestBulkPrintout:
         event_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Bulk Printout DM")
         resp = _post_bulk_printout(client, [event_id])
         assert resp.status_code == 403
+
+
+# ── Archive (soft-delete) ─────────────────────────────────────────────────────
+
+
+class TestEventArchive:
+    def _create_published(self, app) -> int:
+        return _make_event_in_status(app, EventStatus.PUBLISHED, name="Archive Me")
+
+    def test_coordinator_can_archive_published_event(self, app, coordinator_client):
+        event_id = self._create_published(app)
+        response = coordinator_client.post(
+            f"/events/{event_id}/delete",
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.archived is True
+
+    def test_member_cannot_archive_event(self, app, member_client):
+        event_id = self._create_published(app)
+        response = member_client.post(f"/events/{event_id}/delete")
+        assert response.status_code == 403
+
+    def test_archive_sets_archived_true_without_deleting(self, app, coordinator_client):
+        event_id = self._create_published(app)
+        coordinator_client.post(f"/events/{event_id}/delete", follow_redirects=False)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.archived is True
+
+    def test_archive_writes_audit_log_with_archive_action(self, app, coordinator_client):
+        event_id = self._create_published(app)
+        coordinator_client.post(f"/events/{event_id}/delete", follow_redirects=False)
+        with app.app_context():
+            entry = db.session.scalar(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.entity_type == "Event")
+                .where(AuditLogEntry.action_type == "archive")
+                .where(AuditLogEntry.entity_id == str(event_id))
+            )
+            assert entry is not None
+
+    def test_archive_already_archived_event_shows_warning(self, app, coordinator_client):
+        with app.app_context():
+            me = MasterEvent(name="Archive Warning ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Already Archived",
+                master_event_id=me.id,
+                status=EventStatus.PUBLISHED,
+                archived=True,
+                start_datetime=datetime(2030, 9, 1, 8, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 1, 16, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.commit()
+            event_id = event.id
+        response = coordinator_client.post(
+            f"/events/{event_id}/delete",
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "již archivována" in response.data.decode()
+
+
+# ── Unarchive (restore from archive) ─────────────────────────────────────────
+
+
+class TestEventUnarchive:
+    def _create_archived(self, app) -> int:
+        with app.app_context():
+            me = MasterEvent(name="Unarchive ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Archived Event",
+                master_event_id=me.id,
+                status=EventStatus.PUBLISHED,
+                archived=True,
+                start_datetime=datetime(2030, 9, 1, 8, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 9, 1, 16, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.commit()
+            return event.id
+
+    def test_coordinator_can_unarchive_archived_event(self, app, coordinator_client):
+        event_id = self._create_archived(app)
+        response = coordinator_client.post(
+            f"/events/{event_id}/unarchive",
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.archived is False
+
+    def test_member_cannot_unarchive(self, app, member_client):
+        event_id = self._create_archived(app)
+        response = member_client.post(f"/events/{event_id}/unarchive")
+        assert response.status_code == 403
+
+    def test_unarchive_non_archived_event_shows_warning(self, app, coordinator_client):
+        event_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Not Archived")
+        response = coordinator_client.post(
+            f"/events/{event_id}/unarchive",
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "není archivována" in response.data.decode()
+
+    def test_unarchive_writes_audit_log(self, app, coordinator_client):
+        event_id = self._create_archived(app)
+        coordinator_client.post(f"/events/{event_id}/unarchive", follow_redirects=False)
+        with app.app_context():
+            entry = db.session.scalar(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.entity_type == "Event")
+                .where(AuditLogEntry.action_type == "unarchive")
+                .where(AuditLogEntry.entity_id == str(event_id))
+            )
+            assert entry is not None
