@@ -743,6 +743,19 @@ def events_confirm() -> Response:
                     _qual,
                 )
 
+            if not time_missing and not cancelled and not is_past:
+                db.session.flush()
+                db.session.refresh(event)
+                if event.mandatory_total_spots > 0 and event.mandatory_filled_spots >= event.mandatory_total_spots:
+                    event.status = EventStatus.ASSIGNMENTS_CLOSED
+                    event.version += 1
+                    audit(
+                        "status_change",
+                        "Event",
+                        event.id,
+                        "Přihlašování automaticky uzavřeno při importu — všechny pozice obsazeny",
+                    )
+
             audit("import", "Event", event.id, f"Akce importována z Google Sheets: {name}", None)
             created += 1
 

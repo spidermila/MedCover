@@ -1308,3 +1308,90 @@ class TestImportPreviewRidic:
         )
         assert resp.status_code == 200
         assert "Aktualizace kvalifikací".encode() in resp.data
+
+
+class TestImportAutoClose:
+    def test_fully_occupied_future_event_gets_assignments_closed(self, app, admin_client):
+        me_id = _make_master_event(app)
+        rp_id = _make_user(app, "Roman Vykydal", "rp@test.com")
+        _make_user(app, "Adam Gajda", "adam@test.com")
+
+        ev = _minimal_event(name="Plně obsazená akce")
+        ev["responsible_person_id"] = rp_id
+        ev["signups"] = ["Adam Gajda"]
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Plně obsazená akce"))
+            assert event is not None
+            assert event.status == EventStatus.ASSIGNMENTS_CLOSED
+
+    def test_partially_filled_future_event_stays_draft(self, app, admin_client):
+        me_id = _make_master_event(app)
+        rp_id = _make_user(app, "Roman Vykydal", "rp2@test.com")
+
+        ev = _minimal_event(name="Částečně obsazená akce")
+        ev["responsible_person_id"] = rp_id
+        ev["signups"] = []
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Částečně obsazená akce"))
+            assert event is not None
+            assert event.status == EventStatus.DRAFT
+
+    def test_no_assignments_future_event_stays_draft(self, app, admin_client):
+        me_id = _make_master_event(app)
+        ev = _minimal_event(name="Prázdná akce")
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Prázdná akce"))
+            assert event is not None
+            assert event.status == EventStatus.DRAFT
+
+    def test_fully_occupied_past_event_stays_completed(self, app, admin_client):
+        me_id = _make_master_event(app)
+        rp_id = _make_user(app, "Eva Nováková", "eva2@test.com")
+        _make_user(app, "Petr Novák", "petr2@test.com")
+
+        ev = _minimal_event(name="Historická plná akce", date="2020-01-15")
+        ev["responsible_person_id"] = rp_id
+        ev["signups"] = ["Petr Novák"]
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Historická plná akce"))
+            assert event is not None
+            assert event.status == EventStatus.COMPLETED
+
+    def test_fully_occupied_dynamic_spots_future_event_gets_assignments_closed(self, app, admin_client):
+        me_id = _make_master_event(app)
+        rp_id = _make_user(app, "Roman Vykydal", "rp3@test.com")
+        signup_names = [f"User{k} Big" for k in range(4)]
+        for k in range(4):
+            _make_user(app, f"User{k} Big", f"user_big{k}@test.com")
+
+        ev = _minimal_event(name="Velká plná akce")
+        ev["responsible_person_id"] = rp_id
+        ev["signups"] = signup_names
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Velká plná akce"))
+            assert event is not None
+            assert event.status == EventStatus.ASSIGNMENTS_CLOSED
+
+    def test_unknown_signup_leaves_event_draft(self, app, admin_client):
+        me_id = _make_master_event(app)
+        rp_id = _make_user(app, "Roman Vykydal", "rp4@test.com")
+
+        ev = _minimal_event(name="Neznámý přihlášený")
+        ev["responsible_person_id"] = rp_id
+        ev["signups"] = ["Neexistující Osoba"]
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Neznámý přihlášený"))
+            assert event is not None
+            assert event.status == EventStatus.DRAFT
