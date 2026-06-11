@@ -411,7 +411,12 @@ def me_report(me_id: int) -> str | Response:
     now = datetime.now(timezone.utc)
 
     events: list[Event] = list(
-        db.session.scalars(db.select(Event).where(Event.master_event_id == me_id).order_by(Event.start_datetime)).all()
+        db.session.scalars(
+            db.select(Event)
+            .where(Event.master_event_id == me_id)
+            .where(Event.archived == sa.false())
+            .order_by(Event.start_datetime)
+        ).all()
     )
     event_ids = [ev.id for ev in events]
 
@@ -583,6 +588,7 @@ def date_range_report() -> str | Response:
             db.select(Event)
             .where(Event.start_datetime >= from_dt)
             .where(Event.start_datetime < to_dt)
+            .where(Event.archived == sa.false())
             .options(selectinload(Event.master_event))  # type: ignore[arg-type]
             .order_by(Event.start_datetime)
         )

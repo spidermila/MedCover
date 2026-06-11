@@ -17,6 +17,9 @@
     <h2 class="mb-1">
       {{ event.name }}
       {{ badge_status(event.status.value, status_colors, extra_classes='ms-1 fs-6') }}
+      {% if event.archived %}
+        <span class="badge bg-danger ms-1 fs-6">Archivováno</span>
+      {% endif %}
       {# Event type badge #}
       {% if event.event_type == EventType.TRAINING %}
         <span class="badge bg-info text-dark ms-1 fs-6">{{ event.event_type.value }}</span>
@@ -100,11 +103,17 @@
         ✂ Rozdělit akci
       </button>
     {% endif %}
-    {% if event.status == EventStatus.DRAFT and current_user.has_permission('event.delete_draft') %}
+    {% if not event.archived and current_user.has_permission('event.archive_draft' if event.status == EventStatus.DRAFT else 'event.archive') %}
       <form method="POST" action="{{ url_for('events.delete_event', event_id=event.id) }}"
-            data-confirm="Opravdu smazat akci „{{ event.name }}"? Tato akce je nevratná.">
+            data-confirm="Archivovat akci „{{ event.name }}"?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-outline-danger btn-sm">🗑 Smazat akci</button>
+        <button class="btn btn-outline-danger btn-sm">🗑 Archivovat</button>
+      </form>
+    {% endif %}
+    {% if event.archived and current_user.has_permission('event.unarchive') %}
+      <form method="POST" action="{{ url_for('events.unarchive_event', event_id=event.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-success btn-sm">↩ Obnovit z archivu</button>
       </form>
     {% endif %}
   </div>

@@ -97,7 +97,7 @@ def cancel(event_id: int) -> Response:
     event.status = EventStatus.CANCELLED
     event.archived = True
     event.version += 1
-    audit("status_change", "Event", event.id, f"Akce '{event.name}' zrušena a archivována")
+    audit("status_change", "Event", event.id, f"Akce '{event.name}' archivována (zrušena)")
 
     # Notify all assigned users before commit so we still have spot data
     assigned_users = [s.assignment.user for s in event.spots if s.assignment]

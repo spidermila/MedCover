@@ -1017,3 +1017,54 @@ def test_cell_leaves_non_string_values_unchanged():
     for i, val in enumerate([0, 42, 3.14, None, True], start=1):
         _cell(ws, i, 1, val)
         assert ws.cell(row=i, column=1).value == val
+
+
+# ── Archived events excluded from reports ─────────────────────────────────────
+
+
+class TestArchivedEventsExcludedFromReports:
+    def test_archived_event_excluded_from_me_report(self, app, client):
+        with app.app_context():
+            _make_user("admin_tr_me@test.com", "Admin TR ME", Role.ADMIN)
+            me = _make_me("ME With Archived")
+            _make_event(me, "Active Event", EventStatus.COMPLETED)
+            ev_archived = _make_event(me, "Archived Event", EventStatus.COMPLETED)
+            ev_archived.archived = True
+            db.session.commit()
+            me_id = me.id
+
+        _login(client, "admin_tr_me@test.com")
+        resp = client.get(f"/reports/master-event/{me_id}")
+        assert resp.status_code == 200
+        assert b"Active Event" in resp.data
+        assert b"Archived Event" not in resp.data
+
+    def test_archived_event_excluded_from_date_range_report(self, app, client):
+        now = datetime.now(timezone.utc)
+        with app.app_context():
+            _make_user("admin_tr_dr@test.com", "Admin TR DR", Role.ADMIN)
+            me = _make_me("ME DR Archive")
+            _make_event(
+                me,
+                "Active DR Event",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=4),
+            )
+            ev_archived = _make_event(
+                me,
+                "Archived DR Event",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=4),
+            )
+            ev_archived.archived = True
+            db.session.commit()
+
+        _login(client, "admin_tr_dr@test.com")
+        from_d = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        to_d = now.strftime("%Y-%m-%d")
+        resp = client.get(f"/reports/date-range?from_date={from_d}&to_date={to_d}")
+        assert resp.status_code == 200
+        assert b"Active DR Event" in resp.data
+        assert b"Archived DR Event" not in resp.data
