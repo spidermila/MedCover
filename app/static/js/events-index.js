@@ -12,23 +12,15 @@
   var ACTIVE_STATUSES = cfg.activeStatuses || [];
   var CLAIM_BASE      = cfg.claimBase || "";
   var ACTIVE_ME_NAME  = cfg.activeMeName || "";
+  var FOR_ME          = cfg.forMe || false;
 
   var STORAGE_VIEW  = "medcover_events_view";
-  var STORAGE_ELIG  = "medcover_events_elig";
   var STORAGE_DATE  = "medcover_events_cal_date";
 
   var calendarInitialized = false;
   var calendar = null;
   var allCalendarEvents = null;
-  var eligFilter = false;
   var currentCalDate = null;
-
-  // ── Per-page JS filter (elig only — status + ME are server-side) ──
-
-  function loadEligFilter() {
-    try { return localStorage.getItem(STORAGE_ELIG) === "1"; } catch(e) { return false; }
-  }
-  function saveEligFilter(v) { localStorage.setItem(STORAGE_ELIG, v ? "1" : "0"); }
 
   function loadCalendarDate() {
     try { return localStorage.getItem(STORAGE_DATE) || null; } catch(e) { return null; }
@@ -42,19 +34,9 @@
     return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
   }
 
-  // ── Table row visibility (elig only — status + ME are server-side) ──
+  // ── Table row visibility (status + ME + elig are all server-side) ──
 
   function applyLocalFilters() {
-    var tbody = document.querySelector("#events-table tbody");
-    if (!tbody) return;
-    var visibleCount = 0;
-    tbody.querySelectorAll("tr").forEach(function (row) {
-      var eligOk = !eligFilter || row.dataset.eligible === "1";
-      row.style.display = eligOk ? "" : "none";
-      if (eligOk) visibleCount++;
-    });
-    var emptyMsg = document.getElementById("table-empty-msg");
-    if (emptyMsg) emptyMsg.classList.toggle('d-none', visibleCount > 0);
     if (calendarInitialized && calendar) calendar.refetchEvents();
     _saveEventNav();
   }
@@ -74,17 +56,6 @@
       var base = window.location.pathname.replace(/\/events\/.*$/, "/events/");
       sessionStorage.setItem("medcover_event_nav", JSON.stringify({ids: ids, base: base}));
     } catch(e) {}
-  }
-
-  function toggleEligFilter() {
-    eligFilter = !eligFilter;
-    saveEligFilter(eligFilter);
-    var btn = document.getElementById("btn-elig-filter");
-    if (btn) {
-      btn.classList.toggle("active", eligFilter);
-      btn.blur();
-    }
-    applyLocalFilters();
   }
 
   // ── ME filter navigation (server-side; select triggers URL change) ──────
@@ -138,7 +109,7 @@
           }
           successCallback(allCalendarEvents.filter(function (e) {
             var statusOk = ACTIVE_STATUSES.includes(e.extendedProps.status_key);
-            var eligOk = !eligFilter || e.extendedProps.eligible;
+            var eligOk = !FOR_ME || e.extendedProps.eligible;
             var meOk = !ACTIVE_ME_NAME || (e.extendedProps.me_name || "") === ACTIVE_ME_NAME;
             return statusOk && eligOk && meOk;
           }));
@@ -240,29 +211,6 @@
   // ── Init ──────────────────────────────────────────────────────────────────
 
   document.addEventListener("DOMContentLoaded", function () {
-    eligFilter = loadEligFilter();
-    var eligBtn = document.getElementById("btn-elig-filter");
-    if (eligBtn) {
-      eligBtn.classList.toggle("active", eligFilter);
-      var eligTouchStartY = 0;
-      var eligTouchFired = false;
-      eligBtn.addEventListener("touchstart", function (e) {
-        eligTouchStartY = e.touches[0].clientY;
-      }, { passive: true });
-      eligBtn.addEventListener("touchend", function (e) {
-        var dy = Math.abs(e.changedTouches[0].clientY - eligTouchStartY);
-        if (dy > 10) return;
-        eligTouchFired = true;
-        e.preventDefault();
-        toggleEligFilter();
-        setTimeout(function () { eligTouchFired = false; }, 500);
-      }, { passive: false });
-      eligBtn.addEventListener("click", function () {
-        if (eligTouchFired) return;
-        toggleEligFilter();
-      });
-    }
-
     applyLocalFilters();
 
     var saved = localStorage.getItem(STORAGE_VIEW) || "table";
@@ -347,5 +295,4 @@
   window.navigateToMe = navigateToMe;
   window.clearSelection = clearSelection;
   window.submitBulk = submitBulk;
-  window.toggleEligFilter = toggleEligFilter;
 })();

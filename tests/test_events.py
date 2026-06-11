@@ -2014,6 +2014,145 @@ class TestBulkPrintout:
         assert resp.status_code == 403
 
 
+class TestForMeFilter:
+    """Server-side 'pro mě' filter: pagination count must match visible events (issue #326)."""
+
+    def _setup(self, app):
+        """Create member + 1 eligible event (no-req spot) + 1 ineligible event (req spot user can't fill)."""
+        with app.app_context():
+            me = MasterEvent(name="ForMe ME")
+            db.session.add(me)
+            db.session.flush()
+
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            user = UserAccount(email="forme@test.com", name="ForMe User", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+
+            # eligible event: spot with no required qualifications
+            ev_eligible = Event(
+                name="Eligible Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev_eligible)
+            db.session.flush()
+            db.session.add(EventSpot(event_id=ev_eligible.id))
+
+            # ineligible event: spot requires a qual the user doesn't have
+            other_qual = Qualification(name="ForMe Other Qual")
+            db.session.add(other_qual)
+            db.session.flush()
+            ev_ineligible = Event(
+                name="Ineligible Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev_ineligible)
+            db.session.flush()
+            spot = EventSpot(event_id=ev_ineligible.id)
+            db.session.add(spot)
+            db.session.flush()
+            spot.required_qualifications = [other_qual]
+
+            db.session.commit()
+            return user.email
+
+    def test_for_me_shows_only_eligible_events(self, app, client):
+        email = self._setup(app)
+        _login(client, email)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&for_me=1")
+        assert resp.status_code == 200
+        assert b"Eligible Event" in resp.data
+        assert b"Ineligible Event" not in resp.data
+
+    def test_for_me_off_shows_all_events(self, app, client):
+        email = self._setup(app)
+        _login(client, email)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+        assert b"Eligible Event" in resp.data
+        assert b"Ineligible Event" in resp.data
+
+    def test_for_me_excluded_when_no_permission(self, app, client):
+        """A user without event.assign_own cannot activate the for_me filter.
+
+        VIEWER has event.view but not event.assign_own — the for_me param must be
+        silently ignored (page loads normally, no 403 or redirect).
+        """
+        with app.app_context():
+            me = MasterEvent(name="ForMe Viewer ME")
+            db.session.add(me)
+            db.session.flush()
+            ev = Event(
+                name="Viewer Visible Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 10, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 10, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev)
+
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.VIEWER))
+            user = UserAccount(email="viewer_forme@test.com", name="Viewer ForMe", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+            db.session.commit()
+            email = user.email
+        _login(client, email)
+        # Viewer passes for_me=1 but lacks event.assign_own — param is silently ignored
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&for_me=1")
+        assert resp.status_code == 200
+        # The event is still present — the for_me filter was not applied
+        assert b"Viewer Visible Event" in resp.data
+
+    def test_for_me_occupied_spot_excluded(self, app, client):
+        """An event where the user's only eligible spot is already taken is excluded."""
+        with app.app_context():
+            me = MasterEvent(name="Occupied ME")
+            db.session.add(me)
+            db.session.flush()
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+
+            user = UserAccount(email="forme_occ@test.com", name="ForMe Occ", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+
+            other = UserAccount(email="other_occ@test.com", name="Other Occ", is_active=True)
+            other.set_password("testpass123")
+            other.roles = [role]
+            db.session.add(other)
+
+            ev = Event(
+                name="Occupied Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 3, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 3, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev)
+            db.session.flush()
+            spot = EventSpot(event_id=ev.id)
+            db.session.add(spot)
+            db.session.flush()
+            other_id = other.id
+            db.session.add(Assignment(spot_id=spot.id, user_id=other_id))
+            db.session.commit()
+            email = user.email
+
+        _login(client, email)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&for_me=1")
+        assert resp.status_code == 200
+        assert b"Occupied Event" not in resp.data
+
+
 # ── Archive (soft-delete) ─────────────────────────────────────────────────────
 
 
