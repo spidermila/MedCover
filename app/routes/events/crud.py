@@ -18,7 +18,7 @@ from app.models.equipment import (
     EquipmentType,
     EventEquipmentPlan,
 )
-from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
+from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType, spot_qualifications
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.user import UserAccount
@@ -96,6 +96,8 @@ def _parse_index_filters() -> dict:
         raw_types = request.args.get("types", "")
         active_types = [t for t in raw_types.split(",") if t in _ALL_EVENT_TYPES]
 
+    for_me = request.args.get("for_me") == "1" and current_user.has_permission("event.assign_own")
+
     return {
         "show_archived": show_archived,
         "page": page,
@@ -104,6 +106,7 @@ def _parse_index_filters() -> dict:
         "sort_dir": sort_dir,
         "active_me": active_me,
         "active_types": active_types,
+        "for_me": for_me,
     }
 
 
@@ -178,6 +181,44 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
     return result
 
 
+def _eligible_event_ids_for_user(user: UserAccount) -> list[int]:
+    """Return a list of event IDs where the user has at least one unoccupied, fillable spot."""
+    fillable_ids = user_fillable_qual_ids(user)
+
+    # Find deleted qual IDs so we can ignore them (match existing eligibility logic)
+    deleted_qual_ids = {
+        q.id for q in db.session.scalars(db.select(Qualification).where(Qualification.is_deleted == sa.true())).all()
+    }
+
+    # Fetch all (spot_id, event_id, qual_id) for unoccupied spots
+    rows = db.session.execute(
+        db.select(
+            EventSpot.id.label("spot_id"),
+            EventSpot.event_id,
+            spot_qualifications.c.qualification_id,
+        )
+        .outerjoin(Assignment, Assignment.spot_id == EventSpot.id)
+        .outerjoin(spot_qualifications, spot_qualifications.c.spot_id == EventSpot.id)
+        .where(Assignment.id.is_(None))
+    ).all()
+
+    spot_event: dict[int, int] = {}
+    spot_quals: dict[int, set[int]] = {}
+    for spot_id, event_id, qual_id in rows:
+        spot_event[spot_id] = event_id
+        if spot_id not in spot_quals:
+            spot_quals[spot_id] = set()
+        if qual_id is not None and qual_id not in deleted_qual_ids:
+            spot_quals[spot_id].add(qual_id)
+
+    eligible_event_ids: set[int] = set()
+    for spot_id, required_qual_ids in spot_quals.items():
+        if all(qid in fillable_ids for qid in required_qual_ids):
+            eligible_event_ids.add(spot_event[spot_id])
+
+    return list(eligible_event_ids) if eligible_event_ids else [-1]
+
+
 # ── List ──────────────────────────────────────────────────────────────────────
 
 
@@ -209,6 +250,10 @@ def index() -> str:
         query = query.where(Event.status.in_(status_values))
     else:
         query = query.where(db.false())
+
+    if f["for_me"]:
+        eligible_ids = _eligible_event_ids_for_user(current_user)
+        query = query.where(Event.id.in_(eligible_ids))
 
     query = _apply_index_order(query, f["sort_col"], f["sort_dir"])
     pagination = db.paginate(query, page=f["page"], per_page=PER_PAGE, error_out=False)
@@ -244,6 +289,7 @@ def index() -> str:
         eligible_spot_map=_build_eligible_spot_map(events),
         active_named_mes=active_named_mes,
         status_colors=STATUS_BADGE_COLORS,
+        for_me=f["for_me"],
     )
 
 
