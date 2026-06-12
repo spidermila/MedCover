@@ -280,7 +280,8 @@ def restore_from_zip(zip_path: str | Path) -> None:
                             max_id = conn.execute(sa.text(f"SELECT COALESCE(MAX({qpk}), 0) FROM {qt}")).scalar()
                             if max_id is not None:
                                 conn.execute(
-                                    sa.text(f"DBCC CHECKIDENT({qt!r}, RESEED, :max_id)"), {"max_id": int(max_id)}
+                                    sa.text(f"DBCC CHECKIDENT('{table_name}', RESEED, :max_id)"),
+                                    {"max_id": int(max_id)},
                                 )
                     conn.commit()
                 else:
