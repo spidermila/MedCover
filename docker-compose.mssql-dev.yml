@@ -84,6 +84,7 @@ services:
     stop_grace_period: 30s
     environment:
       ACCEPT_EULA: "Y"
+      MSSQL_PID: "Express"
       MSSQL_SA_PASSWORD: "DevPassword123!"
       MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
       MSSQL_MEMORY_LIMIT_MB: "512"
