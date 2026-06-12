@@ -17,6 +17,7 @@ services:
       - /var/opt/mssql/data
     environment:
       ACCEPT_EULA: "Y"
+      MSSQL_PID: "Express"
       MSSQL_SA_PASSWORD: "E2e_Password1!"
       MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
       MSSQL_MEMORY_LIMIT_MB: "512"
