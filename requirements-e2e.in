@@ -1,6 +1,6 @@
 # MedCover e2e test dependencies
 # Edit this file, then run: scripts/compile_requirements.sh
-pytest>=8.0
+pytest>=9.1.0
 playwright
 pytest-playwright>=0.7.2
 pytest-html>=4.0
