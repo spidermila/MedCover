@@ -73,7 +73,7 @@ services:
     container_name: medcover-prod-db
     platform: linux/amd64
     restart: unless-stopped
-    stop_grace_period: 30s
+    stop_grace_period: 60s
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: "Express"
