@@ -22,6 +22,7 @@ _STARTUP_TS: str = str(int(_time.time()))
 def create_app(
     config_name: str | None = None,
     db_url: str | None = None,
+    engine_options: dict | None = None,
 ) -> Flask:
     if config_name is None:
         config_name = os.getenv("FLASK_ENV", "development")
@@ -33,6 +34,9 @@ def create_app(
     # the extension engines are initialised.
     if db_url is not None:
         app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+
+    if engine_options is not None:
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_options
 
     db.init_app(app)
     migrate.init_app(app, db)

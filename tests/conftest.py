@@ -6,6 +6,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 from app import create_app
 from app.extensions import db as _db
@@ -263,7 +264,7 @@ def app(worker_id: str):
     db_url = _worker_db_url(worker_id)
     _ensure_db_exists(db_url)
 
-    flask_app = create_app("testing", db_url=db_url)
+    flask_app = create_app("testing", db_url=db_url, engine_options={"poolclass": NullPool})
 
     with flask_app.app_context():
         _db.drop_all()  # clear leftover types/tables from previous runs
