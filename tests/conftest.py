@@ -329,6 +329,10 @@ def clean_db(app):
     fields that tests may mutate are explicitly reset to their defaults so that
     test order does not matter.
     """
+    # Ensure a completely fresh session at the start of every test — eliminates
+    # any lingering identity-map state or open transactions from fixture setup.
+    with app.app_context():
+        _db.session.remove()
     yield
     with app.app_context():
         _db.session.remove()
