@@ -2,6 +2,7 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -20,74 +21,86 @@ if TYPE_CHECKING:
 
 # All mutable tables — reference data (role, permission, role_permissions,
 # app_settings, alembic_version) is preserved across the suite.
-_MUTABLE_TABLES = " ,".join(
-    [
-        "event_equipment_assignment",
-        "event_equipment_plan",
-        "equipment_item",
-        "equipment_type",
-        "debriefing_record",
-        "assignment",
-        "event_spot",
-        "spot_qualifications",
-        "spot_template_qualifications",
-        "event_spot_template",
-        "event_template",
-        "event",
-        "master_event",
-        "user_qualifications",
-        "qualification_parents",
-        "qualification",
-        "registration_invite",
-        "digest_metric_snapshot",
-        "digest_block",
-        "digest_schedule",
-        "outbox_email",
-        "audit_log_entry",
-        "user_feedback",
-        "user_roles",
-        "user_account",
-    ]
-)
+_MUTABLE_TABLES_LIST = [
+    "event_equipment_assignment",
+    "event_equipment_plan",
+    "equipment_item",
+    "equipment_type",
+    "debriefing_record",
+    "assignment",
+    "event_spot",
+    "spot_qualifications",
+    "spot_template_qualifications",
+    "event_spot_template",
+    "event_template",
+    "event",
+    "master_event",
+    "user_qualifications",
+    "qualification_parents",
+    "qualification",
+    "registration_invite",
+    "digest_metric_snapshot",
+    "digest_block",
+    "digest_schedule",
+    "outbox_email",
+    "audit_log_entry",
+    "user_feedback",
+    "user_roles",
+    "user_account",
+]
 
-# ── Testcontainers: automatic Postgres container lifecycle ─────────────────────
+# ── Testcontainers: automatic MSSQL container lifecycle ───────────────────────
 # The controller starts one container; xdist workers receive the URL via
-# workerinput.  If TEST_DATABASE_URL is already set (CI service, local Postgres)
+# workerinput.  If TEST_DATABASE_URL is already set (CI service, local MSSQL)
 # the container is skipped entirely.
 
-_tc_postgres: object | None = None
+_tc_mssql: object | None = None
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Start a Postgres container when TEST_DATABASE_URL is not pre-set."""
-    global _tc_postgres
+    """Start an MSSQL container when TEST_DATABASE_URL is not pre-set."""
+    global _tc_mssql
     worker_input = getattr(config, "workerinput", None)
     if worker_input is not None:
-        # We are an xdist worker — pick up the URL from the controller.
         if "test_db_url" in worker_input:
             os.environ["TEST_DATABASE_URL"] = worker_input["test_db_url"]
         return
 
-    # We are the controller (or a plain single-process run).
     if os.environ.get("TEST_DATABASE_URL"):
-        # User or CI already provided a DB — respect it, skip the container.
-        _check_db_reachable(os.environ["TEST_DATABASE_URL"])
+        url = os.environ["TEST_DATABASE_URL"]
+        host, port, db_name, _, password = _parse_mssql_url(url)
+        _wait_for_mssql(host, port, password)
+        _create_mssql_db(host, port, password, db_name)
+        _check_db_reachable(url)
         return
 
-    from testcontainers.postgres import PostgresContainer  # pylint: disable=import-outside-toplevel
+    from testcontainers.mssql import SqlServerContainer  # pylint: disable=import-outside-toplevel
 
-    container = PostgresContainer(
-        image="postgres:17",
-        username="medcover",
-        password="devpassword",
-        dbname="medcover_test",
-        driver="psycopg2",
+    container = SqlServerContainer(
+        image="mcr.microsoft.com/mssql/server:2022-latest",
+        password="DevPassword123!",
+        dbname="master",
+        dialect="mssql+pyodbc",
     )
+    container.with_env("MSSQL_PID", "Express")
+    container.with_env("MSSQL_COLLATION", "Czech_100_CI_AS_SC_UTF8")
     container.start()
-    url = container.get_connection_url()
-    os.environ["TEST_DATABASE_URL"] = url
-    _tc_postgres = container
-    config._testcontainer_url = url  # type: ignore[attr-defined]
+
+    host = container.get_container_host_ip()
+    port = container.get_exposed_port(1433)
+
+    # Wait for external connectivity — the internal sqlcmd health check can pass
+    # before the TCP port is ready for external pyodbc connections.
+    _wait_for_mssql(host, port, "DevPassword123!")
+    _create_mssql_db(host, port, "DevPassword123!", "medcover_test")
+
+    base_url = (
+        f"mssql+pyodbc://SA:DevPassword123!@{host}:{port}/medcover_test"
+        "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes"
+    )
+    os.environ["TEST_DATABASE_URL"] = base_url
+    _tc_mssql = container
+    config._testcontainer_url = base_url  # type: ignore[attr-defined]
 
 
 def _check_db_reachable(url: str) -> None:
@@ -121,11 +134,11 @@ def pytest_configure_node(node: object) -> None:  # type: ignore[type-arg]
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
-    """Stop the Postgres container once all tests have finished."""
-    global _tc_postgres
-    if _tc_postgres is not None:
-        _tc_postgres.stop()  # type: ignore[attr-defined]
-        _tc_postgres = None
+    """Stop the MSSQL container once all tests have finished."""
+    global _tc_mssql
+    if _tc_mssql is not None:
+        _tc_mssql.stop()  # type: ignore[attr-defined]
+        _tc_mssql = None
 
 
 # ── DB URL helpers ─────────────────────────────────────────────────────────────
@@ -136,7 +149,8 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 def _base_test_db_url() -> str:
     return os.environ.get(
         "TEST_DATABASE_URL",
-        "postgresql://medcover:devpassword@localhost:5432/medcover_test",
+        "mssql+pyodbc://SA:DevPassword123!@localhost:1433/medcover_test"
+        "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes",
     )
 
 
@@ -144,45 +158,98 @@ def _worker_db_url(worker_id: str) -> str:
     """Return a worker-specific DB URL for xdist parallelism.
 
     Each xdist worker (gw0, gw1, …) gets its own database so that
-    concurrent TRUNCATE operations never conflict.  Non-parallel runs
+    concurrent DELETE operations never conflict.  Non-parallel runs
     (worker_id == 'master') use the base URL unchanged.
     """
     base_url = _base_test_db_url()
     if worker_id == "master":
         return base_url
-    # e.g. medcover_test → medcover_test_gw0
-    base, db_name = base_url.rsplit("/", 1)
-    return f"{base}/{db_name}_{worker_id}"
+    # Parse URL to replace only the database name segment before the query string
+    # e.g. mssql+pyodbc://SA:pwd@host:1433/medcover_test?driver=... →
+    #      mssql+pyodbc://SA:pwd@host:1433/medcover_test_gw0?driver=...
+    parts = urlsplit(base_url)
+    db_name = parts.path.lstrip("/")
+    new_path = f"/{db_name}_{worker_id}"
+    return urlunsplit(parts._replace(path=new_path))
+
+
+def _parse_mssql_url(url: str) -> tuple[str, int, str, str, str]:
+    """Extract (host, port, db_name, user, password) from an MSSQL URL."""
+    parts = urlsplit(url)
+    host = parts.hostname or "localhost"
+    port = parts.port or 1433
+    db_name = parts.path.lstrip("/")
+    user = parts.username or "SA"
+    password = parts.password or ""
+    return host, port, db_name, user, password
+
+
+def _wait_for_mssql(host: str, port: int, sa_password: str, timeout: int = 60) -> None:
+    """Wait until MSSQL accepts external pyodbc connections."""
+    import time  # pylint: disable=import-outside-toplevel
+
+    import pyodbc  # pylint: disable=import-outside-toplevel
+
+    conn_str = (
+        f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};"
+        f"DATABASE=master;UID=SA;PWD={sa_password};Encrypt=no;TrustServerCertificate=yes"
+    )
+    deadline = time.monotonic() + timeout
+    last_exc: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            pyodbc.connect(conn_str, timeout=3).close()
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            time.sleep(2)
+    raise RuntimeError(f"MSSQL not ready after {timeout}s: {last_exc}") from last_exc
+
+
+def _create_mssql_db(host: str, port: int, sa_password: str, db_name: str) -> None:
+    """Create an MSSQL database with Czech collation and RCSI enabled."""
+    import pyodbc  # pylint: disable=import-outside-toplevel
+
+    conn_str = (
+        f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};"
+        f"DATABASE=master;UID=SA;PWD={sa_password};Encrypt=no;TrustServerCertificate=yes"
+    )
+    conn = pyodbc.connect(conn_str)
+    conn.autocommit = True
+    c = conn.cursor()
+    c.execute(
+        f"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name='{db_name}') "
+        f"CREATE DATABASE [{db_name}] COLLATE Czech_100_CI_AS_SC_UTF8"
+    )
+    c.execute(f"ALTER DATABASE [{db_name}] SET READ_COMMITTED_SNAPSHOT ON")
+    conn.close()
 
 
 def _ensure_db_exists(db_url: str) -> None:
-    """Create the database if it does not already exist."""
-    base, db_name = db_url.rsplit("/", 1)
-    maintenance_url = f"{base}/postgres"
-    engine = create_engine(maintenance_url, isolation_level="AUTOCOMMIT")
-    with engine.connect() as conn:
-        exists = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": db_name}).fetchone()
-        if not exists:
-            conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    engine.dispose()
+    """Create the worker database if it does not already exist."""
+    host, port, db_name, _, password = _parse_mssql_url(db_url)
+    _create_mssql_db(host, port, password, db_name)
 
 
 def _drop_db(db_url: str) -> None:
     """Drop the worker database (only called for worker-specific DBs)."""
-    base, db_name = db_url.rsplit("/", 1)
-    maintenance_url = f"{base}/postgres"
-    engine = create_engine(maintenance_url, isolation_level="AUTOCOMMIT")
-    with engine.connect() as conn:
-        # Terminate open connections before dropping
-        conn.execute(
-            text(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = :n AND pid <> pg_backend_pid()"
-            ),
-            {"n": db_name},
-        )
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    engine.dispose()
+    import pyodbc  # pylint: disable=import-outside-toplevel
+
+    host, port, db_name, _, password = _parse_mssql_url(db_url)
+    conn_str = (
+        f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};"
+        f"DATABASE=master;UID=SA;PWD={password};Encrypt=no;TrustServerCertificate=yes"
+    )
+    conn = pyodbc.connect(conn_str)
+    conn.autocommit = True
+    c = conn.cursor()
+    # Force disconnect all active connections before dropping
+    c.execute(
+        f"IF EXISTS (SELECT 1 FROM sys.databases WHERE name='{db_name}') "
+        f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE"
+    )
+    c.execute(f"DROP DATABASE IF EXISTS [{db_name}]")
+    conn.close()
 
 
 @pytest.fixture(scope="session")
@@ -251,12 +318,13 @@ def _seed_reference_data() -> None:
 
 @pytest.fixture(autouse=True)
 def clean_db(app):
-    """Truncate all mutable tables after every test to keep tests isolated.
+    """Delete all mutable rows after every test to keep tests isolated.
 
-    TRUNCATE ... CASCADE handles FK ordering automatically. The app fixture no
-    longer holds a persistent connection, so the ACCESS EXCLUSIVE lock is safe.
+    For MSSQL we disable FK constraints, delete all rows in each mutable
+    table, then re-enable constraints. Identity columns are left as-is
+    (tests don't depend on specific ID values).
 
-    AppSettings is NOT truncated (it is reference data seeded once) but any
+    AppSettings is NOT cleared (it is reference data seeded once) but any
     fields that tests may mutate are explicitly reset to their defaults so that
     test order does not matter.
     """
@@ -264,7 +332,16 @@ def clean_db(app):
     with app.app_context():
         _db.session.remove()
         with _db.engine.connect() as conn:
-            conn.execute(_db.text(f"TRUNCATE TABLE {_MUTABLE_TABLES} RESTART IDENTITY CASCADE"))
+            preparer = _db.engine.dialect.identifier_preparer
+            for t in _MUTABLE_TABLES_LIST:
+                qt = preparer.quote(t)
+                conn.execute(_db.text(f"ALTER TABLE {qt} NOCHECK CONSTRAINT ALL"))
+            for t in _MUTABLE_TABLES_LIST:
+                qt = preparer.quote(t)
+                conn.execute(_db.text(f"DELETE FROM {qt}"))
+            for t in _MUTABLE_TABLES_LIST:
+                qt = preparer.quote(t)
+                conn.execute(_db.text(f"ALTER TABLE {qt} CHECK CONSTRAINT ALL"))
             conn.commit()
         # Reset mutable AppSettings fields to their defaults
         settings = _db.session.get(AppSettings, 1)

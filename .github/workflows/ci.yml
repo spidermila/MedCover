@@ -26,23 +26,24 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      postgres:
-        image: postgres:17-alpine
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
         env:
-          POSTGRES_USER: medcover
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: medcover_test
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "CiPassword123!"
+          MSSQL_PID: "Express"
+          MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
         ports:
-          - 5432:5432
+          - 1433:1433
         options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'CiPassword123!' -C -Q 'SELECT 1' -b"
+          --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://medcover:testpassword@localhost:5432/medcover_test
-      TEST_DATABASE_URL: postgresql://medcover:testpassword@localhost:5432/medcover_test
+      TEST_DATABASE_URL: "mssql+pyodbc://SA:CiPassword123!@localhost:1433/medcover_test?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes"
+      DATABASE_URL: "mssql+pyodbc://SA:CiPassword123!@localhost:1433/medcover_test?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes"
       FLASK_ENV: testing
       SECRET_KEY: ci-test-secret-not-real
 
@@ -52,6 +53,19 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
+
+      - name: Install ODBC Driver for SQL Server
+        run: |
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/$(lsb_release -rs)/prod $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc-dev
+
+      - name: Create test database
+        run: |
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'CiPassword123!' -C -Q \
+            "CREATE DATABASE medcover_test COLLATE Czech_100_CI_AS_SC_UTF8; \
+             ALTER DATABASE medcover_test SET READ_COMMITTED_SNAPSHOT ON"
 
       - name: Install dependencies
         run: pip install --require-hashes -r requirements-dev.txt
