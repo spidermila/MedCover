@@ -30,7 +30,7 @@ class Qualification(db.Model):  # type: ignore[misc]
             "ix_qualification_name_active_unique",
             "name",
             unique=True,
-            postgresql_where=db.text("is_deleted = false"),
+            mssql_where=db.text("is_deleted = 0"),
         ),
     )
 

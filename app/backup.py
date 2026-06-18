@@ -94,10 +94,7 @@ def _get_alembic_head() -> str:
     """
     try:
         with db.engine.connect() as conn:
-            if db.engine.dialect.name == "mssql":
-                row = conn.execute(sa.text("SELECT TOP 1 version_num FROM alembic_version")).fetchone()
-            else:
-                row = conn.execute(sa.text("SELECT version_num FROM alembic_version LIMIT 1")).fetchone()
+            row = conn.execute(sa.text("SELECT TOP 1 version_num FROM alembic_version")).fetchone()
             return str(row[0]) if row else "unknown"
     except Exception:
         return "unknown"
@@ -220,26 +217,30 @@ def restore_from_zip(zip_path: str | Path) -> None:
         tables_to_clear = [t for t in all_table_names if t not in _EXCLUDED_TABLES]
 
         # Pre-collect column info before TRUNCATE acquires AccessExclusiveLock.
+        # Also track which tables have IDENTITY columns (MSSQL requires
+        # SET IDENTITY_INSERT ON to insert explicit values into them).
+        from sqlalchemy import inspect as sa_inspect  # pylint: disable=import-outside-toplevel
+
+        _col_cache = {t: sa_inspect(db.engine).get_columns(t) for t in all_table_names if t not in _EXCLUDED_TABLES}
         current_columns_map: dict[str, set[str]] = {
-            t: {col["name"] for col in inspector.get_columns(t)} for t in all_table_names if t not in _EXCLUDED_TABLES
+            t: {str(col["name"]) for col in cols} for t, cols in _col_cache.items()
+        }
+        identity_tables: set[str] = {
+            t for t, cols in _col_cache.items() if any(col.get("autoincrement") for col in cols)
         }
 
         if tables_to_clear:
             preparer = db.engine.dialect.identifier_preparer
-            if db.engine.dialect.name == "mssql":
-                # MSSQL: disable FK checks, delete all rows, re-enable
-                for t in tables_to_clear:
-                    qt = preparer.quote(t)
-                    conn.execute(sa.text(f"ALTER TABLE {qt} NOCHECK CONSTRAINT ALL"))
-                for t in tables_to_clear:
-                    qt = preparer.quote(t)
-                    conn.execute(sa.text(f"DELETE FROM {qt}"))
-                for t in tables_to_clear:
-                    qt = preparer.quote(t)
-                    conn.execute(sa.text(f"ALTER TABLE {qt} CHECK CONSTRAINT ALL"))
-            else:
-                quoted = ", ".join(preparer.quote(t) for t in tables_to_clear)
-                conn.execute(sa.text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+            # MSSQL: disable FK constraints, delete all rows, re-enable
+            for t in tables_to_clear:
+                qt = preparer.quote(t)
+                conn.execute(sa.text(f"ALTER TABLE {qt} NOCHECK CONSTRAINT ALL"))
+            for t in tables_to_clear:
+                qt = preparer.quote(t)
+                conn.execute(sa.text(f"DELETE FROM {qt}"))
+            for t in tables_to_clear:
+                qt = preparer.quote(t)
+                conn.execute(sa.text(f"ALTER TABLE {qt} CHECK CONSTRAINT ALL"))
 
         # Re-insert rows, skipping columns that no longer exist in the schema.
         for table_name in restore_sequence:
@@ -250,6 +251,10 @@ def restore_from_zip(zip_path: str | Path) -> None:
             if current_columns is None:
                 log.warning("Table %r in backup does not exist in current schema — skipping", table_name)
                 continue
+            qt = preparer.quote(table_name)
+            has_identity = table_name in identity_tables
+            if has_identity:
+                conn.execute(sa.text(f"SET IDENTITY_INSERT {qt} ON"))
             for row in rows:
                 filtered = {k: v for k, v in row.items() if k in current_columns}
                 # sa.text() bypasses SQLAlchemy type coercion, so dict/list
@@ -259,9 +264,11 @@ def restore_from_zip(zip_path: str | Path) -> None:
                     col_list = ", ".join(preparer.quote(c) for c in filtered)
                     val_list = ", ".join(f":{c}" for c in filtered)
                     conn.execute(
-                        sa.text(f"INSERT INTO {preparer.quote(table_name)} ({col_list}) VALUES ({val_list})"),
+                        sa.text(f"INSERT INTO {qt} ({col_list}) VALUES ({val_list})"),
                         filtered,
                     )
+            if has_identity:
+                conn.execute(sa.text(f"SET IDENTITY_INSERT {qt} OFF"))
 
         conn.commit()
 
@@ -270,36 +277,19 @@ def restore_from_zip(zip_path: str | Path) -> None:
         for table_name in tables_to_clear:
             try:
                 qt = preparer.quote(table_name)
-                if db.engine.dialect.name == "mssql":
-                    # Reseed IDENTITY columns to max(pk)+1 (or 0 if table is empty)
-                    pk_cols = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
-                    for pk in pk_cols:
-                        col_info = next((c for c in inspector.get_columns(table_name) if c["name"] == pk), None)
-                        if col_info and col_info.get("autoincrement", False):
-                            qpk = preparer.quote(pk)
-                            max_id = conn.execute(sa.text(f"SELECT COALESCE(MAX({qpk}), 0) FROM {qt}")).scalar()
-                            if max_id is not None:
-                                conn.execute(
-                                    sa.text(f"DBCC CHECKIDENT('{table_name}', RESEED, :max_id)"),
-                                    {"max_id": int(max_id)},
-                                )
-                    conn.commit()
-                else:
-                    pk_cols = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
-                    for pk in pk_cols:
-                        seq = conn.execute(
-                            sa.text("SELECT pg_get_serial_sequence(:tbl, :col)"),
-                            {"tbl": table_name, "col": pk},
-                        ).scalar()
-                        if seq:
-                            qpk = preparer.quote(pk)
-                            next_id = conn.execute(sa.text(f"SELECT COALESCE(MAX({qpk}), 0) + 1 FROM {qt}")).scalar()
-                            if next_id is not None:
-                                conn.execute(
-                                    sa.text("SELECT setval(:seq, :val, false)"),
-                                    {"seq": seq, "val": int(next_id)},
-                                )
-                    conn.commit()
+                # Reseed MSSQL IDENTITY columns to max(pk) so future INSERTs don't collide
+                pk_cols = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
+                for pk in pk_cols:
+                    col_info = next((c for c in inspector.get_columns(table_name) if c["name"] == pk), None)
+                    if col_info and col_info.get("autoincrement", False):
+                        qpk = preparer.quote(pk)
+                        max_id = conn.execute(sa.text(f"SELECT COALESCE(MAX({qpk}), 0) FROM {qt}")).scalar()
+                        if max_id is not None:
+                            conn.execute(
+                                sa.text(f"DBCC CHECKIDENT('{table_name}', RESEED, :max_id)"),
+                                {"max_id": int(max_id)},
+                            )
+                conn.commit()
             except Exception as exc:
                 conn.rollback()
                 log.debug("Could not reset sequence for %s: %s", table_name, exc)

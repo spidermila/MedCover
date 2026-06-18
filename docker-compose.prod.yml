@@ -69,25 +69,27 @@ services:
       start_period: 15s
 
   db:
-    image: postgres:17-alpine
+    image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: medcover-prod-db
-    stop_grace_period: 60s
-    volumes:
-      - postgres_data_prod:/var/lib/postgresql/data
-      - ./db-init:/docker-entrypoint-initdb.d:ro
-      - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-medcover_prod}
-      POSTGRES_USER: ${POSTGRES_USER:-medcover}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required in .env.prod}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medcover}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    # DB is not exposed to the host — access it through the web/scheduler services
+    platform: linux/amd64
     restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Express"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD is required in .env.prod}
+      MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
+    volumes:
+      - mssql_data_prod:/var/opt/mssql
+      - ./mssql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P",
+             "${MSSQL_SA_PASSWORD}", "-C", "-Q", "SELECT 1", "-b"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    # DB is not exposed to the host — access it through the web/scheduler services
 
 volumes:
-  postgres_data_prod:
+  mssql_data_prod:

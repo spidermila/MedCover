@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Database engine switched from PostgreSQL to Microsoft SQL Server (MSSQL 2022 / Azure SQL). PostgreSQL is no longer supported.
+- `docker-compose.yml` now uses the MSSQL 2022 Express container instead of PostgreSQL.
+- `docker-compose.e2e.yml` updated to use MSSQL.
+- `docker-compose.prod.yml` updated to use MSSQL.
+- CI pipeline updated to use an MSSQL service container.
+- `psycopg2-binary` removed from dependencies; `pyodbc` is the sole DB driver.
+- Backup/restore engine updated for MSSQL (IDENTITY_INSERT, DBCC CHECKIDENT, FK constraint handling).
+- Test suite migrated to MSSQL; uses a temporary MSSQL container via testcontainers when `TEST_DATABASE_URL` is not pre-set.
+
 ## [0.16.0] - 2026-06-09
 
 ### Added

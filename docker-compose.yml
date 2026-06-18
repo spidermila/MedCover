@@ -55,7 +55,6 @@ services:
         max-size: "50m"
         max-file: "7"
     healthcheck:
-      # Healthy if the heartbeat file was touched within the last 30 seconds
       test: ["CMD", "python", "-c",
              "import os, time; f='/tmp/scheduler_heartbeat'; assert os.path.exists(f) and time.time()-os.path.getmtime(f)<30"]
       interval: 30s
@@ -64,29 +63,27 @@ services:
       start_period: 15s
 
   db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
     platform: linux/amd64
-    image: postgres:17-alpine
     restart: unless-stopped
-    # Give PostgreSQL up to 60 s to finish its final checkpoint before Docker
-    # sends SIGKILL on 'docker compose down/stop'.  Default is 10 s which is
-    # often too short for a clean shutdown.
-    stop_grace_period: 60s
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db-init:/docker-entrypoint-initdb.d:ro
-      - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    stop_grace_period: 30s
     environment:
-      POSTGRES_DB: medcover_dev
-      POSTGRES_USER: medcover
-      POSTGRES_PASSWORD: devpassword
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U medcover -d medcover_dev"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Express"
+      MSSQL_SA_PASSWORD: "DevPassword123!"
+      MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
+      MSSQL_MEMORY_LIMIT_MB: "512"
     ports:
-      - "5432:5432"
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - ./mssql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "DevPassword123!", "-C", "-Q", "SELECT 1", "-b"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
 volumes:
-  postgres_data:
+  mssql_data:

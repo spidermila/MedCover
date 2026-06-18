@@ -9,7 +9,6 @@ Flask-Login
 Flask-Mail
 Flask-WTF
 gunicorn
-psycopg2-binary
 pyodbc
 schedule
 cryptography

@@ -12,24 +12,9 @@ LOGIN_LOCKOUT_MINUTES = 15  # how long the account is locked
 _VERSION_FILE = pathlib.Path(__file__).parent.parent / "VERSION"
 
 
-def _fix_db_url(url: str) -> str:
-    """Translate postgres:// → postgresql:// for SQLAlchemy 2.x compatibility.
-
-    Render (and Heroku) inject DATABASE_URL with the legacy 'postgres://' scheme.
-    SQLAlchemy 2.x only accepts 'postgresql://'.
-    """
-    if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql://", 1)
-    return url
-
-
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "")
-    # Development and production configs require DATABASE_URL to be set.
-    # TestingConfig overrides this with TEST_DATABASE_URL so this may be empty
-    # during test runs — that is fine as long as TestingConfig is used.
-    # Render injects DATABASE_URL as postgres:// — _fix_db_url normalises it.
-    SQLALCHEMY_DATABASE_URI = _fix_db_url(os.environ.get("DATABASE_URL", ""))
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT: int | None = (
@@ -63,11 +48,10 @@ class TestingConfig(Config):
     # Always use the dedicated test database — never the dev/prod DATABASE_URL.
     # This ensures that conftest.py's drop_all() teardown cannot wipe the dev DB.
     SECRET_KEY = os.getenv("SECRET_KEY", "test-secret-not-for-production")
-    SQLALCHEMY_DATABASE_URI = _fix_db_url(
-        os.getenv(
-            "TEST_DATABASE_URL",
-            "postgresql://medcover:devpassword@localhost:5432/medcover_test",
-        )
+    SQLALCHEMY_DATABASE_URI = os.getenv(
+        "TEST_DATABASE_URL",
+        "mssql+pyodbc://SA:DevPassword123!@localhost:1433/medcover_test"
+        "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes",
     )
     WTF_CSRF_ENABLED = False
     # Required so url_for() works outside an active request context (e.g. in
@@ -85,9 +69,10 @@ class ProductionConfig(Config):
     @classmethod
     def init_app(cls, app: object) -> None:  # type: ignore[override]
         db_url = os.environ.get("DATABASE_URL", "")
-        if db_url and "sslmode" not in db_url:
+        if db_url and "Encrypt=yes" not in db_url and "Authentication=ActiveDirectoryMsi" not in db_url:
             warnings.warn(
-                "DATABASE_URL does not include sslmode=require. " "Add ?sslmode=require for production security.",
+                "DATABASE_URL does not include Encrypt=yes. "
+                "Add Encrypt=yes to the MSSQL connection string for production security.",
                 stacklevel=2,
             )
 

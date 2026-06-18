@@ -45,50 +45,30 @@ class ServerStatsBlock(BaseBlock):
 
         if config.get("show_db_size", True):
             try:
-                dialect = db_session.bind.dialect.name if db_session.bind else "postgresql"
-                if dialect == "mssql":
-                    row = db_session.execute(
-                        sa.text("SELECT CAST(SUM(size) * 8.0 / 1024 AS DECIMAL(10,2)) " "FROM sys.database_files")
-                    ).fetchone()
-                    data["db_size"] = f"{row[0]} MB" if row and row[0] else "N/A"
-                else:
-                    row = db_session.execute(
-                        sa.text("SELECT pg_size_pretty(pg_database_size(current_database()))")
-                    ).fetchone()
-                    data["db_size"] = row[0] if row else "N/A"
+                row = db_session.execute(
+                    sa.text("SELECT CAST(SUM(size) * 8.0 / 1024 AS DECIMAL(10,2)) FROM sys.database_files")
+                ).fetchone()
+                data["db_size"] = f"{row[0]} MB" if row and row[0] else "N/A"
             except Exception:  # noqa: BLE001
                 data["db_size"] = "N/A"
 
         if config.get("show_table_sizes", True):
             try:
                 max_table_rows = int(config.get("max_table_rows", 5))
-                dialect = db_session.bind.dialect.name if db_session.bind else "postgresql"
-                if dialect == "mssql":
-                    rows = db_session.execute(
-                        sa.text("""
-                        SELECT TOP(:limit) t.name,
-                               CAST(SUM(a.total_pages) * 8.0 / 1024 AS DECIMAL(10,2)) AS size_mb
-                        FROM sys.tables t
-                        JOIN sys.indexes i ON t.object_id = i.object_id
-                        JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
-                        JOIN sys.allocation_units a ON p.partition_id = a.container_id
-                        GROUP BY t.name
-                        ORDER BY SUM(a.total_pages) DESC
-                        """),
-                        {"limit": max_table_rows},
-                    ).fetchall()
-                    data["table_sizes"] = [(r[0], f"{r[1]} MB") for r in rows]
-                else:
-                    rows = db_session.execute(
-                        sa.text("""
-                        SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) AS pretty_size
-                        FROM pg_catalog.pg_statio_user_tables
-                        ORDER BY pg_total_relation_size(relid) DESC
-                        LIMIT :limit
-                        """),
-                        {"limit": max_table_rows},
-                    ).fetchall()
-                    data["table_sizes"] = [(r[0], r[1]) for r in rows]
+                rows = db_session.execute(
+                    sa.text("""
+                    SELECT TOP(:limit) t.name,
+                           CAST(SUM(a.total_pages) * 8.0 / 1024 AS DECIMAL(10,2)) AS size_mb
+                    FROM sys.tables t
+                    JOIN sys.indexes i ON t.object_id = i.object_id
+                    JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
+                    JOIN sys.allocation_units a ON p.partition_id = a.container_id
+                    GROUP BY t.name
+                    ORDER BY SUM(a.total_pages) DESC
+                    """),
+                    {"limit": max_table_rows},
+                ).fetchall()
+                data["table_sizes"] = [(r[0], f"{r[1]} MB") for r in rows]
             except Exception:  # noqa: BLE001
                 data["table_sizes"] = []
 
