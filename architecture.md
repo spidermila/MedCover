@@ -325,7 +325,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 
 **Transport security**
 - All traffic between end users and the application must be encrypted with TLS (HTTPS). The hosting platform's reverse proxy / load balancer handles TLS termination at the edge; no additional configuration is needed in the app itself.
-- The connection between the application and PostgreSQL must use TLS (`sslmode=require`) in production. This is enforced via the `DATABASE_URL` environment variable in the production config.
+- The connection between the application and Azure SQL must use TLS (`Encrypt=yes`) in production. This is enforced via the `DATABASE_URL` environment variable in the production config.
 - Container-to-container traffic within the same Docker network is isolated from the public internet. We rely on the hosting platform's network isolation as the primary protection for intra-service traffic; DB SSL provides defence in depth. This is considered an acceptable risk for a non-critical internal application. If the deployment platform changes, this assumption must be re-evaluated.
 - The web ↔ scheduler pair communicates only through the shared database (no HTTP calls between them), so no inter-service TLS is needed.
 - We do **not** plan a multi-server / distributed deployment for MVP. If this changes, intra-cluster mTLS must be re-evaluated.
@@ -405,16 +405,18 @@ When in doubt about the correct Czech UI label or English code name for a concep
         - Python Flask + relational database + lightweight JavaScript frontend
         - Python Django + relational database + lightweight JavaScript frontend
         - Other frameworks / languages
-    - Decision - **Python Flask + PostgreSQL + server-rendered HTML (Jinja2) + vanilla JS/jQuery**
+    - Decision - **Python Flask + SQL Server (MSSQL) + server-rendered HTML (Jinja2) + vanilla JS/jQuery**
     - Justification
         - Flask is lightweight and familiar to the project lead; keeps the codebase simple and easy for volunteers to contribute to
-        - PostgreSQL provides robustness and production-grade reliability without significant operational overhead
+        - SQL Server (Azure SQL Database) provides production-grade reliability as a managed service on Azure, eliminating operational overhead
         - Jinja2 server-rendered templates eliminate the need for a separate frontend build pipeline or SPA framework
         - Vanilla JS / jQuery is sufficient for the required interactivity (form enhancements, dynamic notifications); calendar views are handled by FullCalendar (see AD08)
-        - This stack is well-supported on all considered hosting platforms (VPS, PythonAnywhere, cloud container services, etc.)
+        - This stack is well-supported on all considered hosting platforms
+    - Notes
+        - The application was initially developed with PostgreSQL 17. PostgreSQL was replaced by MSSQL in [PR #381](https://github.com/spidermila/MedCover/pull/381) to align with Azure SQL Database on the target hosting platform.
     - Implications
         - REST API: can be added later using Flask blueprints without major architectural changes (auth mechanism TBD when REST API is scoped)
-        - ORM: SQLAlchemy (standard Flask ORM for PostgreSQL)
+        - ORM: SQLAlchemy (supports MSSQL via the `mssql+pyodbc` dialect)
 
 
 - AD05 Authentication Mechanism
@@ -485,8 +487,8 @@ When in doubt about the correct Czech UI label or English code name for a concep
         - Container-first is the industry standard and familiar to most developers, making it easier for future volunteers to contribute.
     - Notes
         - **Production target**: A major cloud provider (GCP Cloud Run, Azure Container Apps, or AWS ECS) using NGO non-profit credits. Same `Dockerfile` applies to all candidates.
-        - **Local development**: Docker Compose with Flask app + PostgreSQL containers; `.env` file for secrets (not committed).
-        - **CI/CD**: GitHub Actions runs lint, test, and dependency audit on every PR. A deployment workflow will be added once the production platform is chosen.
+        - **Local development**: Docker Compose with Flask app + MSSQL 2022 Express container; `.env` file for secrets (not committed).
+        - **CI/CD**: GitHub Actions runs lint, test (MSSQL service container), and dependency audit on every PR. Deploy workflow triggers on version tag push.
         - The Deployment Model section should be updated once the NGO credit application is approved and a cloud provider is chosen.
 
 - AD10 Background Task / Scheduler Architecture
@@ -547,7 +549,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
     - **Context:** The application is deployed as multiple containers (web, scheduler, database). The question is: what encryption and isolation is needed for traffic between containers, and is TLS between containers necessary?
     - **Decision:**
         1. **External traffic (user ↔ web):** TLS is terminated at the hosting platform's reverse proxy / load balancer. No in-app TLS configuration needed.
-        2. **Web ↔ PostgreSQL:** TLS (`sslmode=require`) is enforced via `DATABASE_URL` in production. The `ProductionConfig` asserts this. Dev/test use plaintext (acceptable; no real data).
+        2. **Web ↔ MSSQL (Azure SQL):** TLS (`Encrypt=yes`) is enforced via `DATABASE_URL` in production. The `ProductionConfig` warns if missing. Dev/test use plaintext (acceptable; no real data).
         3. **Web ↔ Scheduler:** These containers communicate exclusively through the shared database. No HTTP calls exist between them. No inter-service TLS is needed.
         4. **Container-to-container isolation:** The hosting platform's private network (Docker bridge / VPC / private subnet) is non-routable from the public internet. We rely on this network isolation as the primary protection for intra-service traffic. We do **not** implement mTLS between containers — it is not justified for a single-region, non-distributed, non-critical internal app of this scale.
         5. **If deployment platform changes:** The transport security assumptions must be re-evaluated. A cloud platform with a true VPC and private subnets (AWS, Azure, GCP) provides equivalent or stronger isolation.
@@ -733,7 +735,7 @@ flowchart TD
 |---|---|
 | **Frontend Web Client** | Server-rendered HTML pages (Jinja2 templates) with vanilla JS/jQuery for interactivity. Served directly by the Flask application. Optimised for desktop and mobile. |
 | **Backend Application** | Python Flask application. Implements all business logic, RBAC, event lifecycle, assignment management, qualification matching, notification triggers, audit logging, scheduled tasks. Serves the web UI via Jinja2 templates and will expose a REST API (future). Uses SQLAlchemy as the ORM. |
-| **Relational Database** | PostgreSQL. Persistent storage for all domain data: users, roles, qualifications, master events, events, event spots, assignments, equipment, audit log, notification settings, debriefing records. |
+| **Relational Database** | SQL Server 2022 / Azure SQL Database. Persistent storage for all domain data: users, roles, qualifications, master events, events, event spots, assignments, equipment, audit log, notification settings, debriefing records. |
 | **Email / Notification Service** | Outbound email delivery: invite links, account activation, password reset, event notifications/reminders, admin digests, debriefing links. May be an external SMTP relay or third-party email API. |
 
 
@@ -909,7 +911,7 @@ erDiagram
 | **UserFeedback** | user, message, submitted_at | In-app feedback form; viewable by Admin |
 
 ### Data Store
-- Single **relational database**: **PostgreSQL** (see AD04)
+- Single **relational database**: **SQL Server 2022 / Azure SQL Database** (see AD04)
 - All domain data is stored in one database; no separate read replicas or caches planned for MVP
 - Audit log is append-only and stored in the same database
 
@@ -948,7 +950,7 @@ The application runs as **two containers** sharing the same Docker image:
 | `web` | Flask web application | `flask run --host=0.0.0.0 --debug` | `gunicorn -w 2 -b 0.0.0.0:5000 "app:create_app()"` |
 | `scheduler` | Background task runner — email outbox drain, Event auto-transitions, reminder emails, admin digests, backup, work-report cleanup | `python scheduler/main.py` | `python scheduler/main.py` |
 
-Both containers connect to the same PostgreSQL database. See AD10 for the scheduler decision rationale. Full details in `DEVOPS.md`.
+Both containers connect to the same MSSQL database. See AD10 for the scheduler decision rationale. Full details in `DEVOPS.md`.
 
 ### Environments
 
@@ -956,7 +958,7 @@ Both containers connect to the same PostgreSQL database. See AD10 for the schedu
 |---|---|---|---|
 | **Local dev** | Developer playground; rapid iteration | Generated mock/seed data (`scripts/seed_dev.py`) | Docker Compose on developer laptop |
 | **Zerver (home lab)** | Integration testing; mirrors production config | Seeded dev data | Self-hosted server (LAN); synced via `zerver_scp.sh` after each commit |
-| **Production** | Live system serving real users | Real data | TBD — major cloud provider (GCP / Azure / AWS) with NGO credits — see AD09 |
+| **Production** | Live system serving real users | Real data | Azure Container Apps (France Central) + Azure SQL Database |
 
 No permanent staging environment for MVP. The zerver home-lab server fulfils this role during active development.
 

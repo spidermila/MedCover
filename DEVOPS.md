@@ -113,7 +113,7 @@ MedCover/
 │   └── test_smoke_navigation.py
 │
 ├── Dockerfile                  # Single image for both web and scheduler containers
-├── docker-compose.yml          # Local dev: web + scheduler + postgres (hot reload)
+├── docker-compose.yml          # Local dev: web + scheduler + MSSQL (hot reload)
 ├── docker-compose.e2e.yml      # E2E tests: db-e2e + web-e2e + playwright runner
 ├── .env.example                # Template for required env vars — COMMIT THIS
 ├── .env                        # Actual secrets — NEVER COMMIT (in .gitignore)
@@ -138,7 +138,7 @@ Two containers share a single Docker image; they run different commands:
 | `web` | `flask run --host=0.0.0.0 --debug` | `gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} "app:create_app()"` | Serves the Flask web application |
 | `scheduler` | `python scheduler/main.py` | `python scheduler/main.py` | Background tasks: auto-transitions, reminders, digests, file cleanup |
 
-Both containers share the same codebase and connect to the same PostgreSQL database via `DATABASE_URL`.
+Both containers share the same codebase and connect to the same MSSQL database via `DATABASE_URL`.
 The `web` container uses `docker-entrypoint.sh` which runs `flask db upgrade` + `flask verify-schema` before starting.
 The `scheduler` container uses `docker-entrypoint-scheduler.sh` (no migrations) and waits for `web` to be healthy before starting.
 
@@ -156,7 +156,7 @@ The `scheduler` container uses `docker-entrypoint-scheduler.sh` (no migrations) 
 git clone https://github.com/spidermila/MedCover.git
 cd MedCover
 cp .env.example .env          # Fill in your local secrets
-docker compose up --build     # Starts web + scheduler + postgres
+docker compose up --build     # Starts web + scheduler + MSSQL
 ```
 
 The app will be available at `http://localhost:5000`.
@@ -190,13 +190,13 @@ docker compose exec web tox -e py314
 ```
 
 Or directly on the host with a local Python venv (`requirements-dev.txt` installed)
-and `DATABASE_URL` / `TEST_DATABASE_URL` pointing at a running Postgres:
+and `TEST_DATABASE_URL` pointing at a running MSSQL instance:
 
 ```bash
 pip install -r requirements-dev.txt
 
-# Run directly — set TEST_DATABASE_URL to use an existing DB,
-# or let testcontainers auto-spin a postgres:17 container if not set
+# Run directly — set TEST_DATABASE_URL to use an existing MSSQL DB,
+# or let testcontainers auto-spin an MSSQL 2022 Express container if not set
 pytest
 
 # Via tox — same behaviour
@@ -218,7 +218,7 @@ set `CONTAINER_ENGINE=docker tox -e e2e`.
 
 | Container | Image | Purpose |
 |-----------|-------|---------|
-| `db-e2e` | `postgres:17-alpine` | Fresh Postgres on tmpfs (destroyed after each run) |
+| `db-e2e` | `mcr.microsoft.com/mssql/server:2022-latest` | Fresh MSSQL on tmpfs (destroyed after each run) |
 | `web-e2e` | App Dockerfile | Runs migrations, seeds data (`seed_dev.py`), serves Flask |
 | `e2e` | `mcr.microsoft.com/playwright/python` | Runs Playwright tests against `http://web-e2e:5000` |
 
@@ -273,8 +273,7 @@ The embedded summary below reflects the actual file. Key points:
 - `web` uses `flask run --debug` (hot reload) in dev; production uses gunicorn via `CMD` in the Dockerfile
 - Both containers mount `.:/app` so local code changes reflect immediately
 - Both containers have healthchecks; the scheduler checks a heartbeat file written every ~10 s
-- `db` uses **postgres:17-alpine** and a custom `postgres.conf` (tuned checkpoint settings for WSL2 stability — see Known Issues)
-- `stop_grace_period: 60s` on `db` gives PostgreSQL time to checkpoint cleanly on shutdown
+- `db` uses **MSSQL 2022 Express** (`mcr.microsoft.com/mssql/server:2022-latest`) with Czech collation and RCSI enabled
 
 ```yaml
 services:
@@ -310,28 +309,21 @@ services:
         condition: service_healthy
 
   db:
-    image: postgres:17-alpine
+    image: mcr.microsoft.com/mssql/server:2022-latest
     restart: unless-stopped
-    stop_grace_period: 60s   # Gives PostgreSQL time to checkpoint cleanly
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db-init:/docker-entrypoint-initdb.d:ro
-      - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     environment:
-      POSTGRES_DB: medcover_dev
-      POSTGRES_USER: medcover
-      POSTGRES_PASSWORD: devpassword
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U medcover"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Express"
+      MSSQL_SA_PASSWORD: "DevPassword123!"
+      MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
     ports:
-      - "5432:5432"
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - ./mssql-init:/docker-entrypoint-initdb.d:ro
 
 volumes:
-  postgres_data:
+  mssql_data:
 ```
 
 ---
@@ -409,7 +401,7 @@ Copy `.env.example` to `.env` for local development. Never commit `.env`.
 |---|---|---|
 | `FLASK_ENV` | `development` or `production` | `development` |
 | `SECRET_KEY` | Flask session secret — generate a strong random value | `openssl rand -hex 32` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://medcover:devpassword@db:5432/medcover_dev` |
+| `DATABASE_URL` | MSSQL connection string | `mssql+pyodbc://medcover:Dev_Password1!@db:1433/medcover_dev?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes` |
 
 > **Email / SMTP:** SMTP credentials are configured through the web UI setup wizard on first run and stored Fernet-encrypted in the `app_settings` database table. No `MAIL_*` environment variables are required.
 
@@ -523,7 +515,7 @@ PR opened / updated
       ↓
 GitHub Actions: ci.yml
   ├── lint job: pre-commit (flake8, mypy, pyupgrade, whitespace)
-  ├── test job: postgres:17 service → pytest --cov
+  ├── test job: MSSQL 2022 service → pytest --cov
   └── audit job: pip-audit → check dependencies for known CVEs
       ↓
 Review, approve, merge
@@ -533,7 +525,7 @@ Dependabot submits weekly PRs for `pip` and `github-actions` dependency updates 
 
 ### On merge to main
 
-> **No automated deployment yet.** A deployment workflow will be added once the production hosting platform is chosen (see AD09 in `architecture.md`). Currently, deployment to the zerver test server is manual via `zerver_scp.sh`.
+Tag a version to trigger the deploy workflow (`deploy-azure.yml`) which builds the Docker image and deploys to Azure Container Apps.
 
 ### .github/workflows/ci.yml
 
@@ -550,52 +542,74 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
       - name: Install pre-commit
         run: pip install pre-commit
       - name: Run pre-commit hooks
         run: pre-commit run --all-files
-    # Runs: trailing-whitespace, end-of-file-fixer, check-yaml,
-    #       flake8, pyupgrade, mypy
 
   test:
     runs-on: ubuntu-latest
 
     services:
-      postgres:
-        image: postgres:17-alpine
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
         env:
-          POSTGRES_USER: medcover
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: medcover_test
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "CiPassword123!"
+          MSSQL_PID: "Express"
+          MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
         ports:
-          - 5432:5432
+          - 1433:1433
         options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'CiPassword123!' -C -Q 'SELECT 1' -b"
+          --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://medcover:testpassword@localhost:5432/medcover_test
-      TEST_DATABASE_URL: postgresql://medcover:testpassword@localhost:5432/medcover_test
+      TEST_DATABASE_URL: "mssql+pyodbc://SA:CiPassword123!@localhost:1433/medcover_test?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes"
       FLASK_ENV: testing
       SECRET_KEY: ci-test-secret-not-real
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
+      - name: Install ODBC Driver for SQL Server
+        run: |
+          sudo find /etc/apt/sources.list.d/ -name "*.list" -exec grep -l "packages.microsoft.com" {} \; | xargs sudo rm -f
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/$(lsb_release -rs)/prod $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update -q
+          sudo ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc-dev
+      - name: Create test database
+        run: |
+          pip install pyodbc
+          python - << 'EOF'
+          import pyodbc, time
+          conn_str = "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1433;DATABASE=master;UID=SA;PWD=CiPassword123!;Encrypt=no;TrustServerCertificate=yes"
+          for _ in range(30):
+              try:
+                  conn = pyodbc.connect(conn_str); conn.autocommit = True; break
+              except Exception:
+                  time.sleep(2)
+          c = conn.cursor()
+          c.execute("IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name='medcover_test') CREATE DATABASE medcover_test COLLATE Czech_100_CI_AS_SC_UTF8")
+          c.execute("ALTER DATABASE medcover_test SET READ_COMMITTED_SNAPSHOT ON")
+          conn.close()
+          print("medcover_test ready")
+          EOF
       - name: Install dependencies
         run: pip install --require-hashes -r requirements-dev.txt
       - name: Run tests with coverage
         run: pytest --cov=app --cov-report=term-missing --cov-report=xml
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-report
@@ -604,8 +618,8 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
       - name: Install pip-audit
@@ -787,69 +801,13 @@ connect-src 'self' https://cdn.jsdelivr.net;
 
 ## Known Issues & Mitigations
 
-### WSL2 + Docker PostgreSQL schema loss
+### MSSQL on WSL2
 
-**Symptom:** After a Windows restart, hibernate, or `wsl --shutdown`, the
-app fails to start (or shows login errors) even though `alembic_version`
-reports the correct migration head. Running `flask verify-schema` reveals
-that all application tables are missing.
+MSSQL Server is a significantly heavier container than the PostgreSQL it replaced (approx. 1.5 GB image). On WSL2, allow extra time for the container to start and become healthy. The MSSQL health check retries up to 10 times with 10 s intervals, giving 100 s total — this is sufficient in practice.
 
-**Root cause:** Docker named volumes on WSL2 live on `/dev/sdd`, the WSL2
-virtual disk (a `.vhdx` file managed by Hyper-V). PostgreSQL writes
-committed data to the **Linux kernel page cache** first — fsync flushes it
-to the page cache, not directly to the VHD. The page cache is only written
-through to the underlying VHD periodically by the kernel. When WSL2 is
-force-terminated (Windows shutdown, hibernate, `wsl --shutdown`), it kills
-all processes immediately without going through Docker's stop sequence.
-PostgreSQL therefore never runs a final checkpoint, and any dirty pages
-still in the kernel page cache at that moment are lost.
+If the container fails to start, check available memory: MSSQL Express requires at least 1 GB RAM. The compose file caps it at 512 MB buffer pool via `MSSQL_MEMORY_LIMIT_MB`; the OS-level limit should be at least 1.5 GB.
 
-`alembic_version` survives because it was written early (during `flask db
-upgrade`) and had time to be flushed to disk. The application tables, being
-written later and containing more data, are typically still in the page
-cache when the kill happens.
-
-**Why the default settings make it worse:** PostgreSQL's default
-`checkpoint_timeout` is **5 minutes**, meaning up to 5 minutes of dirty
-pages can accumulate in RAM between disk flushes. The default `stop_grace_period`
-in Docker Compose is **10 seconds**, which is often too short for PostgreSQL
-to finish a checkpoint before receiving SIGKILL from `docker compose down`.
-
-**Mitigations applied** (commit `4fd6d72`):
-
-| File | Change | Effect |
-|---|---|---|
-| `postgres.conf` | `checkpoint_timeout = 30s` | Dirty-page window reduced from 5 min → 30 s |
-| `postgres.conf` | `checkpoint_completion_target = 0.9` | Spreads checkpoint I/O to avoid spikes |
-| `postgres.conf` | `listen_addresses = '*'` | Required when supplying a full custom config — PostgreSQL defaults to `localhost`-only, which blocks inter-container connections |
-| `docker-compose.yml` | `stop_grace_period: 60s` on `db` | Gives PostgreSQL enough time to checkpoint cleanly on `docker compose down/stop` |
-
-**Residual risk:** A hard WSL2 kill can still lose up to ~30 s of dev
-writes. This is an inherent limitation of running PostgreSQL inside Docker
-on WSL2 and cannot be fully eliminated without moving the database outside
-Docker. For dev use this is acceptable; data can be re-seeded with
-`python scripts/seed_dev.py`.
-
-**Fast-fail guard:** `docker-entrypoint.sh` runs `flask verify-schema`
-after every `flask db upgrade`. If any table or column is missing, the
-container exits immediately with a clear diagnostic rather than serving
-traffic with a broken database.
-
-**Recovery procedure:**
-
-```bash
-# 1. Drop the stale migration marker
-docker compose exec db psql -U medcover -d medcover_dev -c "DROP TABLE IF EXISTS alembic_version;"
-
-# 2. Re-apply all migrations
-docker compose exec web flask db upgrade
-
-# 3. Verify
-docker compose exec web flask verify-schema
-
-# 4. Re-seed dev data
-docker compose exec web python scripts/seed_dev.py
-```
+> **Historical note:** The dev stack originally used PostgreSQL 17. PostgreSQL was removed and replaced with MSSQL in [PR #381](https://github.com/spidermila/MedCover/pull/381).
 
 ---
 
