@@ -66,9 +66,21 @@ jobs:
 
       - name: Create test database
         run: |
-          /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'CiPassword123!' -C -Q \
-            "CREATE DATABASE medcover_test COLLATE Czech_100_CI_AS_SC_UTF8; \
-             ALTER DATABASE medcover_test SET READ_COMMITTED_SNAPSHOT ON"
+          pip install pyodbc
+          python - << 'EOF'
+          import pyodbc, time
+          conn_str = "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1433;DATABASE=master;UID=SA;PWD=CiPassword123!;Encrypt=no;TrustServerCertificate=yes"
+          for _ in range(30):
+              try:
+                  conn = pyodbc.connect(conn_str); conn.autocommit = True; break
+              except Exception:
+                  time.sleep(2)
+          c = conn.cursor()
+          c.execute("IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name='medcover_test') CREATE DATABASE medcover_test COLLATE Czech_100_CI_AS_SC_UTF8")
+          c.execute("ALTER DATABASE medcover_test SET READ_COMMITTED_SNAPSHOT ON")
+          conn.close()
+          print("medcover_test ready")
+          EOF
 
       - name: Install dependencies
         run: pip install --require-hashes -r requirements-dev.txt
