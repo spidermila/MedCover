@@ -20,13 +20,13 @@ It manages events, spot assignments, user roles, equipment, and reporting — al
 |---|---|
 | Language | Python 3.14 |
 | Web framework | Flask 3 |
-| Database | PostgreSQL 17 |
+| Database | SQL Server 2022 (MSSQL / Azure SQL) |
 | ORM / migrations | SQLAlchemy · Flask-Migrate (Alembic) |
 | Auth | Flask-Login · Flask-Mail |
 | Frontend | Jinja2 · Bootstrap 5.3 · FullCalendar |
 | Infrastructure | Docker Compose (web + scheduler + db) |
 | CI | GitHub Actions (lint + test) |
-| Hosting (target) | TBD — major cloud provider (GCP / Azure / AWS) |
+| Hosting | Azure Container Apps (France Central) |
 
 ---
 
@@ -77,11 +77,11 @@ Environment variables (`FLASK_ENV`, `SECRET_KEY`) are injected automatically by
 `pytest-env` via `pyproject.toml`.
 
 **`TEST_DATABASE_URL` is managed automatically** by `testcontainers`:
-- If `TEST_DATABASE_URL` is **not set**, a temporary `postgres:17` Docker container
+- If `TEST_DATABASE_URL` is **not set**, a temporary MSSQL 2022 Express Docker container
   is started at the beginning of the test session and stopped at the end.
   The only requirement is a running Docker daemon.
 - If `TEST_DATABASE_URL` **is set** (e.g. in CI or by a developer with a local
-  Postgres), testcontainers skips the container and uses the provided URL.
+  MSSQL instance), testcontainers skips the container and uses the provided URL.
 
 Coverage report is written to `htmlcov/` after each run.
 
