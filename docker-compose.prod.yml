@@ -11,10 +11,10 @@
 #   - Gunicorn (4 workers) instead of flask run --debug
 #   - No source-code volume mount; code is baked into the image
 #   - Web runs on host port 5001 (dev uses 5000) to allow side-by-side on same host
-#   - DB port is NOT exposed to the host (internal network only)
 #   - restart: unless-stopped on every service
 #   - Reads secrets from .env.prod (never .env)
-#   - Separate postgres_data_prod volume so prod data is isolated from dev
+#   - No bundled database: connects to the managed Azure SQL service
+#     (passwordless via managed identity); see .env.prod.example
 
 name: medcover-prod
 
@@ -32,9 +32,6 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    depends_on:
-      db:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c",
@@ -67,29 +64,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-
-  db:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: medcover-prod-db
-    platform: linux/amd64
-    restart: unless-stopped
-    stop_grace_period: 60s
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_PID: "Express"
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD is required in .env.prod}
-      MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
-    volumes:
-      - mssql_data_prod:/var/opt/mssql
-      - ./mssql-init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P",
-             "${MSSQL_SA_PASSWORD}", "-C", "-Q", "SELECT 1", "-b"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    # DB is not exposed to the host — access it through the web/scheduler services
-
-volumes:
-  mssql_data_prod:
