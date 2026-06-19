@@ -39,5 +39,3 @@ docker-compose.prod.yml
 render.yaml
 deploy.sh
 zerver_scp.sh
-postgres.conf
-db-init/
