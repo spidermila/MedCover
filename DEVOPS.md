@@ -181,26 +181,38 @@ docker compose exec web flask db upgrade
 
 ### Run tests
 
-```bash
-# Inside the running web container (day-to-day dev)
-docker compose exec web pytest
+Tests run on the **host** in a local Python 3.14 virtualenv. The application
+image (`Dockerfile`) installs only `requirements.txt` (production), so the
+running `web`/`scheduler` containers do **not** contain pytest/tox — running
+the suite inside them does not work. CI follows the same host-based approach
+(see `.github/workflows/ci.yml`).
 
-# Via tox (mirrors CI — same pinned deps)
-docker compose exec web tox -e py314
+Because the only database driver is now `pyodbc`, the host needs the
+**Microsoft ODBC Driver 18** and unixODBC installed once (pyodbc links against
+`libodbc.so.2` at runtime — pip alone is not enough):
+
+```bash
+# Debian/Ubuntu — install the ODBC driver + unixODBC (one-time, needs sudo)
+curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+curl -fsSL https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list \
+  | sudo tee /etc/apt/sources.list.d/mssql-release.list
+sudo apt-get update
+sudo ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc-dev
+# macOS: brew install msodbcsql18 unixodbc
 ```
 
-Or directly on the host with a local Python venv (`requirements-dev.txt` installed)
-and `TEST_DATABASE_URL` pointing at a running MSSQL instance:
+Then create a venv, install dev dependencies, and run the suite:
 
 ```bash
-pip install -r requirements-dev.txt
+python3.14 -m venv .venv && source .venv/bin/activate
+pip install --require-hashes -r requirements-dev.txt
 
-# Run directly — set TEST_DATABASE_URL to use an existing MSSQL DB,
-# or let testcontainers auto-spin an MSSQL 2022 Express container if not set
-pytest
-
-# Via tox — same behaviour
-tox -e py314
+# Set TEST_DATABASE_URL to use an existing MSSQL DB (the dev db works fine —
+# the suite uses an isolated medcover_test database), or leave it unset to let
+# testcontainers auto-spin an MSSQL 2022 Express container.
+export TEST_DATABASE_URL="mssql+pyodbc://SA:DevPassword123!@localhost:1433/medcover_test?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes"
+pytest          # or: tox -e py314  (mirrors CI)
 ```
 
 ### Run E2E browser tests (Playwright)
@@ -292,6 +304,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
   scheduler:
     build:
@@ -320,7 +334,22 @@ services:
       - "1433:1433"
     volumes:
       - mssql_data:/var/opt/mssql
-      - ./mssql-init:/docker-entrypoint-initdb.d:ro
+
+  # One-shot initializer — the MSSQL image has no auto-init directory, so this
+  # creates the dev database (Czech collation + RCSI) and the app login/user
+  # once the db is healthy, then exits. web waits for it to complete.
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MSSQL_HOST: db
+      MSSQL_SA_PASSWORD: "DevPassword123!"
+    volumes:
+      - ./mssql-init:/mssql-init:ro
+    entrypoint: ["/bin/bash", "/mssql-init/setup.sh"]
+    restart: "no"
 
 volumes:
   mssql_data:
@@ -420,23 +449,19 @@ See `azure-setup-guide.md` in the `medcover-infra` repo for the full Azure provi
 - **First-run setup wizard**: After the web service is live, navigate to the app URL. The wizard appears on first visit — configure the application name, admin account, and SMTP settings there.
 - **Production compose file**: `docker-compose.prod.yml` is available for self-hosted deployments (e.g. the zerver home-lab test server).
 
-### ⚠️ One-time MSSQL bootstrap — required before first production deployment
+### Database schema on first deploy
 
-The migration history in `migrations/versions/` was written for PostgreSQL and cannot run on a fresh MSSQL database. Before starting the containers for the first time against a new Azure SQL database, you must bootstrap the schema manually:
+The migration history is a single MSSQL-native baseline
+(`migrations/versions/*_mssql_baseline_schema.py`, `down_revision = None`), so
+no manual bootstrap is needed. The web container's entrypoint runs
+`flask db upgrade` on every start, which creates the full schema on a fresh
+Azure SQL database and applies any later migrations on subsequent deploys.
 
-```bash
-# 1. Set your Azure SQL DATABASE_URL (Managed Identity or SQL auth)
-export DATABASE_URL="mssql+pyodbc://@medcover-sql.database.windows.net/MedCover?driver=ODBC+Driver+18+for+SQL+Server&Authentication=ActiveDirectoryMsi&Encrypt=yes"
-
-# 2. Run the one-time bootstrap (from the repo root, with the venv active)
-flask db stamp head                         # mark all PG migrations as already applied
-flask db migrate -m "mssql_prod_initial"   # autogenerate a fresh MSSQL baseline migration
-flask db upgrade                            # apply the new migration to create all tables
-```
-
-This only needs to run **once** per new database. After that, normal `flask db upgrade` (run automatically by the entrypoint on every deploy) handles future migrations correctly.
-
-The autogenerated migration file will appear in `migrations/versions/` — commit it as part of the deployment preparation.
+> **Historical note:** earlier revisions carried 45 PostgreSQL-era migrations
+> that could not run on MSSQL and required a manual `stamp head` +
+> autogenerate bootstrap. Those were squashed into the single baseline in
+> [PR #381](https://github.com/spidermila/MedCover/pull/381); the manual step
+> is gone.
 
 ### Subsequent deployments
 
