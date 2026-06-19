@@ -1,8 +1,8 @@
 """mssql baseline schema
 
-Revision ID: 2dbbf9629c3f
+Revision ID: 2c159bca01be
 Revises: 
-Create Date: 2026-06-19 15:27:36.374850
+Create Date: 2026-06-19 16:55:00.727357
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '2dbbf9629c3f'
+revision = '2c159bca01be'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -325,6 +325,7 @@ def upgrade():
     sa.Column('contact_person', sa.String(length=255), nullable=True),
     sa.Column('paid', sa.Boolean(), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('color', sa.String(length=50), nullable=True),
     sa.Column('responsible_person_id', sa.Uuid(), nullable=True),
     sa.Column('created_by_id', sa.Uuid(), nullable=True),
     sa.Column('reminder_schedule', sa.String(length=255), nullable=True),
