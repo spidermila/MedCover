@@ -18,6 +18,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     logging:
       driver: "json-file"
       options:
@@ -77,13 +79,30 @@ services:
       - "1433:1433"
     volumes:
       - mssql_data:/var/opt/mssql
-      - ./mssql-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "DevPassword123!", "-C", "-Q", "SELECT 1", "-b"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
+
+  # One-shot initializer: the MSSQL image has no auto-init directory, so this
+  # creates the medcover_dev database (Czech collation + RCSI) and the app
+  # login/user once the db container is healthy, then exits. Runs automatically
+  # on `docker compose up`; idempotent, so re-runs are safe.
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MSSQL_HOST: db
+      MSSQL_SA_PASSWORD: "DevPassword123!"
+    volumes:
+      - ./mssql-init:/mssql-init:ro
+    entrypoint: ["/bin/bash", "/mssql-init/setup.sh"]
+    restart: "no"
 
 volumes:
   mssql_data:
