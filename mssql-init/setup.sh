@@ -2,23 +2,29 @@
 # mssql-init/setup.sh
 #
 # Wait for MSSQL to become ready, then create the dev database with
-# Czech collation and enable RCSI (Read Committed Snapshot Isolation).
+# Czech collation and enable RCSI (Read Committed Snapshot Isolation),
+# plus the application login/user.
 #
-# This script is NOT run automatically by the MSSQL container (unlike
-# PostgreSQL's docker-entrypoint-initdb.d). You need to run it manually
-# after first startup:
+# The MSSQL container has no auto-init directory (unlike PostgreSQL's
+# docker-entrypoint-initdb.d), so this runs as the dedicated one-shot
+# `db-init` service in docker-compose.yml — `docker compose up` invokes it
+# automatically once the db container is healthy. No manual step required.
 #
-#   docker compose -f docker-compose.mssql.yml exec mssql /docker-entrypoint-initdb.d/setup.sh
+# Configurable via environment:
+#   MSSQL_HOST         target server (default: localhost)
+#   MSSQL_SA_PASSWORD  sa password   (default: DevPassword123!)
+#   SQLCMD             sqlcmd path   (default: /opt/mssql-tools18/bin/sqlcmd)
 
 set -e
 
-SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
-SA_PASSWORD="DevPassword123!"
+SQLCMD="${SQLCMD:-/opt/mssql-tools18/bin/sqlcmd}"
+MSSQL_HOST="${MSSQL_HOST:-localhost}"
+SA_PASSWORD="${MSSQL_SA_PASSWORD:-DevPassword123!}"
 
-echo "Waiting for SQL Server to be ready..."
+echo "Waiting for SQL Server at ${MSSQL_HOST} to be ready..."
 READY=false
 for i in $(seq 1 30); do
-    if $SQLCMD -S localhost -U sa -P "$SA_PASSWORD" -C -Q "SELECT 1" &>/dev/null; then
+    if $SQLCMD -S "$MSSQL_HOST" -U sa -P "$SA_PASSWORD" -C -Q "SELECT 1" &>/dev/null; then
         echo "SQL Server is ready."
         READY=true
         break
@@ -33,7 +39,7 @@ if [ "$READY" = "false" ]; then
 fi
 
 echo "Creating database medcover_dev..."
-$SQLCMD -S localhost -U sa -P "$SA_PASSWORD" -C -Q "
+$SQLCMD -S "$MSSQL_HOST" -U sa -P "$SA_PASSWORD" -C -Q "
 IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'medcover_dev')
 BEGIN
     CREATE DATABASE medcover_dev
@@ -48,7 +54,7 @@ END
 "
 
 echo "Creating login and user..."
-$SQLCMD -S localhost -U sa -P "$SA_PASSWORD" -C -Q "
+$SQLCMD -S "$MSSQL_HOST" -U sa -P "$SA_PASSWORD" -C -Q "
 IF NOT EXISTS (SELECT name FROM sys.server_principals WHERE name = 'medcover')
 BEGIN
     CREATE LOGIN medcover WITH PASSWORD = 'Dev_Password1!';
@@ -58,7 +64,7 @@ ELSE
     PRINT 'Login medcover already exists.';
 "
 
-$SQLCMD -S localhost -U sa -P "$SA_PASSWORD" -C -d medcover_dev -Q "
+$SQLCMD -S "$MSSQL_HOST" -U sa -P "$SA_PASSWORD" -C -d medcover_dev -Q "
 IF NOT EXISTS (SELECT name FROM sys.database_principals WHERE name = 'medcover')
 BEGIN
     CREATE USER medcover FOR LOGIN medcover;
