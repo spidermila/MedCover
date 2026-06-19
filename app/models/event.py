@@ -143,6 +143,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     contact_person = db.Column(db.String(255), nullable=True)
     paid = db.Column(db.Boolean, default=False, nullable=False)
     description = db.Column(db.Text, nullable=True)
+    color = db.Column(db.String(50), nullable=True)
     responsible_person_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=True)
     created_by_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=True)
     # Reminder schedule inherited from template or set manually (hours before start, comma-separated)

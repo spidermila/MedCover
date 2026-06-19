@@ -51,6 +51,16 @@ STATUS_COLORS: dict[str, str] = {
     "Zrušena": "#adb5bd",
 }
 
+# Bootstrap badge colour class names by status value (used in event list template)
+STATUS_BADGE_COLORS: dict[str, str] = {
+    "Koncept": "secondary",
+    "Zveřejněná": "primary",
+    "Přihlášky otevřeny": "success",
+    "Přihlášky uzavřeny": "warning",
+    "Dokončena": "dark",
+    "Zrušena": "secondary",
+}
+
 PER_PAGE = 75
 
 
@@ -142,6 +152,16 @@ def _validate_event_fields(
             assignments_open_dt = _local_to_utc(fields["assignments_open_str"])
         except ValueError:
             return "Neplatný formát data otevření přihlášek.", event_type, None, None, None, None
+
+    if assignments_open_dt is not None and assignments_open_dt >= start_dt:
+        return (
+            "Datum otevření přihlášek musí být před začátkem akce.",
+            event_type,
+            None,
+            None,
+            None,
+            None,
+        )
 
     return None, event_type, planned_participants_count, start_dt, end_dt, assignments_open_dt
 

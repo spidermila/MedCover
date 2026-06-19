@@ -238,25 +238,7 @@ _ROW_COLORS = [
     "#c8e6fa",
 ]
 
-_TM_COLOR_RE = re.compile(r"\[color:(#[0-9A-Fa-f]{6})\]", re.IGNORECASE)
 _HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
-
-
-def _parse_tm_color(description: str | None) -> str | None:
-    """Return the [color:#XXXXXX] hex value embedded in an event description, or None."""
-    if not description:
-        return None
-    m = _TM_COLOR_RE.search(description)
-    return m.group(1).upper() if m else None
-
-
-def _set_tm_color(description: str | None, color: str | None) -> str | None:
-    """Insert/replace/remove the [color:] tag in an event description."""
-    base = _TM_COLOR_RE.sub("", description or "").strip()
-    if color:
-        tag = f"[color:{color.upper()}]"
-        return f"{base} {tag}".strip() if base else tag
-    return base or None
 
 
 def _build_table_rows(events: list) -> tuple[list[dict], int]:
@@ -283,7 +265,7 @@ def _build_table_rows(events: list) -> tuple[list[dict], int]:
                     "qual_name": qual_name,
                     "spots": spots,
                     "color": "",
-                    "event_color": _parse_tm_color(event.description),
+                    "event_color": event.color,
                 }
             )
 
@@ -622,8 +604,8 @@ def table_event_update(me_id: int, event_id: int) -> Response:
         return _handle_advance_status(event)
 
     if field == "color":
-        color = value if _HEX_RE.match(value) else None
-        event.description = _set_tm_color(event.description, color)
+        color = value.upper() if _HEX_RE.match(value) else None
+        event.color = color
         event.version += 1
         audit("edit", "Event", event.id, f"Nastavena barva řádku (tabulkový manažer): {color or 'reset'}")
         db.session.commit()
@@ -754,6 +736,7 @@ def table_event_clone(me_id: int, event_id: int) -> Response:
         end_datetime=source.end_datetime,
         event_type=source.event_type,
         description=source.description,
+        color=source.color,
         status=EventStatus.DRAFT,
     )
     db.session.add(clone)

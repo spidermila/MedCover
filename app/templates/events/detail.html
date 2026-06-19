@@ -439,12 +439,14 @@
                 {% endfor %}
               </div>
               {% if spot.assignment %}
-              <div class="alert alert-warning py-2 px-3 mb-2 small d-none" id="unassign-warning-{{ spot.id }}">
-                ⚠️ Uživatel <strong>{{ spot.assignment.user.name }}</strong> nesplňuje nové požadavky a bude automaticky odhlášen.
-                <div class="form-check mt-1">
+              <div class="alert alert-warning py-2 px-3 mb-2 d-none text-start" id="unassign-warning-{{ spot.id }}">
+                <p class="mb-1 small">
+                  ⚠️ Uživatel <strong>{{ spot.assignment.user.name }}</strong> nesplňuje nové požadavky a bude automaticky odhlášen.
+                </p>
+                <div class="form-check">
                   <input class="form-check-input" type="checkbox" name="confirm_unassign" value="1"
                          id="confirm_unassign_{{ spot.id }}">
-                  <label class="form-check-label" for="confirm_unassign_{{ spot.id }}">
+                  <label class="form-check-label small" for="confirm_unassign_{{ spot.id }}">
                     Rozumím, odhlásit uživatele pokud nebude kvalifikován
                   </label>
                 </div>
