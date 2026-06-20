@@ -22,6 +22,9 @@ jobs:
       - name: Run pre-commit hooks
         run: pre-commit run --all-files
 
+      - name: Guard migration baseline (no re-squash)
+        run: python scripts/check_migrations.py
+
   test:
     runs-on: ubuntu-latest
 
