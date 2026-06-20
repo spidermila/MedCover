@@ -19,6 +19,15 @@ repos:
 
   - repo: local
     hooks:
+      - id: check-migration-baseline
+        name: Guard migration baseline (no re-squash)
+        entry: python scripts/check_migrations.py
+        language: system
+        pass_filenames: false
+        files: ^migrations/versions/.*\.py$
+
+  - repo: local
+    hooks:
       - id: no-inline-event-handlers
         name: No inline event handlers in templates
         language: pygrep

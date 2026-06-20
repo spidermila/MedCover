@@ -799,6 +799,99 @@ flask db downgrade
 
 Migrations run automatically on `web` container start via `docker-entrypoint.sh` (`flask db upgrade`). The scheduler container skips migrations and waits for web to be healthy.
 
+### ⚠️ Do NOT re-squash the baseline once a DB exists
+
+The migration history is a single MSSQL baseline (`*_mssql_baseline_schema.py`,
+`down_revision = None`). That squash was a **one-time bootstrap**. Once any
+long-lived database (dev on zerver, staging, or prod) has been created from a
+baseline, **never re-squash or rewrite that baseline** — always add **forward
+migrations** for schema changes instead:
+
+```bash
+flask db migrate -m "add color to event"   # new revision, down_revision = current head
+```
+
+**Why:** re-squashing rewrites the baseline's revision id and folds new columns
+into it. An existing DB then (1) has an `alembic_version` pointing at a revision
+that no longer exists (`Can't locate revision identified by '<old>'`), and
+(2) is missing any columns the new baseline added — and because a single
+baseline has no incremental step, `flask db upgrade` can never add them. The web
+container fails its `flask verify-schema` health check and the deploy aborts.
+This exact failure hit the zerver dev deploy of `feat/mssql-support` (the
+re-squash that "included color" left dev DBs without `event.color`).
+
+**This is not a dev-only risk — production is more exposed.** The mechanism is
+environment-independent: it triggers for *any* database stamped at the old
+baseline, including staging and prod. In fact, a re-squash that produces a
+schema **identical** to the old one still breaks prod, because the squash mints
+a *new* revision id and the dangling-`alembic_version` failure (1) fires
+regardless. Prod is the worst place for it to land:
+
+- The auto-run entrypoint (`flask db upgrade` → `flask verify-schema`) aborts on
+  deploy, so the new version never becomes healthy — a **failed/blocked
+  production release**, possibly mid-rollout.
+- There is no disposable-volume escape hatch with real data: recovery is the
+  manual path only — stamp `alembic_version` to head, then hand-write
+  `ALTER TABLE`s to reconcile every divergence with the baseline, verifying with
+  `flask verify-schema`. Error-prone under release pressure.
+
+**CI / pre-commit guard.** `scripts/check_migrations.py` enforces this
+mechanically and runs both in the CI `lint` job and as a pre-commit hook
+(triggered when any `migrations/versions/*.py` changes). It fails the build if
+the baseline (root) revision id ever changes from the frozen
+`EXPECTED_BASELINE_REVISION`, if there is more than one root, or if history has
+more than one head. The guard is a **forcing function, not an absolute ban** —
+bumping `EXPECTED_BASELINE_REVISION` is allowed, but only as the documented step
+4 of the procedure below, so a re-baseline can't merge by accident.
+
+### Sanctioned re-baseline (squash) procedure
+
+A re-squash *is* allowed when migration history has grown unwieldy — but it must
+be done so that every durable DB survives it. The two rules that make it safe:
+
+- **It must be schema-neutral.** The new baseline must reproduce the *current*
+  head schema **exactly** — do not fold any new or changed columns into it. Any
+  real schema change ships separately as a normal forward migration, either
+  before or after the squash, never baked into it. (The `event.color` incident
+  happened because a schema change rode along inside the squash.)
+- **Every durable DB must be re-stamped** to the new baseline id during the
+  deploy window — because the entrypoint's `flask db upgrade` reads the old,
+  now-deleted revision and aborts before anything else runs.
+
+Steps:
+
+1. **Snapshot the current schema** of a representative up-to-date DB (dev is
+   fine): `flask verify-schema` should pass on it first, so you know it matches
+   today's head.
+2. **Squash** the history into a single new baseline whose `down_revision = None`.
+   Apply it to a **fresh, empty** DB and run `flask verify-schema` against it —
+   it must report the *same* objects as the snapshot in step 1. If anything
+   differs, the squash is not schema-neutral; fix it before proceeding.
+3. **Record the new baseline revision id** (call it `NEW_ID`).
+4. **Bump the guard:** set `EXPECTED_BASELINE_REVISION = "<NEW_ID>"` in
+   `scripts/check_migrations.py` in the *same commit* as the squash. CI now
+   passes; the diff is the audit trail.
+5. **Re-stamp every durable DB** (dev on zerver, staging, prod) in the deploy
+   window, *before* the new app image starts its auto-`upgrade`. Since the old
+   code can't reach `NEW_ID`, do it with a plain SQL update against
+   `alembic_version`:
+   ```sql
+   UPDATE alembic_version SET version_num = '<NEW_ID>';
+   ```
+   (Equivalent to `flask db stamp <NEW_ID>` once you can run the new code with
+   auto-upgrade disabled. Take a DB backup first for prod.)
+6. **Deploy** the new image normally. `flask db upgrade` now finds `NEW_ID` as
+   head and is a no-op; `flask verify-schema` passes; the container goes healthy.
+7. **Verify** each environment: container healthy + `flask verify-schema` OK.
+
+If step 2 ever shows a schema difference, stop — that is exactly the failure this
+whole section exists to prevent.
+
+**Recovering a DB already stranded** by an *un*sanctioned past re-squash: stamp
+`alembic_version` to the current head, then `ALTER TABLE` in the missing columns
+to match the baseline (confirm with `flask verify-schema`) — or, **for dev only,
+if the data is disposable**, drop the DB volume so the baseline applies fresh.
+
 ---
 
 ## Security Notes
