@@ -10,8 +10,6 @@ services:
       MSSQL_SA_PASSWORD: "E2e_Password1!"
       MSSQL_COLLATION: "Czech_100_CI_AS_SC_UTF8"
       MSSQL_MEMORY_LIMIT_MB: "512"
-    volumes:
-      - ./mssql-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "E2e_Password1!", "-C", "-Q", "SELECT 1", "-b"]
       interval: 5s

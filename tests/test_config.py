@@ -1,7 +1,6 @@
 """Unit tests for Config classes."""
 
 import os
-import warnings
 from unittest.mock import patch
 
 from app.config import DevelopmentConfig, ProductionConfig
@@ -43,44 +42,36 @@ class TestDevelopmentConfigInitApp:
 
 
 class TestProductionConfigInitApp:
-    def test_warns_when_encrypt_missing(self):
+    def test_raises_when_encrypt_missing(self):
 
         _url = "mssql+pyodbc://SA:pwd@server.database.windows.net:1433/db" "?driver=ODBC+Driver+18+for+SQL+Server"
         with patch.dict(os.environ, {"DATABASE_URL": _url}):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+            try:
                 ProductionConfig.init_app(object())
-            assert any("Encrypt=yes" in str(warning.message) for warning in w)
+                assert False, "Expected RuntimeError"
+            except RuntimeError as exc:
+                assert "Encrypt=yes" in str(exc)
 
-    def test_no_warn_when_encrypt_present(self):
+    def test_no_raise_when_encrypt_present(self):
 
         _url = (
             "mssql+pyodbc://SA:pwd@server.database.windows.net:1433/db"
             "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes"
         )
         with patch.dict(os.environ, {"DATABASE_URL": _url}):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                ProductionConfig.init_app(object())
-            assert not any("Encrypt=yes" in str(warning.message) for warning in w)
+            ProductionConfig.init_app(object())  # must not raise
 
-    def test_no_warn_when_msi(self):
+    def test_no_raise_when_msi(self):
 
         _url = (
             "mssql+pyodbc://@server.database.windows.net/db"
             "?driver=ODBC+Driver+18+for+SQL+Server&Authentication=ActiveDirectoryMsi"
         )
         with patch.dict(os.environ, {"DATABASE_URL": _url}):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                ProductionConfig.init_app(object())
-            assert not any("Encrypt" in str(warning.message) for warning in w)
+            ProductionConfig.init_app(object())  # must not raise
 
-    def test_no_warn_when_database_url_empty(self):
-        """Empty DATABASE_URL should not trigger the warning (setup wizard case)."""
+    def test_no_raise_when_database_url_empty(self):
+        """Empty DATABASE_URL should not raise (setup wizard case)."""
 
         with patch.dict(os.environ, {"DATABASE_URL": ""}):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                ProductionConfig.init_app(object())
-            assert not any("Encrypt" in str(warning.message) for warning in w)
+            ProductionConfig.init_app(object())  # must not raise
