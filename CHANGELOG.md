@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Migration baseline guard (`scripts/check_migrations.py`, wired into CI and pre-commit): fails the build if the squashed Alembic baseline is re-squashed/rewritten (changed root revision id), or if history has multiple roots or heads. Prevents stranding existing databases on deploy. A sanctioned re-baseline procedure is documented in DEVOPS.md.
+
 ### Changed
 - Database engine switched from PostgreSQL to Microsoft SQL Server (MSSQL 2022 / Azure SQL). PostgreSQL is no longer supported.
 - `docker-compose.yml` now uses the MSSQL 2022 Express container instead of PostgreSQL.
