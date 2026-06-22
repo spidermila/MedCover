@@ -207,7 +207,13 @@ def _wait_for_mssql(host: str, port: int, sa_password: str, timeout: int = 60) -
 
 
 def _create_mssql_db(host: str, port: int, sa_password: str, db_name: str) -> None:
-    """Create an MSSQL database with Czech collation and RCSI enabled."""
+    """Create an MSSQL database with Czech collation.
+
+    Note: RCSI (READ_COMMITTED_SNAPSHOT) is intentionally NOT enabled for test
+    databases. Standard READ COMMITTED with locking guarantees committed rows are
+    immediately visible to any connection, eliminating snapshot-gap flakiness in CI.
+    Production databases use RCSI (set via mssql-init/setup.sh).
+    """
     import pyodbc  # pylint: disable=import-outside-toplevel
 
     conn_str = (
@@ -221,7 +227,6 @@ def _create_mssql_db(host: str, port: int, sa_password: str, db_name: str) -> No
         f"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name='{db_name}') "
         f"CREATE DATABASE [{db_name}] COLLATE Czech_100_CI_AS_SC_UTF8"
     )
-    c.execute(f"ALTER DATABASE [{db_name}] SET READ_COMMITTED_SNAPSHOT ON")
     conn.close()
 
 
