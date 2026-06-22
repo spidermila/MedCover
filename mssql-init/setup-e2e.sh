@@ -1,8 +1,11 @@
 #!/bin/bash
 # mssql-init/setup-e2e.sh
 #
-# Create the e2e test database in the MSSQL container.
-# Run after the container is healthy:
+# MANUAL DEV HELPER — not used by the automated e2e stack.
+#
+# The docker-compose.e2e.yml e2e stack creates the database automatically
+# via scripts/e2e-entrypoint.sh (Python/pyodbc). This script is retained
+# as a convenience for manually inspecting or resetting the e2e database:
 #   podman exec <container> /docker-entrypoint-initdb.d/setup-e2e.sh
 
 set -e

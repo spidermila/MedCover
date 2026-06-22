@@ -1,6 +1,5 @@
 import os
 import pathlib
-import warnings
 
 RESET_TOKEN_MINUTES = 10
 INVITE_TOKEN_HOURS = 72
@@ -70,10 +69,9 @@ class ProductionConfig(Config):
     def init_app(cls, app: object) -> None:  # type: ignore[override]
         db_url = os.environ.get("DATABASE_URL", "")
         if db_url and "Encrypt=yes" not in db_url and "Authentication=ActiveDirectoryMsi" not in db_url:
-            warnings.warn(
+            raise RuntimeError(
                 "DATABASE_URL does not include Encrypt=yes. "
-                "Add Encrypt=yes to the MSSQL connection string for production security.",
-                stacklevel=2,
+                "Add Encrypt=yes to the MSSQL connection string for production security."
             )
 
 
