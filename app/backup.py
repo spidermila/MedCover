@@ -291,7 +291,13 @@ def restore_from_zip(zip_path: str | Path) -> None:
                     if col_info and col_info.get("autoincrement", False):
                         qpk = preparer.quote(pk)
                         max_id = conn.execute(sa.text(f"SELECT COALESCE(MAX({qpk}), 0) FROM {qt}")).scalar()
-                        if max_id is not None:
+                        # Only reseed when the table actually has restored rows.
+                        # DBCC CHECKIDENT(..., RESEED, 0) on an EMPTY table makes the
+                        # *next* insert use the reseed value directly (0) rather than
+                        # reseed+increment — a MSSQL quirk — which would hand out an
+                        # invalid id=0 PK. Empty tables have nothing to collide with,
+                        # so skipping the reseed is both safe and correct.
+                        if max_id is not None and int(max_id) > 0:
                             conn.execute(
                                 sa.text(f"DBCC CHECKIDENT('{table_name}', RESEED, :max_id)"),
                                 {"max_id": int(max_id)},
