@@ -216,12 +216,10 @@ def restore_from_zip(zip_path: str | Path) -> None:
         all_table_names = inspector.get_table_names()
         tables_to_clear = [t for t in all_table_names if t not in _EXCLUDED_TABLES]
 
-        # Pre-collect column info before TRUNCATE acquires AccessExclusiveLock.
+        # Pre-collect column info before clearing the tables.
         # Also track which tables have IDENTITY columns (MSSQL requires
         # SET IDENTITY_INSERT ON to insert explicit values into them).
-        from sqlalchemy import inspect as sa_inspect  # pylint: disable=import-outside-toplevel
-
-        _col_cache = {t: sa_inspect(db.engine).get_columns(t) for t in all_table_names if t not in _EXCLUDED_TABLES}
+        _col_cache = {t: sa.inspect(db.engine).get_columns(t) for t in all_table_names if t not in _EXCLUDED_TABLES}
         current_columns_map: dict[str, set[str]] = {
             t: {str(col["name"]) for col in cols} for t, cols in _col_cache.items()
         }
@@ -231,7 +229,16 @@ def restore_from_zip(zip_path: str | Path) -> None:
 
         if tables_to_clear:
             preparer = db.engine.dialect.identifier_preparer
-            # MSSQL: disable FK constraints, delete all rows, re-enable
+            # Clear every table by toggling FK constraints off, DELETE-ing all
+            # rows, then re-enabling the constraints — rather than relying on
+            # ON DELETE CASCADE. Reasons:
+            #   * The schema's FKs are not declared with ON DELETE CASCADE, so a
+            #     plain DELETE on a referenced parent would fail. We want to wipe
+            #     *all* tables regardless of their FK topology.
+            #   * TRUNCATE can't be used on tables referenced by a FK in MSSQL.
+            #   * NOCHECK CONSTRAINT ALL lets us DELETE in any order without
+            #     having to topologically sort the dependency graph; CHECK
+            #     CONSTRAINT ALL restores enforcement afterwards.
             for t in tables_to_clear:
                 qt = preparer.quote(t)
                 conn.execute(sa.text(f"ALTER TABLE {qt} NOCHECK CONSTRAINT ALL"))

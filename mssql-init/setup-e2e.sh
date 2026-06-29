@@ -7,11 +7,15 @@
 # via scripts/e2e-entrypoint.sh (Python/pyodbc). This script is retained
 # as a convenience for manually inspecting or resetting the e2e database:
 #   podman exec <container> /docker-entrypoint-initdb.d/setup-e2e.sh
+#
+# Configurable via environment (mirrors setup.sh):
+#   MSSQL_SA_PASSWORD  sa password   (default: E2e_Password1!)
+#   SQLCMD             sqlcmd path   (default: /opt/mssql-tools18/bin/sqlcmd)
 
 set -e
 
-SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
-SA_PASSWORD="E2e_Password1!"
+SQLCMD="${SQLCMD:-/opt/mssql-tools18/bin/sqlcmd}"
+SA_PASSWORD="${MSSQL_SA_PASSWORD:-E2e_Password1!}"
 
 echo "Waiting for SQL Server to be ready..."
 READY=false

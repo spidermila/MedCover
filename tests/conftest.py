@@ -1,9 +1,11 @@
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
+import pyodbc
 import pytest
 from sqlalchemy import create_engine, text
 
@@ -186,13 +188,9 @@ def _parse_mssql_url(url: str) -> tuple[str, int, str, str, str]:
 
 def _wait_for_mssql(host: str, port: int, sa_password: str, timeout: int = 60) -> None:
     """Wait until MSSQL accepts external pyodbc connections."""
-    import time  # pylint: disable=import-outside-toplevel
-
-    import pyodbc  # pylint: disable=import-outside-toplevel
-
     conn_str = (
         f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};"
-        f"DATABASE=master;UID=SA;PWD={sa_password};Encrypt=no;TrustServerCertificate=yes"
+        f"DATABASE=master;UID=SA;PWD={{{sa_password}}};Encrypt=no;TrustServerCertificate=yes"
     )
     deadline = time.monotonic() + timeout
     last_exc: Exception | None = None
@@ -214,11 +212,9 @@ def _create_mssql_db(host: str, port: int, sa_password: str, db_name: str) -> No
     immediately visible to any connection, eliminating snapshot-gap flakiness in CI.
     Production databases use RCSI (set via mssql-init/setup.sh).
     """
-    import pyodbc  # pylint: disable=import-outside-toplevel
-
     conn_str = (
         f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};"
-        f"DATABASE=master;UID=SA;PWD={sa_password};Encrypt=no;TrustServerCertificate=yes"
+        f"DATABASE=master;UID=SA;PWD={{{sa_password}}};Encrypt=no;TrustServerCertificate=yes"
     )
     conn = pyodbc.connect(conn_str)
     conn.autocommit = True
@@ -238,12 +234,10 @@ def _ensure_db_exists(db_url: str) -> None:
 
 def _drop_db(db_url: str) -> None:
     """Drop the worker database (only called for worker-specific DBs)."""
-    import pyodbc  # pylint: disable=import-outside-toplevel
-
     host, port, db_name, _, password = _parse_mssql_url(db_url)
     conn_str = (
         f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};"
-        f"DATABASE=master;UID=SA;PWD={password};Encrypt=no;TrustServerCertificate=yes"
+        f"DATABASE=master;UID=SA;PWD={{{password}}};Encrypt=no;TrustServerCertificate=yes"
     )
     conn = pyodbc.connect(conn_str)
     conn.autocommit = True
