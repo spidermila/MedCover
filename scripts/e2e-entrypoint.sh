@@ -56,10 +56,12 @@ c2.execute(f"IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name='{u
 conn2.close()
 print(f"  Database '{db}' ready.")
 PYEOF
-# Apply the single MSSQL baseline migration to the fresh database. (Previously
-# this did a "stamp head + autogenerate" dance to work around PG-only migration
-# history; that history has been squashed into one MSSQL baseline, so a plain
-# upgrade — same as the production entrypoint — now creates the full schema.)
+# Bring the fresh database up to the latest schema: applies the MSSQL baseline
+# plus every later migration, in order (today that's just the baseline; any
+# migrations added in the future are applied here too). (Previously this did a
+# "stamp head + autogenerate" dance to work around PG-only migration history;
+# that history has been squashed into one MSSQL baseline, so a plain upgrade —
+# same as the production entrypoint — now creates the full schema.)
 flask db upgrade
 
 echo "=== E2E: Seeding test data ==="
