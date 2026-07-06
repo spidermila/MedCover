@@ -227,6 +227,14 @@ def restore_from_zip(zip_path: str | Path) -> None:
             t for t, cols in _col_cache.items() if any(col.get("autoincrement") for col in cols)
         }
 
+        # Reflect table schemas so SQLAlchemy binds INSERT parameters with the
+        # correct MSSQL column types (varchar(max) / nvarchar(max) for Text
+        # columns).  Without this, sa.text() + raw dict hands pyodbc plain
+        # Python strings and pyodbc infers the legacy 'text' type, which MSSQL
+        # rejects when the database collation is _UTF8.
+        sa_metadata = sa.MetaData()
+        sa_metadata.reflect(bind=db.engine, only=tables_to_clear)
+
         if tables_to_clear:
             preparer = db.engine.dialect.identifier_preparer
             # Clear every table by toggling FK constraints off, DELETE-ing all
@@ -260,20 +268,13 @@ def restore_from_zip(zip_path: str | Path) -> None:
                 continue
             qt = preparer.quote(table_name)
             has_identity = table_name in identity_tables
+            sa_table = sa_metadata.tables[table_name]
             if has_identity:
                 conn.execute(sa.text(f"SET IDENTITY_INSERT {qt} ON"))
             for row in rows:
                 filtered = {k: v for k, v in row.items() if k in current_columns}
-                # sa.text() bypasses SQLAlchemy type coercion, so dict/list
-                # values (JSON columns) must be serialized manually.
-                filtered = {k: json.dumps(v) if isinstance(v, (dict, list)) else v for k, v in filtered.items()}
                 if filtered:
-                    col_list = ", ".join(preparer.quote(c) for c in filtered)
-                    val_list = ", ".join(f":{c}" for c in filtered)
-                    conn.execute(
-                        sa.text(f"INSERT INTO {qt} ({col_list}) VALUES ({val_list})"),
-                        filtered,
-                    )
+                    conn.execute(sa_table.insert().values(filtered))
             if has_identity:
                 conn.execute(sa.text(f"SET IDENTITY_INSERT {qt} OFF"))
 
