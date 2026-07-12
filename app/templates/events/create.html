@@ -118,7 +118,11 @@
             </label>
             <button type="button" class="btn btn-outline-danger btn-sm" id="addSpotBtn">Přidat pozici</button>
           </div>
-          <div id="spotRows"></div>
+          <div id="spotRows"
+               data-rp-qual-ids="{{ all_qualifications | selectattr('can_be_rp') | map(attribute='id') | list | tojson }}"
+               data-msg-no-spots="Akce musí mít alespoň jednu pozici."
+               data-msg-no-mandatory="Akce musí mít alespoň jednu povinnou pozici."
+               data-msg-no-rp-qual="Alespoň jedna povinná pozice musí vyžadovat kvalifikaci umožňující roli zodpovědné osoby."></div>
           <input type="hidden" name="spot_total" id="spotTotal" value="0">
           <template id="spotRowTpl">
             <div class="card card-body mb-2 p-2 spot-row-item">
