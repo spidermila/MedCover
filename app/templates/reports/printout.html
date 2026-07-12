@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from 'macros/help.html' import help_icon %}
+{% block title %}Sestava pro tisk — MedCover{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Sestava pro tisk
+    {{ help_icon("Vygeneruje Excel soubor se dvěma listy: Podpisy (jeden řádek na osobu, místo pro podpis) a Přehled (jeden řádek na akci, osoby vedle sebe).") }}
+  </h2>
+  <a href="{{ url_for('reports.index') }}" class="btn btn-outline-secondary btn-sm">← Zpět na přehledy</a>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('reports.printout') }}" class="row g-3 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3">
+        <label for="from_date" class="form-label">Od data
+          {{ help_icon("Nepovinné pokud je vybrána nadřazená akce — pak se zahrnou všechny její akce.") }}
+        </label>
+        <input type="text" class="form-control flatpickr-date" id="from_date" name="from_date"
+               value="{{ request.form.get('from_date', '') }}">
+      </div>
+      <div class="col-md-3">
+        <label for="to_date" class="form-label">Do data</label>
+        <input type="text" class="form-control flatpickr-date" id="to_date" name="to_date"
+               value="{{ request.form.get('to_date', '') }}">
+      </div>
+      <div class="col-md-4">
+        <label for="me_id" class="form-label">Nadřazená akce
+          {{ help_icon("Nepovinné — vyplňte pro omezení na konkrétní nadřazenou akci.") }}
+        </label>
+        <select class="form-select" id="me_id" name="me_id">
+          <option value="">— Všechny —</option>
+          {% for me in master_events %}
+          <option value="{{ me.id }}"
+            {{ 'selected' if request.form.get('me_id') == me.id|string }}>
+            {{ me.name }}{% if me.is_general %} (Výchozí){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-danger w-100">⬇ Stáhnout xlsx</button>
+      </div>
+    </form>
+    <p class="text-muted small mt-3 mb-0">
+      Zahrnuty jsou pouze nezarchivované akce, které nejsou ve stavu Koncept.
+      Prázdné pozice jsou v podpisovém archu zahrnuty pro doplnění na místě.
+    </p>
+  </div>
+</div>
+{% endblock %}
