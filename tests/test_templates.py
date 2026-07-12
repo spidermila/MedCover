@@ -53,15 +53,10 @@ class TestTemplateListPermissions:
         response = coordinator_client.get("/templates/")
         assert response.status_code == 200
 
-    def test_list_accessible_for_member(self, member_client):
-        # Member has event_template.view permission
+    def test_list_forbidden_for_member(self, member_client):
+        # Member no longer has event_template.view — templates are only for coordinators+
         response = member_client.get("/templates/")
-        assert response.status_code == 200
-
-    def test_create_button_hidden_for_member(self, member_client):
-        # Member does not have event_template.create — button must not appear
-        response = member_client.get("/templates/")
-        assert "Nová šablona" not in response.data.decode("utf-8")
+        assert response.status_code == 403
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
