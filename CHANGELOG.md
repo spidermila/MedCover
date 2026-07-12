@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-07-12
+
+### Fixed
+- Azure SQL managed-identity authentication: the web/scheduler containers hung on connect until `Login timeout expired` on Azure Container Apps. The `msodbcsql18` driver's `Authentication=ActiveDirectoryMsi` targets the VM IMDS endpoint, which Container Apps does not expose (identity is served via `IDENTITY_ENDPOINT`). The app now fetches the Azure AD access token itself from the Container Apps identity endpoint and injects it into pyodbc via `SQL_COPT_SS_ACCESS_TOKEN` (`app/db_auth.py`). Scoped to managed-identity URLs only; SQL-auth dev/test connections are unchanged.
+
 ## [0.17.0] - 2026-07-12
 
 ### Added
