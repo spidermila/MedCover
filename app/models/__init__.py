@@ -26,9 +26,7 @@ from .outbox import OutboxEmail  # noqa: F401  # noqa: F401
 from .qualification import Qualification  # noqa: F401
 from .qualification import qualification_parents  # noqa: F401
 from .qualification import user_qualifications  # noqa: F401
-from .role import Permission  # noqa: F401
 from .role import Role  # noqa: F401
-from .role import role_permissions  # noqa: F401
 from .settings import AppSettings  # noqa: F401
 from .settings import get_settings  # noqa: F401
 from .user import CalendarView  # noqa: F401

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
+from app.models.role import ROLE_PERMISSIONS
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment, DebriefingRecord
@@ -177,10 +178,10 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         return check_password_hash(self.password_hash, password)
 
     def has_permission(self, code: str) -> bool:
-        return any(p.code == code for role in self.roles for p in role.permissions)
+        return any(code in ROLE_PERMISSIONS.get(role.name, []) for role in self.roles)
 
     def has_any_permission(self, *codes: str) -> bool:
-        owned = {p.code for role in self.roles for p in role.permissions}
+        owned = {c for role in self.roles for c in ROLE_PERMISSIONS.get(role.name, [])}
         return bool(owned & set(codes))
 
     def is_rp_eligible(self) -> bool:

@@ -34,7 +34,7 @@ from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentType
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
-from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS, Permission, Role
+from app.models.role import ROLE_PERMISSIONS, Role
 from app.models.settings import AppSettings
 from app.models.user import UserAccount
 from app.routes.dev import DEV_ACCOUNTS
@@ -102,32 +102,11 @@ def seed() -> None:
             settings.setup_complete = True
             db.session.flush()
 
-        # ── Permissions & roles ───────────────────────────────────────────────
-        print("Seeding permissions...")
-        for perm_data in ALL_PERMISSIONS:
-            if not db.session.scalar(db.select(Permission).where(Permission.code == perm_data["code"])):
-                db.session.add(Permission(code=perm_data["code"], description=perm_data["description"]))
-        db.session.flush()
-
-        print("Seeding roles and assigning permissions...")
-        for role_name, perm_codes in ROLE_PERMISSIONS.items():
-            role = db.session.scalar(db.select(Role).where(Role.name == role_name))
-            if not role:
-                role = Role(name=role_name)
-                db.session.add(role)
-                db.session.flush()
-            target_codes = set(perm_codes)
-            existing_codes = {p.code for p in role.permissions}
-            # Add missing permissions
-            for code in target_codes - existing_codes:
-                perm = db.session.scalar(db.select(Permission).where(Permission.code == code))
-                if perm:
-                    role.permissions.append(perm)
-            # Remove stale permissions no longer in the role definition
-            for perm in list(role.permissions):
-                if perm.code not in target_codes:
-                    role.permissions.remove(perm)
-                    print(f"  Removed stale permission '{perm.code}' from role '{role_name}'")
+        # ── Roles ─────────────────────────────────────────────────────────────
+        print("Seeding roles...")
+        for role_name in ROLE_PERMISSIONS:
+            if not db.session.scalar(db.select(Role).where(Role.name == role_name)):
+                db.session.add(Role(name=role_name))
         db.session.flush()
 
         # ── Dev user accounts ─────────────────────────────────────────────────

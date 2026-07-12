@@ -1,13 +1,4 @@
-from sqlalchemy.orm import Mapped
-
 from app.extensions import db
-
-# Many-to-many: Role ↔ Permission
-role_permissions = db.Table(
-    "role_permissions",
-    db.Column("role_id", db.Integer, db.ForeignKey("role.id"), primary_key=True),
-    db.Column("permission_id", db.Integer, db.ForeignKey("permission.id"), primary_key=True),
-)
 
 
 class Role(db.Model):  # type: ignore[misc]
@@ -32,12 +23,6 @@ class Role(db.Model):  # type: ignore[misc]
     name = db.Column(db.String(64), unique=True, nullable=False)
     description = db.Column(db.String(255), nullable=True)
 
-    permissions: Mapped[list[Permission]] = db.relationship(
-        "Permission",
-        secondary=role_permissions,
-        back_populates="roles",
-        lazy="selectin",
-    )
     # Back-ref to UserAccount via string table name to avoid circular import
     users = db.relationship(
         "UserAccount",
@@ -48,24 +33,6 @@ class Role(db.Model):  # type: ignore[misc]
 
     def __repr__(self) -> str:
         return f"<Role {self.name}>"
-
-
-class Permission(db.Model):  # type: ignore[misc]
-    __tablename__ = "permission"
-
-    id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(64), unique=True, nullable=False)
-    description = db.Column(db.String(255), nullable=True)
-
-    roles = db.relationship(
-        "Role",
-        secondary=role_permissions,
-        back_populates="permissions",
-        lazy="dynamic",
-    )
-
-    def __repr__(self) -> str:
-        return f"<Permission {self.code}>"
 
 
 # All permission codes defined in the RBAC table in architecture.md

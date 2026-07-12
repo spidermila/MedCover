@@ -52,7 +52,6 @@ _EXCLUDED_TABLES: frozenset[str] = frozenset({"app_settings", "alembic_version"}
 # Tables not listed here are restored after these, in arbitrary order.
 _RESTORE_ORDER: list[str] = [
     "role",
-    "permission",
     "user_account",
     "master_event",
     "event",
@@ -63,7 +62,6 @@ _RESTORE_ORDER: list[str] = [
     "equipment_type",
     "equipment_item",
     # M2M / association tables last
-    "role_permissions",
     "user_roles",
     "user_qualifications",
     "qualification_parents",

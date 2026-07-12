@@ -14,7 +14,7 @@ from flask_mail import Message
 
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db, mail
-from app.models.role import ROLE_PERMISSIONS, Permission, Role
+from app.models.role import Role
 from app.models.settings import AppSettings, get_settings
 from app.models.user import UserAccount
 
@@ -172,26 +172,13 @@ def done() -> str:
 
 
 def _ensure_roles() -> None:
-    """Idempotently create all permissions and roles (mirrors seed_dev.py logic)."""
-    from app.models.role import ALL_PERMISSIONS  # pylint: disable=import-outside-toplevel
+    """Idempotently create all roles."""
+    from app.models.role import ROLE_PERMISSIONS  # pylint: disable=import-outside-toplevel
 
-    for perm_data in ALL_PERMISSIONS:
-        if not db.session.scalar(db.select(Permission).where(Permission.code == perm_data["code"])):
-            db.session.add(Permission(code=perm_data["code"], description=perm_data.get("description")))
+    for role_name in ROLE_PERMISSIONS:
+        if not db.session.scalar(db.select(Role).where(Role.name == role_name)):
+            db.session.add(Role(name=role_name))
     db.session.flush()
-
-    for role_name, perm_codes in ROLE_PERMISSIONS.items():
-        role = db.session.scalar(db.select(Role).where(Role.name == role_name))
-        if not role:
-            role = Role(name=role_name)
-            db.session.add(role)
-            db.session.flush()
-        existing_codes = {p.code for p in role.permissions}
-        for code in perm_codes:
-            if code not in existing_codes:
-                perm = db.session.scalar(db.select(Permission).where(Permission.code == code))
-                if perm:
-                    role.permissions.append(perm)
 
 
 def _ensure_general_me() -> None:
