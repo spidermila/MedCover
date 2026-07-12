@@ -10,6 +10,7 @@ from flask import Flask, g, redirect, request, url_for
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from .config import config_by_name
+from .db_auth import attach_msi_token_auth, prepare_msi_auth
 from .extensions import csrf, db, login_manager
 from .extensions import mail as _flask_mail
 from .extensions import migrate
@@ -38,11 +39,19 @@ def create_app(
     if engine_options is not None:
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_options
 
+    # Azure SQL managed-identity auth: rewrite an ActiveDirectoryMsi URL to a
+    # token-friendly form before the engine is built (no-op for SQL-auth URLs
+    # used by dev/tests). The matching do_connect listener is attached below,
+    # before any DB access. See app/db_auth.py.
+    prepare_msi_auth(app)
+
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
     _flask_mail.init_app(app)
     csrf.init_app(app)
+
+    attach_msi_token_auth(app, db)
 
     # Import models here so Flask-Migrate discovers all tables
     with app.app_context():
