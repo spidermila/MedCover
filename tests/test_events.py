@@ -1721,7 +1721,8 @@ class TestAssignmentsOpenDatetimeValidation:
 
     def test_create_accepts_open_before_start(self, app, admin_client):
         me_id = _make_master_event(app)
-        data = _event_form_data(me_id)
+        rp_qual_id = _make_rp_qual(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
         data["start_datetime"] = "2030-06-01T10:00"
         data["end_datetime"] = "2030-06-01T18:00"
         data["assignments_open_datetime"] = "2030-06-01T09:00"
@@ -1734,7 +1735,8 @@ class TestAssignmentsOpenDatetimeValidation:
 
     def test_create_accepts_missing_open_datetime(self, app, admin_client):
         me_id = _make_master_event(app)
-        data = _event_form_data(me_id)
+        rp_qual_id = _make_rp_qual(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
         data.pop("assignments_open_datetime", None)
         response = admin_client.post("/events/create", data=data, follow_redirects=False)
         assert response.status_code == 302
