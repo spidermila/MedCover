@@ -243,24 +243,21 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         return bool(self.unfilled_spots)
 
     @property
+    def is_sufficiently_staffed(self) -> bool:
+        """True when all mandatory spots are filled (event can proceed)."""
+        return self.mandatory_total_spots > 0 and self.mandatory_filled_spots == self.mandatory_total_spots
+
+    @property
     def staffing_status(self) -> str:
-        mandatory_total = self.mandatory_total_spots
-        mandatory_filled = self.mandatory_filled_spots
-        if mandatory_total == 0:
+        if self.mandatory_total_spots == 0:
             return "Žádné pozice"
-        if mandatory_filled == 0:
+        if self.mandatory_filled_spots == 0:
             return "Neobsazeno"
-        if mandatory_filled < mandatory_total:
+        if not self.is_sufficiently_staffed:
             return "Částečně obsazeno"
         if self.filled_spots == self.total_spots:
             return "Plně obsazena"
         return "Dostatečně obsazena"
-
-    @property
-    def is_sufficiently_staffed(self) -> bool:
-        """True when all mandatory spots are filled (event can proceed)."""
-        mandatory_total = self.mandatory_total_spots
-        return mandatory_total > 0 and self.mandatory_filled_spots == mandatory_total
 
     @property
     def is_centrally_coordinated(self) -> bool:
