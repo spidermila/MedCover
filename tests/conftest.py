@@ -14,7 +14,7 @@ from app.extensions import db as _db
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
-from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS, Permission, Role
+from app.models.role import ROLE_PERMISSIONS, Role
 from app.models.settings import AppSettings
 from app.models.user import UserAccount
 
@@ -300,30 +300,13 @@ def worker_id(request: pytest.FixtureRequest) -> str:
 
 
 def _seed_reference_data() -> None:
-    """Seed roles, permissions and AppSettings — stable data tests depend on."""
+    """Seed roles and AppSettings — stable data tests depend on."""
     if not _db.session.get(AppSettings, 1):
         _db.session.add(AppSettings(id=1, org_name="Test Org", setup_complete=True))
 
-    for perm_data in ALL_PERMISSIONS:
-        if not _db.session.scalar(_db.select(Permission).where(Permission.code == perm_data["code"])):
-            _db.session.add(Permission(code=perm_data["code"], description=perm_data["description"]))
-    _db.session.flush()
-
-    for role_name, perm_codes in ROLE_PERMISSIONS.items():
-        role = _db.session.scalar(_db.select(Role).where(Role.name == role_name))
-        if not role:
-            role = Role(name=role_name)
-            _db.session.add(role)
-            _db.session.flush()
-        target_codes = set(perm_codes)
-        existing_codes = {p.code for p in role.permissions}
-        for code in target_codes - existing_codes:
-            perm = _db.session.scalar(_db.select(Permission).where(Permission.code == code))
-            if perm:
-                role.permissions.append(perm)
-        for perm in list(role.permissions):
-            if perm.code not in target_codes:
-                role.permissions.remove(perm)
+    for role_name in ROLE_PERMISSIONS:
+        if not _db.session.scalar(_db.select(Role).where(Role.name == role_name)):
+            _db.session.add(Role(name=role_name))
 
     _db.session.commit()
 
