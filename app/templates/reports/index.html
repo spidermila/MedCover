@@ -87,4 +87,20 @@
     </div>
   </div>
 </div>
+
+<div class="row g-4 mt-1">
+  <div class="col-md-4">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body d-flex flex-column">
+        <h5 class="card-title">Sestava pro tisk</h5>
+        <p class="card-text text-muted flex-grow-1">
+          Excel soubor s podpisovým archem a přehledovým archem pro fyzické použití na místě akce.
+        </p>
+        <a href="{{ url_for('reports.printout') }}" class="btn btn-outline-danger mt-2">
+          Generovat sestavu
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

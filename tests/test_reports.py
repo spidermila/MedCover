@@ -1,9 +1,12 @@
 """Tests for the reports blueprint."""
 
+import io
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+
+from openpyxl import load_workbook
 
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
@@ -12,7 +15,7 @@ from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
 from app.routes.reports import _compute_user_stats
-from tests.conftest import _login, _make_user
+from tests.conftest import _get_csrf, _login, _make_user
 
 
 def _make_me(name: str = "Testovací nadřazená akce") -> MasterEvent:
@@ -713,3 +716,258 @@ class TestDateRangeUserStats:
         assert resp.status_code == 200
         assert "Statistiky účastníků".encode() in resp.data
         assert b"Member DRStat" in resp.data
+
+
+# ── Printout (xlsx export) ────────────────────────────────────────────────────
+
+XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _post_printout(client, **form_fields):
+    csrf = _get_csrf(client, "/reports/printout")
+    data = {"csrf_token": csrf, **form_fields}
+    return client.post("/reports/printout", data=data, follow_redirects=False)
+
+
+def _xlsx_sheets(response_data: bytes):
+    """Load workbook from response bytes; return dict of sheet_name → list of row tuples."""
+    wb = load_workbook(filename=io.BytesIO(response_data))
+    return {title: [tuple(cell.value for cell in row) for row in wb[title].iter_rows()] for title in wb.sheetnames}
+
+
+class TestPrintoutReport:
+    def test_get_shows_form(self, app, client):
+        with app.app_context():
+            _make_user("admin_po@test.com", "Admin PO", Role.ADMIN)
+        _login(client, "admin_po@test.com")
+        resp = client.get("/reports/printout")
+        assert resp.status_code == 200
+        assert b"from_date" in resp.data
+
+    def test_unauthenticated_redirected(self, client):
+        resp = client.get("/reports/printout", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_no_dates_no_me_returns_error(self, app, client):
+        with app.app_context():
+            _make_user("admin_po2@test.com", "Admin PO2", Role.ADMIN)
+        _login(client, "admin_po2@test.com")
+        resp = _post_printout(client)
+        assert resp.status_code == 200
+        assert "alespoň".encode() in resp.data
+
+    def test_invalid_date_returns_error(self, app, client):
+        with app.app_context():
+            _make_user("admin_po3@test.com", "Admin PO3", Role.ADMIN)
+        _login(client, "admin_po3@test.com")
+        resp = _post_printout(client, from_date="notadate", to_date="alsonotadate")
+        assert resp.status_code == 200
+        assert "Neplatné datum".encode() in resp.data
+
+    def test_from_after_to_returns_error(self, app, client):
+        with app.app_context():
+            _make_user("admin_po4@test.com", "Admin PO4", Role.ADMIN)
+        _login(client, "admin_po4@test.com")
+        resp = _post_printout(client, from_date="2030-06-10", to_date="2030-06-01")
+        assert resp.status_code == 200
+        assert "před".encode() in resp.data
+
+    def test_no_matching_events_shows_warning(self, app, client):
+        with app.app_context():
+            _make_user("admin_po5@test.com", "Admin PO5", Role.ADMIN)
+        _login(client, "admin_po5@test.com")
+        resp = _post_printout(client, from_date="2000-01-01", to_date="2000-01-31")
+        assert resp.status_code == 200
+        assert "Žádné akce nevyhovovaly zadaným filtrům.".encode() in resp.data
+
+    def test_date_range_returns_xlsx(self, app, client):
+        with app.app_context():
+            _make_user("admin_po6@test.com", "Admin PO6", Role.ADMIN)
+            me = _make_me("Printout ME")
+            now = datetime.now(timezone.utc)
+            _make_event(
+                me,
+                "Printout Akce",
+                EventStatus.PUBLISHED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
+        _login(client, "admin_po6@test.com")
+        from_d = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+        to_d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        resp = _post_printout(client, from_date=from_d, to_date=to_d)
+        assert resp.status_code == 200
+        assert resp.content_type == XLSX_CONTENT_TYPE
+
+    def test_me_only_no_dates_returns_xlsx(self, app, client):
+        with app.app_context():
+            _make_user("admin_po7@test.com", "Admin PO7", Role.ADMIN)
+            me = _make_me("Printout ME2")
+            now = datetime.now(timezone.utc)
+            _make_event(
+                me,
+                "ME Only Akce",
+                EventStatus.PUBLISHED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
+            me_id = me.id
+        _login(client, "admin_po7@test.com")
+        resp = _post_printout(client, me_id=str(me_id))
+        assert resp.status_code == 200
+        assert resp.content_type == XLSX_CONTENT_TYPE
+
+    def test_draft_events_excluded(self, app, client):
+        with app.app_context():
+            _make_user("admin_po8@test.com", "Admin PO8", Role.ADMIN)
+            me = _make_me("Printout ME Draft")
+            now = datetime.now(timezone.utc)
+            _make_event(
+                me,
+                "Draft Akce",
+                EventStatus.DRAFT,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
+            me_id = me.id
+        _login(client, "admin_po8@test.com")
+        resp = _post_printout(client, me_id=str(me_id))
+        assert resp.status_code == 200
+        # No xlsx — warning flash shown instead
+        assert resp.content_type != XLSX_CONTENT_TYPE
+
+    def test_archived_events_excluded(self, app, client):
+        with app.app_context():
+            _make_user("admin_po9@test.com", "Admin PO9", Role.ADMIN)
+            me = _make_me("Printout ME Archived")
+            now = datetime.now(timezone.utc)
+            ev = _make_event(
+                me,
+                "Archived Akce",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
+            ev.archived = True
+            db.session.commit()
+            me_id = me.id
+        _login(client, "admin_po9@test.com")
+        resp = _post_printout(client, me_id=str(me_id))
+        assert resp.status_code == 200
+        assert resp.content_type != XLSX_CONTENT_TYPE
+
+    def test_signature_sheet_has_one_row_per_spot(self, app, client):
+        with app.app_context():
+            admin = _make_user("admin_po10@test.com", "Admin PO10", Role.ADMIN)
+            member = _make_user("member_po10@test.com", "Member PO10", Role.MEMBER)
+            me = _make_me("Printout Spots ME")
+            now = datetime.now(timezone.utc)
+            ev = _make_event(
+                me,
+                "Spots Akce",
+                EventStatus.PUBLISHED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
+            spot1 = _make_spot(ev)
+            _make_spot(ev)
+            _make_assignment(spot1, member, admin)
+            me_id = me.id
+        _login(client, "admin_po10@test.com")
+        resp = _post_printout(client, me_id=str(me_id))
+        assert resp.status_code == 200
+        assert resp.content_type == XLSX_CONTENT_TYPE
+
+        sheets = _xlsx_sheets(resp.data)
+        assert "Podpisy" in sheets
+        # Title (row 1), info (row 2), header (row 3), then 2 data rows (one per spot)
+        data_rows = [r for r in sheets["Podpisy"][3:] if any(v for v in r)]
+        assert len(data_rows) == 2
+
+    def test_signature_sheet_empty_spot_appears(self, app, client):
+        """An unassigned spot shows up in the signature sheet with no person name."""
+        with app.app_context():
+            _make_user("admin_po11@test.com", "Admin PO11", Role.ADMIN)
+            me = _make_me("Printout Empty Spot ME")
+            now = datetime.now(timezone.utc)
+            ev = _make_event(
+                me,
+                "Empty Spot Akce",
+                EventStatus.PUBLISHED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
+            _make_spot(ev)  # no assignment
+            me_id = me.id
+        _login(client, "admin_po11@test.com")
+        resp = _post_printout(client, me_id=str(me_id))
+        assert resp.status_code == 200
+        assert resp.content_type == XLSX_CONTENT_TYPE
+
+        sheets = _xlsx_sheets(resp.data)
+        data_rows = [r for r in sheets["Podpisy"][3:] if any(v for v in r)]
+        assert len(data_rows) == 1
+        person_col = 2  # 0-indexed: Datum=0, Název akce=1, Jméno=2
+        assert data_rows[0][person_col] is None or data_rows[0][person_col] == ""
+
+    def test_overview_sheet_has_one_row_per_event(self, app, client):
+        with app.app_context():
+            _make_user("admin_po12@test.com", "Admin PO12", Role.ADMIN)
+            me = _make_me("Printout Overview ME")
+            now = datetime.now(timezone.utc)
+            _make_event(
+                me,
+                "Overview Akce 1",
+                EventStatus.PUBLISHED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=2),
+            )
+            _make_event(
+                me,
+                "Overview Akce 2",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
+            me_id = me.id
+        _login(client, "admin_po12@test.com")
+        resp = _post_printout(client, me_id=str(me_id))
+        assert resp.status_code == 200
+        assert resp.content_type == XLSX_CONTENT_TYPE
+
+        sheets = _xlsx_sheets(resp.data)
+        assert "Přehled" in sheets
+        data_rows = [r for r in sheets["Přehled"][3:] if any(v for v in r)]
+        assert len(data_rows) == 2
+
+    def test_overview_sheet_cells_contain_only_names(self, app, client):
+        """Spot columns in the overview sheet show person names, not roles."""
+        with app.app_context():
+            admin = _make_user("admin_po13@test.com", "Admin PO13", Role.ADMIN)
+            member = _make_user("member_po13@test.com", "Member PO13", Role.MEMBER)
+            me = _make_me("Printout Names ME")
+            now = datetime.now(timezone.utc)
+            ev = _make_event(
+                me,
+                "Names Akce",
+                EventStatus.PUBLISHED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=2),
+            )
+            spot = EventSpot(event_id=ev.id, description="Zdravotník")
+            db.session.add(spot)
+            db.session.flush()
+            _make_assignment(spot, member, admin)
+            me_id = me.id
+        _login(client, "admin_po13@test.com")
+        resp = _post_printout(client, me_id=str(me_id))
+        assert resp.status_code == 200
+        assert resp.content_type == XLSX_CONTENT_TYPE
+
+        sheets = _xlsx_sheets(resp.data)
+        data_rows = [r for r in sheets["Přehled"][3:] if any(v for v in r)]
+        assert len(data_rows) == 1
+        # Column 3 (0-indexed) is the first spot column
+        spot_cell = data_rows[0][3]
+        assert spot_cell == "Member PO13"
+        assert "Zdravotník" not in (spot_cell or "")

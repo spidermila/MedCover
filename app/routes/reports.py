@@ -21,7 +21,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import cast
 
-from flask import Blueprint, Response, abort, make_response, redirect, render_template, request, url_for
+import sqlalchemy as sa
+from flask import Blueprint, Response, abort, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
@@ -31,6 +32,8 @@ from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
+from app.printout_generator import generate_printout
+from app.queries import active_master_events_list, active_users_list
 from app.utils import czech_sort_key, get_app_tz, quick_date_ranges, require_permission
 
 reports_bp = Blueprint("reports", __name__, url_prefix="/reports")
@@ -265,8 +268,6 @@ def _user_stat_csv_rows(user_stat_rows: list[tuple[UserAccount, UserStats]]) -> 
 @login_required
 def index() -> str:
     require_permission("report.view")
-    from app.queries import active_master_events_list, active_users_list  # pylint: disable=import-outside-toplevel
-
     master_events = active_master_events_list()
     all_users = active_users_list() if current_user.has_permission("report.view") else []
     return render_template("reports/index.html", master_events=master_events, all_users=all_users)
@@ -603,3 +604,81 @@ def date_range_report() -> str | Response:
         to_date=to_date_str,
         quick_ranges=_quick_ranges(),
     )
+
+
+# ── Printout (Excel export) ───────────────────────────────────────────────────
+
+
+@reports_bp.route("/printout", methods=["GET", "POST"])
+@login_required
+def printout() -> str | Response:
+    require_permission("report.view")
+
+    master_events = active_master_events_list()
+
+    if request.method == "GET":
+        return render_template("reports/printout.html", master_events=master_events)
+
+    from_date_str = request.form.get("from_date", "").strip()
+    to_date_str = request.form.get("to_date", "").strip()
+    me_id_str = request.form.get("me_id", "").strip()
+
+    has_dates = bool(from_date_str or to_date_str)
+
+    if not has_dates and not me_id_str:
+        flash("Zadejte alespoň datum nebo nadřazenou akci.", "danger")
+        return render_template("reports/printout.html", master_events=master_events)
+
+    from_dt = to_dt = None
+    if has_dates:
+        try:
+            from_dt = datetime.strptime(from_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+        except ValueError:
+            flash("Neplatné datum — vyplňte obě pole nebo obě nechte prázdná.", "danger")
+            return render_template("reports/printout.html", master_events=master_events)
+
+        if from_dt >= to_dt:
+            flash("Datum 'od' musí být před datem 'do'.", "danger")
+            return render_template("reports/printout.html", master_events=master_events)
+
+    query = (
+        db.select(Event)
+        .where(Event.status != EventStatus.DRAFT)
+        .where(Event.archived == sa.false())
+        .options(
+            selectinload(Event.spots).selectinload(EventSpot.required_qualifications),
+            selectinload(Event.spots).selectinload(EventSpot.assignment).selectinload(Assignment.user),
+        )
+        .order_by(Event.start_datetime)
+    )
+
+    if from_dt and to_dt:
+        query = query.where(Event.start_datetime >= from_dt).where(Event.start_datetime < to_dt)
+
+    if me_id_str:
+        query = query.where(Event.master_event_id == int(me_id_str))
+
+    events = db.session.scalars(query).unique().all()
+
+    if not events:
+        flash("Žádné akce nevyhovovaly zadaným filtrům.", "warning")
+        return render_template("reports/printout.html", master_events=master_events)
+
+    me_name: str | None = None
+    if me_id_str:
+        me = db.session.get(MasterEvent, int(me_id_str))
+        me_name = me.name if me else None
+
+    date_range = f"{from_date_str} – {to_date_str}" if has_dates else "vše"
+    wb = generate_printout(list(events), date_range, me_name)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"sestava_{from_date_str}_{to_date_str}.xlsx"
+    response = make_response(buf.getvalue())
+    response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
