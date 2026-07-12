@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-12
+
 ### Added
 - Migration baseline guard (`scripts/check_migrations.py`, wired into CI and pre-commit): fails the build if the squashed Alembic baseline is re-squashed/rewritten (changed root revision id), or if history has multiple roots or heads. Prevents stranding existing databases on deploy. A sanctioned re-baseline procedure is documented in DEVOPS.md.
 
