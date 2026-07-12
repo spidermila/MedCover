@@ -48,6 +48,9 @@ _THIN = Border(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
+_FORMULA_STARTERS = ("=", "+", "-", "@")
+
+
 def _cell(
     ws: Worksheet,
     row: int,
@@ -59,6 +62,8 @@ def _cell(
     alignment: Alignment | None = None,
     border: Border | None = None,
 ) -> None:
+    if isinstance(value, str) and value.startswith(_FORMULA_STARTERS):
+        value = "'" + value
     c = ws.cell(row=row, column=col, value=value)
     if font is not None:
         c.font = font
