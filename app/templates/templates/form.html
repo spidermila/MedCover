@@ -70,7 +70,11 @@
         <button type="button" class="btn btn-outline-danger btn-sm" id="addSpotBtn">Přidat pozici</button>
       </div>
 
-      <div id="spotRows">
+      <div id="spotRows"
+           data-rp-qual-ids="{{ qualifications | selectattr('can_be_rp') | map(attribute='id') | list | tojson }}"
+           data-msg-no-spots="Šablona musí mít alespoň jednu pozici."
+           data-msg-no-mandatory="Šablona musí mít alespoň jednu povinnou pozici."
+           data-msg-no-rp-qual="Alespoň jedna povinná pozice musí vyžadovat kvalifikaci umožňující roli zodpovědné osoby.">
         {% if template and template.spot_templates %}
           {% for st in template.spot_templates %}
           {% set spot_idx = loop.index0 %}

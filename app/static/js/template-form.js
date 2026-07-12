@@ -55,3 +55,44 @@
 
   addBtn.addEventListener('click', addRow);
 })();
+
+/* Spot constraint pre-validation — blocks submit and shows inline error. */
+(function () {
+  var form = document.querySelector('form');
+  var container = document.getElementById('spotRows');
+  if (!form || !container) return;
+
+  var rpQualIds = JSON.parse(container.dataset.rpQualIds || '[]').map(Number);
+
+  var errEl = document.createElement('div');
+  errEl.className = 'alert alert-danger mt-2 d-none';
+  container.after(errEl);
+
+  function validate() {
+    var rows = container.querySelectorAll('.spot-row-item');
+    if (!rows.length) return container.dataset.msgNoSpots;
+    var mandatory = Array.from(rows).filter(function (r) {
+      var cb = r.querySelector('[name^="spot_optional_"]');
+      return !cb || !cb.checked;
+    });
+    if (!mandatory.length) return container.dataset.msgNoMandatory;
+    var hasRp = mandatory.some(function (r) {
+      return Array.from(r.querySelectorAll('[name^="spot_cred_"]:checked')).some(function (cb) {
+        return rpQualIds.indexOf(+cb.value) !== -1;
+      });
+    });
+    return hasRp ? null : container.dataset.msgNoRpQual;
+  }
+
+  form.addEventListener('submit', function (e) {
+    var err = validate();
+    if (err) {
+      e.preventDefault();
+      errEl.textContent = err;
+      errEl.classList.remove('d-none');
+      errEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      errEl.classList.add('d-none');
+    }
+  });
+})();
