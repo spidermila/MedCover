@@ -685,7 +685,7 @@ class TestMasterEventArchiveCascade:
             me = MasterEvent(name="Partial Cascade ME")
             db.session.add(me)
             db.session.flush()
-            # Event already archived
+            # Event already archived before cascade runs
             ev_already_trashed = Event(
                 name="Already Archived",
                 master_event_id=me.id,
@@ -695,7 +695,7 @@ class TestMasterEventArchiveCascade:
                 end_datetime=datetime(2030, 10, 1, 16, 0, tzinfo=timezone.utc),
             )
             db.session.add(ev_already_trashed)
-            # Event not archived
+            # Event not yet archived
             ev_active = Event(
                 name="Active Event",
                 master_event_id=me.id,
@@ -708,13 +708,20 @@ class TestMasterEventArchiveCascade:
             db.session.commit()
             me_id = me.id
             ev_already_id = ev_already_trashed.id
+            ev_already_version = ev_already_trashed.version
             ev_active_id = ev_active.id
 
         admin_client.post(f"/master-events/{me_id}/archive", follow_redirects=False)
         with app.app_context():
-            # Both should be archived
-            assert db.session.get(Event, ev_already_id).archived is True
-            assert db.session.get(Event, ev_active_id).archived is True
+            already = db.session.get(Event, ev_already_id)
+            active = db.session.get(Event, ev_active_id)
+            # Active event cascaded: archived and version bumped
+            assert active.archived is True
+            assert active.version == ev_already_version + 1
+            # Pre-archived event: still archived but version untouched —
+            # confirms the query filter (archived == false) truly skipped it
+            assert already.archived is True
+            assert already.version == ev_already_version
 
     def test_archiving_me_audit_log_contains_affected_event_ids(self, app, admin_client):
         me_id, event_ids = self._make_me_with_events(app, count=2)
