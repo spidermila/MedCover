@@ -277,9 +277,9 @@ holidays==0.99 \
     --hash=sha256:9ef8278cdfb67dbd93309ec9b30c30609ab35fd57cb207ce4593f80dc91196f5 \
     --hash=sha256:bc47cefa781dbc6415e782767dea013794146cc629845354b393c53cdee90c64
     # via -r requirements.in
-icalendar==7.1.3 \
-    --hash=sha256:690f30aa50a76cbf854db5ad52654705db9c5cd0e1b152222f5d4b7854b60667 \
-    --hash=sha256:eb03a0e215f30db689a72c49f18f998aabf17522eb0858a293c393510850727c
+icalendar==7.2.0 \
+    --hash=sha256:32dacc396101825b82f9f1bbdf691c02be613130d5ab7a457e553fcd20959fdd \
+    --hash=sha256:77922b6be57dfcc2e94f93063d2fd7e948ada9b5bdf7b08bebbc684b1b66c7c4
     # via -r requirements.in
 itsdangerous==2.2.0 \
     --hash=sha256:c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef \
