@@ -646,6 +646,13 @@ def printout() -> str | Response:
             flash("Datum 'od' musí být před datem 'do'.", "danger")
             return render_template("reports/printout.html", master_events=master_events)
 
+    selected_me: MasterEvent | None = None
+    if me_id_str:
+        selected_me = next((me for me in master_events if str(me.id) == me_id_str), None)
+        if selected_me is None:
+            flash("Vybraná nadřazená akce nebyla nalezena.", "warning")
+            return render_template("reports/printout.html", master_events=master_events)
+
     query = (
         db.select(Event)
         .where(Event.status != EventStatus.DRAFT)
@@ -660,8 +667,8 @@ def printout() -> str | Response:
     if from_dt and to_dt:
         query = query.where(Event.start_datetime >= from_dt).where(Event.start_datetime < to_dt)
 
-    if me_id_str:
-        query = query.where(Event.master_event_id == int(me_id_str))
+    if selected_me is not None:
+        query = query.where(Event.master_event_id == selected_me.id)
 
     events = db.session.scalars(query).unique().all()
 
@@ -669,10 +676,7 @@ def printout() -> str | Response:
         flash("Žádné akce nevyhovovaly zadaným filtrům.", "warning")
         return render_template("reports/printout.html", master_events=master_events)
 
-    me_name: str | None = None
-    if me_id_str:
-        me = db.session.get(MasterEvent, int(me_id_str))
-        me_name = me.name if me else None
+    me_name: str | None = selected_me.name if selected_me is not None else None
 
     date_range = f"{from_date_str} – {to_date_str}" if has_dates else "vše"
     wb = generate_printout(list(events), date_range, me_name)
