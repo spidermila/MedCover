@@ -643,7 +643,7 @@ def delete_event(event_id: int) -> Response:
 def events_printout() -> Response:
     require_permission("report.view")
 
-    event_ids = [int(x) for x in request.form.getlist("event_ids") if x.isdigit()]
+    event_ids = [int(x) for x in request.form.getlist("event_ids") if x.isdecimal()]
     if not event_ids:
         flash("Nevybrány žádné akce.", "warning")
         return redirect(url_for("events.index"))
@@ -671,8 +671,9 @@ def events_printout() -> Response:
         return redirect(url_for("events.index"))
 
     tz = get_app_tz()
-    dates = sorted({e.start_datetime.astimezone(tz).strftime("%d.%m.%Y") for e in events})
-    date_range = f"{dates[0]} – {dates[-1]}" if len(dates) > 1 else dates[0]
+    first_date = events[0].start_datetime.astimezone(tz).strftime("%d.%m.%Y")
+    last_date = events[-1].start_datetime.astimezone(tz).strftime("%d.%m.%Y")
+    date_range = f"{first_date} – {last_date}" if first_date != last_date else first_date
 
     wb = generate_printout(list(events), date_range, me_name=None)
 
