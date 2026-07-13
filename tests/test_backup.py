@@ -339,7 +339,7 @@ class TestBackupRoutes:
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        assert b"RESTORE" in resp.data
+        assert "Obnovení selhalo: pro potvrzení zadejte RESTORE.".encode() in resp.data
 
     def test_restore_succeeds_with_correct_confirmation(self, app, client, tmp_path):
         with app.app_context():
@@ -433,7 +433,7 @@ class TestBackupRoutes:
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        assert b"RESTORE" in resp.data
+        assert "Obnovení selhalo: pro potvrzení zadejte RESTORE.".encode() in resp.data
 
     def test_upload_restore_no_file_rejected(self, app, client, tmp_path):
         with app.app_context():
@@ -450,7 +450,7 @@ class TestBackupRoutes:
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        assert b"soubor" in resp.data.lower()
+        assert "Nebyl vybrán žádný soubor.".encode() in resp.data
 
     def test_upload_restore_non_zip_rejected(self, app, client, tmp_path):
         with app.app_context():
@@ -471,7 +471,7 @@ class TestBackupRoutes:
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        assert b".zip" in resp.data
+        assert "Soubor musí být ve formátu .zip.".encode() in resp.data
 
     def test_upload_restore_succeeds_and_restores_data(self, app, client, tmp_path):
         with app.app_context():
