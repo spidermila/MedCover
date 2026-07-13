@@ -24,7 +24,7 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from tests.conftest import _login, _make_event_in_status, _make_master_event, _make_rp_qual
+from tests.conftest import _get_csrf, _login, _make_event_in_status, _make_master_event, _make_rp_qual
 
 
 def _event_form_data(master_event_id: int, name: str = "Test Event", rp_qual_id: int | None = None) -> dict:
@@ -1985,3 +1985,57 @@ class TestEventSpotRpConstraint:
                 db.select(db.func.count()).select_from(EventSpot).where(EventSpot.event_id == event_id)
             )
             assert count == 2
+
+
+# ── Bulk printout ─────────────────────────────────────────────────────────────
+
+XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _post_bulk_printout(client, event_ids: list[int]) -> object:
+    csrf = _get_csrf(client, "/events/")
+    data = {"csrf_token": csrf}
+    for eid in event_ids:
+        data.setdefault("event_ids", [])
+        if isinstance(data["event_ids"], list):
+            data["event_ids"].append(str(eid))
+    return client.post("/events/printout", data=data, follow_redirects=False)
+
+
+class TestBulkPrintout:
+    def test_unauthenticated_redirected(self, client):
+        resp = client.post("/events/printout", follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_no_ids_redirects_with_warning(self, app, member_client):
+        resp = _post_bulk_printout(member_client, [])
+        assert resp.status_code == 302
+
+    def test_valid_events_return_xlsx(self, app, member_client):
+        event_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Bulk Printout OK")
+        resp = _post_bulk_printout(member_client, [event_id])
+        assert resp.status_code == 200
+        assert resp.content_type == XLSX_CONTENT_TYPE
+
+    def test_draft_events_excluded_returns_redirect(self, app, member_client):
+        event_id = _make_event_in_status(app, EventStatus.DRAFT, name="Bulk Printout Draft")
+        resp = _post_bulk_printout(member_client, [event_id])
+        # All submitted events filtered out → warning flash + redirect
+        assert resp.status_code == 302
+
+    def test_archived_events_excluded_returns_redirect(self, app, member_client):
+        event_id = _make_event_in_status(app, EventStatus.COMPLETED, name="Bulk Printout Archived")
+        with app.app_context():
+            ev = db.session.get(Event, event_id)
+            ev.archived = True
+            db.session.commit()
+        resp = _post_bulk_printout(member_client, [event_id])
+        assert resp.status_code == 302
+
+    def test_mixed_selection_excludes_draft(self, app, member_client):
+        published_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Bulk Printout Published")
+        draft_id = _make_event_in_status(app, EventStatus.DRAFT, name="Bulk Printout Draft Mix")
+        resp = _post_bulk_printout(member_client, [published_id, draft_id])
+        # Valid events present → xlsx returned (draft silently dropped)
+        assert resp.status_code == 200
+        assert resp.content_type == XLSX_CONTENT_TYPE

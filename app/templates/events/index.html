@@ -162,11 +162,23 @@
         Označit jako neplacené
       </button>
       {% endif %}
+      {% if current_user.has_permission('report.view') %}
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-printout">
+        ⬇ Sestava
+      </button>
+      {% endif %}
       <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-auto" id="btn-clear-selection">
         Zrušit výběr
       </button>
     </div>
   </form>
+  {# Separate form for printout — cannot be nested inside bulk-form #}
+  {% if current_user.has_permission('report.view') %}
+  <form method="POST" action="{{ url_for('events.events_printout') }}" id="printout-form" class="d-none">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div id="printout-ids-container"></div>
+  </form>
+  {% endif %}
 </div>
 {% endif %}
 
