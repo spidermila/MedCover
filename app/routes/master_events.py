@@ -204,6 +204,10 @@ def archive(me_id: int) -> Response:
         flash("Výchozí nadřazenou akci nelze archivovat.", "danger")
         return redirect(url_for("master_events.detail", me_id=me_id))
 
+    if me.archived:
+        flash("Nadřazená akce je již archivována.", "warning")
+        return redirect(url_for("master_events.detail", me_id=me_id))
+
     affected_events = db.session.scalars(
         db.select(Event).where(
             Event.master_event_id == me_id,
@@ -247,6 +251,10 @@ def unarchive(me_id: int) -> Response:
     require_permission("master_event.unarchive")
 
     me = get_or_404(MasterEvent, me_id)
+
+    if not me.archived:
+        flash("Nadřazená akce není archivována.", "warning")
+        return redirect(url_for("master_events.detail", me_id=me_id))
 
     # Count events still archived under this ME so we can hint that unarchiving
     # the ME does NOT automatically restore them (they may have been archived
