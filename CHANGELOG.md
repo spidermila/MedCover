@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-13
+
+### Added
+- Printout generator: new "Tisk" action on the events list and on the Reports page generates a printable view of selected events for a configurable date range and optional Master Event; date filters use the configured app timezone (#406)
+- Event spot constraints: an event must contain at least one mandatory spot and at least one spot whose required qualification is RP-capable; enforced server-side on event and template create/edit, with frontend validation (#383)
+
+### Fixed
+- Archivation logic: archived events are now excluded from per-user reports and Master Event statistics; ME archiving is idempotent; unarchiving a ME shows a hint that child events remain archived; event archive route renamed from `/delete` to `/archive` (#404)
+- Import: events correctly transition to ASSIGNMENTS_CLOSED state during import (#385)
+- HTML: unclosed attribute tag in master events index template (#404)
+
+### Changed
+- Excel and printout exports: cells beginning with `=`, `+`, `-`, or `@` are escaped to prevent formula injection in spreadsheet readers (#406)
+- Permissions no longer stored in the database; permission definitions are now managed entirely in code — no change to effective permissions (#399)
+- `event_template.view` permission removed from Member and Viewer roles (#399)
+- Production deployment docs (`.env.prod.example`): corrected for user-assigned MSI and in-app AAD token injection on Azure Container Apps (#408)
+
 ## [0.17.1] - 2026-07-12
 
 ### Fixed
@@ -315,7 +332,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/spidermila/MedCover/compare/v0.17.1...v0.18.0
+[0.17.1]: https://github.com/spidermila/MedCover/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/spidermila/MedCover/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/spidermila/MedCover/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/spidermila/MedCover/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/spidermila/MedCover/compare/v0.13.2...v0.14.0
