@@ -1358,7 +1358,7 @@ class TestDeleteDraftEvent:
     def test_coordinator_can_trash_draft(self, app, coordinator_client):
         event_id = self._create_draft(app)
         response = coordinator_client.post(
-            f"/events/{event_id}/delete",
+            f"/events/{event_id}/archive",
             follow_redirects=False,
         )
         assert response.status_code in (200, 302)
@@ -1370,7 +1370,7 @@ class TestDeleteDraftEvent:
 
     def test_trash_draft_audited(self, app, coordinator_client):
         event_id = self._create_draft(app)
-        coordinator_client.post(f"/events/{event_id}/delete")
+        coordinator_client.post(f"/events/{event_id}/archive")
         with app.app_context():
             entry = db.session.scalar(
                 db.select(AuditLogEntry)
@@ -1382,7 +1382,7 @@ class TestDeleteDraftEvent:
 
     def test_member_cannot_trash_draft(self, app, member_client):
         event_id = self._create_draft(app)
-        response = member_client.post(f"/events/{event_id}/delete")
+        response = member_client.post(f"/events/{event_id}/archive")
         assert response.status_code == 403
         with app.app_context():
             event = db.session.get(Event, event_id)
@@ -1392,7 +1392,7 @@ class TestDeleteDraftEvent:
     def test_delete_ajax_returns_json(self, app, coordinator_client):
         event_id = self._create_draft(app)
         response = coordinator_client.post(
-            f"/events/{event_id}/delete",
+            f"/events/{event_id}/archive",
             headers={"X-CSRFToken": "test-csrf", "Accept": "application/json"},
         )
         assert response.status_code == 200
@@ -2048,7 +2048,7 @@ class TestEventArchive:
     def test_coordinator_can_archive_published_event(self, app, coordinator_client):
         event_id = self._create_published(app)
         response = coordinator_client.post(
-            f"/events/{event_id}/delete",
+            f"/events/{event_id}/archive",
             follow_redirects=False,
         )
         assert response.status_code == 302
@@ -2059,12 +2059,12 @@ class TestEventArchive:
 
     def test_member_cannot_archive_event(self, app, member_client):
         event_id = self._create_published(app)
-        response = member_client.post(f"/events/{event_id}/delete")
+        response = member_client.post(f"/events/{event_id}/archive")
         assert response.status_code == 403
 
     def test_archive_sets_archived_true_without_deleting(self, app, coordinator_client):
         event_id = self._create_published(app)
-        coordinator_client.post(f"/events/{event_id}/delete", follow_redirects=False)
+        coordinator_client.post(f"/events/{event_id}/archive", follow_redirects=False)
         with app.app_context():
             event = db.session.get(Event, event_id)
             assert event is not None
@@ -2072,7 +2072,7 @@ class TestEventArchive:
 
     def test_archive_writes_audit_log_with_archive_action(self, app, coordinator_client):
         event_id = self._create_published(app)
-        coordinator_client.post(f"/events/{event_id}/delete", follow_redirects=False)
+        coordinator_client.post(f"/events/{event_id}/archive", follow_redirects=False)
         with app.app_context():
             entry = db.session.scalar(
                 db.select(AuditLogEntry)
@@ -2099,7 +2099,7 @@ class TestEventArchive:
             db.session.commit()
             event_id = event.id
         response = coordinator_client.post(
-            f"/events/{event_id}/delete",
+            f"/events/{event_id}/archive",
             follow_redirects=True,
         )
         assert response.status_code == 200

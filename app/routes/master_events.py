@@ -119,14 +119,18 @@ def detail(me_id: int) -> str:
         db.select(Event).where(Event.master_event_id == me_id).order_by(Event.start_datetime.desc())
     ).all()
 
+    # Archived events are still listed (viewable) but excluded from the status
+    # breakdown; they are reported separately via the "archived" count.
+    active_events = [e for e in events if not e.archived]
     stats = {
-        "total": len(events),
-        "draft": sum(1 for e in events if e.status == EventStatus.DRAFT),
-        "published": sum(1 for e in events if e.status == EventStatus.PUBLISHED),
-        "assignments_open": sum(1 for e in events if e.status == EventStatus.ASSIGNMENTS_OPEN),
-        "assignments_closed": sum(1 for e in events if e.status == EventStatus.ASSIGNMENTS_CLOSED),
-        "completed": sum(1 for e in events if e.status == EventStatus.COMPLETED),
-        "cancelled": sum(1 for e in events if e.status == EventStatus.CANCELLED),
+        "total": len(active_events),
+        "draft": sum(1 for e in active_events if e.status == EventStatus.DRAFT),
+        "published": sum(1 for e in active_events if e.status == EventStatus.PUBLISHED),
+        "assignments_open": sum(1 for e in active_events if e.status == EventStatus.ASSIGNMENTS_OPEN),
+        "assignments_closed": sum(1 for e in active_events if e.status == EventStatus.ASSIGNMENTS_CLOSED),
+        "completed": sum(1 for e in active_events if e.status == EventStatus.COMPLETED),
+        "cancelled": sum(1 for e in active_events if e.status == EventStatus.CANCELLED),
+        "archived": sum(1 for e in events if e.archived),
     }
 
     return render_template("master_events/detail.html", me=me, events=events, stats=stats)
@@ -244,12 +248,28 @@ def unarchive(me_id: int) -> Response:
 
     me = get_or_404(MasterEvent, me_id)
 
+    # Count events still archived under this ME so we can hint that unarchiving
+    # the ME does NOT automatically restore them (they may have been archived
+    # individually before the ME was, so we deliberately do not cascade).
+    archived_event_count = db.session.scalar(
+        db.select(db.func.count(Event.id)).where(
+            Event.master_event_id == me_id,
+            Event.archived == sa.true(),
+        )
+    )
+
     me.archived = False
     me.version += 1
     audit("unarchive", "MasterEvent", me.id, f"Nadřazená akce '{me.name}' byla obnovena z archivu")
     db.session.commit()
 
     flash(f'Nadřazená akce „{me.name}" byla obnovena z archivu.', "success")
+    if archived_event_count:
+        flash(
+            f"Pozor: {archived_event_count} akcí této nadřazené akce zůstává archivováno. "
+            "Archivované akce je potřeba obnovit jednotlivě.",
+            "info",
+        )
     return redirect(url_for("master_events.detail", me_id=me_id))
 
 
