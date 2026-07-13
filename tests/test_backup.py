@@ -4,6 +4,7 @@ import json
 import time
 import zipfile
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 
 import pytest
 
@@ -413,3 +414,145 @@ class TestBackupRoutes:
             data={"csrf_token": csrf, "confirmation": "SMAZAT"},
         )
         assert resp.status_code == 404
+
+    # ── Upload-restore route ──────────────────────────────────────────────────
+
+    def test_upload_restore_wrong_confirmation_rejected(self, app, client, tmp_path):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+            settings = get_settings()
+            settings.backup_dir = str(tmp_path)
+            _db.session.commit()
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        client.post("/admin/backup/run", data={"csrf_token": csrf})
+        resp = client.post(
+            "/admin/backup/upload-restore",
+            data={"csrf_token": csrf, "confirmation": "WRONG"},
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"RESTORE" in resp.data
+
+    def test_upload_restore_no_file_rejected(self, app, client, tmp_path):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+            settings = get_settings()
+            settings.backup_dir = str(tmp_path)
+            _db.session.commit()
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        resp = client.post(
+            "/admin/backup/upload-restore",
+            data={"csrf_token": csrf, "confirmation": "RESTORE"},
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"soubor" in resp.data.lower()
+
+    def test_upload_restore_non_zip_rejected(self, app, client, tmp_path):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+            settings = get_settings()
+            settings.backup_dir = str(tmp_path)
+            _db.session.commit()
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        resp = client.post(
+            "/admin/backup/upload-restore",
+            data={
+                "csrf_token": csrf,
+                "confirmation": "RESTORE",
+                "backup_file": (BytesIO(b"not a zip"), "backup.txt"),
+            },
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b".zip" in resp.data
+
+    def test_upload_restore_succeeds_and_restores_data(self, app, client, tmp_path):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+            _make_user("upload_target@example.com", "Upload Target", Role.MEMBER)
+            settings = get_settings()
+            settings.backup_dir = str(tmp_path)
+            settings.backup_keep_count = 7
+            _db.session.commit()
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+
+        # Create backup that includes upload_target
+        client.post("/admin/backup/run", data={"csrf_token": csrf})
+        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        assert files
+        zip_bytes = files[0].read_bytes()
+
+        # Delete the user so we can verify restoration
+        with app.app_context():
+            u = _db.session.scalars(
+                _db.select(UserAccount).where(UserAccount.email == "upload_target@example.com")
+            ).first()
+            _db.session.delete(u)
+            _db.session.commit()
+
+        # Upload-restore
+        resp = client.post(
+            "/admin/backup/upload-restore",
+            data={
+                "csrf_token": csrf,
+                "confirmation": "RESTORE",
+                "backup_file": (BytesIO(zip_bytes), "medcover_backup_upload.zip"),
+            },
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"selhala" not in resp.data
+
+        with app.app_context():
+            restored = _db.session.scalars(
+                _db.select(UserAccount).where(UserAccount.email == "upload_target@example.com")
+            ).first()
+            assert restored is not None
+            assert restored.name == "Upload Target"
+
+    def test_restore_route_actually_restores_deleted_data(self, app, client, tmp_path):
+        """Restoring from a stored backup brings back data deleted after the backup."""
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+            me = MasterEvent(name="Backup Round-trip ME")
+            _db.session.add(me)
+            _db.session.commit()
+            me_id = me.id
+            settings = get_settings()
+            settings.backup_dir = str(tmp_path)
+            settings.backup_keep_count = 7
+            _db.session.commit()
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+
+        # Backup includes the ME
+        client.post("/admin/backup/run", data={"csrf_token": csrf})
+        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        assert files
+
+        # Delete the ME after backup
+        with app.app_context():
+            me = _db.session.get(MasterEvent, me_id)
+            _db.session.delete(me)
+            _db.session.commit()
+            assert _db.session.get(MasterEvent, me_id) is None
+
+        # Restore — ME should come back
+        resp = client.post(
+            f"/admin/backup/restore/{files[0].name}",
+            data={"csrf_token": csrf, "confirmation": "RESTORE"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"selhala" not in resp.data
+        with app.app_context():
+            assert _db.session.get(MasterEvent, me_id) is not None
