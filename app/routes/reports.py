@@ -632,8 +632,12 @@ def printout() -> str | Response:
     from_dt = to_dt = None
     if has_dates:
         try:
-            from_dt = datetime.strptime(from_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-            to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+            tz = get_app_tz()
+            from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
+            to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+            to_date_excl = to_date + timedelta(days=1)
+            from_dt = datetime(from_date.year, from_date.month, from_date.day, tzinfo=tz)
+            to_dt = datetime(to_date_excl.year, to_date_excl.month, to_date_excl.day, tzinfo=tz)
         except ValueError:
             flash("Neplatné datum — vyplňte obě pole nebo obě nechte prázdná.", "danger")
             return render_template("reports/printout.html", master_events=master_events)
