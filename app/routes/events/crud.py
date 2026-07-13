@@ -1,11 +1,13 @@
 """Event CRUD routes: index, feed, create, create_from_template, detail, edit, delete."""
 
+import io
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
-from flask import Response, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import Response, abort, flash, jsonify, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import case, collate, func
+from sqlalchemy.orm import selectinload
 
 import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
@@ -16,6 +18,7 @@ from app.models.event import Event, EventSpot, EventStatus, EventTemplate, Event
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.user import UserAccount
+from app.printout_generator import generate_printout
 from app.queries import (
     active_master_events_list,
     active_users_list,
@@ -630,3 +633,54 @@ def delete_event(event_id: int) -> Response:
     if me_id:
         return redirect(url_for("master_events.detail", me_id=me_id))
     return redirect(url_for("events.index"))
+
+
+# ── Printout (bulk xlsx export) ───────────────────────────────────────────────
+
+
+@events_bp.post("/printout")
+@login_required
+def events_printout() -> Response:
+    require_permission("report.view")
+
+    event_ids = [int(x) for x in request.form.getlist("event_ids") if x.isdigit()]
+    if not event_ids:
+        flash("Nevybrány žádné akce.", "warning")
+        return redirect(url_for("events.index"))
+
+    events = (
+        db.session.scalars(
+            db.select(Event)
+            .where(Event.id.in_(event_ids))
+            .where(Event.status != EventStatus.DRAFT)
+            .where(Event.archived == sa.false())
+            .options(
+                selectinload(Event.spots).selectinload(EventSpot.required_qualifications),
+                selectinload(Event.spots).selectinload(EventSpot.assignment).selectinload(Assignment.user),
+            )
+            .order_by(Event.start_datetime)
+        )
+        .unique()
+        .all()
+    )
+
+    if not events:
+        flash(
+            "Žádné z vybraných akcí nelze zahrnout do sestavy (koncepty a archivované akce jsou vyloučeny).", "warning"
+        )
+        return redirect(url_for("events.index"))
+
+    tz = get_app_tz()
+    dates = sorted({e.start_datetime.astimezone(tz).strftime("%d.%m.%Y") for e in events})
+    date_range = f"{dates[0]} – {dates[-1]}" if len(dates) > 1 else dates[0]
+
+    wb = generate_printout(list(events), date_range, me_name=None)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    response = make_response(buf.getvalue())
+    response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    response.headers["Content-Disposition"] = 'attachment; filename="sestava_vybrane.xlsx"'
+    return response

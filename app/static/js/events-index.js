@@ -324,6 +324,24 @@
     if (clearBtn) clearBtn.addEventListener("click", clearSelection);
   });
 
+  function submitPrintout() {
+    var ids = Array.from(document.querySelectorAll(".row-event-check:checked")).map(function (cb) { return cb.value; });
+    if (ids.length === 0) return;
+    var form = document.getElementById("printout-form");
+    if (!form) return;
+    var container = document.getElementById("printout-ids-container");
+    container.innerHTML = "";
+    ids.forEach(function (id) {
+      var inp = document.createElement("input");
+      inp.type = "hidden"; inp.name = "event_ids"; inp.value = id;
+      container.appendChild(inp);
+    });
+    form.submit();
+  }
+
+  var printoutBtn = document.getElementById("btn-printout");
+  if (printoutBtn) printoutBtn.addEventListener("click", submitPrintout);
+
   // No longer needed as window globals — kept for backwards compat during any cached page loads
   window.setView = setView;
   window.navigateToMe = navigateToMe;
