@@ -182,39 +182,28 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
 
 
 def _eligible_event_ids_for_user(user: UserAccount) -> list[int]:
-    """Return a list of event IDs where the user has at least one unoccupied, fillable spot."""
+    """Return event IDs where the user has at least one unoccupied, claimable spot.
+
+    Mirrors _build_eligible_spot_map: only ASSIGNMENTS_OPEN events, uses
+    EventSpot.is_eligible_for as the single source of truth for deleted-qual
+    filtering and fillable-qual checks, and excludes spots already held by
+    the user.
+    """
     fillable_ids = user_fillable_qual_ids(user)
+    user_assigned_spot_ids = set(
+        db.session.scalars(db.select(Assignment.spot_id).where(Assignment.user_id == user.id)).all()
+    )
 
-    # Find deleted qual IDs so we can ignore them (match existing eligibility logic)
-    deleted_qual_ids = {
-        q.id for q in db.session.scalars(db.select(Qualification).where(Qualification.is_deleted == sa.true())).all()
-    }
+    events = db.session.scalars(db.select(Event).where(Event.status == EventStatus.ASSIGNMENTS_OPEN)).all()
 
-    # Fetch all (spot_id, event_id, qual_id) for unoccupied spots
-    rows = db.session.execute(
-        db.select(
-            EventSpot.id.label("spot_id"),
-            EventSpot.event_id,
-            spot_qualifications.c.qualification_id,
+    eligible_event_ids = {
+        e.id
+        for e in events
+        if any(
+            s.assignment is None and s.id not in user_assigned_spot_ids and s.is_eligible_for(fillable_ids)
+            for s in e.spots
         )
-        .outerjoin(Assignment, Assignment.spot_id == EventSpot.id)
-        .outerjoin(spot_qualifications, spot_qualifications.c.spot_id == EventSpot.id)
-        .where(Assignment.id.is_(None))
-    ).all()
-
-    spot_event: dict[int, int] = {}
-    spot_quals: dict[int, set[int]] = {}
-    for spot_id, event_id, qual_id in rows:
-        spot_event[spot_id] = event_id
-        if spot_id not in spot_quals:
-            spot_quals[spot_id] = set()
-        if qual_id is not None and qual_id not in deleted_qual_ids:
-            spot_quals[spot_id].add(qual_id)
-
-    eligible_event_ids: set[int] = set()
-    for spot_id, required_qual_ids in spot_quals.items():
-        if all(qid in fillable_ids for qid in required_qual_ids):
-            eligible_event_ids.add(spot_event[spot_id])
+    }
 
     return list(eligible_event_ids) if eligible_event_ids else [-1]
 
