@@ -2039,3 +2039,17 @@ class TestBulkPrintout:
         # Valid events present → xlsx returned (draft silently dropped)
         assert resp.status_code == 200
         assert resp.content_type == XLSX_CONTENT_TYPE
+
+    def test_user_without_report_view_gets_403(self, app, client):
+        """A role that lacks report.view must be denied, not just redirected."""
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.DEBRIEFING_MANAGER))
+            user = UserAccount(email="dm_printout@test.com", name="DM Printout", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+            db.session.commit()
+        _login(client, "dm_printout@test.com")
+        event_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Bulk Printout DM")
+        resp = _post_bulk_printout(client, [event_id])
+        assert resp.status_code == 403

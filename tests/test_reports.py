@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
-from openpyxl import load_workbook
+import pytest
+from openpyxl import Workbook, load_workbook
 
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
@@ -14,6 +15,7 @@ from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.printout_generator import _cell
 from app.routes.reports import _compute_user_stats
 from tests.conftest import _get_csrf, _login, _make_user
 
@@ -971,3 +973,47 @@ class TestPrintoutReport:
         spot_cell = data_rows[0][3]
         assert spot_cell == "Member PO13"
         assert "Zdravotník" not in (spot_cell or "")
+
+
+# ── Formula-injection sanitization ───────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "=1+1",
+        "+1+1",
+        "-1+1",
+        "@SUM(A1)",
+        "\t=cmd|'/c calc'!A1",
+        "\r=cmd|'/c calc'!A1",
+    ],
+)
+def test_cell_escapes_formula_starters(payload):
+    """_cell() must prefix any formula-starter string with an apostrophe."""
+    wb = Workbook()
+    ws = wb.active
+    _cell(ws, 1, 1, payload)
+    value = ws.cell(row=1, column=1).value
+    assert isinstance(value, str), f"Expected str, got {type(value)}"
+    assert value.startswith("'"), f"Formula payload {payload!r} was not escaped; cell value: {value!r}"
+    assert value == "'" + payload
+
+
+def test_cell_leaves_safe_strings_unchanged():
+    """_cell() must not alter strings that don't start with a formula character."""
+    wb = Workbook()
+    ws = wb.active
+    safe_values = ["Zdravotník", "Jan Novák", "Akce 2026", "", "100"]
+    for i, val in enumerate(safe_values, start=1):
+        _cell(ws, i, 1, val)
+        assert ws.cell(row=i, column=1).value == val
+
+
+def test_cell_leaves_non_string_values_unchanged():
+    """_cell() must not touch numbers, None, or other non-string types."""
+    wb = Workbook()
+    ws = wb.active
+    for i, val in enumerate([0, 42, 3.14, None, True], start=1):
+        _cell(ws, i, 1, val)
+        assert ws.cell(row=i, column=1).value == val
