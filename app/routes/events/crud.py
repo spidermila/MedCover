@@ -604,12 +604,12 @@ def edit(event_id: int) -> str | Response:
     )
 
 
-# ── Delete (soft-archive) ─────────────────────────────────────────────────────
+# ── Archive (soft-delete) ─────────────────────────────────────────────────────
 
 
-@events_bp.post("/<int:event_id>/delete")
+@events_bp.post("/<int:event_id>/archive")
 @login_required
-def delete_event(event_id: int) -> Response:
+def archive_event(event_id: int) -> Response:
     is_ajax = request.headers.get("X-CSRFToken") and request.accept_mimetypes.accept_json
 
     event = get_or_404(Event, event_id)

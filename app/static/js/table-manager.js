@@ -529,14 +529,14 @@
     });
   }
 
-  // ── Delete draft event ──────────────────────────────────────────────────────
+  // ── Archive draft event ─────────────────────────────────────────────────────
   if (canArchiveDraft) {
     document.querySelectorAll(".tm-delete-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var eventId = this.dataset.eventId;
         var eventName = this.dataset.eventName;
         if (!confirm('Archivovat akci \u201E' + eventName + '\u201C?')) return;
-        csrfFetch("/events/" + eventId + "/delete", {
+        csrfFetch("/events/" + eventId + "/archive", {
           method: "POST",
           headers: { "Accept": "application/json" },
         })

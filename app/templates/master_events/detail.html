@@ -88,6 +88,16 @@
       </div>
     </div>
   </div>
+  {% if stats.archived %}
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-0 bg-warning bg-opacity-10">
+      <div class="card-body py-2">
+        <div class="fs-3 fw-bold text-warning-emphasis">{{ stats.archived }}</div>
+        <div class="small text-muted">Archivováno</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 {# Events table #}
@@ -124,6 +134,7 @@
         <td class="text-nowrap">{{ event.start_datetime | localdt }}</td>
         <td>
           <a href="{{ url_for('events.detail', event_id=event.id) }}" class="text-decoration-none">{{ event.name }}</a>
+          {% if event.archived %}{{ badge_warning('Archivováno', extra_classes='ms-1') }}{% endif %}
         </td>
         <td>
           {% set status_colors = {

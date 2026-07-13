@@ -777,3 +777,27 @@ class TestMasterEventArchiveCascade:
             for eid in event_ids:
                 event = db.session.get(Event, eid)
                 assert event.archived is True, f"Event {eid} should remain archived"
+
+    def test_unarchiving_me_hints_events_remain_archived(self, app, admin_client):
+        me_id, _ = self._make_me_with_events(app, count=1)
+        admin_client.post(f"/master-events/{me_id}/archive", follow_redirects=False)
+        resp = admin_client.post(f"/master-events/{me_id}/unarchive", follow_redirects=True)
+        assert resp.status_code == 200
+        # The user is warned that the ME's events stay archived (no unarchive cascade)
+        assert "zůstává archivováno" in resp.data.decode()
+
+    def test_me_detail_excludes_archived_from_stats_and_shows_archived_count(self, app, admin_client):
+        me_id, event_ids = self._make_me_with_events(app, count=2)
+        with app.app_context():
+            archived = db.session.get(Event, event_ids[0])
+            archived.archived = True
+            db.session.commit()
+
+        resp = admin_client.get(f"/master-events/{me_id}")
+        body = resp.data.decode()
+        assert resp.status_code == 200
+        # Archived event is still listed (viewable) and the archived count card appears
+        assert "Cascade Event 1" in body
+        assert "Archivováno" in body
+        # "Celkem akcí" (total) counts only active events — 1 of the 2 is archived.
+        assert '<div class="fs-3 fw-bold">1</div>' in body

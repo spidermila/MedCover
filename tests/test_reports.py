@@ -1068,3 +1068,22 @@ class TestArchivedEventsExcludedFromReports:
         assert resp.status_code == 200
         assert b"Active DR Event" in resp.data
         assert b"Archived DR Event" not in resp.data
+
+    def test_archived_event_excluded_from_user_report(self, app, client):
+        with app.app_context():
+            admin = _make_user("admin_tr_ur@test.com", "Admin TR UR", Role.ADMIN)
+            member = _make_user("member_tr_ur@test.com", "Member TR UR", Role.MEMBER)
+            me = _make_me("ME UR Archive")
+            ev_active = _make_event(me, "Active UR Event", EventStatus.COMPLETED)
+            ev_archived = _make_event(me, "Archived UR Event", EventStatus.COMPLETED)
+            _make_assignment(_make_spot(ev_active), member, admin)
+            _make_assignment(_make_spot(ev_archived), member, admin)
+            ev_archived.archived = True
+            db.session.commit()
+            member_id = member.id
+
+        _login(client, "admin_tr_ur@test.com")
+        resp = client.get(f"/reports/user/{member_id}")
+        assert resp.status_code == 200
+        assert b"Active UR Event" in resp.data
+        assert b"Archived UR Event" not in resp.data

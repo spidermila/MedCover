@@ -313,12 +313,15 @@ def user_report(user_id: uuid.UUID) -> str | Response:
 
     now = datetime.now(timezone.utc)
 
-    # Load assignments for this user with eager-loaded spot → event
+    # Load assignments for this user with eager-loaded spot → event.
+    # Archived events are excluded so they are not counted in the per-user
+    # report, consistent with the master-event and date-range reports.
     query = (
         db.select(Assignment)
         .where(Assignment.user_id == user_id)
         .join(Assignment.spot)
         .join(EventSpot.event)
+        .where(Event.archived == sa.false())
         .options(
             selectinload(Assignment.spot).selectinload(EventSpot.event),  # type: ignore[arg-type]
         )
