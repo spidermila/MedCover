@@ -1,7 +1,7 @@
 """drop permission and role_permissions tables
 
 Revision ID: 08afa74293a8
-Revises: 68fee3388efa
+Revises: 2c159bca01be
 Create Date: 2026-07-12 00:00:00.000000
 
 Permissions are now resolved entirely from the ROLE_PERMISSIONS dict in
