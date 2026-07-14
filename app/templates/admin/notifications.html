@@ -13,6 +13,62 @@
   Ostatní lze deaktivovat níže — každý přepínač ovládá skupinu souvisejících typů oznámení.
 </div>
 
+{# ── Notification delay tiers (issue #268 · read-only) ────────────────────── #}
+{% macro minutes_to_human(m) -%}
+  {%- if m is none -%}—
+  {%- elif m < 60 -%}{{ m }} min
+  {%- elif m < 1440 -%}
+    {%- set h = m // 60 -%}{%- set rem = m % 60 -%}
+    {%- if rem == 0 -%}{{ h }} h{%- else -%}{{ h }} h {{ rem }} min{%- endif -%}
+  {%- elif m == 1440 -%}24 h
+  {%- else -%}
+    {%- set d = m // 1440 -%}{%- set rem_h = (m % 1440) // 60 -%}
+    {%- if rem_h == 0 -%}{{ d }} d{%- else -%}{{ d }} d {{ rem_h }} h{%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold">Zpoždění notifikací</div>
+  <div class="card-body pb-2">
+    <p class="text-muted small mb-2">
+      Aktuální hodnoty zpoždění pro e-mailová oznámení související s akcemi.
+      Zpoždění je zvoleno podle toho, jak daleko je akce v čase. Úprava hodnot
+      bude dostupná v následující verzi.
+    </p>
+    <table class="table table-sm mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Kdy začíná akce</th>
+          <th class="text-end">Hodnota</th>
+          <th class="text-end">Doba zpoždění</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Do 24 hodin do akce</td>
+          <td class="text-end font-monospace">{{ settings.notify_delay_under_24h_min }} min</td>
+          <td class="text-end">{{ minutes_to_human(settings.notify_delay_under_24h_min) }}</td>
+        </tr>
+        <tr>
+          <td>1–7 dní do akce</td>
+          <td class="text-end font-monospace">{{ settings.notify_delay_1_7_days_min }} min</td>
+          <td class="text-end">{{ minutes_to_human(settings.notify_delay_1_7_days_min) }}</td>
+        </tr>
+        <tr>
+          <td>1–4 týdny do akce</td>
+          <td class="text-end font-monospace">{{ settings.notify_delay_1_4_weeks_min }} min</td>
+          <td class="text-end">{{ minutes_to_human(settings.notify_delay_1_4_weeks_min) }}</td>
+        </tr>
+        <tr>
+          <td>Více než měsíc do akce</td>
+          <td class="text-end font-monospace">{{ settings.notify_delay_over_month_min }} min</td>
+          <td class="text-end">{{ minutes_to_human(settings.notify_delay_over_month_min) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 {# ── Toggle controls ────────────────────────────────────────────────────────── #}
 <form method="POST" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

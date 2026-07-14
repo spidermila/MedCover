@@ -21,6 +21,31 @@ class OutboxEmail(db.Model):  # type: ignore[misc]
     # Null for emails enqueued before this column was added.
     instance_name = db.Column(db.String(64), nullable=True, index=True)
 
+    # ── Notification batching (issue #268) ────────────────────────────────
+    # Populated by the deferred enqueue path (Phase 3+); NULL on legacy rows
+    # and on non-event / immediate notifications (invite, reset, activation,
+    # admin digest). FK ondelete=SET NULL is defensive — entities are archived
+    # rather than hard-deleted in practice.
+    user_id = db.Column(
+        db.Uuid,
+        db.ForeignKey("user_account.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Symbolic tag for the kind of change carried by change_value.
+    # Examples (populated Phase 3+): "field_edit", "assignment", "unfilled_reminder".
+    change_type = db.Column(db.String(64), nullable=True)
+    # JSON-serialised payload. MSSQL has no native JSON type — we store text
+    # and use json.dumps/json.loads at the application boundary (Phase 3+).
+    change_value = db.Column(db.Text, nullable=True)
+    # NULL means "send immediately" (matches legacy behaviour). When set, the
+    # drain skips the row until now() >= send_after.
+    send_after = db.Column(db.DateTime(timezone=True), nullable=True)
+
     # 'pending' → being picked up by scheduler
     # 'sent'    → successfully delivered to SMTP relay
     # 'failed'  → retry_count reached MAX_RETRIES; given up
@@ -38,6 +63,8 @@ class OutboxEmail(db.Model):  # type: ignore[misc]
     last_error = db.Column(db.Text, nullable=True)
 
     MAX_RETRIES: int = 3
+
+    __table_args__ = (db.Index("ix_outbox_email_status_send_after", "status", "send_after"),)
 
     def __repr__(self) -> str:
         return f"<OutboxEmail id={self.id} to={self.to_email!r} status={self.status}>"
