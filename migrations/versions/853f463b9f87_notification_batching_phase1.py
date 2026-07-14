@@ -64,10 +64,10 @@ def upgrade():
 
 def downgrade():
     with op.batch_alter_table('app_settings', schema=None) as batch_op:
-        batch_op.drop_column('notify_delay_over_month_min')
-        batch_op.drop_column('notify_delay_1_4_weeks_min')
-        batch_op.drop_column('notify_delay_1_7_days_min')
-        batch_op.drop_column('notify_delay_under_24h_min')
+        batch_op.drop_column('notify_delay_over_month_min', mssql_drop_default=True)
+        batch_op.drop_column('notify_delay_1_4_weeks_min', mssql_drop_default=True)
+        batch_op.drop_column('notify_delay_1_7_days_min', mssql_drop_default=True)
+        batch_op.drop_column('notify_delay_under_24h_min', mssql_drop_default=True)
 
     with op.batch_alter_table('outbox_email', schema=None) as batch_op:
         batch_op.drop_index('ix_outbox_email_status_send_after')
