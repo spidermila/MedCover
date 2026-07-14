@@ -521,3 +521,59 @@ class TestOutboxEmailModel:
             db.session.commit()
             assert "a@b.com" in repr(row)
             assert "pending" in repr(row)
+
+
+# ── Phase 1 (#268) — OutboxEmail new columns ─────────────────────────────────
+
+
+class TestOutboxEmailPhase1Columns:
+    """AC-3 / AC-12: new columns default to NULL; populated values round-trip."""
+
+    def test_new_columns_default_null(self, app):
+        """Creating an OutboxEmail with only legacy args leaves all new cols NULL."""
+        with app.app_context():
+            row = OutboxEmail(to_email="legacy@test.cz", subject="S", body="B")
+            db.session.add(row)
+            db.session.commit()
+            db.session.expire(row)
+            assert row.user_id is None
+            assert row.event_id is None
+            assert row.change_type is None
+            assert row.change_value is None
+            assert row.send_after is None
+
+    def test_new_columns_round_trip(self, app):
+        """When new columns are set, they survive a flush + re-fetch."""
+        with app.app_context():
+            me = MasterEvent(name="RT ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="RT Event",
+                master_event_id=me.id,
+                start_datetime=datetime(2030, 1, 1, 9, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 17, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            send_at = datetime(2030, 1, 1, 8, 0, tzinfo=timezone.utc)
+            row = OutboxEmail(
+                to_email="batch@test.cz",
+                subject="Batched",
+                body="body",
+                event_id=event.id,
+                change_type="field_edit",
+                change_value='{"name":["A","B"]}',
+                send_after=send_at,
+            )
+            db.session.add(row)
+            db.session.commit()
+            row_id = row.id
+            event_id_saved = event.id
+            db.session.expunge_all()
+
+            fetched = db.session.get(OutboxEmail, row_id)
+            assert fetched.event_id == event_id_saved
+            assert fetched.change_type == "field_edit"
+            assert fetched.change_value == '{"name":["A","B"]}'
+            assert fetched.send_after is not None

@@ -476,3 +476,57 @@ class TestNotificationTestRoute:
         )
         assert resp.status_code == 200
         assert b"akci" in resp.data
+
+
+# ── Phase 1 (#268) — Delay tier settings + admin page block ──────────────────
+
+
+class TestNotificationDelayTierDefaults:
+    """AC-4 / AC-5: AppSettings delay tier columns have the expected defaults."""
+
+    def test_delay_tier_defaults(self, app):
+        with app.app_context():
+            settings = get_settings()
+            assert settings.notify_delay_under_24h_min == 5
+            assert settings.notify_delay_1_7_days_min == 60
+            assert settings.notify_delay_1_4_weeks_min == 360
+            assert settings.notify_delay_over_month_min == 1440
+
+
+class TestNotificationsDelayCard:
+    """AC-6 / AC-7 / AC-8 / AC-9: admin page renders the read-only delay card."""
+
+    def test_card_header_present(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        assert resp.status_code == 200
+        assert "Zpoždění notifikací".encode() in resp.data
+
+    def test_all_tier_labels_present(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        assert b"Do 24 hodin do akce" in resp.data
+        assert "1\u20137 dní do akce".encode() in resp.data
+        assert "1\u20134 týdny do akce".encode() in resp.data
+        assert "Více než měsíc do akce".encode() in resp.data
+
+    def test_human_friendly_values_present(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        body = resp.data.decode()
+        assert "5 min" in body
+        assert "1 h" in body
+        assert "6 h" in body
+        assert "24 h" in body
+
+    def test_card_has_no_form_controls(self, admin_client):
+        """The delay card must be read-only: no input, select, or submit button."""
+        resp = admin_client.get("/admin/notifications/")
+        body = resp.data.decode()
+        # Locate the card by its header text and inspect the slice up to the
+        # next card boundary (the toggle form that follows).
+        card_start = body.find("Zpoždění notifikací")
+        form_start = body.find("<form method", card_start)
+        assert card_start != -1
+        assert form_start != -1
+        delay_card_html = body[card_start:form_start]
+        assert "<input" not in delay_card_html
+        assert "<select" not in delay_card_html
+        assert '<button type="submit"' not in delay_card_html
