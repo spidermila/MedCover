@@ -29,9 +29,10 @@ When adding a new send_* function:
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
+import sqlalchemy as sa
 from flask import g, render_template
 
 from app.extensions import db
@@ -40,6 +41,7 @@ from app.models.outbox import OutboxEmail
 if TYPE_CHECKING:
     from app.models.assignment import Assignment
     from app.models.event import Event
+    from app.models.settings import AppSettings
     from app.models.user import UserAccount
 
 log = logging.getLogger(__name__)
@@ -50,6 +52,35 @@ log = logging.getLogger(__name__)
 _INSTANCE_ID: str = os.environ.get("INSTANCE_ID", "")
 
 _PLAIN_FALLBACK = "Tento e-mail obsahuje formátovaný obsah. Otevřete jej v e-mailovém klientovi s podporou HTML."
+
+# ── Notification-delay tier boundaries (issue #268) ──────────────────────────
+# Boundary semantics (REQUIREMENTS FR-4):
+#   delta < 24h                → tier 1 (past events fall here — delta <= 0)
+#   24h <= delta < 7d          → tier 2
+#   7d  <= delta < 28d         → tier 3
+#   delta >= 28d               → tier 4
+_TIER_1_UPPER: timedelta = timedelta(hours=24)
+_TIER_2_UPPER: timedelta = timedelta(days=7)
+_TIER_3_UPPER: timedelta = timedelta(days=28)
+
+
+def _compute_send_after(event_start: datetime, now: datetime, settings: AppSettings) -> datetime:
+    """Return the future UTC datetime at which a notification for an event
+    starting at *event_start* should be sent, given the tier delays in *settings*.
+
+    *event_start* and *now* must both be tz-aware UTC (``tzinfo=timezone.utc``).
+    """
+    delta = event_start - now
+    if delta < _TIER_1_UPPER:
+        minutes = settings.notify_delay_under_24h_min
+    elif delta < _TIER_2_UPPER:
+        minutes = settings.notify_delay_1_7_days_min
+    elif delta < _TIER_3_UPPER:
+        minutes = settings.notify_delay_1_4_weeks_min
+    else:
+        minutes = settings.notify_delay_over_month_min
+    return now + timedelta(minutes=minutes)
+
 
 # ---------------------------------------------------------------------------
 # Notification catalog — single source of truth (AD17)
@@ -292,6 +323,110 @@ def _enqueue(
         log.warning("Failed to enqueue mail to %s — %s", to, exc)
 
 
+def enqueue_deferred(
+    user: UserAccount,
+    event: Event,
+    notification_type: str,
+    subject: str,
+    body: str,
+    html_body: str | None = None,
+    change_type: str | None = None,
+    change_value: str | None = None,
+) -> datetime | None:
+    """Insert or update a pending OutboxEmail row for the deferred/batched
+    event-notification pipeline (issue #268).
+
+    Lookup key: (user_id, event_id, notification_type, status='pending').
+    On lookup hit: overwrites rendered content and takes ``min(existing,
+    computed)`` on ``send_after`` (immediate — NULL — always wins over any
+    future timestamp per FR-8).
+
+    On lookup miss: inserts a new row with ``send_after`` computed from
+    proximity tier settings, or ``NULL`` if the request-scoped
+    ``g._test_notification_immediate`` flag is set.
+
+    Notification-gate checks must have been evaluated by the caller (FR-3).
+
+    Returns the row's final ``send_after`` value (may be ``None``).
+    """
+    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
+
+    # Recipient override (FR-2 / FR-9).
+    override = getattr(g, "_test_notification_email", None)
+    to_email = override or user.email
+
+    # Immediate-bypass flag (FR-6). Tolerates "outside request context".
+    try:
+        immediate = bool(getattr(g, "_test_notification_immediate", False))
+    except RuntimeError:
+        immediate = False
+
+    computed_send_after: datetime | None
+    if immediate:
+        computed_send_after = None
+    else:
+        now_utc = datetime.now(timezone.utc)
+        computed_send_after = _compute_send_after(event.start_datetime, now_utc, get_settings())
+
+    try:
+        lookup = (
+            db.select(OutboxEmail)
+            .where(
+                OutboxEmail.user_id == user.id,
+                OutboxEmail.event_id == event.id,
+                OutboxEmail.notification_type == notification_type,
+                OutboxEmail.status == "pending",
+            )
+            .limit(1)
+            .with_hint(OutboxEmail, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+        )
+        existing = db.session.scalars(lookup).first()
+
+        if existing is not None:
+            # FR-8 — merge send_after: immediate wins; else min().
+            if existing.send_after is None:
+                merged_send_after: datetime | None = None
+            elif computed_send_after is None:
+                merged_send_after = None
+            else:
+                merged_send_after = min(existing.send_after, computed_send_after)
+            existing.send_after = merged_send_after
+            existing.to_email = to_email
+            existing.subject = subject
+            existing.body = body
+            existing.html_body = html_body
+            existing.change_type = change_type
+            existing.change_value = change_value
+            db.session.flush()
+            return existing.send_after
+
+        row = OutboxEmail(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            html_body=html_body,
+            notification_type=notification_type,
+            user_id=user.id,
+            event_id=event.id,
+            change_type=change_type,
+            change_value=change_value,
+            send_after=computed_send_after,
+            instance_name=_INSTANCE_ID or None,
+        )
+        db.session.add(row)
+        db.session.flush()
+        return computed_send_after
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Failed to enqueue_deferred (user_id=%s event_id=%s type=%s) — %s",
+            getattr(user, "id", None),
+            getattr(event, "id", None),
+            notification_type,
+            exc,
+        )
+        return None
+
+
 def _guarded_send(
     setting: str,
     notif_type: str,
@@ -321,27 +456,45 @@ def _guarded_send(
 
 def send_assignment_confirmed(user: UserAccount, event: Event) -> None:
     """Notify a user that their spot assignment was confirmed."""
-    _guarded_send(
-        "notify_assignment",
-        "assignment",
-        user,
-        f"MedCover — Přihlášení na akci: {event.name}",
+    if not _is_notify_enabled("notify_assignment"):
+        return
+    if not user_can_receive_notification(user, "assignment"):
+        return
+    html = render_template(
         "email/assignment_confirmed.html",
-        "assignment_confirmed",
+        user_name=user.name,
         event=event,
+        **_base_context(),
+    )
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="assignment_confirmed",
+        subject=f"MedCover — Přihlášení na akci: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
     )
 
 
 def send_assignment_released(user: UserAccount, event: Event) -> None:
     """Notify a user that their assignment was released (by themselves or coordinator)."""
-    _guarded_send(
-        "notify_assignment",
-        "assignment",
-        user,
-        f"MedCover — Odhlášení z akce: {event.name}",
+    if not _is_notify_enabled("notify_assignment"):
+        return
+    if not user_can_receive_notification(user, "assignment"):
+        return
+    html = render_template(
         "email/assignment_released.html",
-        "assignment_released",
+        user_name=user.name,
         event=event,
+        **_base_context(),
+    )
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="assignment_released",
+        subject=f"MedCover — Odhlášení z akce: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
     )
 
 
@@ -350,40 +503,67 @@ def send_assignment_released(user: UserAccount, event: Event) -> None:
 
 def send_event_published(user: UserAccount, event: Event) -> None:
     """Notify a user that an event they might be interested in was published."""
-    _guarded_send(
-        "notify_event_published",
-        "event_published",
-        user,
-        f"MedCover — Nová akce: {event.name}",
+    if not _is_notify_enabled("notify_event_published"):
+        return
+    if not user_can_receive_notification(user, "event_published"):
+        return
+    html = render_template(
         "email/event_published.html",
-        "event_published",
+        user_name=user.name,
         event=event,
+        **_base_context(),
+    )
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="event_published",
+        subject=f"MedCover — Nová akce: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
     )
 
 
 def send_assignments_opened(user: UserAccount, event: Event) -> None:
     """Notify a user that assignments opened for an event."""
-    _guarded_send(
-        "notify_assignments_opened",
-        "assignments_opened",
-        user,
-        f"MedCover — Otevřeny přihlášky: {event.name}",
+    if not _is_notify_enabled("notify_assignments_opened"):
+        return
+    if not user_can_receive_notification(user, "assignments_opened"):
+        return
+    html = render_template(
         "email/assignments_opened.html",
-        "assignments_opened",
+        user_name=user.name,
         event=event,
+        **_base_context(),
+    )
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="assignments_opened",
+        subject=f"MedCover — Otevřeny přihlášky: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
     )
 
 
 def send_event_cancelled(user: UserAccount, event: Event) -> None:
     """Notify an assigned user that an event was cancelled."""
-    _guarded_send(
-        "notify_event_cancelled",
-        "event_cancelled",
-        user,
-        f"MedCover — Akce zrušena: {event.name}",
+    if not _is_notify_enabled("notify_event_cancelled"):
+        return
+    if not user_can_receive_notification(user, "event_cancelled"):
+        return
+    html = render_template(
         "email/event_cancelled.html",
-        "event_cancelled",
+        user_name=user.name,
         event=event,
+        **_base_context(),
+    )
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="event_cancelled",
+        subject=f"MedCover — Akce zrušena: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
     )
 
 
@@ -455,12 +635,13 @@ def send_event_changed(
         changes=formatted,
         **_base_context(),
     )
-    _enqueue(
-        user.email,
-        f"MedCover — Změna akce: {event.name}",
-        _PLAIN_FALLBACK,
-        html_body=html_body,
+    enqueue_deferred(
+        user=user,
+        event=event,
         notification_type="event_changed",
+        subject=f"MedCover — Změna akce: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html_body,
     )
 
 
@@ -473,16 +654,25 @@ def send_unfilled_spots_reminder(
     unfilled: list,
 ) -> None:
     """Remind coordinator/RP that an event still has unfilled spots."""
-    _guarded_send(
-        "notify_unfilled_reminder",
-        "unfilled_reminder",
-        user,
-        f"MedCover — Připomínka: volná místa na akci {event.name}",
+    if not _is_notify_enabled("notify_unfilled_reminder"):
+        return
+    if not user_can_receive_notification(user, "unfilled_reminder"):
+        return
+    html = render_template(
         "email/unfilled_spots_reminder.html",
-        "unfilled_reminder",
+        user_name=user.name,
         coordinator_name=user.name,
         event=event,
         unfilled=unfilled,
+        **_base_context(),
+    )
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="unfilled_reminder",
+        subject=f"MedCover — Připomínka: volná místa na akci {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
     )
 
 
@@ -534,11 +724,16 @@ def drain_one_outbox_email() -> bool:
 
     from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
 
+    _now_utc = datetime.now(timezone.utc)
     query = (
         db.select(OutboxEmail)
         .where(
             OutboxEmail.status == "pending",
             OutboxEmail.retry_count < OutboxEmail.MAX_RETRIES,
+            sa.or_(
+                OutboxEmail.send_after.is_(None),
+                OutboxEmail.send_after <= _now_utc,
+            ),
         )
         .order_by(OutboxEmail.created_at.asc())
         .limit(1)
@@ -623,12 +818,13 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
         debriefing_url=debriefing_url,
         **_base_context(),
     )
-    _enqueue(
-        user.email,
-        f"MedCover — Výjezdová zpráva: {event.name}",
-        _PLAIN_FALLBACK,
-        html_body=html,
+    enqueue_deferred(
+        user=user,
+        event=event,
         notification_type="debriefing_invitation",
+        subject=f"MedCover — Výjezdová zpráva: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
     )
 
 

@@ -789,3 +789,59 @@ class TestDelayTierSave:
         assert "alespoň 1 minuta".encode() in resp.data
         with app.app_context():
             assert get_settings().notify_delay_under_24h_min == before_val
+
+
+# ── Phase 3 (#268) — "Odeslat okamžitě" checkbox ────────────────────────────
+
+
+class TestTestNotificationImmediate:
+    """AC-17 / AC-18 / AC-19: send_immediately checkbox + flash message."""
+
+    def test_checkbox_present_default_unchecked(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        body = resp.data.decode("utf-8")
+        assert 'name="send_immediately"' in body
+        assert "Odeslat okamžitě (přeskočit zpoždění)" in body
+        # Must not be pre-checked by default
+        assert 'id="test_send_immediately" checked' not in body
+        assert 'name="send_immediately" value="1" checked' not in body
+
+    def test_post_without_immediate_creates_deferred_row(self, app, admin_client):
+        event_id = _make_event_for_test(app)
+        resp = admin_client.post(
+            "/admin/notifications/test/assignment_confirmed",
+            data={"test_email": "deferred@test.cz", "test_event_id": str(event_id), "send_immediately": "0"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert "zařazeno do fronty" in body
+        with app.app_context():
+            row = db.session.scalar(
+                db.select(OutboxEmail)
+                .where(OutboxEmail.to_email == "deferred@test.cz")
+                .order_by(OutboxEmail.id.desc())
+                .limit(1)
+            )
+            assert row is not None
+            assert row.send_after is not None
+
+    def test_post_with_immediate_creates_null_send_after(self, app, admin_client):
+        event_id = _make_event_for_test(app)
+        resp = admin_client.post(
+            "/admin/notifications/test/assignment_confirmed",
+            data={"test_email": "immediate@test.cz", "test_event_id": str(event_id), "send_immediately": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert "okamžitě" in body
+        with app.app_context():
+            row = db.session.scalar(
+                db.select(OutboxEmail)
+                .where(OutboxEmail.to_email == "immediate@test.cz")
+                .order_by(OutboxEmail.id.desc())
+                .limit(1)
+            )
+            assert row is not None
+            assert row.send_after is None
