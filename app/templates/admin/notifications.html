@@ -29,44 +29,62 @@
 
 <div class="card mb-4">
   <div class="card-header fw-semibold">Zpoždění notifikací</div>
-  <div class="card-body pb-2">
-    <p class="text-muted small mb-2">
-      Aktuální hodnoty zpoždění pro e-mailová oznámení související s akcemi.
-      Zpoždění je zvoleno podle toho, jak daleko je akce v čase. Úprava hodnot
-      bude dostupná v následující verzi.
-    </p>
-    <table class="table table-sm mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Kdy začíná akce</th>
-          <th class="text-end">Hodnota</th>
-          <th class="text-end">Doba zpoždění</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Do 24 hodin do akce</td>
-          <td class="text-end font-monospace">{{ settings.notify_delay_under_24h_min }} min</td>
-          <td class="text-end">{{ minutes_to_human(settings.notify_delay_under_24h_min) }}</td>
-        </tr>
-        <tr>
-          <td>1–7 dní do akce</td>
-          <td class="text-end font-monospace">{{ settings.notify_delay_1_7_days_min }} min</td>
-          <td class="text-end">{{ minutes_to_human(settings.notify_delay_1_7_days_min) }}</td>
-        </tr>
-        <tr>
-          <td>1–4 týdny do akce</td>
-          <td class="text-end font-monospace">{{ settings.notify_delay_1_4_weeks_min }} min</td>
-          <td class="text-end">{{ minutes_to_human(settings.notify_delay_1_4_weeks_min) }}</td>
-        </tr>
-        <tr>
-          <td>Více než měsíc do akce</td>
-          <td class="text-end font-monospace">{{ settings.notify_delay_over_month_min }} min</td>
-          <td class="text-end">{{ minutes_to_human(settings.notify_delay_over_month_min) }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  <form method="POST" action="{{ url_for('notifications.save_delay_tiers') }}" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="card-body">
+      <div class="mb-3">
+        <label for="notify_delay_under_24h_min" class="form-label fw-semibold">Do 24 hodin do akce</label>
+        <div class="input-group input-group-sm" style="max-width: 18rem;">
+          <input type="number" class="form-control" id="notify_delay_under_24h_min"
+                 name="notify_delay_under_24h_min" min="1" max="20160" step="1" required
+                 value="{{ settings.notify_delay_under_24h_min }}">
+          <span class="input-group-text">min</span>
+          <span class="input-group-text text-muted">≈ {{ minutes_to_human(settings.notify_delay_under_24h_min) }}</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="notify_delay_1_7_days_min" class="form-label fw-semibold">1–7 dní do akce</label>
+        <div class="input-group input-group-sm" style="max-width: 18rem;">
+          <input type="number" class="form-control" id="notify_delay_1_7_days_min"
+                 name="notify_delay_1_7_days_min" min="1" max="20160" step="1" required
+                 value="{{ settings.notify_delay_1_7_days_min }}">
+          <span class="input-group-text">min</span>
+          <span class="input-group-text text-muted">≈ {{ minutes_to_human(settings.notify_delay_1_7_days_min) }}</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="notify_delay_1_4_weeks_min" class="form-label fw-semibold">1–4 týdny do akce</label>
+        <div class="input-group input-group-sm" style="max-width: 18rem;">
+          <input type="number" class="form-control" id="notify_delay_1_4_weeks_min"
+                 name="notify_delay_1_4_weeks_min" min="1" max="20160" step="1" required
+                 value="{{ settings.notify_delay_1_4_weeks_min }}">
+          <span class="input-group-text">min</span>
+          <span class="input-group-text text-muted">≈ {{ minutes_to_human(settings.notify_delay_1_4_weeks_min) }}</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="notify_delay_over_month_min" class="form-label fw-semibold">Více než měsíc do akce</label>
+        <div class="input-group input-group-sm" style="max-width: 18rem;">
+          <input type="number" class="form-control" id="notify_delay_over_month_min"
+                 name="notify_delay_over_month_min" min="1" max="20160" step="1" required
+                 value="{{ settings.notify_delay_over_month_min }}">
+          <span class="input-group-text">min</span>
+          <span class="input-group-text text-muted">≈ {{ minutes_to_human(settings.notify_delay_over_month_min) }}</span>
+        </div>
+      </div>
+
+      <div class="form-text">
+        Delší odklad seskupí více změn do jednoho e-mailu, ale zpozdí doručení.
+        Doporučené hodnoty: 5 / 60 / 360 / 1440 minut.
+      </div>
+    </div>
+    <div class="card-footer d-flex gap-2">
+      <button type="submit" class="btn btn-primary btn-sm">Uložit zpoždění</button>
+    </div>
+  </form>
 </div>
 
 {# ── Toggle controls ────────────────────────────────────────────────────────── #}

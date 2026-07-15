@@ -17,6 +17,23 @@ from app.utils import audit, diff_changes, require_permission
 
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/admin/notifications")
 
+_DELAY_TIER_FIELDS: list[str] = [
+    "notify_delay_under_24h_min",
+    "notify_delay_1_7_days_min",
+    "notify_delay_1_4_weeks_min",
+    "notify_delay_over_month_min",
+]
+
+_DELAY_TIER_LABELS_CS: dict[str, str] = {
+    "notify_delay_under_24h_min": "Do 24 hodin do akce",
+    "notify_delay_1_7_days_min": "1\u20137 dn\u00ed do akce",
+    "notify_delay_1_4_weeks_min": "1\u20134 t\u00fddny do akce",
+    "notify_delay_over_month_min": "V\u00edce ne\u017e m\u011bs\u00edc do akce",
+}
+
+_DELAY_TIER_MIN: int = 1
+_DELAY_TIER_MAX: int = 20160
+
 
 def _build_toggle_groups(catalog: list[dict]) -> list[dict]:
     """Group catalog entries by settings_field for the toggle UI.
@@ -70,6 +87,64 @@ def index() -> str | Response:
         settings=settings,
         recent_events=_recent_events(),
     )
+
+
+@notifications_bp.route("/delay-tiers", methods=["POST"])
+@login_required
+def save_delay_tiers() -> Response:
+    require_permission("admin.manage_settings")
+    settings = get_settings()
+
+    parsed: dict[str, int] = {}
+    for field in _DELAY_TIER_FIELDS:
+        label = _DELAY_TIER_LABELS_CS[field]
+        raw = request.form.get(field, "").strip()
+
+        if not raw:
+            flash(f'Hodnota pro \u201e{label}" nesm\u00ed b\u00fdt pr\u00e1zdn\u00e1.', "warning")
+            return redirect(url_for("notifications.index"))
+
+        try:
+            value = int(raw)
+        except ValueError:
+            flash(
+                f'Hodnota pro \u201e{label}" mus\u00ed b\u00fdt cel\u00e9 \u010d\u00edslo (zad\u00e1no: \u201e{raw}").',
+                "warning",
+            )
+            return redirect(url_for("notifications.index"))
+
+        if value < _DELAY_TIER_MIN:
+            flash(
+                f'Hodnota pro \u201e{label}" mus\u00ed b\u00fdt alespo\u0148 1 minuta (zad\u00e1no: {value}).',
+                "warning",
+            )
+            return redirect(url_for("notifications.index"))
+
+        if value > _DELAY_TIER_MAX:
+            flash(
+                f'Hodnota pro \u201e{label}" nesm\u00ed p\u0159ekro\u010dit 20 160 minut (zad\u00e1no: {value}).',
+                "warning",
+            )
+            return redirect(url_for("notifications.index"))
+
+        parsed[field] = value
+
+    before = {f: getattr(settings, f) for f in _DELAY_TIER_FIELDS}
+    for field in _DELAY_TIER_FIELDS:
+        setattr(settings, field, parsed[field])
+    after = {f: getattr(settings, f) for f in _DELAY_TIER_FIELDS}
+
+    audit(
+        "edit",
+        "AppSettings",
+        1,
+        "Nastaven\u00ed zpo\u017ed\u011bn\u00ed notifikac\u00ed bylo upraveno.",
+        diff_changes(before, after),
+    )
+    db.session.commit()
+
+    flash("Nastaven\u00ed zpo\u017ed\u011bn\u00ed notifikac\u00ed bylo ulo\u017eeno.", "success")
+    return redirect(url_for("notifications.index"))
 
 
 def _recent_events() -> list[Event]:
