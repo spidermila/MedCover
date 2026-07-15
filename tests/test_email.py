@@ -9,7 +9,7 @@ Strategy:
     function transitions rows through pending → sent / failed correctly.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -17,10 +17,13 @@ from click.testing import CliRunner
 from app.extensions import db
 from app.mail import (
     drain_one_outbox_email,
+    enqueue_deferred,
+    send_admin_digest,
     send_assignment_confirmed,
     send_assignment_released,
     send_assignments_opened,
     send_event_cancelled,
+    send_event_changed,
     send_event_published,
     send_unfilled_spots_reminder,
 )
@@ -577,3 +580,299 @@ class TestOutboxEmailPhase1Columns:
             assert fetched.change_type == "field_edit"
             assert fetched.change_value == '{"name":["A","B"]}'
             assert fetched.send_after is not None
+
+
+# ── Phase 3 (#268) — non-event helper columns null ───────────────────────────
+
+
+class TestNonEventHelperNullColumns:
+    """AC-14: non-event send_* helpers produce rows with send_after/user_id/event_id all NULL."""
+
+    def test_non_event_helper_has_null_batching_columns(self, app):
+        with app.app_context():
+            send_admin_digest("admin@test.cz", "Digest", "<p>body</p>")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "admin_digest"))
+            assert row is not None
+            assert row.send_after is None
+            assert row.user_id is None
+            assert row.event_id is None
+
+
+# ── Phase 3 (#268) — enqueue_deferred helper ─────────────────────────────────
+
+
+def _make_ed_event(delta_hours: float | None = None) -> tuple[UserAccount, Event]:
+    """Create a member user + event inside the current app context."""
+    me = MasterEvent(name="ED-ME")
+    db.session.add(me)
+    db.session.flush()
+    role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
+    user = UserAccount(email="ed_user@test.cz", name="ED User", is_active=True)
+    user.set_password("x")
+    user.roles = [role]
+    db.session.add(user)
+    db.session.flush()
+    if delta_hours is None:
+        start = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    else:
+        start = datetime.now(timezone.utc) + timedelta(hours=delta_hours)
+    event = Event(
+        name="ED Event",
+        master_event_id=me.id,
+        start_datetime=start,
+        end_datetime=start + timedelta(hours=2),
+    )
+    db.session.add(event)
+    db.session.flush()
+    return user, event
+
+
+class TestEnqueueDeferred:
+    """Phase 3 (#268) — enqueue_deferred tier logic, upsert, and immediate bypass."""
+
+    def test_tier1_delta_12h_yields_5min(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=12)
+            enqueue_deferred(user, event, "assignment_confirmed", "Subj", "body")
+            db.session.commit()
+            row = db.session.scalar(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "assignment_confirmed")
+            )
+            assert row is not None
+            assert row.send_after is not None
+            expected = datetime.now(timezone.utc) + timedelta(minutes=5)
+            assert abs((row.send_after - expected).total_seconds()) < 10
+
+    def test_tier2_delta_3d_yields_60min(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            enqueue_deferred(user, event, "event_published", "Subj", "body")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_published"))
+            assert row is not None
+            assert row.send_after is not None
+            expected = datetime.now(timezone.utc) + timedelta(minutes=60)
+            assert abs((row.send_after - expected).total_seconds()) < 10
+
+    def test_tier3_delta_14d_yields_360min(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=14 * 24)
+            enqueue_deferred(user, event, "event_changed", "Subj", "body")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            assert row is not None
+            assert row.send_after is not None
+            expected = datetime.now(timezone.utc) + timedelta(minutes=360)
+            assert abs((row.send_after - expected).total_seconds()) < 10
+
+    def test_tier4_delta_60d_yields_1440min(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=60 * 24)
+            enqueue_deferred(user, event, "event_cancelled", "Subj", "body")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_cancelled"))
+            assert row is not None
+            assert row.send_after is not None
+            expected = datetime.now(timezone.utc) + timedelta(minutes=1440)
+            assert abs((row.send_after - expected).total_seconds()) < 10
+
+    def test_past_event_uses_tier1(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=-1)
+            enqueue_deferred(user, event, "assignment_released", "Subj", "body")
+            db.session.commit()
+            row = db.session.scalar(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "assignment_released")
+            )
+            assert row is not None
+            assert row.send_after is not None
+            expected = datetime.now(timezone.utc) + timedelta(minutes=5)
+            assert abs((row.send_after - expected).total_seconds()) < 10
+
+    def test_immediate_flag_yields_null_send_after(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=12)
+            with app.test_request_context("/"):
+                from flask import g as flask_g  # pylint: disable=import-outside-toplevel
+
+                flask_g._test_notification_immediate = True
+                enqueue_deferred(user, event, "assignment_confirmed", "Subj", "body")
+            db.session.commit()
+            row = db.session.scalar(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "assignment_confirmed")
+            )
+            assert row is not None
+            assert row.send_after is None
+
+    def test_second_call_later_send_after_keeps_earlier(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)  # tier 2 → 60 min
+            enqueue_deferred(user, event, "event_changed", "Subj v1", "body")
+            db.session.flush()
+            # Second call with far-future event → tier 4 (1440 min) — later; must keep first
+            event.start_datetime = datetime.now(timezone.utc) + timedelta(days=60)
+            enqueue_deferred(user, event, "event_changed", "Subj v2", "body")
+            db.session.commit()
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed")
+            ).all()
+            assert len(rows) == 1
+            expected = datetime.now(timezone.utc) + timedelta(minutes=60)
+            assert abs((rows[0].send_after - expected).total_seconds()) < 10
+
+    def test_second_call_earlier_send_after_replaces_later(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=60 * 24)  # tier 4 → 1440 min
+            enqueue_deferred(user, event, "event_changed", "Subj v1", "body")
+            db.session.flush()
+            # Second call with near event → tier 1 (5 min) — earlier; must replace
+            event.start_datetime = datetime.now(timezone.utc) + timedelta(hours=12)
+            enqueue_deferred(user, event, "event_changed", "Subj v2", "body")
+            db.session.commit()
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed")
+            ).all()
+            assert len(rows) == 1
+            expected = datetime.now(timezone.utc) + timedelta(minutes=5)
+            assert abs((rows[0].send_after - expected).total_seconds()) < 10
+
+    def test_existing_null_send_after_stays_null(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=12)
+            with app.test_request_context("/"):
+                from flask import g as flask_g  # pylint: disable=import-outside-toplevel
+
+                flask_g._test_notification_immediate = True
+                enqueue_deferred(user, event, "event_changed", "Subj v1", "body")
+            db.session.flush()
+            # Second call without immediate flag — must NOT overwrite NULL
+            enqueue_deferred(user, event, "event_changed", "Subj v2", "body")
+            db.session.commit()
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed")
+            ).all()
+            assert len(rows) == 1
+            assert rows[0].send_after is None
+
+    def test_two_calls_same_triple_single_row(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/1")
+            db.session.flush()
+            send_event_changed(user, event, {"name": ["B", "C"]}, event_url="http://x/1")
+            db.session.commit()
+            count = db.session.scalar(
+                db.select(db.func.count(OutboxEmail.id)).where(
+                    OutboxEmail.notification_type == "event_changed",
+                    OutboxEmail.status == "pending",
+                )
+            )
+            assert count == 1
+
+    def test_two_users_two_rows(self, app):
+        with app.app_context():
+            user1, event = _make_ed_event(delta_hours=72)
+            role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
+            user2 = UserAccount(email="ed_user2@test.cz", name="ED User 2", is_active=True)
+            user2.set_password("x")
+            user2.roles = [role]
+            db.session.add(user2)
+            db.session.flush()
+            enqueue_deferred(user1, event, "event_changed", "Subj", "body")
+            enqueue_deferred(user2, event, "event_changed", "Subj", "body")
+            db.session.commit()
+            count = db.session.scalar(
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
+            )
+            assert count == 2
+
+    def test_two_events_two_rows(self, app):
+        with app.app_context():
+            user, event1 = _make_ed_event(delta_hours=72)
+            me2 = MasterEvent(name="ED-ME2")
+            db.session.add(me2)
+            db.session.flush()
+            start2 = datetime.now(timezone.utc) + timedelta(hours=72)
+            event2 = Event(
+                name="ED Event 2",
+                master_event_id=me2.id,
+                start_datetime=start2,
+                end_datetime=start2 + timedelta(hours=2),
+            )
+            db.session.add(event2)
+            db.session.flush()
+            enqueue_deferred(user, event1, "event_changed", "Subj", "body")
+            enqueue_deferred(user, event2, "event_changed", "Subj", "body")
+            db.session.commit()
+            count = db.session.scalar(
+                db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
+            )
+            assert count == 2
+
+    def test_html_body_overwritten_on_update(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            enqueue_deferred(user, event, "event_changed", "Subj", "body", html_body="<p>v1</p>")
+            db.session.flush()
+            enqueue_deferred(user, event, "event_changed", "Subj", "body", html_body="<p>v2</p>")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            assert row is not None
+            assert row.html_body == "<p>v2</p>"
+
+    def test_gate_off_no_row_created(self, app):
+        with app.app_context():
+            settings = get_settings()
+            settings.notify_assignment = False
+            db.session.commit()
+
+            user, event = _make_ed_event(delta_hours=12)
+            send_assignment_confirmed(user, event)
+            db.session.commit()
+            count = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+            assert count == 0
+
+
+# ── Phase 3 (#268) — drain send_after filter ─────────────────────────────────
+
+
+class TestDrainSendAfterFilter:
+    """AC-11 / AC-12 / AC-13: rows with future send_after are held; past/null are sent."""
+
+    def _seed(self, app, send_after: datetime | None) -> int:
+        with app.app_context():
+            row = OutboxEmail(to_email="d@test.cz", subject="S", body="B", send_after=send_after)
+            db.session.add(row)
+            db.session.commit()
+            return row.id
+
+    def test_drain_null_send_after_is_sent(self, app):
+        row_id = self._seed(app, send_after=None)
+        with app.app_context():
+            with patch("flask_mail.Mail.send"):
+                drain_one_outbox_email()
+        with app.app_context():
+            row = db.session.get(OutboxEmail, row_id)
+            assert row.status == "sent"
+
+    def test_drain_future_send_after_is_skipped(self, app):
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
+        row_id = self._seed(app, send_after=future)
+        with app.app_context():
+            with patch("flask_mail.Mail.send") as mock_send:
+                drain_one_outbox_email()
+        mock_send.assert_not_called()
+        with app.app_context():
+            row = db.session.get(OutboxEmail, row_id)
+            assert row.status == "pending"
+
+    def test_drain_past_send_after_is_sent(self, app):
+        past = datetime.now(timezone.utc) - timedelta(minutes=1)
+        row_id = self._seed(app, send_after=past)
+        with app.app_context():
+            with patch("flask_mail.Mail.send"):
+                drain_one_outbox_email()
+        with app.app_context():
+            row = db.session.get(OutboxEmail, row_id)
+            assert row.status == "sent"

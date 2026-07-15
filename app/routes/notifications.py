@@ -12,8 +12,9 @@ from flask_login import current_user, login_required
 from app.extensions import db
 from app.mail import NOTIFICATION_CATALOG
 from app.models.event import Event
+from app.models.outbox import OutboxEmail
 from app.models.settings import get_settings
-from app.utils import audit, diff_changes, require_permission
+from app.utils import audit, diff_changes, get_app_tz, require_permission
 
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/admin/notifications")
 
@@ -191,8 +192,13 @@ def test_notification(code: str) -> Response:
     import app.mail as mailer  # pylint: disable=import-outside-toplevel
     from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
+    send_immediately_raw = request.form.get("send_immediately", "0")
+    send_immediately = send_immediately_raw == "1"
+
     # Temporarily override the outbox recipient for this request.
     g._test_notification_email = test_email
+    if send_immediately:
+        g._test_notification_immediate = True
 
     try:
         if code == "assignment_confirmed":
@@ -230,7 +236,29 @@ def test_notification(code: str) -> Response:
                 return redirect(url_for("notifications.index"))
             mailer.send_debriefing_invitation(fake_assignment, event)
         db.session.commit()
-        flash(f"Zkušební oznámení ({code}) zařazeno do fronty pro {test_email}.", "success")
+
+        latest = db.session.scalar(
+            db.select(OutboxEmail)
+            .where(
+                OutboxEmail.to_email == test_email,
+                OutboxEmail.notification_type == code,
+                OutboxEmail.status == "pending",
+            )
+            .order_by(OutboxEmail.created_at.desc())
+            .limit(1)
+        )
+        if latest is not None and latest.send_after is not None:
+            local = latest.send_after.astimezone(get_app_tz())
+            flash(
+                f"Zkušební oznámení ({code}) zařazeno do fronty pro {test_email} "
+                f"(odloženo do {local.strftime('%d.%m.%Y %H:%M')}).",
+                "success",
+            )
+        else:
+            flash(
+                f"Zkušební oznámení ({code}) bude odesláno okamžitě na {test_email}.",
+                "success",
+            )
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         flash(f"Zkušební oznámení se nepodařilo odeslat: {exc}", "danger")
