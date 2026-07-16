@@ -202,9 +202,9 @@ def test_notification(code: str) -> Response:
 
     try:
         if code == "assignment_confirmed":
-            mailer.send_assignment_confirmed(current_user, event)
+            mailer.send_assignment_confirmed(current_user, event, spot_description="Testovací pozice")
         elif code == "assignment_released":
-            mailer.send_assignment_released(current_user, event)
+            mailer.send_assignment_released(current_user, event, spot_description="Testovací pozice")
         elif code == "event_published":
             mailer.send_event_published(current_user, event)
         elif code == "assignments_opened":

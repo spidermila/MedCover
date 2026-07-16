@@ -185,7 +185,7 @@ def do_assign_user(
         db.session.rollback()
         return AssignResult(ok=False, error="Tato pozice byla právě obsazena někým jiným.", event=event)
 
-    mailer.send_assignment_confirmed(user, event)
+    mailer.send_assignment_confirmed(user, event, spot_description=spot.description or "")
     return AssignResult(ok=True, assignment=spot.assignment, event=event, user=user)
 
 
@@ -225,7 +225,7 @@ def do_unassign_user(
 
     db.session.commit()
 
-    mailer.send_assignment_released(user, event)
+    mailer.send_assignment_released(user, event, spot_description=assignment.spot.description or "")
     return AssignResult(ok=True, event=event, user=user)
 
 

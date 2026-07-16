@@ -40,22 +40,26 @@ def _logged_task(name: str, fn: Callable[[], None]) -> Callable[[], None]:
 
 
 def process_email_queue() -> None:
-    """Drain the outbox_email queue one message at a time.
+    """Drain the outbox_email queue.
 
-    Called every MAIL_QUEUE_INTERVAL_SECONDS (default 3 s).  Delegates to
-    app.mail.drain_one_outbox_email which contains the actual logic and can
-    also be called directly in tests without importing the scheduler.
+    Priority (issue #268 Phase 5):
+      1. drain_batched_outbox() — one batched email per triggering recipient.
+      2. Fall through to drain_one_outbox_email() for user_id=NULL legacy rows.
 
-    Re-applies SMTP settings from the DB on every run so changes made via
-    the admin settings page take effect without a container restart.
+    Called every MAIL_QUEUE_INTERVAL_SECONDS (default 3 s).  At most one
+    SMTP send per tick — the batched drain's early return prevents double sending.
     """
     with app.app_context():
-        from app.mail import drain_one_outbox_email  # pylint: disable=import-outside-toplevel
+        from app.mail import (  # pylint: disable=import-outside-toplevel
+            drain_batched_outbox,
+            drain_one_outbox_email,
+        )
         from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
         s = get_settings()
         s.apply_to_app(app)
-        drain_one_outbox_email()
+        if not drain_batched_outbox():
+            drain_one_outbox_email()
 
 
 def open_assignments() -> None:
