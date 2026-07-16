@@ -31,7 +31,7 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from flask import g, render_template
@@ -67,6 +67,11 @@ _TIER_3_UPPER: timedelta = timedelta(days=28)
 # Stored in outbox_email.change_type for rows whose change_value is a
 # field-level {field: [old, new]} JSON diff (issue #268 Phase 4).
 _EVENT_CHANGED_CHANGE_TYPE: str = "field_edit"
+
+# Phase 5 (#268) — change_type tokens for batched drain dispatch.
+_ASSIGNMENT_CHANGE_TYPE: str = "assignment"
+_UNFILLED_REMINDER_CHANGE_TYPE: str = "unfilled_reminder"
+_DEBRIEFING_CHANGE_TYPE: str = "debriefing"
 
 
 def _compute_send_after(event_start: datetime, now: datetime, settings: AppSettings) -> datetime:
@@ -364,7 +369,7 @@ def enqueue_deferred(
     body: str,
     html_body: str | None = None,
     change_type: str | None = None,
-    change_value: dict[str, list] | None = None,
+    change_value: dict[str, Any] | None = None,
     event_url: str = "",
 ) -> datetime | None:
     """Insert or update a pending OutboxEmail row for the deferred/batched
@@ -521,7 +526,7 @@ def _guarded_send(
 # ── Assignment notifications ──────────────────────────────────────────────────
 
 
-def send_assignment_confirmed(user: UserAccount, event: Event) -> None:
+def send_assignment_confirmed(user: UserAccount, event: Event, spot_description: str = "") -> None:
     """Notify a user that their spot assignment was confirmed."""
     if not _is_notify_enabled("notify_assignment"):
         return
@@ -540,10 +545,12 @@ def send_assignment_confirmed(user: UserAccount, event: Event) -> None:
         subject=f"MedCover — Přihlášení na akci: {event.name}",
         body=_PLAIN_FALLBACK,
         html_body=html,
+        change_type=_ASSIGNMENT_CHANGE_TYPE,
+        change_value={"action": "confirmed", "spot_description": spot_description or ""},
     )
 
 
-def send_assignment_released(user: UserAccount, event: Event) -> None:
+def send_assignment_released(user: UserAccount, event: Event, spot_description: str = "") -> None:
     """Notify a user that their assignment was released (by themselves or coordinator)."""
     if not _is_notify_enabled("notify_assignment"):
         return
@@ -562,6 +569,8 @@ def send_assignment_released(user: UserAccount, event: Event) -> None:
         subject=f"MedCover — Odhlášení z akce: {event.name}",
         body=_PLAIN_FALLBACK,
         html_body=html,
+        change_type=_ASSIGNMENT_CHANGE_TYPE,
+        change_value={"action": "released", "spot_description": spot_description or ""},
     )
 
 
@@ -762,6 +771,8 @@ def send_unfilled_spots_reminder(
         subject=f"MedCover — Připomínka: volná místa na akci {event.name}",
         body=_PLAIN_FALLBACK,
         html_body=html,
+        change_type=_UNFILLED_REMINDER_CHANGE_TYPE,
+        change_value={"unfilled_count": len(unfilled)},
     )
 
 
@@ -819,6 +830,7 @@ def drain_one_outbox_email() -> bool:
         .where(
             OutboxEmail.status == "pending",
             OutboxEmail.retry_count < OutboxEmail.MAX_RETRIES,
+            OutboxEmail.user_id.is_(None),  # Phase 5 (#268) guard — FR-16
             sa.or_(
                 OutboxEmail.send_after.is_(None),
                 OutboxEmail.send_after <= _now_utc,
@@ -914,6 +926,8 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
         subject=f"MedCover — Výjezdová zpráva: {event.name}",
         body=_PLAIN_FALLBACK,
         html_body=html,
+        change_type=_DEBRIEFING_CHANGE_TYPE,
+        change_value={"assignment_id": assignment.id},
     )
 
 
@@ -933,3 +947,289 @@ def send_account_activated(user: UserAccount) -> None:
         html_body=html_body,
         notification_type="account_activated",
     )
+
+
+# ── Batched drain (issue #268 Phase 5) ────────────────────────────────────────
+
+
+def _pick_trigger_user(now_utc: datetime) -> object:
+    """Return the user_id whose oldest qualifying matured-pending row is
+    earliest in the queue, or None if no user qualifies (FR-3)."""
+    stmt = (
+        db.select(OutboxEmail.user_id)
+        .where(
+            OutboxEmail.status == "pending",
+            OutboxEmail.user_id.is_not(None),
+            OutboxEmail.retry_count < OutboxEmail.MAX_RETRIES,
+            sa.or_(
+                OutboxEmail.send_after.is_(None),
+                OutboxEmail.send_after <= now_utc,
+            ),
+        )
+        .group_by(OutboxEmail.user_id)
+        .order_by(sa.func.min(OutboxEmail.created_at).asc())
+        .limit(1)
+    )
+    return db.session.scalars(stmt).first()
+
+
+def _load_batch_for_user(user_id: object) -> list:
+    """Load and UPDLOCK-lock all pending rows for user_id (matured + immature). FR-4, NFR-2."""
+    stmt = (
+        db.select(OutboxEmail)
+        .where(
+            OutboxEmail.status == "pending",
+            OutboxEmail.user_id == user_id,
+        )
+        .order_by(OutboxEmail.created_at.asc())
+        .with_hint(OutboxEmail, "WITH (UPDLOCK, ROWLOCK)")
+    )
+    return list(db.session.scalars(stmt).all())
+
+
+def _row_to_entry(row: OutboxEmail) -> dict:
+    """Translate one OutboxEmail row into a template entry dict.
+    Dispatches on notification_type + change_type with defensive parsing (FR-35)."""
+    ntype = row.notification_type or ""
+    ctype = row.change_type or ""
+
+    if ntype == "event_changed" and ctype == _EVENT_CHANGED_CHANGE_TYPE:
+        try:
+            payload = json.loads(row.change_value or "{}")
+        except ValueError, TypeError:
+            log.warning("Bad event_changed payload on outbox row id=%s", row.id)
+            payload = {}
+        changes = [
+            (
+                _EVENT_FIELD_LABELS.get(field, field),
+                _format_event_change_value(field, pair[0]),
+                _format_event_change_value(field, pair[1]),
+            )
+            for field, pair in payload.items()
+        ]
+        return {"type": "event_changed", "changes": changes}
+
+    if ntype in ("assignment_confirmed", "assignment_released"):
+        try:
+            payload = json.loads(row.change_value or "{}")
+        except ValueError, TypeError:
+            log.warning("Missing/bad change_value on outbox row id=%s (type=%s)", row.id, ntype)
+            payload = {}
+        spot_description = payload.get("spot_description", "") or ""
+        return {"type": ntype, "spot_description": spot_description}
+
+    if ntype in ("event_published", "assignments_opened", "event_cancelled"):
+        return {"type": ntype}
+
+    if ntype == "unfilled_reminder":
+        try:
+            payload = json.loads(row.change_value or "{}")
+        except ValueError, TypeError:
+            log.warning("Missing/bad change_value on outbox row id=%s (unfilled_reminder)", row.id)
+            payload = {}
+        try:
+            count = int(payload.get("unfilled_count", 0))
+        except ValueError, TypeError:
+            count = 0
+        return {"type": "unfilled_reminder", "unfilled_count": count}
+
+    if ntype == "debriefing_invitation":
+        try:
+            payload = json.loads(row.change_value or "{}")
+        except ValueError, TypeError:
+            log.warning("Missing/bad change_value on outbox row id=%s (debriefing_invitation)", row.id)
+            payload = {}
+        assignment_id = payload.get("assignment_id")
+        if assignment_id is None:
+            log.warning("debriefing outbox row id=%s missing assignment_id", row.id)
+            debriefing_url = ""
+        else:
+            from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
+
+            debriefing_url = external_url_for("debriefing.submit", assignment_id=int(assignment_id))
+        return {"type": "debriefing_invitation", "debriefing_url": debriefing_url}
+
+    # Fallback — pre-Phase-5 rows or unknown types: inline pre-rendered html_body.
+    log.warning(
+        "Unknown notification_type=%r change_type=%r for outbox row id=%s — using legacy html_body fallback",
+        ntype,
+        ctype,
+        row.id,
+    )
+    return {"type": "legacy", "legacy_html": row.html_body or ""}
+
+
+def _build_event_section(event: object, rows: list) -> dict:
+    """Build one event section dict for the batched email template. FR-34."""
+    from app.utils import external_url_for, get_app_tz  # pylint: disable=import-outside-toplevel
+
+    return {
+        "event_name": event.name,  # type: ignore[attr-defined]
+        "event_url": external_url_for("events.detail", event_id=event.id),  # type: ignore[attr-defined]
+        "start_datetime_local": event.start_datetime.astimezone(get_app_tz()).strftime(  # type: ignore[attr-defined]
+            "%d.%m.%Y %H:%M"
+        ),
+        "rows": [_row_to_entry(r) for r in rows],
+    }
+
+
+def _write_batch_failure_audit(
+    to_email: str,
+    subject: str,
+    error_str: str,
+    rows: list,
+) -> None:
+    """Write ONE AuditLogEntry for a batch SMTP failure (FR-12). No commit."""
+    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
+
+    try:
+        db.session.add(
+            AuditLogEntry(
+                actor_id=None,
+                action_type="email_failed",
+                entity_type="OutboxEmail",
+                entity_id=str(rows[0].id) if rows else None,
+                summary=(f"Dávkový e-mail pro {to_email} ({len(rows)} řádků)" f" se nepodařilo odeslat: {error_str}"),
+                changes_json={
+                    "to": to_email,
+                    "subject": subject,
+                    "error": error_str,
+                    "row_ids": [r.id for r in rows],
+                },
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to write batch failure audit — %s", exc)
+
+
+def drain_batched_outbox() -> bool:
+    """Send one batched email to one triggering recipient.
+
+    Returns True if any state change was made (sent, dropped, failed, skipped),
+    False only if no user qualified (queue empty of matured batched rows). FR-1..FR-13.
+    """
+    from flask_mail import Message  # pylint: disable=import-outside-toplevel
+
+    from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
+    from app.models.event import Event as _Event  # pylint: disable=import-outside-toplevel
+    from app.models.settings import get_settings as _get_settings  # pylint: disable=import-outside-toplevel
+
+    now_utc = datetime.now(timezone.utc)
+    user_id = _pick_trigger_user(now_utc)
+    if user_id is None:
+        return False
+
+    rows = _load_batch_for_user(user_id)
+
+    # FR-6 — drop rows whose event has been hard-deleted (FK set to NULL).
+    live_rows: list[OutboxEmail] = []
+    for r in rows:
+        if r.event_id is None:
+            r.status = "failed"
+            r.last_error = "event_deleted"
+        else:
+            live_rows.append(r)
+
+    if not live_rows:
+        db.session.commit()
+        log.info("drain_batched_outbox: user_id=%s had only deleted-event rows", user_id)
+        return True
+
+    # to_email frozen at enqueue time (includes any g._test_notification_email override).
+    to_email = live_rows[0].to_email
+
+    # Load recipient display name.
+    from app.models.user import UserAccount as _UserAccount  # pylint: disable=import-outside-toplevel
+
+    user_obj = db.session.get(_UserAccount, user_id)
+    user_name = user_obj.name if user_obj is not None else ""
+
+    # FR-8 — dev email block.
+    settings = _get_settings()
+    if not settings.is_email_allowed(to_email):
+        for r in live_rows:
+            r.status = "skipped"
+            r.last_error = "dev_email_block: recipient not in allowlist"
+        db.session.commit()
+        log.warning(
+            "Batch mail suppressed (dev_email_block): user_id=%s to=%s rows=%d",
+            user_id,
+            to_email,
+            len(live_rows),
+        )
+        return True
+
+    # Load Event objects — one round trip (NFR-1).
+    event_ids = sorted({r.event_id for r in live_rows if r.event_id is not None})
+    events = db.session.scalars(db.select(_Event).where(_Event.id.in_(event_ids))).all()
+    events_by_id = {e.id: e for e in events}
+
+    # Group live_rows by event_id; handle rows whose event vanished between load and now.
+    grouped: dict = {}
+    orphan_rows: list[OutboxEmail] = []
+    for r in live_rows:
+        if r.event_id in events_by_id:
+            grouped.setdefault(r.event_id, []).append(r)
+        else:
+            r.status = "failed"
+            r.last_error = "event_deleted"
+            orphan_rows.append(r)
+
+    active_rows = [r for r in live_rows if r not in orphan_rows]
+    if not active_rows:
+        db.session.commit()
+        return True
+
+    # Sort event sections by event.start_datetime ASC (FR-5, AC-29).
+    ordered_events = sorted(events_by_id.values(), key=lambda e: e.start_datetime)
+    event_sections = [_build_event_section(e, grouped[e.id]) for e in ordered_events if e.id in grouped]
+
+    # Subject line (FR-10, AC-6, AC-7).
+    if len(event_sections) == 1:
+        subject = f"MedCover — Změny v akci: {ordered_events[0].name}"
+    else:
+        subject = f"MedCover — Souhrn změn ({len(event_sections)} akcí)"
+
+    ctx = {
+        "user_name": user_name,
+        "event_sections": event_sections,
+        **_base_context(),
+    }
+    html_body = render_template("email/event_batched.html", **ctx)
+
+    try:
+        msg = Message(subject=subject, recipients=[to_email], body=_PLAIN_FALLBACK)
+        msg.html = html_body
+        if _INSTANCE_ID:
+            msg.extra_headers = {"X-MedCover-Instance": _INSTANCE_ID}
+        _mail.send(msg)
+        _now = datetime.now(timezone.utc)
+        for r in active_rows:
+            r.status = "sent"
+            r.sent_at = _now
+        db.session.commit()
+        log.info(
+            "Batch mail sent: user_id=%s to=%s events=%d rows=%d",
+            user_id,
+            to_email,
+            len(event_sections),
+            len(active_rows),
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        err = str(exc)
+        for r in active_rows:
+            r.retry_count += 1
+            r.last_error = err
+            if r.retry_count >= OutboxEmail.MAX_RETRIES:
+                r.status = "failed"
+        _write_batch_failure_audit(to_email, subject, err, active_rows)
+        db.session.commit()
+        log.warning(
+            "Batch mail failed (user_id=%s to=%s rows=%d) — %s",
+            user_id,
+            to_email,
+            len(active_rows),
+            exc,
+        )
+        return True

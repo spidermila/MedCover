@@ -19,19 +19,22 @@ from app.extensions import db
 from app.mail import (
     _EVENT_CHANGED_CHANGE_TYPE,
     _merge_event_changed_payloads,
+    drain_batched_outbox,
     drain_one_outbox_email,
     enqueue_deferred,
     send_admin_digest,
     send_assignment_confirmed,
     send_assignment_released,
     send_assignments_opened,
+    send_debriefing_invitation,
     send_event_cancelled,
     send_event_changed,
     send_event_published,
     send_unfilled_spots_reminder,
 )
+from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
-from app.models.event import Event, EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.outbox import OutboxEmail
 from app.models.role import Role
@@ -1153,3 +1156,691 @@ class TestEventChangedBodyRerender:
             assert "Původní" in row.html_body
             assert "Finální" in row.html_body
             assert "Prostřední" not in row.html_body
+
+
+# ── Phase 5 (#268) — batched drain + aggregated template ─────────────────────
+
+
+def _make_batched_row(
+    user: UserAccount,
+    event: Event,
+    notification_type: str,
+    change_type: str | None = None,
+    change_value: dict | None = None,
+    send_after: datetime | None = None,
+) -> OutboxEmail:
+    row = OutboxEmail(
+        to_email=user.email,
+        subject=f"MedCover — {notification_type}",
+        body="fallback",
+        html_body=f"<p>legacy body for {notification_type}</p>",
+        notification_type=notification_type,
+        user_id=user.id,
+        event_id=event.id,
+        change_type=change_type,
+        change_value=(
+            json.dumps(change_value, ensure_ascii=False, sort_keys=True) if change_value is not None else None
+        ),
+        send_after=send_after,
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
+
+
+class TestDrainBatchedOutbox:
+    """Phase 5 (#268) — drain_batched_outbox() behaviour: AC-1..AC-17, AC-27..AC-29."""
+
+    def test_matured_row_triggers_batch(self, app):
+        """AC-1: one matured pending row → drain sends it and returns True."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=5)
+            row = _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+            row_id = row.id
+        with app.app_context():
+            with patch("flask_mail.Mail.send") as mock_send:
+                result = drain_batched_outbox()
+        assert result is True
+        mock_send.assert_called_once()
+        with app.app_context():
+            r = db.session.get(OutboxEmail, row_id)
+            assert r.status == "sent"
+
+    def test_immature_rows_join_batch(self, app):
+        """AC-2: one matured + one immature row → both sent in one call."""
+        with app.app_context():
+            user, event1 = _make_ed_event(delta_hours=72)
+            me2 = MasterEvent(name="B5-ME2")
+            db.session.add(me2)
+            db.session.flush()
+            start2 = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
+            event2 = Event(
+                name="B5 Event 2",
+                master_event_id=me2.id,
+                start_datetime=start2,
+                end_datetime=start2 + timedelta(hours=2),
+            )
+            db.session.add(event2)
+            db.session.flush()
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            future = datetime.now(timezone.utc) + timedelta(hours=2)
+            r1 = _make_batched_row(user, event1, "event_published", send_after=past)
+            r2 = _make_batched_row(user, event2, "event_cancelled", send_after=future)
+            db.session.commit()
+            ids = (r1.id, r2.id)
+        html_captured: list[str] = []
+
+        def capture_send(msg):
+            html_captured.append(msg.html or "")
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                result = drain_batched_outbox()
+        assert result is True
+        assert len(html_captured) == 1
+        assert "B5 Event 2" in html_captured[0] or "ED Event" in html_captured[0]
+        with app.app_context():
+            for rid in ids:
+                assert db.session.get(OutboxEmail, rid).status == "sent"
+
+    def test_only_immature_no_trigger(self, app):
+        """AC-3: only immature rows → drain returns False, row stays pending."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            future = datetime.now(timezone.utc) + timedelta(hours=2)
+            row = _make_batched_row(user, event, "event_published", send_after=future)
+            db.session.commit()
+            row_id = row.id
+        with app.app_context():
+            with patch("flask_mail.Mail.send") as mock_send:
+                result = drain_batched_outbox()
+        assert result is False
+        mock_send.assert_not_called()
+        with app.app_context():
+            assert db.session.get(OutboxEmail, row_id).status == "pending"
+
+    def test_empty_queue_returns_false(self, app):
+        """AC-4: empty outbox → drain returns False."""
+        with app.app_context():
+            result = drain_batched_outbox()
+        assert result is False
+
+    def test_multiple_events_two_sections(self, app):
+        """AC-5: rows for two events → both event names in the rendered HTML."""
+        with app.app_context():
+            user, event1 = _make_ed_event(delta_hours=72)
+            event1.name = "Akce Jedna"
+            me2 = MasterEvent(name="B5-ME3")
+            db.session.add(me2)
+            db.session.flush()
+            start2 = datetime(2026, 9, 15, 9, 0, tzinfo=timezone.utc)
+            event2 = Event(
+                name="Akce Dvě",
+                master_event_id=me2.id,
+                start_datetime=start2,
+                end_datetime=start2 + timedelta(hours=2),
+            )
+            db.session.add(event2)
+            db.session.flush()
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event1, "event_cancelled", send_after=past)
+            _make_batched_row(user, event2, "event_published", send_after=past)
+            db.session.commit()
+        html_captured: list[str] = []
+
+        def capture_send(msg):
+            html_captured.append(msg.html or "")
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert len(html_captured) == 1
+        assert "Akce Jedna" in html_captured[0]
+        assert "Akce Dvě" in html_captured[0]
+
+    def test_subject_single_event(self, app):
+        """AC-6: one event section → subject includes event name."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            event.name = "Plavecký závod"
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+        msgs_captured: list = []
+
+        def capture_send(msg):
+            msgs_captured.append(msg)
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert len(msgs_captured) == 1
+        assert msgs_captured[0].subject == "MedCover — Změny v akci: Plavecký závod"
+
+    def test_subject_multiple_events(self, app):
+        """AC-7: two event sections → subject is the N-event summary format."""
+        with app.app_context():
+            user, event1 = _make_ed_event(delta_hours=72)
+            me2 = MasterEvent(name="B5-ME4")
+            db.session.add(me2)
+            db.session.flush()
+            start2 = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+            event2 = Event(
+                name="Akce B",
+                master_event_id=me2.id,
+                start_datetime=start2,
+                end_datetime=start2 + timedelta(hours=2),
+            )
+            db.session.add(event2)
+            db.session.flush()
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event1, "event_published", send_after=past)
+            _make_batched_row(user, event2, "event_cancelled", send_after=past)
+            db.session.commit()
+        msgs_captured: list = []
+
+        def capture_send(msg):
+            msgs_captured.append(msg)
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert len(msgs_captured) == 1
+        assert msgs_captured[0].subject == "MedCover — Souhrn změn (2 akcí)"
+
+    def test_event_changed_diff_table_rendered(self, app):
+        """AC-8: event_changed row with field_edit → HTML contains field label + old/new values."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(
+                user,
+                event,
+                "event_changed",
+                change_type="field_edit",
+                change_value={"name": ["Stará akce", "Nová akce"]},
+                send_after=past,
+            )
+            db.session.commit()
+        html_captured: list[str] = []
+
+        def capture_send(msg):
+            html_captured.append(msg.html or "")
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert len(html_captured) == 1
+        assert "Název akce" in html_captured[0] or "name" in html_captured[0]
+        assert "Stará akce" in html_captured[0]
+        assert "Nová akce" in html_captured[0]
+
+    def test_assignment_confirmed_spot_description(self, app):
+        """AC-9: assignment_confirmed row → HTML contains confirmation sentence with spot name."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(
+                user,
+                event,
+                "assignment_confirmed",
+                change_type="assignment",
+                change_value={"action": "confirmed", "spot_description": "Záchranář"},
+                send_after=past,
+            )
+            db.session.commit()
+        html_captured: list[str] = []
+
+        def capture_send(msg):
+            html_captured.append(msg.html or "")
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert "Záchranář" in html_captured[0]
+        assert "přihlášeni" in html_captured[0]
+
+    def test_assignment_released_spot_description(self, app):
+        """AC-10: assignment_released row → HTML contains release sentence with spot name."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(
+                user,
+                event,
+                "assignment_released",
+                change_type="assignment",
+                change_value={"action": "released", "spot_description": "Řidič"},
+                send_after=past,
+            )
+            db.session.commit()
+        html_captured: list[str] = []
+
+        def capture_send(msg):
+            html_captured.append(msg.html or "")
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert "Řidič" in html_captured[0]
+        assert "odhlášeni" in html_captured[0]
+
+    def test_unfilled_reminder_count(self, app):
+        """AC-11: unfilled_reminder row → HTML contains count and Czech word."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(
+                user,
+                event,
+                "unfilled_reminder",
+                change_type="unfilled_reminder",
+                change_value={"unfilled_count": 3},
+                send_after=past,
+            )
+            db.session.commit()
+        html_captured: list[str] = []
+
+        def capture_send(msg):
+            html_captured.append(msg.html or "")
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert "3" in html_captured[0]
+        assert "neobsazen" in html_captured[0]
+
+    def test_debriefing_invitation_link(self, app):
+        """AC-12: debriefing_invitation row → HTML contains a debriefing link."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(
+                user,
+                event,
+                "debriefing_invitation",
+                change_type="debriefing",
+                change_value={"assignment_id": 42},
+                send_after=past,
+            )
+            db.session.commit()
+        html_captured: list[str] = []
+
+        def capture_send(msg):
+            html_captured.append(msg.html or "")
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert "debriefing" in html_captured[0].lower() or "42" in html_captured[0]
+
+    def test_deleted_event_row_dropped(self, app):
+        """AC-13: row with event_id=None + live row → dead row failed, live row sent, email sent."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            dead_row = OutboxEmail(
+                to_email=user.email,
+                subject="MedCover — event_published",
+                body="fallback",
+                notification_type="event_published",
+                user_id=user.id,
+                event_id=None,
+                send_after=past,
+            )
+            db.session.add(dead_row)
+            live_row = _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+            dead_id, live_id = dead_row.id, live_row.id
+        with app.app_context():
+            with patch("flask_mail.Mail.send") as mock_send:
+                result = drain_batched_outbox()
+        assert result is True
+        mock_send.assert_called_once()
+        with app.app_context():
+            dead = db.session.get(OutboxEmail, dead_id)
+            live = db.session.get(OutboxEmail, live_id)
+            assert dead.status == "failed"
+            assert dead.last_error == "event_deleted"
+            assert live.status == "sent"
+
+    def test_deleted_event_only_no_email(self, app):
+        """AC-14: only a NULL-event row → row failed, no email sent, drain returns True."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            dead_row = OutboxEmail(
+                to_email=user.email,
+                subject="MedCover — event_published",
+                body="fallback",
+                notification_type="event_published",
+                user_id=user.id,
+                event_id=None,
+                send_after=past,
+            )
+            db.session.add(dead_row)
+            db.session.commit()
+            dead_id = dead_row.id
+        with app.app_context():
+            with patch("flask_mail.Mail.send") as mock_send:
+                result = drain_batched_outbox()
+        assert result is True
+        mock_send.assert_not_called()
+        with app.app_context():
+            assert db.session.get(OutboxEmail, dead_id).status == "failed"
+
+    def test_smtp_failure_batch_retry(self, app):
+        """AC-15: SMTP raises → both rows stay pending with retry_count=1, one AuditLogEntry."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            r1 = _make_batched_row(user, event, "event_published", send_after=past)
+            r2 = _make_batched_row(user, event, "event_cancelled", send_after=past)
+            db.session.commit()
+            ids = (r1.id, r2.id)
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=Exception("SMTP down")):
+                result = drain_batched_outbox()
+        assert result is True
+        with app.app_context():
+            for rid in ids:
+                r = db.session.get(OutboxEmail, rid)
+                assert r.status == "pending"
+                assert r.retry_count == 1
+            audit_count = db.session.scalar(
+                db.select(db.func.count(AuditLogEntry.id)).where(AuditLogEntry.action_type == "email_failed")
+            )
+            assert audit_count == 1
+
+    def test_smtp_permanent_failure_all_failed(self, app):
+        """AC-16: rows at MAX_RETRIES-1 → after SMTP failure, both status='failed', one audit."""
+        max_r = OutboxEmail.MAX_RETRIES
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            r1 = _make_batched_row(user, event, "event_published", send_after=past)
+            r2 = _make_batched_row(user, event, "event_cancelled", send_after=past)
+            r1.retry_count = max_r - 1
+            r2.retry_count = max_r - 1
+            db.session.commit()
+            ids = [r1.id, r2.id]
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=Exception("permanent")):
+                drain_batched_outbox()
+        with app.app_context():
+            for rid in ids:
+                assert db.session.get(OutboxEmail, rid).status == "failed"
+            audit = db.session.scalar(db.select(AuditLogEntry).where(AuditLogEntry.action_type == "email_failed"))
+            assert audit is not None
+            cj = json.loads(audit.changes_json) if isinstance(audit.changes_json, str) else audit.changes_json
+            assert set(ids).issubset(set(cj["row_ids"]))
+
+    def test_dev_email_block_batch_skipped(self, app):
+        """AC-17: dev_email_block blocks recipient → both rows skipped, no send."""
+        with app.app_context():
+            s = get_settings()
+            s.dev_email_block = True
+            s.dev_email_allowlist = "other@example.com"
+            db.session.commit()
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            r1 = _make_batched_row(user, event, "event_published", send_after=past)
+            r2 = _make_batched_row(user, event, "event_cancelled", send_after=past)
+            db.session.commit()
+            ids = (r1.id, r2.id)
+        with app.app_context():
+            with patch("flask_mail.Mail.send") as mock_send:
+                result = drain_batched_outbox()
+        mock_send.assert_not_called()
+        assert result is True
+        with app.app_context():
+            for rid in ids:
+                r = db.session.get(OutboxEmail, rid)
+                assert r.status == "skipped"
+                assert "dev_email_block" in r.last_error
+            # reset
+            s = get_settings()
+            s.dev_email_block = False
+            db.session.commit()
+
+    def test_one_user_per_tick(self, app):
+        """AC-27: two users → exactly one email per drain call, other user's rows still pending."""
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
+            userA = UserAccount(email="userA_b5@test.cz", name="User A", is_active=True)
+            userA.set_password("x")
+            userA.roles = [role]
+            userB = UserAccount(email="userB_b5@test.cz", name="User B", is_active=True)
+            userB.set_password("x")
+            userB.roles = [role]
+            db.session.add_all([userA, userB])
+            db.session.flush()
+
+            me = MasterEvent(name="B5-ME-tick")
+            db.session.add(me)
+            db.session.flush()
+            start = datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc)
+            event = Event(
+                name="Tick Event",
+                master_event_id=me.id,
+                start_datetime=start,
+                end_datetime=start + timedelta(hours=2),
+            )
+            db.session.add(event)
+            db.session.flush()
+
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(userA, event, "event_published", send_after=past)
+            _make_batched_row(userB, event, "event_cancelled", send_after=past)
+            db.session.commit()
+
+        send_count = [0]
+
+        def capture_send(msg):
+            send_count[0] += 1
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert send_count[0] == 1
+
+        with app.app_context():
+            pending_rows = db.session.scalars(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.status == "pending",
+                    OutboxEmail.notification_type.in_(["event_published", "event_cancelled"]),
+                )
+            ).all()
+            assert len(pending_rows) == 1
+
+    def test_missing_change_value_graceful(self, app):
+        """AC-28: assignment_confirmed with change_value=None → row sent, no crash."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            row = _make_batched_row(
+                user,
+                event,
+                "assignment_confirmed",
+                change_type="assignment",
+                change_value=None,
+                send_after=past,
+            )
+            db.session.commit()
+            row_id = row.id
+        with app.app_context():
+            with patch("flask_mail.Mail.send") as mock_send:
+                result = drain_batched_outbox()
+        assert result is True
+        mock_send.assert_called_once()
+        with app.app_context():
+            assert db.session.get(OutboxEmail, row_id).status == "sent"
+
+    def test_event_sections_sorted_by_start_datetime(self, app):
+        """AC-29: two events — earlier start_datetime section appears first in HTML."""
+        with app.app_context():
+            user, _ = _make_ed_event(delta_hours=72)
+            me2 = MasterEvent(name="B5-sort-ME")
+            db.session.add(me2)
+            db.session.flush()
+
+            start_later = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
+            start_earlier = datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc)
+
+            event_later = Event(
+                name="Later Event",
+                master_event_id=me2.id,
+                start_datetime=start_later,
+                end_datetime=start_later + timedelta(hours=2),
+            )
+            event_earlier = Event(
+                name="Earlier Event",
+                master_event_id=me2.id,
+                start_datetime=start_earlier,
+                end_datetime=start_earlier + timedelta(hours=2),
+            )
+            db.session.add_all([event_later, event_earlier])
+            db.session.flush()
+
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event_later, "event_published", send_after=past)
+            _make_batched_row(user, event_earlier, "event_cancelled", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+
+        def capture_send(msg):
+            html_captured.append(msg.html or "")
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                drain_batched_outbox()
+        assert len(html_captured) == 1
+        html = html_captured[0]
+        idx_earlier = html.index("Earlier Event")
+        idx_later = html.index("Later Event")
+        assert idx_earlier < idx_later, "Earlier-start event section must appear before later-start event section"
+
+
+class TestLegacyDrainGuard:
+    """Phase 5 (#268) — drain_one_outbox_email ignores batched rows; drain_batched_outbox ignores NULL-user rows.
+    AC-18, AC-19, AC-20."""
+
+    def test_batched_drain_ignores_user_null_rows(self, app):
+        """AC-18: row with user_id=None → drain_batched_outbox returns False."""
+        with app.app_context():
+            row = OutboxEmail(to_email="legacy@test.cz", subject="S", body="B")
+            db.session.add(row)
+            db.session.commit()
+            row_id = row.id
+        with app.app_context():
+            result = drain_batched_outbox()
+        assert result is False
+        with app.app_context():
+            assert db.session.get(OutboxEmail, row_id).status == "pending"
+
+    def test_legacy_drain_handles_user_null_row(self, app):
+        """AC-19: row with user_id=None → drain_one_outbox_email sends it."""
+        with app.app_context():
+            row = OutboxEmail(to_email="legacy2@test.cz", subject="S2", body="B2")
+            db.session.add(row)
+            db.session.commit()
+            row_id = row.id
+        with app.app_context():
+            with patch("flask_mail.Mail.send"):
+                drain_one_outbox_email()
+        with app.app_context():
+            assert db.session.get(OutboxEmail, row_id).status == "sent"
+
+    def test_legacy_drain_ignores_batched_rows(self, app):
+        """AC-20: row with user_id set → drain_one_outbox_email leaves it pending."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            row = _make_batched_row(user, event, "event_published")
+            db.session.commit()
+            row_id = row.id
+        with app.app_context():
+            with patch("flask_mail.Mail.send") as mock_send:
+                result = drain_one_outbox_email()
+        mock_send.assert_not_called()
+        assert result is False
+        with app.app_context():
+            assert db.session.get(OutboxEmail, row_id).status == "pending"
+
+
+class TestBatchedPayloadCallers:
+    """Phase 5 (#268) — send_* helpers store structured change_value in the row. AC-23..AC-26."""
+
+    def test_send_assignment_confirmed_stores_change_value(self, app):
+        """AC-23: confirmed row has change_type='assignment' and action/spot_description."""
+        with app.app_context():
+            event = _make_event("Payload Test Event")
+            user = _make_member_user("payload_a@test.cz", "Payload User A")
+            send_assignment_confirmed(user, event, spot_description="Záchranář")
+            db.session.commit()
+            row = db.session.scalar(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "assignment_confirmed")
+            )
+            assert row is not None
+            assert row.change_type == "assignment"
+            payload = json.loads(row.change_value)
+            assert payload == {"action": "confirmed", "spot_description": "Záchranář"}
+
+    def test_send_assignment_released_stores_change_value(self, app):
+        """AC-24: released row has change_type='assignment' and action/spot_description."""
+        with app.app_context():
+            event = _make_event("Payload Test Event 2")
+            user = _make_member_user("payload_b@test.cz", "Payload User B")
+            send_assignment_released(user, event, spot_description="Řidič")
+            db.session.commit()
+            row = db.session.scalar(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "assignment_released")
+            )
+            assert row is not None
+            assert row.change_type == "assignment"
+            payload = json.loads(row.change_value)
+            assert payload == {"action": "released", "spot_description": "Řidič"}
+
+    def test_send_unfilled_spots_reminder_stores_count(self, app):
+        """AC-25: unfilled_reminder row has change_type='unfilled_reminder' and count."""
+        with app.app_context():
+            event = _make_event("Unfilled Event")
+            user = _make_member_user("payload_c@test.cz", "Payload User C")
+            spot1 = EventSpot(event_id=event.id, description="Spot 1")
+            spot2 = EventSpot(event_id=event.id, description="Spot 2")
+            db.session.add_all([spot1, spot2])
+            db.session.flush()
+            send_unfilled_spots_reminder(user, event, unfilled=[spot1, spot2])
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "unfilled_reminder"))
+            assert row is not None
+            assert row.change_type == "unfilled_reminder"
+            payload = json.loads(row.change_value)
+            assert payload == {"unfilled_count": 2}
+
+    def test_send_debriefing_invitation_stores_assignment_id(self, app):
+        """AC-26: debriefing_invitation row has change_type='debriefing' and assignment_id."""
+        with app.app_context():
+            event = _make_event("Debriefing Event")
+            user = _make_member_user("payload_d@test.cz", "Payload User D")
+            spot = EventSpot(event_id=event.id, description="Debriefing Spot")
+            db.session.add(spot)
+            db.session.flush()
+            assignment = Assignment(
+                spot_id=spot.id,
+                user_id=user.id,
+            )
+            db.session.add(assignment)
+            db.session.flush()
+            send_debriefing_invitation(assignment, event)
+            db.session.commit()
+            row = db.session.scalar(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "debriefing_invitation")
+            )
+            assert row is not None
+            assert row.change_type == "debriefing"
+            payload = json.loads(row.change_value)
+            assert payload == {"assignment_id": assignment.id}
