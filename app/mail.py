@@ -27,6 +27,7 @@ When adding a new send_* function:
   5. Update DEVOPS.md and CHANGELOG.md.
 """
 
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -62,6 +63,10 @@ _PLAIN_FALLBACK = "Tento e-mail obsahuje formátovaný obsah. Otevřete jej v e-
 _TIER_1_UPPER: timedelta = timedelta(hours=24)
 _TIER_2_UPPER: timedelta = timedelta(days=7)
 _TIER_3_UPPER: timedelta = timedelta(days=28)
+
+# Stored in outbox_email.change_type for rows whose change_value is a
+# field-level {field: [old, new]} JSON diff (issue #268 Phase 4).
+_EVENT_CHANGED_CHANGE_TYPE: str = "field_edit"
 
 
 def _compute_send_after(event_start: datetime, now: datetime, settings: AppSettings) -> datetime:
@@ -323,6 +328,34 @@ def _enqueue(
         log.warning("Failed to enqueue mail to %s — %s", to, exc)
 
 
+def _merge_event_changed_payloads(
+    existing_json: str,
+    incoming: dict[str, list],
+) -> dict[str, list] | None:
+    """Merge two event_changed field-diff payloads.
+
+    Rules (REQUIREMENTS FR-3, FR-4):
+      1. Fields present in both: keep existing's [0] (earliest old_val),
+         overwrite with incoming's [1] (latest new_val).
+      2. Fields present only in incoming: take incoming pair as-is.
+      3. Fields present only in existing: carry forward unchanged.
+      4. After merge, drop fields where str(old) == str(new) — matches the
+         equality rule used by diff_changes at app/utils.py:171.
+      5. If the merged dict is empty, return None (caller deletes the row).
+    """
+    existing = json.loads(existing_json)
+    merged: dict[str, list] = dict(existing)
+    for field, pair in incoming.items():
+        in_old, in_new = pair[0], pair[1]
+        if field in existing:
+            original_old = existing[field][0]
+            merged[field] = [original_old, in_new]
+        else:
+            merged[field] = [in_old, in_new]
+    merged = {f: v for f, v in merged.items() if str(v[0]) != str(v[1])}
+    return merged or None
+
+
 def enqueue_deferred(
     user: UserAccount,
     event: Event,
@@ -331,7 +364,8 @@ def enqueue_deferred(
     body: str,
     html_body: str | None = None,
     change_type: str | None = None,
-    change_value: str | None = None,
+    change_value: dict[str, list] | None = None,
+    event_url: str = "",
 ) -> datetime | None:
     """Insert or update a pending OutboxEmail row for the deferred/batched
     event-notification pipeline (issue #268).
@@ -394,9 +428,38 @@ def enqueue_deferred(
             existing.to_email = to_email
             existing.subject = subject
             existing.body = body
-            existing.html_body = html_body
-            existing.change_type = change_type
-            existing.change_value = change_value
+
+            if (
+                notification_type == "event_changed"
+                and change_type == _EVENT_CHANGED_CHANGE_TYPE
+                and isinstance(change_value, dict)
+            ):
+                if existing.change_value:
+                    # Cell 4: merge structured payloads (FR-3 / FR-4).
+                    merged_payload = _merge_event_changed_payloads(existing.change_value, change_value)
+                    if merged_payload is None:
+                        db.session.delete(existing)
+                        db.session.flush()
+                        return None
+                    existing.change_value = json.dumps(merged_payload, ensure_ascii=False, sort_keys=True)
+                    existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
+                    existing.html_body = _render_event_changed_body(user, event, merged_payload, event_url)
+                else:
+                    # Cell 2: FR-5 transitional — NULL existing, adopt incoming.
+                    existing.change_value = json.dumps(change_value, ensure_ascii=False, sort_keys=True)
+                    existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
+                    existing.html_body = _render_event_changed_body(user, event, change_value, event_url)
+            else:
+                # Cell 1 / 3: Phase 3 overwrite behaviour.
+                existing.html_body = html_body
+                existing.change_type = change_type
+                if change_value is not None:
+                    existing.change_value = (
+                        json.dumps(change_value, ensure_ascii=False, sort_keys=True)
+                        if isinstance(change_value, dict)
+                        else change_value
+                    )
+
             db.session.flush()
             return existing.send_after
 
@@ -409,7 +472,11 @@ def enqueue_deferred(
             user_id=user.id,
             event_id=event.id,
             change_type=change_type,
-            change_value=change_value,
+            change_value=(
+                json.dumps(change_value, ensure_ascii=False, sort_keys=True)
+                if isinstance(change_value, dict)
+                else change_value
+            ),
             send_after=computed_send_after,
             instance_name=_INSTANCE_ID or None,
         )
@@ -603,6 +670,40 @@ def _format_event_change_value(field: str, raw: object) -> str:
     return val
 
 
+def _render_event_changed_body(
+    user: UserAccount,
+    event: Event,
+    payload: dict[str, list],
+    event_url: str,
+) -> str:
+    """Translate a field-diff payload into a rendered HTML email body.
+
+    Called from send_event_changed (first-insert path) and the merge branch
+    inside enqueue_deferred (update path).  Designed to be callable from
+    drain time in Phase 5 without modification.
+    """
+    if not event_url:
+        from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
+
+        event_url = external_url_for("events.detail", event_id=event.id)
+    formatted: list[tuple[str, str, str]] = [
+        (
+            _EVENT_FIELD_LABELS.get(field, field),
+            _format_event_change_value(field, pair[0]),
+            _format_event_change_value(field, pair[1]),
+        )
+        for field, pair in payload.items()
+    ]
+    return render_template(
+        "email/event_changed.html",
+        user_name=user.name,
+        event=event,
+        event_url=event_url,
+        changes=formatted,
+        **_base_context(),
+    )
+
+
 def send_event_changed(
     user: UserAccount,
     event: Event,
@@ -619,22 +720,7 @@ def send_event_changed(
         return
     if not user_can_receive_notification(user, "event_changed"):
         return
-    formatted: list[tuple[str, str, str]] = [
-        (
-            _EVENT_FIELD_LABELS.get(field, field),
-            _format_event_change_value(field, vals[0]),
-            _format_event_change_value(field, vals[1]),
-        )
-        for field, vals in changes.items()
-    ]
-    html_body = render_template(
-        "email/event_changed.html",
-        user_name=user.name,
-        event=event,
-        event_url=event_url,
-        changes=formatted,
-        **_base_context(),
-    )
+    html_body = _render_event_changed_body(user, event, changes, event_url)
     enqueue_deferred(
         user=user,
         event=event,
@@ -642,6 +728,9 @@ def send_event_changed(
         subject=f"MedCover — Změna akce: {event.name}",
         body=_PLAIN_FALLBACK,
         html_body=html_body,
+        change_type=_EVENT_CHANGED_CHANGE_TYPE,
+        change_value=changes,
+        event_url=event_url,
     )
 
 

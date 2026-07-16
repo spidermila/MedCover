@@ -1,9 +1,11 @@
 """Tests for the notification catalog and toggle route (/admin/notifications/)."""
 
+import json
 from datetime import datetime, timezone
 
 from app.extensions import db
 from app.mail import (
+    _EVENT_CHANGED_CHANGE_TYPE,
     NOTIFICATION_CATALOG,
     _format_event_change_value,
     _is_notify_enabled,
@@ -845,3 +847,60 @@ class TestTestNotificationImmediate:
             )
             assert row is not None
             assert row.send_after is None
+
+
+# ── AC-13 / AC-14: test-form event_changed produces structured payload ────────
+
+
+class TestTestFormEventChangedPayload:
+    """Phase 4 (#268) — test-form POST for event_changed creates a valid row."""
+
+    def test_deferred_row_has_valid_payload(self, app, admin_client):
+        """AC-13: deferred mode creates row with field_edit change_type and non-empty JSON."""
+        event_id = _make_event_for_test(app)
+        with app.app_context():
+            before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        resp = admin_client.post(
+            "/admin/notifications/test/event_changed",
+            data={"test_email": "ac13@test.cz", "test_event_id": str(event_id), "send_immediately": "0"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+            assert after == before + 1
+            row = db.session.scalar(
+                db.select(OutboxEmail)
+                .where(OutboxEmail.to_email == "ac13@test.cz")
+                .order_by(OutboxEmail.id.desc())
+                .limit(1)
+            )
+            assert row is not None
+            assert row.change_type == _EVENT_CHANGED_CHANGE_TYPE
+            payload = json.loads(row.change_value)
+            assert isinstance(payload, dict) and payload
+            assert "description" in payload
+            assert payload["description"] == ["—", "Zkušební oznámení"]
+            assert row.html_body is not None
+
+    def test_immediate_row_has_null_send_after(self, app, admin_client):
+        """AC-14: immediate mode creates row with send_after=NULL."""
+        event_id = _make_event_for_test(app)
+        resp = admin_client.post(
+            "/admin/notifications/test/event_changed",
+            data={"test_email": "ac14@test.cz", "test_event_id": str(event_id), "send_immediately": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            row = db.session.scalar(
+                db.select(OutboxEmail)
+                .where(OutboxEmail.to_email == "ac14@test.cz")
+                .order_by(OutboxEmail.id.desc())
+                .limit(1)
+            )
+            assert row is not None
+            assert row.send_after is None
+            assert row.change_type == _EVENT_CHANGED_CHANGE_TYPE
+            payload = json.loads(row.change_value)
+            assert isinstance(payload, dict) and payload
