@@ -149,9 +149,9 @@ def save_delay_tiers() -> Response:
 
 
 def _recent_events() -> list[Event]:
-    """Return the 20 most recently created non-archived events for the test dropdown."""
+    """Return all non-archived events for the test dropdown, most recent first."""
     return db.session.scalars(
-        db.select(Event).where(Event.archived == sa.false()).order_by(Event.start_datetime.desc()).limit(20)
+        db.select(Event).where(Event.archived == sa.false()).order_by(Event.start_datetime.desc())
     ).all()
 
 
