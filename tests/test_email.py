@@ -9,6 +9,7 @@ Strategy:
     function transitions rows through pending → sent / failed correctly.
 """
 
+import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -16,6 +17,8 @@ from click.testing import CliRunner
 
 from app.extensions import db
 from app.mail import (
+    _EVENT_CHANGED_CHANGE_TYPE,
+    _merge_event_changed_payloads,
     drain_one_outbox_email,
     enqueue_deferred,
     send_admin_digest,
@@ -876,3 +879,277 @@ class TestDrainSendAfterFilter:
         with app.app_context():
             row = db.session.get(OutboxEmail, row_id)
             assert row.status == "sent"
+
+
+# ── Phase 4 (#268) — structured change_value + merge for event_changed ────────
+
+
+class TestMergeEventChangedPayloads:
+    """Unit tests for _merge_event_changed_payloads (pure function, no DB)."""
+
+    def test_merge_same_field_keeps_earliest_old(self):
+        result = _merge_event_changed_payloads('{"name": ["A", "B"]}', {"name": ["B", "C"]})
+        assert result == {"name": ["A", "C"]}
+
+    def test_merge_new_field_added(self):
+        result = _merge_event_changed_payloads('{"name": ["A", "B"]}', {"address": ["X", "Y"]})
+        assert result == {"name": ["A", "B"], "address": ["X", "Y"]}
+
+    def test_merge_full_revert_returns_none(self):
+        result = _merge_event_changed_payloads('{"name": ["A", "B"]}', {"name": ["B", "A"]})
+        assert result is None
+
+    def test_merge_partial_revert_keeps_other_fields(self):
+        result = _merge_event_changed_payloads('{"name": ["A", "B"], "address": ["X", "Y"]}', {"name": ["B", "A"]})
+        assert result == {"address": ["X", "Y"]}
+
+    def test_merge_bool_round_trip(self):
+        result = _merge_event_changed_payloads('{"paid": [false, true]}', {"paid": [True, False]})
+        assert result is None  # reverted: False → True → False
+
+    def test_merge_none_values(self):
+        result = _merge_event_changed_payloads('{"master_event_id": [null, "3"]}', {"master_event_id": ["3", "5"]})
+        assert result == {"master_event_id": [None, "5"]}
+
+
+class TestEventChangedMerge:
+    """Phase 4 (#268) — structured change_value + merge for event_changed."""
+
+    def test_first_call_stores_field_edit_and_payload(self, app):
+        """AC-1, AC-11: first call creates row with change_type=field_edit and JSON payload."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            assert row is not None
+            assert row.change_type == _EVENT_CHANGED_CHANGE_TYPE
+            assert row.change_type == "field_edit"
+            payload = json.loads(row.change_value)
+            assert payload == {"name": ["A", "B"]}
+            assert "A" in row.html_body
+            assert "B" in row.html_body
+            assert row.send_after is not None
+
+    def test_two_edits_same_field_merge_endpoints(self, app):
+        """AC-2: second edit to same field keeps earliest old, latest new."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            db.session.flush()
+            send_event_changed(user, event, {"name": ["B", "C"]}, event_url="http://x/e")
+            db.session.commit()
+            count = db.session.scalar(
+                db.select(db.func.count(OutboxEmail.id)).where(
+                    OutboxEmail.notification_type == "event_changed",
+                    OutboxEmail.status == "pending",
+                )
+            )
+            assert count == 1
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            payload = json.loads(row.change_value)
+            assert payload == {"name": ["A", "C"]}
+            assert "A" in row.html_body
+            assert "C" in row.html_body
+
+    def test_two_edits_different_fields_both_kept(self, app):
+        """AC-3: second edit to a different field adds it alongside the first."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            db.session.flush()
+            send_event_changed(user, event, {"name": ["B", "C"], "address": ["X", "Y"]}, event_url="http://x/e")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            payload = json.loads(row.change_value)
+            assert payload == {"address": ["X", "Y"], "name": ["A", "C"]}
+            assert "A" in row.html_body
+            assert "C" in row.html_body
+            assert "X" in row.html_body
+            assert "Y" in row.html_body
+
+    def test_full_revert_deletes_row(self, app):
+        """AC-4: reverting all changed fields deletes the pending row."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            db.session.flush()
+            send_event_changed(user, event, {"name": ["B", "A"]}, event_url="http://x/e")
+            db.session.commit()
+            count = db.session.scalar(
+                db.select(db.func.count(OutboxEmail.id)).where(
+                    OutboxEmail.notification_type == "event_changed",
+                    OutboxEmail.status == "pending",
+                )
+            )
+            assert count == 0
+
+    def test_partial_revert_keeps_other_fields(self, app):
+        """AC-5: reverting one field keeps the other field's row."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["A", "B"], "address": ["X", "Y"]}, event_url="http://x/e")
+            db.session.flush()
+            send_event_changed(user, event, {"name": ["B", "A"]}, event_url="http://x/e")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            assert row is not None
+            payload = json.loads(row.change_value)
+            assert payload == {"address": ["X", "Y"]}
+            assert "Název akce" not in row.html_body
+
+    def test_three_consecutive_edits_merge_to_endpoints(self, app):
+        """AC-6: three chained edits collapse to earliest old, latest new."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            t0, t1, t2, t3 = "2025-01-01T10:00:00", "2025-01-01T11:00:00", "2025-01-01T12:00:00", "2025-01-01T13:00:00"
+            send_event_changed(user, event, {"start_datetime": [t0, t1]}, event_url="http://x/e")
+            db.session.flush()
+            send_event_changed(user, event, {"start_datetime": [t1, t2]}, event_url="http://x/e")
+            db.session.flush()
+            send_event_changed(user, event, {"start_datetime": [t2, t3]}, event_url="http://x/e")
+            db.session.commit()
+            count = db.session.scalar(
+                db.select(db.func.count(OutboxEmail.id)).where(
+                    OutboxEmail.notification_type == "event_changed",
+                    OutboxEmail.status == "pending",
+                )
+            )
+            assert count == 1
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            payload = json.loads(row.change_value)
+            assert payload == {"start_datetime": [t0, t3]}
+
+    def test_null_change_value_row_upgraded_no_merge(self, app):
+        """AC-7: existing row with change_value=NULL adopts incoming payload (no merge)."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            # Seed a Phase-3-era row with NULL change_value.
+            row = OutboxEmail(
+                to_email=user.email,
+                subject="Old",
+                body="body",
+                html_body="<p>old</p>",
+                notification_type="event_changed",
+                user_id=user.id,
+                event_id=event.id,
+                change_value=None,
+            )
+            db.session.add(row)
+            db.session.flush()
+            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            db.session.commit()
+            count = db.session.scalar(
+                db.select(db.func.count(OutboxEmail.id)).where(
+                    OutboxEmail.notification_type == "event_changed",
+                    OutboxEmail.status == "pending",
+                )
+            )
+            assert count == 1
+            fetched = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            assert fetched.change_value is not None
+            payload = json.loads(fetched.change_value)
+            assert payload == {"name": ["A", "B"]}
+
+    def test_immediate_flag_still_merges(self, app):
+        """AC-8: g._test_notification_immediate=True still triggers merge; send_after=NULL wins."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            db.session.flush()
+            with app.test_request_context("/"):
+                from flask import g as flask_g  # pylint: disable=import-outside-toplevel
+
+                flask_g._test_notification_immediate = True
+                send_event_changed(user, event, {"name": ["B", "C"]}, event_url="http://x/e")
+            db.session.commit()
+            count = db.session.scalar(
+                db.select(db.func.count(OutboxEmail.id)).where(
+                    OutboxEmail.notification_type == "event_changed",
+                    OutboxEmail.status == "pending",
+                )
+            )
+            assert count == 1
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            payload = json.loads(row.change_value)
+            assert payload == {"name": ["A", "C"]}
+            assert row.send_after is None
+
+    def test_two_users_change_values_isolated(self, app):
+        """AC-9: edits for different users create isolated rows."""
+        with app.app_context():
+            user1, event = _make_ed_event(delta_hours=72)
+            role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
+            user2 = UserAccount(email="ec_user2@test.cz", name="EC User 2", is_active=True)
+            user2.set_password("x")
+            user2.roles = [role]
+            db.session.add(user2)
+            db.session.flush()
+            send_event_changed(user1, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user2, event, {"name": ["A", "Z"]}, event_url="http://x/e")
+            db.session.commit()
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed")
+            ).all()
+            assert len(rows) == 2
+            payloads = {r.to_email: json.loads(r.change_value) for r in rows}
+            assert payloads[user1.email] == {"name": ["A", "B"]}
+            assert payloads[user2.email] == {"name": ["A", "Z"]}
+
+    def test_two_events_change_values_isolated(self, app):
+        """AC-10: edits for different events create isolated rows."""
+        with app.app_context():
+            user, event1 = _make_ed_event(delta_hours=72)
+            me2 = MasterEvent(name="EC-ME2")
+            db.session.add(me2)
+            db.session.flush()
+            start2 = datetime.now(timezone.utc) + timedelta(hours=72)
+            event2 = Event(
+                name="EC Event 2",
+                master_event_id=me2.id,
+                start_datetime=start2,
+                end_datetime=start2 + timedelta(hours=2),
+            )
+            db.session.add(event2)
+            db.session.flush()
+            send_event_changed(user, event1, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user, event2, {"name": ["X", "Y"]}, event_url="http://x/e")
+            db.session.commit()
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed")
+            ).all()
+            assert len(rows) == 2
+            payloads = {r.event_id: json.loads(r.change_value) for r in rows}
+            assert payloads[event1.id] == {"name": ["A", "B"]}
+            assert payloads[event2.id] == {"name": ["X", "Y"]}
+
+    def test_gate_off_produces_no_row(self, app):
+        """AC-16: notify_event_changed=False → no row created."""
+        with app.app_context():
+            settings = get_settings()
+            settings.notify_event_changed = False
+            db.session.commit()
+
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            db.session.commit()
+            count = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+            assert count == 0
+
+
+class TestEventChangedBodyRerender:
+    """Phase 4 (#268) — after merge, html_body reflects merged state."""
+
+    def test_html_body_reflects_merged_endpoints(self, app):
+        """AC-12: intermediate value absent; earliest old and latest new present."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            send_event_changed(user, event, {"name": ["Původní", "Prostřední"]}, event_url="http://x/e")
+            db.session.flush()
+            send_event_changed(user, event, {"name": ["Prostřední", "Finální"]}, event_url="http://x/e")
+            db.session.commit()
+            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
+            assert row is not None
+            assert "Původní" in row.html_body
+            assert "Finální" in row.html_body
+            assert "Prostřední" not in row.html_body
