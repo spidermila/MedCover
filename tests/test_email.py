@@ -10,12 +10,13 @@ Strategy:
 """
 
 import json
+import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
-import app.mail as _mail_mod
 from app.extensions import db
 from app.mail import (
     _EVENT_CHANGED_CHANGE_TYPE,
@@ -1848,17 +1849,16 @@ class TestBatchedPayloadCallers:
 
 
 class TestSchedulerRequestContextBoundary:
-    """Regression: drain_batched_outbox must not crash outside a request context.
+    """Regression: process_email_queue must provide its own request context.
 
-    B-1/B-2 fix: process_email_queue wraps the drain in test_request_context.
-    This test exercises the drain under an app_context ONLY (no request context,
-    no SERVER_NAME) to confirm external_url_for does not raise.
-    TestingConfig sets SERVER_NAME='localhost' which would mask the bug, so we
-    delete it before calling the drain to reproduce the scheduler's ProductionConfig.
+    B-1/B-2 fix: scheduler/main.py wraps the drain in app.test_request_context.
+    Two-phase test:
+      1. Proves the bug exists — drain raises RuntimeError without a request context.
+      2. Proves the fix works — process_email_queue succeeds because it provides one.
     """
 
     def test_drain_without_request_context_succeeds(self, app):
-        """B-4 regression: drain works outside request context with SERVER_NAME unset."""
+        """B-4 regression: process_email_queue provides its own request context."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=5)
@@ -1866,52 +1866,65 @@ class TestSchedulerRequestContextBoundary:
             db.session.commit()
             row_id = row.id
 
-        # Reproduce scheduler's environment: app_context + request_context (the fix),
-        # but without SERVER_NAME so url_for needs the request context to work.
-        # Flask requires the key to exist (can be None); don't pop it.
         saved = app.config.get("SERVER_NAME")
         app.config["SERVER_NAME"] = None
         try:
+            # Phase 1: drain_batched_outbox needs a request context; without one it raises.
+            # This proves the bug is real — if the scheduler called the drain bare, it
+            # would crash in production (no SERVER_NAME in ProductionConfig).
             with app.app_context():
-                with patch("flask_mail.Mail.send"):
-                    # The fix is: test_request_context wraps the drain in the scheduler.
-                    # Here we replicate that wrapper to confirm the drain path is clean.
-                    with app.test_request_context("/"):
-                        result = drain_batched_outbox()
-            assert result is True
+                with pytest.raises(RuntimeError):
+                    drain_batched_outbox()
+
+            # Phase 2: import process_email_queue with the test app injected so that
+            # scheduler.main.app points at the test DB. process_email_queue wraps the
+            # drain in app.test_request_context, so it must NOT raise.
+            sys.modules.pop("scheduler.main", None)
+            with patch("app.create_app", return_value=app):
+                import scheduler.main as sm  # pylint: disable=import-outside-toplevel  # noqa: PLC0415
+
+            with patch("flask_mail.Mail.send"):
+                sm.process_email_queue()  # must not raise
+
             with app.app_context():
                 r = db.session.get(OutboxEmail, row_id)
                 assert r.status == "sent"
         finally:
             app.config["SERVER_NAME"] = saved
+            sys.modules.pop("scheduler.main", None)
 
 
 class TestProcessEmailQueueDispatch:
-    """M-3: process_email_queue dispatches to batched drain first, legacy fallback second."""
+    """M-3: process_email_queue calls the REAL dispatch; patching the drains proves it."""
+
+    @pytest.fixture(autouse=True)
+    def _import_scheduler(self, app):
+        """Import scheduler.main fresh per test with the test app injected."""
+        sys.modules.pop("scheduler.main", None)
+        with patch("app.create_app", return_value=app):
+            import scheduler.main as sm  # pylint: disable=import-outside-toplevel  # noqa: PLC0415
+        self._sm = sm
+        yield
+        sys.modules.pop("scheduler.main", None)
 
     def test_batched_drain_called_first(self, app):
-        """When drain_batched_outbox returns True, legacy drain is NOT called."""
-        with app.app_context():
-            with (
-                patch.object(_mail_mod, "drain_batched_outbox", return_value=True) as mock_batch,
-                patch.object(_mail_mod, "drain_one_outbox_email") as mock_legacy,
-            ):
-                # Simulate process_email_queue dispatch logic.
-                if not _mail_mod.drain_batched_outbox():
-                    _mail_mod.drain_one_outbox_email()
-
+        """AC-21: drain_batched_outbox returns True → drain_one_outbox_email NOT called."""
+        with (
+            patch("app.mail.drain_batched_outbox", return_value=True) as mock_batch,
+            patch("app.mail.drain_one_outbox_email") as mock_legacy,
+            patch("app.models.settings.get_settings"),
+        ):
+            self._sm.process_email_queue()
         mock_batch.assert_called_once()
         mock_legacy.assert_not_called()
 
     def test_legacy_drain_called_when_batch_returns_false(self, app):
-        """When drain_batched_outbox returns False (no matured rows), legacy drain fires."""
-        with app.app_context():
-            with (
-                patch.object(_mail_mod, "drain_batched_outbox", return_value=False) as mock_batch,
-                patch.object(_mail_mod, "drain_one_outbox_email") as mock_legacy,
-            ):
-                if not _mail_mod.drain_batched_outbox():
-                    _mail_mod.drain_one_outbox_email()
-
+        """AC-22: drain_batched_outbox returns False → drain_one_outbox_email IS called."""
+        with (
+            patch("app.mail.drain_batched_outbox", return_value=False) as mock_batch,
+            patch("app.mail.drain_one_outbox_email") as mock_legacy,
+            patch("app.models.settings.get_settings"),
+        ):
+            self._sm.process_email_queue()
         mock_batch.assert_called_once()
         mock_legacy.assert_called_once()
