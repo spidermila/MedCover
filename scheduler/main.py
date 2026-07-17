@@ -58,8 +58,14 @@ def process_email_queue() -> None:
 
         s = get_settings()
         s.apply_to_app(app)
-        if not drain_batched_outbox():
-            drain_one_outbox_email()
+        # drain_batched_outbox calls external_url_for which needs a request context
+        # when SERVER_NAME is not set in ProductionConfig.
+        try:
+            with app.test_request_context("/"):
+                if not drain_batched_outbox():
+                    drain_one_outbox_email()
+        except Exception as exc:  # noqa: BLE001
+            log.error("process_email_queue: drain failed — %s", exc, exc_info=True)
 
 
 def open_assignments() -> None:
