@@ -4,7 +4,7 @@
 {% if event_sections|length == 1 %}
 <p>níže je souhrn oznámení k akci, na které jste přihlášeni:</p>
 {% else %}
-<p>níže je souhrn oznámení ke {{ event_sections|length }} akcím, na kterých jste přihlášeni:</p>
+<p>níže je souhrn oznámení ke {{ event_sections|length }} akcím:</p>
 {% endif %}
 
 {% for section in event_sections %}
@@ -46,7 +46,7 @@
         {%- else %} neobsazených pozic
         {%- endif -%}.</p>
     {% elif entry.type == "debriefing_invitation" %}
-      <p><a href="{{ entry.debriefing_url }}">Vyplňte prosím výjezdovou zprávu.</a></p>
+      <p><a href="{{ entry.debriefing_url }}">Vyplňte prosím debriefing.</a></p>
     {% else %}
       {{ entry.legacy_html|safe }}
     {% endif %}
