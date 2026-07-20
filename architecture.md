@@ -295,11 +295,11 @@ When in doubt about the correct Czech UI label or English code name for a concep
 
 | Trigger | Recipients | Timing |
 |---|---|---|
-| Spot released on an Event | RP (immediately) + all eligible users (immediately) | On event |
-| User joins an Event (spot filled) | RP (immediately) | On event |
-| Coordinator/admin changes Event parameters | RP (immediately) | On event |
-| Unfilled spots as Event approaches | All eligible users | Configurable reminder schedule per Event (default: 1 day before start); inherited from template if applicable |
-| Event Completed — debriefing | Each assigned member (personalised link) | On transition to Completed |
+| Spot released on an Event | RP + all eligible users | Deferred: proximity tier (5 min – 24 h; configurable at /admin/notifications/); batched per recipient |
+| User joins an Event (spot filled) | RP | Deferred: proximity tier; batched per recipient |
+| Coordinator/admin changes Event parameters | RP | Deferred: proximity tier; consecutive edits merge; batched per recipient |
+| Unfilled spots as Event approaches | All eligible users | Configurable reminder schedule per Event (default: 1 day before start); enqueue is then deferred + batched per recipient |
+| Event Completed — debriefing | Each assigned member (personalised link) | On transition to Completed → deferred + batched per recipient |
 | User-set personal reminder | The individual user | At the user-configured time |
 | Manual reminder by admin/coordinator/RP | Selected roles on a specific Event | On demand |
 | Admin system digest | All admins | Adaptive: once/day normally; more frequent if many changes occur in a short window |
@@ -573,17 +573,24 @@ When in doubt about the correct Czech UI label or English code name for a concep
         - **Direct synchronous send** — simple but fragile; all three problems apply.
         - **Celery + Redis broker** — production-grade, full retry semantics, but introduces two additional services (Celery worker, Redis) that increase operational complexity significantly for a low-volume app.
         - **DB-backed outbox queue drained by the scheduler** — the scheduler container already exists (AD10); adding a queue table and a drain job requires no new infrastructure.
-    - **Decision:** **DB-backed outbox queue** (`outbox_email` table).
+    - **Decision:** **DB-backed outbox queue** (`outbox_email` table) with two coexisting drain paths.
         - All `send_*` helpers in `app/mail.py` write a `pending` row to `outbox_email` using `db.session.flush()` (no separate commit; the caller's transaction commits the row atomically with other DB changes).
-        - The scheduler runs `process_email_queue()` every `MAIL_QUEUE_INTERVAL_SECONDS` (default **6 seconds ≈ 10 emails/min**), safely under the MS365 / typical relay limit of 30/min.
-        - Each job run picks the single oldest `pending` row (`ORDER BY created_at ASC`), locks it with `SELECT … FOR UPDATE SKIP LOCKED` to prevent double-processing, sends it, then marks it `sent`.
-        - On SMTP failure: `retry_count` is incremented; the row stays `pending` until `retry_count >= MAX_RETRIES` (3), at which point `status` is set to `failed` for admin inspection.
+        - **Event-related notifications** (`event_changed`, `event_published`, `assignments_opened`, `event_cancelled`, `assignment_confirmed`, `assignment_released`, `debriefing_invitation`, `unfilled_reminder`) go through `enqueue_deferred()`, which additionally populates `user_id`, `event_id`, `notification_type`, `change_type`, `change_value`, and a proximity-based `send_after` timestamp. The `send_after` delay is chosen from four configurable tiers stored in `AppSettings`: `notify_delay_under_24h_min`, `notify_delay_1_7_days_min`, `notify_delay_1_4_weeks_min`, `notify_delay_over_month_min` (defaults **5 / 60 / 360 / 1440 minutes** for events <24 h, 1–7 days, 1–4 weeks, and >1 month away respectively). Tier values are editable by admins at `/admin/notifications/`.
+        - Same-target rows are **merged** rather than duplicated: `enqueue_deferred()` upserts on `(user_id, event_id, notification_type)` under `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)`. `send_after` collapses to `min(existing, new)`. For `event_changed`, `change_value` payloads merge newest-value-wins per field; fields reverted to the original value are dropped from the payload.
+        - **Non-event notifications** (`account_activated`, `invite`, `reset_password`, `admin_digest`) continue to use the original immediate-enqueue path with `user_id IS NULL` — no `send_after`, no merging.
+        - The scheduler runs `process_email_queue()` every `MAIL_QUEUE_INTERVAL_SECONDS` (default **3 seconds ≈ 20 emails/min**, updated from 6 s in v0.15.0), safely under the MS365 / typical relay limit of 30/min. The drain is wrapped in `app.test_request_context('/')` so email templates can call `url_for(...)` for absolute URLs.
+        - Each job run has two paths:
+            1. **Legacy path** — picks the single oldest `pending` row where `user_id IS NULL` (`ORDER BY created_at ASC`), locks it with `WITH (UPDLOCK, ROWLOCK, READPAST)` (MSSQL equivalent of `FOR UPDATE SKIP LOCKED`), sends it, marks it `sent`.
+            2. **Batched path** — picks one `user_id` that has at least one matured row (`send_after <= now()`), loads **all** pending rows for that user (matured *and* immature) under `WITH (UPDLOCK, ROWLOCK)`, composes a single aggregated email using `email/event_batched.html` with one section per event, then marks every included row `sent` in the same transaction. Subject is `"MedCover — Změny v akci: {name}"` (single-event batch) or `"MedCover — Souhrn změn ({N} akcí)"` (multi-event batch).
+        - **Failure semantics**: SMTP failure on the *legacy* path increments `retry_count`; the row stays `pending` until `retry_count >= MAX_RETRIES` (3), at which point `status` is set to `failed`. SMTP failure on the *batched* path rolls every included row back to `pending` with `retry_count += 1`; on `MAX_RETRIES` exhaustion all rows in the batch are marked `failed` and a single audit-log entry summarises the batch. If the referenced event is deleted mid-flight, that specific row is marked `failed` with `last_error='event_deleted'` and the batch continues with the remaining rows.
         - `MAIL_QUEUE_INTERVAL_SECONDS` is an environment variable so the throttle can be tuned per deployment without a code change.
     - **Consequences:**
-        - User-triggered emails (e.g. "you were assigned") arrive with a few-second delay instead of instantly — acceptable for this use case.
+        - Event-related emails arrive after the configured proximity tier (5 min – 24 h) rather than instantly. This is a deliberate trade-off: it lets rapid coordinator edits collapse into a single notification per recipient instead of spamming assigned users with one email per field-change.
         - Bulk sends are automatically spread over time, eliminating burst rate-limit risk.
-        - `outbox_email` rows provide a permanent delivery audit trail viewable by admins.
+        - Recipient-triggered batching means a user receives at most one event-notification email per drain tick, regardless of how many events changed for them.
+        - `outbox_email` rows provide a permanent delivery audit trail viewable by admins. Merged `change_value` payloads preserve the initial-old value and the newest-new value for each field.
         - The scheduler's main loop sleep was reduced from 30 s to 5 s so the queue is drained promptly.
+        - Admin can preview the deferred pipeline end-to-end via the test-notification form at `/admin/notifications/`: the "Odeslat okamžitě" checkbox (default OFF) enqueues the notification through the normal deferred path; when checked, it bypasses the delay for template preview.
 
 - AD16 Google Sheets Event Import Strategy
     - **Context:** The app replaces an existing Google Sheets ("Dozory") workflow. At launch, ~130 future events must be migrated without manual re-entry. A one-off migration path is needed; the GS sheet continues to be used as the booking source until all coordinators move to MedCover natively.

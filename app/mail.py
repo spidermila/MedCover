@@ -499,30 +499,6 @@ def enqueue_deferred(
         return None
 
 
-def _guarded_send(
-    setting: str,
-    notif_type: str,
-    user: UserAccount,
-    subject: str,
-    template: str,
-    notification_type: str,
-    **ctx: object,
-) -> None:
-    """Guard + render + enqueue in one call.
-
-    Checks the global setting toggle and the per-user preference, then renders
-    *template* with ``user_name`` + ``_base_context()`` + any extra **ctx**
-    kwargs, and enqueues the email.  Covers the common pattern shared by the
-    majority of ``send_*`` functions.
-    """
-    if not _is_notify_enabled(setting):
-        return
-    if not user_can_receive_notification(user, notif_type):
-        return
-    html = render_template(template, user_name=user.name, **_base_context(), **ctx)
-    _enqueue(user.email, subject, _PLAIN_FALLBACK, html_body=html, notification_type=notification_type)
-
-
 # ── Assignment notifications ──────────────────────────────────────────────────
 
 
