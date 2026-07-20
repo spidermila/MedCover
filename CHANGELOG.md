@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Notification batching: event-related emails (event changes, published, assignments opened, cancelled, unfilled reminders, debriefing invites, assignment confirmed/released) are now deferred and grouped per recipient. A single email covers all pending event notifications for a user, one section per event; subject line indicates single-event vs multi-event batch. (#268)
+- Admin-configurable delay tiers at `/admin/notifications/` for events <24 h / 1–7 days / 1–4 weeks / >1 month away. Defaults: 5 / 60 / 360 / 1440 minutes. (#268)
+- Structured change payload for `event_changed`: consecutive edits within the delay window merge to the newest value per field; fields reverted to their original value are dropped from the aggregated email. (#268)
+- Test-notification form at `/admin/notifications/` gained an "Odeslat okamžitě" checkbox (default OFF) — unchecked routes the test through the normal deferred pipeline for end-to-end verification; checked bypasses the delay for template preview. (#268)
+
+### Changed
+- `OutboxEmail` schema gained `user_id`, `event_id`, `change_type`, `change_value`, and `send_after` columns plus a composite index for the drain query. Migration `853f463b9f87` (up + down verified on MSSQL). (#268)
+- Email outbox drain now has two paths: batched path for event notifications (per-user aggregation of matured + immature rows), legacy single-row-per-tick path for non-event rows (invite, password reset, account activation, admin digest) — unchanged behaviour. Scheduler wraps the drain in a Flask request context so email templates can build absolute URLs. (#268)
+- Event-related `send_*` helpers now enqueue via `enqueue_deferred()` (which upserts under `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` on `(user_id, event_id, notification_type)`) instead of immediately enqueueing a rendered email. (#268)
+
 ## [0.18.0] - 2026-07-13
 
 ### Added
