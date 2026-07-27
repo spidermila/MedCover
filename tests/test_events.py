@@ -5,16 +5,13 @@ import re
 from datetime import datetime, timezone
 
 import pytest
-import sqlalchemy as sa
 
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
 from app.models.equipment import (
-    EquipmentCategory,
     EquipmentItem,
     EquipmentType,
-    EventEquipmentAssignment,
     EventEquipmentPlan,
 )
 from app.models.event import Event, EventSpot, EventStatus, EventType
@@ -1032,14 +1029,14 @@ class TestEquipmentPlanExtended:
     def _make_event_and_type(self, app):
         event_id = _make_event_in_status(app, EventStatus.DRAFT)
         with app.app_context():
-            et = EquipmentType(name="Plan Type", category=EquipmentCategory.SHARED)
+            et = EquipmentType(name="Plan Type")
             db.session.add(et)
             db.session.commit()
             return event_id, et.id
 
     def test_plan_add_404_for_missing_event(self, app, admin_client):
         with app.app_context():
-            et = EquipmentType(name="Plan T2", category=EquipmentCategory.SHARED)
+            et = EquipmentType(name="Plan T2")
             db.session.add(et)
             db.session.commit()
             type_id = et.id
@@ -1079,72 +1076,6 @@ class TestEquipmentPlanExtended:
 
 
 # ── Equipment assign: extended ────────────────────────────────────────────────
-
-
-class TestEquipmentAssignExtended:
-    def _make_event_type_item(self, app):
-        event_id = _make_event_in_status(app, EventStatus.DRAFT)
-        with app.app_context():
-            et = EquipmentType(name="Assign Type", category=EquipmentCategory.SHARED)
-            db.session.add(et)
-            db.session.flush()
-            item = EquipmentItem(name="Assign Item", type_id=et.id)
-            db.session.add(item)
-            db.session.commit()
-            return event_id, item.id
-
-    def test_assign_duplicate_item_flashes(self, app, admin_client):
-        event_id, item_id = self._make_event_type_item(app)
-        admin_client.post(
-            f"/events/{event_id}/equipment/assign",
-            data={"item_id": str(item_id)},
-            follow_redirects=True,
-        )
-        response = admin_client.post(
-            f"/events/{event_id}/equipment/assign",
-            data={"item_id": str(item_id)},
-            follow_redirects=True,
-        )
-        assert response.status_code == 200
-        assert "přiřazena" in response.data.decode() or "již" in response.data.decode()
-
-    def test_unassign_no_item_id_flashes(self, app, admin_client):
-        event_id = _make_event_in_status(app, EventStatus.DRAFT)
-        response = admin_client.post(f"/events/{event_id}/equipment/unassign", data={}, follow_redirects=True)
-        assert response.status_code == 200
-        assert "Chybí" in response.data.decode() or "položka" in response.data.decode()
-
-    def test_unassign_not_found_flashes(self, app, admin_client):
-        event_id = _make_event_in_status(app, EventStatus.DRAFT)
-        response = admin_client.post(
-            f"/events/{event_id}/equipment/unassign",
-            data={"item_id": "999999"},
-            follow_redirects=True,
-        )
-        assert response.status_code == 200
-        assert "nenalezeno" in response.data.decode() or "přiřazení" in response.data.decode()
-
-    def test_unassign_succeeds(self, app, admin_client):
-        event_id, item_id = self._make_event_type_item(app)
-        admin_client.post(
-            f"/events/{event_id}/equipment/assign",
-            data={"item_id": str(item_id)},
-            follow_redirects=True,
-        )
-        response = admin_client.post(
-            f"/events/{event_id}/equipment/unassign",
-            data={"item_id": str(item_id)},
-            follow_redirects=False,
-        )
-        assert response.status_code == 302
-        with app.app_context():
-            ea = db.session.scalar(
-                sa.select(EventEquipmentAssignment).where(
-                    EventEquipmentAssignment.event_id == event_id,
-                    EventEquipmentAssignment.equipment_item_id == item_id,
-                )
-            )
-            assert ea is None
 
 
 class TestEventChangedNotification:
@@ -2164,3 +2095,164 @@ class TestEventUnarchive:
                 .where(AuditLogEntry.entity_id == str(event_id))
             )
             assert entry is not None
+
+
+# ── Equipment plan validation on create/edit ──────────────────────────────────
+
+
+class TestEquipmentPlanOnCreate:
+    """Equipment plan fields are validated and applied when creating an event."""
+
+    def _make_eq_type(self, app, name: str = "Test EQ Type") -> int:
+        with app.app_context():
+            et = EquipmentType(name=name)
+            db.session.add(et)
+            db.session.commit()
+            return et.id
+
+    def _make_eq_item(self, app, type_id: int, name: str = "Test Item") -> int:
+
+        with app.app_context():
+            item = EquipmentItem(name=name, type_id=type_id)
+            db.session.add(item)
+            db.session.commit()
+            return item.id
+
+    def _create_data(self, app, rp_qual_id: int, **eq_fields) -> dict:
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        data.update(eq_fields)
+        return data
+
+    def test_create_without_equipment_succeeds(self, app, admin_client):
+        rp_qual_id = _make_rp_qual(app)
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        data["eq_total"] = "0"
+        resp = admin_client.post("/events/create", data=data, follow_redirects=False)
+        assert resp.status_code == 302
+
+    def test_create_with_sufficient_equipment_succeeds(self, app, admin_client):
+        rp_qual_id = _make_rp_qual(app)
+        type_id = self._make_eq_type(app, "Sufficient EQ")
+        self._make_eq_item(app, type_id)
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        data.update({"eq_total": "1", "eq_type_id_0": str(type_id), "eq_qty_0": "1"})
+        resp = admin_client.post("/events/create", data=data, follow_redirects=False)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
+            assert event is not None
+            assert len(event.equipment_plans) == 1
+            assert event.equipment_plans[0].quantity_required == 1
+
+    def test_create_blocked_when_equipment_shortage(self, app, admin_client):
+        rp_qual_id = _make_rp_qual(app)
+        type_id = self._make_eq_type(app, "Shortage EQ")
+        # No items → pool = 0, requesting 1 → conflict
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        data.update({"eq_total": "1", "eq_type_id_0": str(type_id), "eq_qty_0": "1"})
+        resp = admin_client.post("/events/create", data=data, follow_redirects=True)
+        assert resp.status_code == 200
+        assert "Nedostatek vybavení" in resp.data.decode()
+        with app.app_context():
+            assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
+
+    def test_create_form_preserved_on_equipment_error(self, app, admin_client):
+        """Form fields survive a validation error so the user doesn't lose data."""
+        rp_qual_id = _make_rp_qual(app)
+        type_id = self._make_eq_type(app, "Preserved EQ")
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id, name="Preserved Name", rp_qual_id=rp_qual_id)
+        data.update({"eq_total": "1", "eq_type_id_0": str(type_id), "eq_qty_0": "1"})
+        resp = admin_client.post("/events/create", data=data, follow_redirects=True)
+        body = resp.data.decode()
+        assert "Preserved Name" in body  # event name preserved
+
+    def test_equipment_conflict_message_contains_event_link(self, app, admin_client):
+        """Error message links to the conflicting event."""
+        rp_qual_id = _make_rp_qual(app)
+        type_id = self._make_eq_type(app, "Link EQ")
+        self._make_eq_item(app, type_id)
+        # Consume the only item with an existing event
+        existing_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Consuming Event")
+        with app.app_context():
+
+            db.session.add(EventEquipmentPlan(event_id=existing_id, equipment_type_id=type_id, quantity_required=1))
+            db.session.commit()
+        # Now try to create another event wanting the same item
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        data["start_datetime"] = "2030-06-01T10:00"
+        data["end_datetime"] = "2030-06-01T18:00"
+        data.update({"eq_total": "1", "eq_type_id_0": str(type_id), "eq_qty_0": "1"})
+        resp = admin_client.post("/events/create", data=data, follow_redirects=True)
+        body = resp.data.decode()
+        assert "Nedostatek vybavení" in body
+        assert "Consuming Event" in body  # link to conflicting event
+
+
+class TestEquipmentPlanOnEdit:
+    """Equipment plans are validated and updated when editing an event."""
+
+    def _setup(self, app, admin_client):
+        """Create event + equipment type + item. Returns (event_id, type_id, version, me_id, rp_qual_id)."""
+        rp_qual_id = _make_rp_qual(app)
+        me_id = _make_master_event(app)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        admin_client.post("/events/create", data=data, follow_redirects=False)
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
+            event_id = event.id
+            version = event.version
+            et = EquipmentType(name="Edit EQ")
+            db.session.add(et)
+            db.session.flush()
+
+            db.session.add(EquipmentItem(name="Edit Item", type_id=et.id))
+            db.session.commit()
+            type_id = et.id
+        return event_id, type_id, version, me_id, rp_qual_id
+
+    def test_edit_adds_equipment_plan(self, app, admin_client):
+        event_id, type_id, version, me_id, rp_qual_id = self._setup(app, admin_client)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        data["version"] = str(version)
+        data.update({"eq_total": "1", "eq_type_id_0": str(type_id), "eq_qty_0": "1"})
+        resp = admin_client.post(f"/events/{event_id}/edit", data=data, follow_redirects=False)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert len(event.equipment_plans) == 1
+
+    def test_edit_blocked_on_equipment_shortage(self, app, admin_client):
+        event_id, type_id, version, me_id, rp_qual_id = self._setup(app, admin_client)
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        data["version"] = str(version)
+        # Request 2 but only 1 item exists
+        data.update({"eq_total": "1", "eq_type_id_0": str(type_id), "eq_qty_0": "2"})
+        resp = admin_client.post(f"/events/{event_id}/edit", data=data, follow_redirects=True)
+        assert resp.status_code == 200
+        assert "Nedostatek vybavení" in resp.data.decode()
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert len(event.equipment_plans) == 0  # unchanged
+
+    def test_edit_clears_equipment_plan_when_eq_total_zero(self, app, admin_client):
+        event_id, type_id, version, me_id, rp_qual_id = self._setup(app, admin_client)
+        # First add a plan
+        with app.app_context():
+            db.session.add(EventEquipmentPlan(event_id=event_id, equipment_type_id=type_id, quantity_required=1))
+            db.session.commit()
+        data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
+        with app.app_context():
+            version = db.session.get(Event, event_id).version
+        data["version"] = str(version)
+        data["eq_total"] = "0"  # remove all plans
+        resp = admin_client.post(f"/events/{event_id}/edit", data=data, follow_redirects=False)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert len(event.equipment_plans) == 0
