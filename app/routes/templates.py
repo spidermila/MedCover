@@ -15,7 +15,7 @@ from sqlalchemy import collate
 
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
-from app.models.equipment import EquipmentCategory, EquipmentType, EventTemplateEquipmentPlan
+from app.models.equipment import EquipmentType, EventTemplateEquipmentPlan
 from app.models.event import EventSpotTemplate, EventTemplate, EventType
 from app.models.qualification import Qualification
 from app.utils import CS_COLLATION, audit, check_version_conflict, diff_changes, get_or_404, require_permission
@@ -139,9 +139,7 @@ def create() -> str | Response:
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
     equipment_types = db.session.scalars(
-        db.select(EquipmentType)
-        .where(EquipmentType.category != EquipmentCategory.PERSONAL)
-        .order_by(collate(EquipmentType.name, CS_COLLATION))
+        db.select(EquipmentType).order_by(collate(EquipmentType.name, CS_COLLATION))
     ).all()
 
     if request.method == "POST":
@@ -228,9 +226,7 @@ def edit(template_id: int) -> str | Response:
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
     equipment_types = db.session.scalars(
-        db.select(EquipmentType)
-        .where(EquipmentType.category != EquipmentCategory.PERSONAL)
-        .order_by(collate(EquipmentType.name, CS_COLLATION))
+        db.select(EquipmentType).order_by(collate(EquipmentType.name, CS_COLLATION))
     ).all()
 
     if request.method == "POST":

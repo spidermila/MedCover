@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from flask import url_for
 from flask_login import current_user
+from markupsafe import Markup
 
 from app.extensions import db
-from app.models.equipment import EquipmentItem, EventEquipmentAssignment, EventEquipmentPlan
+from app.models.equipment import EquipmentType, EventEquipmentPlan
 from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
 from app.models.qualification import Qualification
 from app.models.role import Role
@@ -245,79 +246,6 @@ def build_spots_from_template(event: Event, template: object) -> None:
         db.session.add(plan)
 
 
-def build_equipment_assignments(event: Event, item_ids: list[int]) -> None:
-    """Create EventEquipmentAssignment records for *item_ids* on *event*.
-
-    Silently skips unavailable items or IDs that don't resolve to a real item.
-    Caller must have already flushed the event so event.id is set.
-    """
-    for item_id in item_ids:
-        item = db.session.get(EquipmentItem, item_id)
-        if item is None or not item.is_available:
-            continue
-        db.session.add(EventEquipmentAssignment(event_id=event.id, equipment_item_id=item.id))
-
-
-def equipment_warnings_for_event(event: Event) -> list[dict]:
-    """Return a list of warning dicts for items already assigned to *event*.
-
-    Each dict has keys: item_name, status ("unavailable"|"conflict"),
-    reason (str|None), conflicting_event (dict|None).
-    """
-    warnings: list[dict] = []
-    assigned_items = [ea.equipment_item for ea in event.equipment_assignments]
-    if not assigned_items:
-        return warnings
-
-    # Separate unavailable items (no DB query needed)
-    available_ids: list[int] = []
-    for item in assigned_items:
-        if not item.is_available:
-            warnings.append(
-                {
-                    "item_name": item.name,
-                    "status": "unavailable",
-                    "reason": item.unavailability_reason or "Bez udaného důvodu",
-                    "conflicting_event": None,
-                }
-            )
-        else:
-            available_ids.append(item.id)
-
-    # Single query for all conflicts across all available assigned items
-    if available_ids:
-        conflicts = db.session.scalars(
-            db.select(EventEquipmentAssignment)
-            .join(Event, EventEquipmentAssignment.event_id == Event.id)
-            .where(
-                EventEquipmentAssignment.equipment_item_id.in_(available_ids),
-                EventEquipmentAssignment.event_id != event.id,
-                Event.status != EventStatus.CANCELLED,
-                Event.archived == sa.false(),
-                Event.start_datetime < event.end_datetime,
-                Event.end_datetime > event.start_datetime,
-            )
-        ).all()
-        # Build item_id → name lookup
-        id_to_name = {item.id: item.name for item in assigned_items}
-        for c in conflicts:
-            ce = c.event
-            warnings.append(
-                {
-                    "item_name": id_to_name[c.equipment_item_id],
-                    "status": "conflict",
-                    "reason": None,
-                    "conflicting_event": {
-                        "name": ce.name,
-                        "start": ce.start_datetime,
-                        "end": ce.end_datetime,
-                        "url": url_for("events.detail", event_id=ce.id),
-                    },
-                }
-            )
-    return warnings
-
-
 def copy_spots_with_assignments(source: Event, target: Event) -> None:
     """Copy spots (+ qualifications + existing assignments) from source to target."""
     from app.models.assignment import Assignment  # pylint: disable=import-outside-toplevel
@@ -340,21 +268,119 @@ def copy_spots_with_assignments(source: Event, target: Event) -> None:
             db.session.add(new_assignment)
 
 
+def parse_equipment_plans_from_form(form: dict) -> list[tuple[int, int]]:
+    """Return list of (type_id, quantity) pairs from the form's eq_* fields."""
+    try:
+        total = int(form.get("eq_total", 0) or 0)
+    except (ValueError, TypeError):
+        total = 0
+    plans: list[tuple[int, int]] = []
+    seen: set[int] = set()
+    for i in range(total):
+        raw_type = form.get(f"eq_type_id_{i}", "")
+        raw_qty = form.get(f"eq_qty_{i}", "1")
+        if not raw_type or not str(raw_type).isdigit():
+            continue
+        type_id = int(raw_type)
+        if type_id in seen:
+            continue  # deduplicate
+        try:
+            qty = max(1, int(raw_qty))
+        except (ValueError, TypeError):
+            qty = 1
+        plans.append((type_id, qty))
+        seen.add(type_id)
+    return plans
+
+
+def check_equipment_conflicts(
+    plans: list[tuple[int, int]],
+    start_dt: datetime,
+    end_dt: datetime,
+    exclude_event_id: int | None = None,
+) -> list[Markup]:
+    """Check each (type_id, qty) plan against available stock.
+
+    Returns a list of Markup flash messages (one per conflicting type), each
+    containing a link to the first conflicting event so the user can act.
+    Returns an empty list when everything fits.
+    """
+    from app.queries import available_quantity_for_type  # pylint: disable=import-outside-toplevel
+
+    errors: list[Markup] = []
+    for type_id, qty in plans:
+        avail = available_quantity_for_type(type_id, start_dt, end_dt, exclude_event_id=exclude_event_id)
+        if avail >= qty:
+            continue
+
+        et = db.session.get(EquipmentType, type_id)
+        type_name = et.name if et else str(type_id)
+
+        # Find the events consuming stock during this window (for the link).
+        conflicting = db.session.scalars(
+            db.select(Event)
+            .join(EventEquipmentPlan, EventEquipmentPlan.event_id == Event.id)
+            .where(
+                EventEquipmentPlan.equipment_type_id == type_id,
+                Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
+                Event.archived == sa.false(),
+                Event.start_datetime < end_dt,
+                Event.end_datetime > start_dt,
+                *([] if exclude_event_id is None else [Event.id != exclude_event_id]),
+            )
+            .order_by(Event.start_datetime)
+            .limit(3)
+        ).all()
+
+        msg = Markup(f"Nedostatek vybavení — typ „{type_name}”: požadováno {qty} ks, k dispozici {max(0, avail)} ks.")
+        if conflicting:
+            links = Markup(", ").join(
+                Markup('<a href="{}">{}</a>').format(url_for("events.detail", event_id=e.id), e.name)
+                for e in conflicting
+            )
+            msg = msg + Markup(" Konflikt s: ") + links + Markup(".")
+        errors.append(msg)
+    return errors
+
+
+def apply_equipment_plans(event: Event, plans: list[tuple[int, int]]) -> None:
+    """Replace the event's equipment plans with *plans* (type_id, qty pairs).
+
+    Deletes removed rows, upserts the rest.  Caller must flush/commit.
+    """
+    existing = {p.equipment_type_id: p for p in event.equipment_plans}
+    wanted = {type_id for type_id, _ in plans}
+
+    # Remove plans no longer in the list
+    for type_id, plan in list(existing.items()):
+        if type_id not in wanted:
+            db.session.delete(plan)
+
+    # Upsert remaining
+    for type_id, qty in plans:
+        if type_id in existing:
+            existing[type_id].quantity_required = qty
+        else:
+            db.session.add(EventEquipmentPlan(event_id=event.id, equipment_type_id=type_id, quantity_required=qty))
+
+
+def all_shared_equipment_types() -> list[EquipmentType]:
+    """Return all SHARED equipment types ordered by name (for form selectors)."""
+    from sqlalchemy import collate  # pylint: disable=import-outside-toplevel
+
+    from app.utils import CS_COLLATION  # pylint: disable=import-outside-toplevel
+
+    return list(db.session.scalars(db.select(EquipmentType).order_by(collate(EquipmentType.name, CS_COLLATION))).all())
+
+
 def copy_equipment(source: Event, target: Event) -> None:
-    """Copy equipment plans and assignments from source to target."""
+    """Copy equipment plans from source to target."""
     for plan in source.equipment_plans:
         db.session.add(
             EventEquipmentPlan(
                 event_id=target.id,
                 equipment_type_id=plan.equipment_type_id,
                 quantity_required=plan.quantity_required,
-            )
-        )
-    for ea in source.equipment_assignments:
-        db.session.add(
-            EventEquipmentAssignment(
-                event_id=target.id,
-                equipment_item_id=ea.equipment_item_id,
             )
         )
 

@@ -1,12 +1,17 @@
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
 from flask import Blueprint, Response, jsonify, render_template
 from flask_login import current_user, login_required
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from app.extensions import db
 from app.models.assignment import Assignment
+from app.models.equipment import (
+    EquipmentItem,
+    EventEquipmentPlan,
+)
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.user import UserAccount
 from app.queries import user_fillable_qual_ids
@@ -125,6 +130,104 @@ def _attention_events_section(now: datetime, horizon: datetime) -> list[Event]:
     ]
 
 
+def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[Event, str, int, int]]:
+    """Events in the planning horizon with an equipment shortage.
+
+    Returns list of (event, type_name, required, available) tuples.
+    Only one entry per event (the first shortage found).
+    """
+    if not current_user.has_any_permission("event.equipment.plan", "event.view"):
+        return []
+
+    events_with_plans = db.session.scalars(
+        db.select(Event)
+        .where(
+            Event.start_datetime > now,
+            Event.start_datetime <= horizon,
+            Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
+            Event.archived == sa.false(),
+            Event.id.in_(db.select(EventEquipmentPlan.event_id)),
+        )
+        .order_by(Event.start_datetime)
+    ).all()
+
+    if not events_with_plans:
+        return []
+
+    # Batch: pool per type across ALL affected windows would be complex since each
+    # event has its own window.  Instead gather distinct type IDs and compute pool
+    # counts per type for each unique event window in two aggregate queries each.
+    # For the dashboard we cap at the first shortage per event to keep it readable.
+    event_ids = [e.id for e in events_with_plans]
+    type_ids = list({p.equipment_type_id for e in events_with_plans for p in e.equipment_plans})
+
+    # For each type: total pool items (not in maintenance; we'll refine per-event below).
+    # We pre-compute a "global" pool (ignoring exact window) to quickly skip types
+    # where total pool >= sum of all planned quantities — no shortage possible.
+    global_pool_rows = db.session.execute(
+        db.select(EquipmentItem.type_id, func.count(EquipmentItem.id).label("cnt"))
+        .where(
+            EquipmentItem.type_id.in_(type_ids),
+            EquipmentItem.unavailability_since.is_(None),  # quick global pre-filter (ignores window)
+        )
+        .group_by(EquipmentItem.type_id)
+    ).all()
+    global_pool: dict[int, int] = {r.type_id: r.cnt for r in global_pool_rows}
+
+    # Committed quantities from events with overlapping windows (excluding self).
+    committed_rows = db.session.execute(
+        db.select(
+            EventEquipmentPlan.event_id,
+            EventEquipmentPlan.equipment_type_id,
+            func.sum(EventEquipmentPlan.quantity_required).label("committed"),
+        )
+        .join(Event, Event.id == EventEquipmentPlan.event_id)
+        .where(
+            EventEquipmentPlan.equipment_type_id.in_(type_ids),
+            EventEquipmentPlan.event_id.notin_(event_ids),
+            Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
+            Event.archived == sa.false(),
+        )
+        .group_by(EventEquipmentPlan.event_id, EventEquipmentPlan.equipment_type_id)
+    ).all()
+    # Build: committed_by_others[type_id] = [(event_start, event_end, qty)]
+    # Then for each plan, sum up overlapping committed quantities.
+    committed_windows: dict[int, list[tuple]] = defaultdict(list)
+    event_times: dict[int, tuple] = {e.id: (e.start_datetime, e.end_datetime) for e in events_with_plans}
+    # We need start/end for other events — load them.
+    other_event_ids = list({r.event_id for r in committed_rows})
+    if other_event_ids:
+        other_events = db.session.execute(
+            db.select(Event.id, Event.start_datetime, Event.end_datetime).where(Event.id.in_(other_event_ids))
+        ).all()
+        for oe in other_events:
+            event_times[oe.id] = (oe.start_datetime, oe.end_datetime)
+    for r in committed_rows:
+        s, e = event_times.get(r.event_id, (None, None))
+        if s and e:
+            committed_windows[r.equipment_type_id].append((s, e, r.committed))
+
+    result = []
+    seen: set[int] = set()
+    for event in events_with_plans:
+        if event.id in seen:
+            continue
+        for plan in event.equipment_plans:
+            tid = plan.equipment_type_id
+            pool = global_pool.get(tid, 0)
+            committed = sum(
+                qty
+                for (s, e, qty) in committed_windows.get(tid, [])
+                if s < event.end_datetime and e > event.start_datetime
+            )
+            avail = pool - committed
+            if avail < plan.quantity_required:
+                result.append((event, plan.equipment_type.name, plan.quantity_required, avail))
+                seen.add(event.id)
+                break
+    return result
+
+
 def _missing_rp_events_section(now: datetime) -> list[Event]:
     """Events in the next 7 days without a responsible person."""
     if not current_user.has_any_permission("event.publish", "event.assignments.open"):
@@ -193,6 +296,7 @@ def dashboard() -> str:
         open_events=open_events,
         open_events_all=open_events_all,
         attention_events=_attention_events_section(now, horizon),
+        equipment_shortage_events=_equipment_shortage_events(now, horizon),
         pending_activations=pending_activations,
         missing_rp_events=_missing_rp_events_section(now),
         pending_debriefings=_pending_debriefings_section(),
