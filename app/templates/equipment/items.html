@@ -141,24 +141,24 @@
           {% if current_user.has_permission('equipment_item.availability_modify') and item.is_available %}
           <div class="collapse mt-1" id="unavail-form-{{ item.id }}">
             <form method="POST" action="{{ url_for('equipment.item_mark_unavailable', item_id=item.id) }}"
-                  class="d-flex flex-wrap gap-2 align-items-end mt-1">
+                  class="row g-2 align-items-end mt-0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="version" value="{{ item.version }}">
-              <div>
+              <div class="col-sm-4">
                 <label class="form-label form-label-sm mb-1 text-muted small">Důvod</label>
-                <input type="text" name="reason" class="form-control form-control-sm maxw-200"
+                <input type="text" name="reason" class="form-control form-control-sm"
                        placeholder="Servis, oprava…">
               </div>
-              <div>
+              <div class="col-sm-3">
                 <label class="form-label form-label-sm mb-1 text-muted small">Nedostupná od</label>
-                <input type="text" name="since" class="form-control form-control-sm flatpickr-date maxw-130">
+                <input type="text" name="since" class="form-control form-control-sm flatpickr-date">
               </div>
-              <div>
+              <div class="col-sm-3">
                 <label class="form-label form-label-sm mb-1 text-muted small">Do (prázdné = neurčito)</label>
-                <input type="text" name="until" class="form-control form-control-sm flatpickr-date maxw-130">
+                <input type="text" name="until" class="form-control form-control-sm flatpickr-date">
               </div>
-              <div class="align-self-end">
-                <button type="submit" class="btn btn-warning btn-sm">Označit</button>
+              <div class="col-sm-2">
+                <button type="submit" class="btn btn-warning btn-sm w-100">Označit</button>
               </div>
             </form>
           </div>
