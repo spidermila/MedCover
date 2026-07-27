@@ -6,11 +6,20 @@ performance (eager-load shapes, ordering) and to apply changes in one place.
 """
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
-from sqlalchemy import collate
+from sqlalchemy import collate, func
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 from app.extensions import db
+from app.models.equipment import (
+    EquipmentItem,
+    EventEquipmentPlan,
+)
+from app.models.event import Event, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
 from app.utils import CS_COLLATION
@@ -103,26 +112,58 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
     return {q.id for q in all_quals if _user_can_fill(q.id, frozenset())}
 
 
-def assignable_equipment_items() -> list[tuple[str, list]]:
-    """Return non-personal equipment items grouped by type, ordered alphabetically.
+def in_maintenance_during(start_dt: datetime, end_dt: datetime) -> sa.sql.ClauseElement:
+    """Return a SQLAlchemy expression that is TRUE when an EquipmentItem row is in
+    an active maintenance window overlapping [start_dt, end_dt).
 
-    Returns a list of ``(type_name, [EquipmentItem, ...])`` tuples.
-    Used on the event create/edit forms to let the user pre-assign items.
+    An item is in maintenance when its unavailability_since is set and the window
+    [since, until) overlaps [start_dt, end_dt).  No status column needed.
     """
-    from app.models.equipment import (  # pylint: disable=import-outside-toplevel
-        EquipmentCategory,
-        EquipmentItem,
-        EquipmentType,
+    return sa.and_(
+        EquipmentItem.unavailability_since.is_not(None),
+        EquipmentItem.unavailability_since < end_dt,
+        sa.or_(EquipmentItem.unavailability_until.is_(None), EquipmentItem.unavailability_until > start_dt),
     )
 
-    items = db.session.scalars(
-        db.select(EquipmentItem)
-        .join(EquipmentType)
-        .where(EquipmentType.category != EquipmentCategory.PERSONAL)
-        .order_by(collate(EquipmentType.name, CS_COLLATION), collate(EquipmentItem.name, CS_COLLATION))
-    ).all()
 
-    groups: dict[str, list] = {}
-    for item in items:
-        groups.setdefault(item.equipment_type.name, []).append(item)
-    return list(groups.items())
+def available_quantity_for_type(
+    type_id: int,
+    start_dt: datetime,
+    end_dt: datetime,
+    exclude_event_id: int | None = None,
+) -> int:
+    """Return how many SHARED items of *type_id* are still free for the given window.
+
+    Positive = surplus; zero = exact fit; negative = shortage.
+
+    An item is *available* for [start_dt, end_dt) when it is not in a maintenance
+    window that overlaps the query window.  Issued items are included — the person
+    carrying the item may bring it to the event.  Personal-category types are
+    always excluded.
+    """
+    total = (
+        db.session.scalar(
+            db.select(func.count(EquipmentItem.id)).where(
+                EquipmentItem.type_id == type_id,
+                ~in_maintenance_during(start_dt, end_dt),
+            )
+        )
+        or 0
+    )
+
+    committed_q = (
+        db.select(func.sum(EventEquipmentPlan.quantity_required))
+        .join(Event, Event.id == EventEquipmentPlan.event_id)
+        .where(
+            EventEquipmentPlan.equipment_type_id == type_id,
+            Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
+            Event.archived == sa.false(),
+            Event.start_datetime < end_dt,
+            Event.end_datetime > start_dt,
+        )
+    )
+    if exclude_event_id is not None:
+        committed_q = committed_q.where(Event.id != exclude_event_id)
+
+    committed = db.session.scalar(committed_q) or 0
+    return total - committed
