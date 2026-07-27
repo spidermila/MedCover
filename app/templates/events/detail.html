@@ -105,7 +105,7 @@
     {% endif %}
     {% if not event.archived and current_user.has_permission('event.archive_draft' if event.status == EventStatus.DRAFT else 'event.archive') %}
       <form method="POST" action="{{ url_for('events.archive_event', event_id=event.id) }}"
-            data-confirm="Archivovat akci „{{ event.name }}"?">
+            data-confirm="Archivovat akci „{{ event.name }}“">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-outline-danger btn-sm">🗑 Archivovat</button>
       </form>

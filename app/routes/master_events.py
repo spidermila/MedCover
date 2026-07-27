@@ -99,7 +99,7 @@ def create() -> str | Response:
         audit("create", "MasterEvent", me.id, f"Vytvořena nadřazená akce '{me.name}'")
         db.session.commit()
 
-        flash(f'Nadřazená akce „{me.name}" byla vytvořena.', "success")
+        flash(f"Nadřazená akce „{me.name}“ byla vytvořena.", "success")
         return redirect(url_for("master_events.detail", me_id=me.id))
 
     return render_template("master_events/create.html", coordinators=coordinators)
@@ -185,7 +185,7 @@ def edit(me_id: int) -> str | Response:
 
         db.session.commit()
 
-        flash(f'Nadřazená akce „{me.name}" byla uložena.', "success")
+        flash(f"Nadřazená akce „{me.name}“ byla uložena.", "success")
         return redirect(url_for("master_events.detail", me_id=me.id))
 
     return render_template("master_events/edit.html", me=me, coordinators=coordinators)
@@ -241,7 +241,7 @@ def archive(me_id: int) -> Response:
 
     db.session.commit()
 
-    flash(f'Nadřazená akce „{me.name}" byla archivována.', "success")
+    flash(f"Nadřazená akce „{me.name}“ byla archivována.", "success")
     return redirect(url_for("master_events.index"))
 
 
@@ -271,7 +271,7 @@ def unarchive(me_id: int) -> Response:
     audit("unarchive", "MasterEvent", me.id, f"Nadřazená akce '{me.name}' byla obnovena z archivu")
     db.session.commit()
 
-    flash(f'Nadřazená akce „{me.name}" byla obnovena z archivu.', "success")
+    flash(f"Nadřazená akce „{me.name}“ byla obnovena z archivu.", "success")
     if archived_event_count:
         flash(
             f"Pozor: {archived_event_count} akcí této nadřazené akce zůstává archivováno. "

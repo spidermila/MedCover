@@ -77,7 +77,7 @@ def type_create() -> str | Response:
         audit("create", "EquipmentType", str(et.id), f"Vytvořen typ vybavení '{et.name}'")
         db.session.commit()
 
-        flash(f'Typ vybavení „{et.name}" byl vytvořen.', "success")
+        flash(f"Typ vybavení „{et.name}“ byl vytvořen.", "success")
         return redirect(url_for("equipment.index"))
 
     return render_template("equipment/type_form.html", edit=False)
@@ -126,7 +126,7 @@ def type_edit(type_id: int) -> str | Response:
         )
         db.session.commit()
 
-        flash(f'Typ vybavení „{et.name}" byl uložen.', "success")
+        flash(f"Typ vybavení „{et.name}“ byl uložen.", "success")
         return redirect(url_for("equipment.index"))
 
     return render_template("equipment/type_form.html", et=et, edit=True)
@@ -150,7 +150,7 @@ def type_delete(type_id: int) -> Response:
     db.session.delete(et)
     db.session.commit()
 
-    flash(f'Typ vybavení „{et.name}" byl smazán.', "success")
+    flash(f"Typ vybavení „{et.name}“ byl smazán.", "success")
     return redirect(url_for("equipment.index"))
 
 
@@ -231,7 +231,7 @@ def item_create() -> str | Response:
         audit("create", "EquipmentItem", str(item.id), f"Vytvořena položka vybavení '{item.name}'")
         db.session.commit()
 
-        flash(f'Položka vybavení „{item.name}" byla vytvořena.', "success")
+        flash(f"Položka vybavení „{item.name}“ byla vytvořena.", "success")
         return redirect(url_for("equipment.items"))
 
     return render_template("equipment/item_form.html", types=types, edit=False)
@@ -336,7 +336,7 @@ def item_edit(item_id: int) -> str | Response:
         )
         db.session.commit()
 
-        flash(f'Položka vybavení „{item.name}" byla uložena.', "success")
+        flash(f"Položka vybavení „{item.name}“ byla uložena.", "success")
 
         # Warn about shortages if the item just entered a maintenance window.
         if can_modify_availability and was_available and not item.is_available:
@@ -443,7 +443,7 @@ def item_mark_unavailable(item_id: int) -> Response:
     )
     db.session.commit()
 
-    flash(f'Položka „{item.name}" byla označena jako nedostupná.', "success")
+    flash(f"Položka „{item.name}“ byla označena jako nedostupná.", "success")
     _flash_unavailability_shortage_warning(item)
     return redirect(url_for("equipment.items"))
 
@@ -470,7 +470,7 @@ def item_mark_available(item_id: int) -> Response:
     audit("edit", "EquipmentItem", str(item.id), f"Položka '{item.name}' vrácena na sklad (dostupná)")
     db.session.commit()
 
-    flash(f'Položka „{item.name}" je opět dostupná.', "success")
+    flash(f"Položka „{item.name}“ je opět dostupná.", "success")
     return redirect(url_for("equipment.items"))
 
 
@@ -535,7 +535,7 @@ def item_delete(item_id: int) -> Response:
     db.session.delete(item)
     db.session.commit()
 
-    flash(f'Položka vybavení „{item.name}" byla smazána.', "success")
+    flash(f"Položka vybavení „{item.name}“ byla smazána.", "success")
     return redirect(url_for("equipment.items"))
 
 
@@ -575,7 +575,7 @@ def item_issue(item_id: int) -> Response:
     )
     db.session.commit()
 
-    flash(f'Položka „{item.name}" byla vydána uživateli {user.name}.', "success")
+    flash(f"Položka „{item.name}“ byla vydána uživateli {user.name}.", "success")
     return redirect(url_for("equipment.items"))
 
 
@@ -603,7 +603,7 @@ def item_return(item_id: int) -> Response:
     )
     db.session.commit()
 
-    flash(f'Položka „{item.name}" byla vrácena.', "success")
+    flash(f"Položka „{item.name}“ byla vrácena.", "success")
     return redirect(url_for("equipment.items"))
 
 
@@ -631,5 +631,5 @@ def item_take(item_id: int) -> Response:
     )
     db.session.commit()
 
-    flash(f'Položka „{item.name}" byla vydána vám.', "success")
+    flash(f"Položka „{item.name}“ byla vydána vám.", "success")
     return redirect(url_for("equipment.items"))

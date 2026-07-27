@@ -692,7 +692,7 @@ def archive_event(event_id: int) -> Response:
 
     if is_ajax:
         return jsonify({"ok": True})
-    flash(f'Akce „{name}" byla archivována.', "success")
+    flash(f"Akce „{name}“ byla archivována.", "success")
     if me_id:
         return redirect(url_for("master_events.detail", me_id=me_id))
     return redirect(url_for("events.index"))
@@ -770,5 +770,5 @@ def unarchive_event(event_id: int) -> Response:
     audit("unarchive", "Event", event.id, f"Akce '{name}' obnovena z archivu")
     db.session.commit()
 
-    flash(f'Akce „{name}" byla obnovena z archivu.', "success")
+    flash(f"Akce „{name}“ byla obnovena z archivu.", "success")
     return redirect(url_for("events.detail", event_id=event_id))

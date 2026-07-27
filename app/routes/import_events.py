@@ -543,10 +543,10 @@ def events_preview() -> str | Response:
             warnings.append("Čas akce nebyl zadán — akce bude vytvořena bez pozic.")
         if cleaned["responsible_person"] and rp_confidence == "none":
             rp_name = cleaned["responsible_person"]
-            warnings.append(f'Zodpovědná osoba "{rp_name}" nebyla nalezena v databázi. Přiřaďte ručně.')
+            warnings.append(f"Zodpovědná osoba „{rp_name}“ nebyla nalezena v databázi. Přiřaďte ručně.")
         elif rp_confidence in ("iexact", "reversed"):
             rp_name_found = rp_user.name if rp_user else ""
-            warnings.append(f'Zodpovědná osoba spárována přibližně: "{rp_name_found}". Zkontrolujte.')
+            warnings.append(f"Zodpovědná osoba spárována přibližně: „{rp_name_found}“. Zkontrolujte.")
 
         is_duplicate = (cleaned["name"], cleaned["date"]) in existing_events
         if is_duplicate:

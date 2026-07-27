@@ -107,8 +107,8 @@
                   Servis
                 </button>
               {% else %}
-                <form method=”POST” action=”{{ url_for('equipment.item_mark_available', item_id=item.id) }}”
-                      data-confirm=”Vrátit položku „{{ item.name }}” do provozu jako dostupnou?”>
+                <form method="POST" action="{{ url_for('equipment.item_mark_available', item_id=item.id) }}"
+                      data-confirm="Vrátit položku „{{ item.name }}” do provozu jako dostupnou?">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="version" value="{{ item.version }}">
                   <button class="btn btn-outline-success btn-sm">Vrátit do provozu</button>
