@@ -304,8 +304,19 @@ def item_edit(item_id: int) -> str | Response:
 
             was_available = item.is_available
             item.unavailability_reason = request.form.get("unavailability_reason", "").strip() or None
-            item.unavailability_since = _parse_dt(request.form.get("unavailability_since", ""))
-            item.unavailability_until = _parse_dt(request.form.get("unavailability_until", ""))
+            new_since = _parse_dt(request.form.get("unavailability_since", ""))
+            new_until = _parse_dt(request.form.get("unavailability_until", ""))
+            if new_since and new_until and new_until <= new_since:
+                flash("Konec servisního okna musí být po jeho začátku.", "danger")
+                return render_template(
+                    "equipment/item_form.html",
+                    item=item,
+                    types=types,
+                    edit=True,
+                    can_modify_availability=can_modify_availability,
+                )
+            item.unavailability_since = new_since
+            item.unavailability_until = new_until
 
         item.version += 1
         after = {
@@ -414,6 +425,10 @@ def item_mark_unavailable(item_id: int) -> Response:
 
     since = _parse_date(request.form.get("since", "")) or datetime.now(timezone.utc)
     until = _parse_date(request.form.get("until", ""))
+
+    if until and until <= since:
+        flash("Konec servisního okna musí být po jeho začátku.", "danger")
+        return redirect(url_for("equipment.items"))
 
     item.unavailability_reason = reason
     item.unavailability_since = since
