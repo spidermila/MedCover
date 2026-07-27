@@ -861,3 +861,47 @@ class TestUnavailabilityFutureEventWarning:
         assert resp.status_code == 200
         body = resp.data.decode()
         assert "nedostatek" not in body.lower() or "Upozornění" not in body
+
+
+# ── Plan-add conflict message includes conflicting event ──────────────────────
+
+
+class TestPlanAddConflictMessage:
+    """equipment_plan_add flash must link to the conflicting event."""
+
+    def test_conflict_flash_contains_conflicting_event_name(self, app, admin_client):
+        type_id = _make_type(app, "Conflict Msg Type")
+        _make_item(app, type_id, "Conflict Msg Item")
+
+        future_start = datetime.now(timezone.utc) + timedelta(days=3)
+        future_end = future_start + timedelta(hours=8)
+
+        # Event A occupies the only item in its window
+        event_a_id = _make_event_in_status(app, EventStatus.PUBLISHED)
+        with app.app_context():
+            ev_a = db.session.get(Event, event_a_id)
+            ev_a.name = "Blocking Event"
+            ev_a.start_datetime = future_start
+            ev_a.end_datetime = future_end
+            db.session.add(EventEquipmentPlan(
+                event_id=event_a_id, equipment_type_id=type_id, quantity_required=1
+            ))
+            db.session.commit()
+
+        # Event B overlaps — trying to add the same type should fail and name Event A
+        event_b_id = _make_event_in_status(app, EventStatus.PUBLISHED)
+        with app.app_context():
+            ev_b = db.session.get(Event, event_b_id)
+            ev_b.start_datetime = future_start
+            ev_b.end_datetime = future_end
+            db.session.commit()
+
+        resp = admin_client.post(
+            f"/events/{event_b_id}/equipment/plan",
+            data={"type_id": str(type_id), "quantity": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        assert "Nedostatek" in body
+        assert "Blocking Event" in body

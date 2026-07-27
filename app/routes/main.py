@@ -187,8 +187,10 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
                 count += 1  # maintenance ended before event starts
         return count
 
-    # Committed quantities from other events whose windows could overlap.
-    # Bounding by end_datetime > now avoids loading all historical events.
+    # Committed quantities from ALL overlapping events (including other dashboard events).
+    # We include dashboard events here and exclude only the current event in the inner
+    # loop below — otherwise two horizon-events competing for the same type would
+    # each exclude the other and neither would be flagged as short.
     committed_rows = db.session.execute(
         db.select(
             EventEquipmentPlan.event_id,
@@ -198,17 +200,16 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
         .join(Event, Event.id == EventEquipmentPlan.event_id)
         .where(
             EventEquipmentPlan.equipment_type_id.in_(type_ids),
-            EventEquipmentPlan.event_id.notin_(event_ids),
             Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
             Event.archived == sa.false(),
             Event.end_datetime > now,
         )
         .group_by(EventEquipmentPlan.event_id, EventEquipmentPlan.equipment_type_id)
     ).all()
-    # Build: committed_windows[type_id] = [(event_start, event_end, qty)]
+    # Build: committed_windows[type_id] = [(event_id, event_start, event_end, qty)]
     committed_windows: dict[int, list[tuple]] = defaultdict(list)
     event_times: dict[int, tuple] = {e.id: (e.start_datetime, e.end_datetime) for e in events_with_plans}
-    other_event_ids = list({r.event_id for r in committed_rows})
+    other_event_ids = list({r.event_id for r in committed_rows} - set(event_ids))
     if other_event_ids:
         other_events = db.session.execute(
             db.select(Event.id, Event.start_datetime, Event.end_datetime).where(Event.id.in_(other_event_ids))
@@ -218,7 +219,7 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
     for r in committed_rows:
         s, e = event_times.get(r.event_id, (None, None))
         if s and e:
-            committed_windows[r.equipment_type_id].append((s, e, r.committed))
+            committed_windows[r.equipment_type_id].append((r.event_id, s, e, r.committed))
 
     result = []
     seen: set[int] = set()
@@ -230,8 +231,8 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
             pool = _pool_for_window(tid, event.start_datetime, event.end_datetime)
             committed = sum(
                 qty
-                for (s, e, qty) in committed_windows.get(tid, [])
-                if s < event.end_datetime and e > event.start_datetime
+                for (eid, s, e, qty) in committed_windows.get(tid, [])
+                if eid != event.id and s < event.end_datetime and e > event.start_datetime
             )
             avail = pool - committed
             if avail < plan.quantity_required:
