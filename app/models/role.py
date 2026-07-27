@@ -94,7 +94,7 @@ ALL_PERMISSIONS: list[dict] = [
     {"code": "equipment_item.report_own", "description": "Report status of own issued personal items"},
     {
         "code": "equipment_item.availability_modify",
-        "description": "Set equipment item availability (available/unavailable)",
+        "description": "Manage equipment item maintenance windows (mark in/out of service)",
     },
     {"code": "event.equipment.plan", "description": "Plan required equipment for an event"},
     # Debriefing
