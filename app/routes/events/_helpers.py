@@ -6,6 +6,7 @@ import sqlalchemy as sa
 from flask import url_for
 from flask_login import current_user
 from markupsafe import Markup
+from sqlalchemy import collate
 
 from app.extensions import db
 from app.models.equipment import EquipmentType, EventEquipmentPlan
@@ -13,7 +14,8 @@ from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.utils import get_app_tz
+from app.queries import available_quantity_for_type
+from app.utils import CS_COLLATION, get_app_tz
 
 # Valid manual lifecycle transitions: (from_status, to_status, required_permission)
 TRANSITIONS: list[tuple[EventStatus, EventStatus, str]] = [
@@ -289,8 +291,6 @@ def check_equipment_conflicts(
     containing a link to the first conflicting event so the user can act.
     Returns an empty list when everything fits.
     """
-    from app.queries import available_quantity_for_type  # pylint: disable=import-outside-toplevel
-
     errors: list[Markup] = []
     for type_id, qty in plans:
         avail = available_quantity_for_type(type_id, start_dt, end_dt, exclude_event_id=exclude_event_id)
@@ -350,10 +350,6 @@ def apply_equipment_plans(event: Event, plans: list[tuple[int, int]]) -> None:
 
 def all_equipment_types() -> list[EquipmentType]:
     """Return all equipment types ordered by name (for form selectors)."""
-    from sqlalchemy import collate  # pylint: disable=import-outside-toplevel
-
-    from app.utils import CS_COLLATION  # pylint: disable=import-outside-toplevel
-
     return list(db.session.scalars(db.select(EquipmentType).order_by(collate(EquipmentType.name, CS_COLLATION))).all())
 
 
