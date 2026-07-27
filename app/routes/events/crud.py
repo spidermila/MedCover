@@ -13,7 +13,11 @@ import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentItemStatus, EquipmentType
+from app.models.equipment import (
+    EquipmentItem,
+    EquipmentType,
+    EventEquipmentPlan,
+)
 from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
@@ -22,7 +26,7 @@ from app.printout_generator import generate_printout
 from app.queries import (
     active_master_events_list,
     active_users_list,
-    assignable_equipment_items,
+    in_maintenance_during,
     rp_eligible_users_list,
     user_fillable_qual_ids,
 )
@@ -41,11 +45,12 @@ from ._helpers import (
     PER_PAGE,
     STATUS_BADGE_COLORS,
     STATUS_COLORS,
-    build_equipment_assignments,
+    all_shared_equipment_types,
+    apply_equipment_plans,
     build_spots,
-    build_spots_from_template,
     can_view,
-    equipment_warnings_for_event,
+    check_equipment_conflicts,
+    parse_equipment_plans_from_form,
     parse_event_form,
     validate_event_spots_config,
 )
@@ -319,20 +324,25 @@ def create() -> str | Response:
         .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
-    equipment_groups = assignable_equipment_items() if current_user.has_permission("event.equipment.assign") else []
+    eq_types = all_shared_equipment_types()
+
+    def _render_create(**extra: object) -> str:
+        return render_template(
+            "events/form.html",
+            mode="create",
+            master_events=master_events,
+            users=users,
+            all_qualifications=all_qualifications,
+            all_equipment_types=eq_types,
+            EventType=EventType,
+            **extra,
+        )
 
     if request.method == "POST":
         event, error = parse_event_form(request.form)
         if error or event is None:
             flash(error or "Chyba formuláře.", "danger")
-            return render_template(
-                "events/create.html",
-                master_events=master_events,
-                users=users,
-                all_qualifications=all_qualifications,
-                equipment_groups=equipment_groups,
-                EventType=EventType,
-            )
+            return _render_create()
 
         quick_publish = request.form.get("action") == "quick_publish"
         if quick_publish:
@@ -347,34 +357,28 @@ def create() -> str | Response:
         db.session.add(event)
         db.session.flush()
 
-        template_id_str = request.form.get("template_id", "").strip()
-        if template_id_str:
-
-            tmpl = db.session.get(EventTemplate, int(template_id_str))
-            if tmpl:
-                build_spots_from_template(event, tmpl)
-            else:
-                build_spots(event, request.form)
-        else:
-            build_spots(event, request.form)
+        # Spots always come from the form — the template pre-fill renders them
+        # into the form on GET, so POST always contains the (possibly adjusted) rows.
+        build_spots(event, request.form)
 
         db.session.flush()
         spot_error = validate_event_spots_config(list(event.spots))
         if spot_error:
             db.session.rollback()
             flash(spot_error, "danger")
-            return render_template(
-                "events/create.html",
-                master_events=master_events,
-                users=users,
-                all_qualifications=all_qualifications,
-                equipment_groups=equipment_groups,
-                EventType=EventType,
-            )
+            return _render_create()
 
-        if current_user.has_permission("event.equipment.assign"):
-            selected_ids = request.form.getlist("equipment_item_ids", type=int)
-            build_equipment_assignments(event, selected_ids)
+        # Parse and validate equipment plans submitted in the form.
+        eq_plans = parse_equipment_plans_from_form(request.form)
+        eq_errors = check_equipment_conflicts(eq_plans, event.start_datetime, event.end_datetime)
+        if eq_errors:
+            db.session.rollback()
+            for msg in eq_errors:
+                flash(msg, "danger")
+            return _render_create()
+
+        apply_equipment_plans(event, eq_plans)
+        db.session.flush()
 
         audit("create", "Event", event.id, f"Vytvořena akce '{event.name}'")
         db.session.commit()
@@ -385,14 +389,7 @@ def create() -> str | Response:
             flash("Akce byla vytvořena.", "success")
         return redirect(url_for("events.detail", event_id=event.id))
 
-    return render_template(
-        "events/create.html",
-        master_events=master_events,
-        users=users,
-        all_qualifications=all_qualifications,
-        equipment_groups=equipment_groups,
-        EventType=EventType,
-    )
+    return _render_create()
 
 
 # ── Create from template ──────────────────────────────────────────────────────
@@ -411,15 +408,25 @@ def create_from_template(template_id: int) -> str | Response:
         .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
-    equipment_groups = assignable_equipment_items() if current_user.has_permission("event.equipment.assign") else []
-
     return render_template(
-        "events/create.html",
+        "events/form.html",
+        mode="create",
         master_events=master_events,
         users=users,
         template=tmpl,
         all_qualifications=all_qualifications,
-        equipment_groups=equipment_groups,
+        all_equipment_types=all_shared_equipment_types(),
+        # Pre-fill spot rows from the template's spot templates.
+        template_spot_prefill=[
+            {
+                "desc": st.description or "",
+                "optional": st.is_optional,
+                "qual_ids": [q.id for q in st.required_qualifications],
+            }
+            for st in tmpl.spot_templates
+        ],
+        # Pre-fill equipment rows from the template's plans.
+        template_eq_plans=[(p.equipment_type_id, p.quantity_required) for p in tmpl.equipment_plans],
         EventType=EventType,
     )
 
@@ -450,28 +457,42 @@ def detail(event_id: int) -> str | Response:
     )
 
     all_equipment_types = db.session.scalars(
-        db.select(EquipmentType)
-        .where(EquipmentType.category != EquipmentCategory.PERSONAL)
-        .order_by(collate(EquipmentType.name, CS_COLLATION))
+        db.select(EquipmentType).order_by(collate(EquipmentType.name, CS_COLLATION))
     ).all()
-    assigned_item_ids = {ea.equipment_item_id for ea in event.equipment_assignments}
-    if assigned_item_ids:
-        available_equipment_items = db.session.scalars(
-            db.select(EquipmentItem)
+    # Type-level availability: two queries total (one COUNT, one SUM) regardless
+    # of how many equipment types are planned.
+    planned_type_ids = [p.equipment_type_id for p in event.equipment_plans]
+    equipment_availability: dict[int, int] = {}
+    if planned_type_ids:
+        # Total available items per type (SHARED; maintenance-window-aware)
+        pool_rows = db.session.execute(
+            db.select(EquipmentItem.type_id, func.count(EquipmentItem.id).label("cnt"))
             .where(
-                EquipmentItem.id.notin_(assigned_item_ids),
-                EquipmentItem.equipment_type.has(EquipmentType.category != EquipmentCategory.PERSONAL),
+                EquipmentItem.type_id.in_(planned_type_ids),
+                ~in_maintenance_during(event.start_datetime, event.end_datetime),
             )
-            .order_by(collate(EquipmentItem.name, CS_COLLATION))
+            .group_by(EquipmentItem.type_id)
         ).all()
-    else:
-        available_equipment_items = db.session.scalars(
-            db.select(EquipmentItem)
+        pool: dict[int, int] = {row.type_id: row.cnt for row in pool_rows}
+
+        # Committed quantities from other overlapping non-cancelled/completed events
+        committed_rows = db.session.execute(
+            db.select(EventEquipmentPlan.equipment_type_id, func.sum(EventEquipmentPlan.quantity_required).label("qty"))
+            .join(Event, Event.id == EventEquipmentPlan.event_id)
             .where(
-                EquipmentItem.equipment_type.has(EquipmentType.category != EquipmentCategory.PERSONAL),
+                EventEquipmentPlan.equipment_type_id.in_(planned_type_ids),
+                EventEquipmentPlan.event_id != event.id,
+                Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
+                Event.archived == sa.false(),
+                Event.start_datetime < event.end_datetime,
+                Event.end_datetime > event.start_datetime,
             )
-            .order_by(collate(EquipmentItem.name, CS_COLLATION))
+            .group_by(EventEquipmentPlan.equipment_type_id)
         ).all()
+        committed: dict[int, int] = {row.equipment_type_id: int(row.qty) for row in committed_rows}
+
+        for type_id in planned_type_ids:
+            equipment_availability[type_id] = pool.get(type_id, 0) - committed.get(type_id, 0)
 
     all_qualifications = db.session.scalars(
         db.select(Qualification)
@@ -505,17 +526,15 @@ def detail(event_id: int) -> str | Response:
         now=datetime.now(timezone.utc),
         EventStatus=EventStatus,
         EventType=EventType,
-        EquipmentItemStatus=EquipmentItemStatus,
         eligible_users=eligible_users,
         assigned_user_ids=assigned_user_ids,
         can_assign=can_assign,
         me_coordinated=me_coordinated,
         all_equipment_types=all_equipment_types,
-        available_equipment_items=available_equipment_items,
+        equipment_availability=equipment_availability,
         all_qualifications=all_qualifications,
         fillers_map=fillers_map,
         rp_eligible_attendees=rp_eligible_attendees,
-        equipment_warnings=equipment_warnings_for_event(event),
     )
 
 
@@ -535,13 +554,30 @@ def edit(event_id: int) -> str | Response:
 
     master_events = active_master_events_list()
     users = rp_eligible_users_list()
+    eq_types = all_shared_equipment_types()
+    all_qualifications = db.session.scalars(
+        db.select(Qualification)
+        .where(Qualification.is_deleted == sa.false())
+        .order_by(collate(Qualification.name, CS_COLLATION))
+    ).all()
+
+    def _render_edit(**extra: object) -> str:
+        return render_template(
+            "events/form.html",
+            mode="edit",
+            event=event,
+            master_events=master_events,
+            users=users,
+            all_qualifications=all_qualifications,
+            all_equipment_types=eq_types,
+            EventType=EventType,
+            **extra,
+        )
 
     if request.method == "POST":
         if check_version_conflict(event, request.form.get("version")):
             flash(RECORD_MODIFIED_MSG, "danger")
-            return render_template(
-                "events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType
-            )
+            return _render_edit()
 
         # Snapshot before mutation
         before = {
@@ -562,9 +598,7 @@ def edit(event_id: int) -> str | Response:
         updated, error = parse_event_form(request.form, existing=event)
         if error:
             flash(error, "danger")
-            return render_template(
-                "events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType
-            )
+            return _render_edit()
 
         after = {
             "name": event.name,
@@ -580,6 +614,32 @@ def edit(event_id: int) -> str | Response:
             "assignments_open_datetime": str(event.assignments_open_datetime),
             "planned_participants_count": event.planned_participants_count,
         }
+
+        # Validate and apply equipment plans.
+        eq_plans = parse_equipment_plans_from_form(request.form)
+        eq_errors = check_equipment_conflicts(
+            eq_plans, event.start_datetime, event.end_datetime, exclude_event_id=event.id
+        )
+        if eq_errors:
+            db.session.rollback()
+            for msg in eq_errors:
+                flash(msg, "danger")
+            return _render_edit()
+
+        apply_equipment_plans(event, eq_plans)
+
+        # Rebuild spots only when the user explicitly changed them in the form.
+        if request.form.get("spots_changed") == "1":
+            for spot in list(event.spots):
+                db.session.delete(spot)
+            db.session.flush()
+            build_spots(event, request.form)
+            db.session.flush()
+            spot_error = validate_event_spots_config(list(event.spots))
+            if spot_error:
+                db.session.rollback()
+                flash(spot_error, "danger")
+                return _render_edit()
 
         event.version += 1
         audit("edit", "Event", event.id, f"Upravena akce '{event.name}'", diff_changes(before, after))
@@ -599,9 +659,7 @@ def edit(event_id: int) -> str | Response:
         flash("Akce byla uložena.", "success")
         return redirect(url_for("events.detail", event_id=event.id))
 
-    return render_template(
-        "events/edit.html", event=event, master_events=master_events, users=users, EventType=EventType
-    )
+    return _render_edit()
 
 
 # ── Archive (soft-delete) ─────────────────────────────────────────────────────

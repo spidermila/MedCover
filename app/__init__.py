@@ -101,6 +101,11 @@ def create_app(
 
         return dt.astimezone(get_app_tz()).strftime(fmt)
 
+    @app.template_filter("localdate")
+    def localdate_filter(dt: datetime | None) -> str:
+        """Like localdt but date-only (dd.mm.yyyy)."""
+        return localdt_filter(dt, fmt="%d.%m.%Y")
+
     @app.template_filter("midpoint_iso")
     def midpoint_iso_filter(event: object) -> str:
         """Return the midpoint between event.start_datetime and event.end_datetime
