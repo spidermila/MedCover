@@ -860,7 +860,8 @@ class TestUnavailabilityFutureEventWarning:
         # 2 items → marking 1 unavailable still leaves 1 available → no shortage
         assert resp.status_code == 200
         body = resp.data.decode()
-        assert "nedostatek" not in body.lower() or "Upozornění" not in body
+        assert "Upozornění" not in body
+        assert "nedostatek" not in body.lower()
 
 
 # ── Plan-add conflict message includes conflicting event ──────────────────────

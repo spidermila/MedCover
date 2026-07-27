@@ -315,7 +315,9 @@ def check_equipment_conflicts(
             .limit(3)
         ).all()
 
-        msg = Markup(f"Nedostatek vybavení — typ „{type_name}”: požadováno {qty} ks, k dispozici {max(0, avail)} ks.")
+        msg = Markup("Nedostatek vybavení — typ „{name}”: požadováno {qty} ks, k dispozici {avail} ks.").format(
+            name=type_name, qty=qty, avail=max(0, avail)
+        )
         if conflicting:
             links = Markup(", ").join(
                 Markup('<a href="{}">{}</a>').format(url_for("events.detail", event_id=e.id), e.name)

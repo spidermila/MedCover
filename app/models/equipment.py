@@ -68,11 +68,15 @@ class EquipmentItem(db.Model):  # type: ignore[misc]
     def is_available(self) -> bool:
         """True when no active maintenance window covers the current moment."""
         now = datetime.now(timezone.utc)
+
+        def _utc(dt: datetime) -> datetime:
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
         if self.unavailability_since is None:
             return True
-        if self.unavailability_since > now:
+        if _utc(self.unavailability_since) > now:
             return True  # maintenance hasn't started yet
-        if self.unavailability_until is not None and self.unavailability_until <= now:
+        if self.unavailability_until is not None and _utc(self.unavailability_until) <= now:
             return True  # maintenance window has ended
         return False
 
