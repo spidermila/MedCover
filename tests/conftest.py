@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 # All mutable tables — reference data (role, permission, role_permissions,
 # app_settings, alembic_version) is preserved across the suite.
 _MUTABLE_TABLES_LIST = [
-    "event_equipment_assignment",
     "event_equipment_plan",
     "equipment_item",
     "equipment_type",
@@ -242,12 +241,43 @@ def _drop_db(db_url: str) -> None:
     conn = pyodbc.connect(conn_str)
     conn.autocommit = True
     c = conn.cursor()
-    # Force disconnect all active connections before dropping
-    c.execute(
-        f"IF EXISTS (SELECT 1 FROM sys.databases WHERE name='{db_name}') "
-        f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE"
-    )
-    c.execute(f"DROP DATABASE IF EXISTS [{db_name}]")
+    # Explicitly KILL every session connected to the target DB so that
+    # the DROP cannot race a reconnecting pool connection.  SINGLE_USER
+    # leaves a brief window where a new connection can slip in; KILL does
+    # not have that problem.
+    c.execute(f"""
+        IF EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{db_name}')
+        BEGIN
+            DECLARE @kill NVARCHAR(MAX) = N''
+            SELECT @kill += N'KILL ' + CAST(session_id AS NVARCHAR(10)) + N'; '
+            FROM sys.dm_exec_sessions
+            WHERE database_id = DB_ID(N'{db_name}')
+            IF LEN(@kill) > 0
+                EXEC sp_executesql @kill
+        END
+    """)
+    # Allow terminated sessions to fully disconnect before the DROP.
+    time.sleep(0.3)
+    for attempt in range(5):
+        try:
+            c.execute(f"DROP DATABASE IF EXISTS [{db_name}]")
+            break
+        except pyodbc.ProgrammingError:
+            if attempt == 4:
+                raise
+            # Re-kill any sessions that reconnected in the interim
+            c.execute(f"""
+                IF EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{db_name}')
+                BEGIN
+                    DECLARE @kill2 NVARCHAR(MAX) = N''
+                    SELECT @kill2 += N'KILL ' + CAST(session_id AS NVARCHAR(10)) + N'; '
+                    FROM sys.dm_exec_sessions
+                    WHERE database_id = DB_ID(N'{db_name}')
+                    IF LEN(@kill2) > 0
+                        EXEC sp_executesql @kill2
+                END
+            """)
+            time.sleep(0.4)
     conn.close()
 
 
@@ -287,6 +317,16 @@ def app(worker_id: str):
 
     with flask_app.app_context():
         _db.drop_all()
+        # Capture engine before the context exits so we can dispose it
+        # after Flask-SQLAlchemy's own teardown (db.session.remove()) runs.
+        engine = _db.engine
+
+    # Flask-SQLAlchemy teardown has now returned the session's connection to
+    # the pool.  Dispose the engine so every pool connection is closed and the
+    # pool will not attempt new connections — this must happen before _drop_db
+    # issues SET SINGLE_USER, otherwise pool_pre_ping can re-open a connection
+    # to the target DB between the ROLLBACK IMMEDIATE and the DROP.
+    engine.dispose()
 
     # Clean up worker-specific DB; leave the base medcover_test intact
     if worker_id != "master":
@@ -495,8 +535,11 @@ def _make_user_with_qual(app, email: str, qual_id: int) -> str:
 
 
 def _make_rp_qual(app, name: str = "RP Qualification") -> int:
-    """Create a Qualification with can_be_rp=True and return its ID."""
+    """Return (creating if needed) a Qualification with can_be_rp=True."""
     with app.app_context():
+        existing = _db.session.scalar(_db.select(Qualification).where(Qualification.name == name))
+        if existing:
+            return existing.id
         qual = Qualification(name=name, can_be_rp=True)
         _db.session.add(qual)
         _db.session.commit()
