@@ -1,0 +1,429 @@
+{% extends "base.html" %}
+{% from 'macros/help.html' import help_icon %}
+{% block title %}{{ "Upravit: " ~ event.name if mode == "edit" else "Nová akce" }} — MedCover{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-lg-8">
+    <h2 class="mb-4">
+      {%- if mode == "edit" -%}Upravit akci
+      {%- elif template -%}Nová akce ze šablony
+      {%- else -%}Nová akce
+      {%- endif -%}
+    </h2>
+
+    {% if template %}
+    <div class="alert alert-info d-flex align-items-center gap-2 mb-4">
+      <span>📋</span>
+      <span>Vytváříte akci ze šablony: <strong>{{ template.name }}</strong></span>
+    </div>
+    {% endif %}
+
+    <form method="POST"
+          {% if mode == "edit" %}action="{{ url_for('events.edit', event_id=event.id) }}"
+          {% else %}action="{{ url_for('events.create') }}"{% endif %}
+          novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if mode == "edit" %}
+        <input type="hidden" name="version" value="{{ event.version }}">
+        <input type="hidden" name="spots_changed" id="spots_changed" value="0">
+      {% elif template %}
+        <input type="hidden" name="template_id" value="{{ template.id }}">
+      {% endif %}
+
+      <div class="row g-3">
+        {# ── Name ──────────────────────────────────────────────────────────── #}
+        <div class="col-12">
+          <label for="name" class="form-label">Název <span class="text-danger">*</span>
+            {{ help_icon("Celý název akce, jak se zobrazí v přehledech a v kalendáři.") }}
+          </label>
+          <input type="text" class="form-control" id="name" name="name"
+                 value="{{ request.form.get('name', event.name if event else '') }}"
+                 required autofocus>
+        </div>
+
+        {# ── Event type ────────────────────────────────────────────────────── #}
+        <div class="col-12 col-md-6">
+          <label for="event_type" class="form-label">Typ akce <span class="text-danger">*</span>
+            {{ help_icon("Určuje typ akce a ovlivňuje dostupná pole i formulář výjezdové zprávy.") }}
+          </label>
+          <select class="form-select" id="event_type" name="event_type" required>
+            {% set default_type = event.event_type.name if event else (template.event_type.name if template else 'MEDICAL_COVER') %}
+            {% for et in EventType %}
+              <option value="{{ et.name }}"
+                {{ 'selected' if request.form.get('event_type', default_type) == et.name }}>
+                {{ et.value }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# ── Planned participants (training only) ──────────────────────────── #}
+        <div class="col-12 col-md-6" id="planned_participants_row" style="display:none">
+          <label for="planned_participants_count" class="form-label">Plánovaný počet účastníků
+            {{ help_icon("Odhadovaný počet účastníků školení. Slouží pro plánování a výkazy.") }}
+          </label>
+          <input type="number" min="0" class="form-control" id="planned_participants_count"
+                 name="planned_participants_count"
+                 value="{{ request.form.get('planned_participants_count', event.planned_participants_count or '' if event else '') }}">
+        </div>
+
+        {# ── Master event ──────────────────────────────────────────────────── #}
+        <div class="col-12 col-md-6">
+          <label for="master_event_id" class="form-label">Nadřazená akce <span class="text-danger">*</span>
+            {{ help_icon("Sdružuje akce do celku. Pokud akce nepatří do žádné série, vyberte 'Obecné'.") }}
+          </label>
+          <select class="form-select" id="master_event_id" name="master_event_id" required>
+            <option value="">— Vyberte —</option>
+            {% set default_me = event.master_event_id|string if event else '' %}
+            {% for me in master_events %}
+              {% set sel = request.form.get('master_event_id', default_me) %}
+              <option value="{{ me.id }}"
+                {{ 'selected' if sel == me.id|string
+                   or (not sel and not event and me.is_general and not request.form.get('master_event_id')) }}>
+                {{ me.name }}{% if me.is_general %} (Výchozí){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# ── Responsible person ────────────────────────────────────────────── #}
+        <div class="col-12 col-md-6">
+          <label for="responsible_person_id" class="form-label">Zodpovědná osoba
+            {{ help_icon("Zodpovědná osoba na místě. Neovlivňuje přístupová práva — ta jsou řízena rolemi.") }}
+          </label>
+          <select class="form-select" id="responsible_person_id" name="responsible_person_id">
+            <option value="">— Nepřiřazena —</option>
+            {% set default_rp = event.responsible_person_id|string if event and event.responsible_person_id else '' %}
+            {% for user in users %}
+              <option value="{{ user.id }}"
+                {{ 'selected' if request.form.get('responsible_person_id', default_rp) == user.id|string }}>
+                {{ user.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# ── Start datetime ────────────────────────────────────────────────── #}
+        <div class="col-12 col-md-6">
+          <label for="start_datetime" class="form-label">Začátek <span class="text-danger">*</span>
+            {{ help_icon("Datum a čas zahájení akce.") }}
+          </label>
+          <div class="input-group">
+            <input type="text" class="form-control flatpickr-dt" id="start_datetime" name="start_datetime"
+                   value="{{ request.form.get('start_datetime',
+                             event.start_datetime | localdt(fmt='%Y-%m-%dT%H:%M') if event and event.start_datetime else '') }}"
+                   required>
+            <button class="btn btn-outline-secondary btn-fpnow" type="button">Teď</button>
+          </div>
+        </div>
+
+        {# ── End datetime ──────────────────────────────────────────────────── #}
+        <div class="col-12 col-md-6">
+          <label for="end_datetime" class="form-label">Konec <span class="text-danger">*</span>
+            {{ help_icon("Po tomto čase scheduler automaticky přesune akci do stavu Dokončena.") }}
+          </label>
+          <div class="input-group">
+            <input type="text" class="form-control flatpickr-dt" id="end_datetime" name="end_datetime"
+                   value="{{ request.form.get('end_datetime',
+                             event.end_datetime | localdt(fmt='%Y-%m-%dT%H:%M') if event and event.end_datetime else '') }}"
+                   required>
+            <button class="btn btn-outline-secondary btn-fpnow" type="button">Teď</button>
+          </div>
+        </div>
+
+        {# ── Assignments open datetime ─────────────────────────────────────── #}
+        <div class="col-12 col-md-6">
+          <label for="assignments_open_datetime" class="form-label">Otevření přihlášek
+            {{ help_icon("Pokud zadáte datum, přihlašování se automaticky otevře až v tento čas. Prázdné = ihned po zveřejnění.") }}
+          </label>
+          <div class="input-group">
+            <input type="text" class="form-control flatpickr-dt" id="assignments_open_datetime"
+                   name="assignments_open_datetime"
+                   value="{{ request.form.get('assignments_open_datetime',
+                             event.assignments_open_datetime | localdt(fmt='%Y-%m-%dT%H:%M')
+                             if event and event.assignments_open_datetime else '') }}">
+            <button class="btn btn-outline-secondary btn-fpnow" type="button">Teď</button>
+          </div>
+          <div class="form-text">Prázdné = okamžitě po zveřejnění</div>
+        </div>
+
+        {# ── Spots ────────────────────────────────────────────────────────── #}
+        <div class="col-12">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label mb-0">Pozice
+              {{ help_icon("Přidejte pozice, které mají být na akci obsazeny. Ke každé pozici lze přiřadit požadovanou kvalifikaci.") }}
+            </label>
+            <button type="button" class="btn btn-outline-danger btn-sm" id="addSpotBtn">Přidat pozici</button>
+          </div>
+          {% if mode == "edit" %}
+          <p class="text-muted small mb-2">
+            Změna pozic v tomto formuláři odstraní stávající přiřazení.
+            Pro jemnou úpravu jednotlivých pozic použijte <a href="{{ url_for('events.detail', event_id=event.id) }}">detail akce</a>.
+          </p>
+          {% endif %}
+          <div id="spotRows"
+               data-rp-qual-ids="{{ all_qualifications | selectattr('can_be_rp') | map(attribute='id') | list | tojson }}"
+               data-msg-no-spots="Akce musí mít alespoň jednu pozici."
+               data-msg-no-mandatory="Akce musí mít alespoň jednu povinnou pozici."
+               data-msg-no-rp-qual="Alespoň jedna povinná pozice musí vyžadovat kvalifikaci umožňující roli zodpovědné osoby.">
+            {# Priority: 1) POST failure, 2) event spots (edit), 3) template prefill, 4) empty #}
+            {% set spot_total_raw = request.form.get('spot_total', '') %}
+            {% if spot_total_raw %}
+              {% for i in range(spot_total_raw | int) %}
+              <div class="card card-body mb-2 p-2 spot-row-item">
+                <div class="d-flex gap-2 align-items-start">
+                  <input type="text" class="form-control form-control-sm" name="spot_desc_{{ i }}"
+                         value="{{ request.form.get('spot_desc_' ~ i, '') }}"
+                         placeholder="Popis pozice (např. Záchranář — stanoviště 1)">
+                  <div class="form-check form-check-inline mb-0 flex-shrink-0 align-self-center">
+                    <input class="form-check-input" type="checkbox" name="spot_optional_{{ i }}" value="1"
+                           id="spot_optional_id_{{ i }}"
+                           {{ 'checked' if request.form.get('spot_optional_' ~ i) == '1' }}>
+                    <label class="form-check-label small text-muted" for="spot_optional_id_{{ i }}">Volitelná</label>
+                  </div>
+                  <button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0 remove-spot-btn">✕</button>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-2 spot-creds">
+                  {% set checked_creds = request.form.getlist('spot_cred_' ~ i) | map('int') | list %}
+                  {% for cred in all_qualifications %}
+                  <div class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" name="spot_cred_{{ i }}"
+                           value="{{ cred.id }}" id="spot_cred_id_{{ i }}_{{ cred.id }}"
+                           {{ 'checked' if cred.id in checked_creds }}>
+                    <label class="form-check-label small" for="spot_cred_id_{{ i }}_{{ cred.id }}">{{ cred.name }}</label>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endfor %}
+            {% elif event and event.spots %}
+              {% for spot in event.spots %}
+              {% set i = loop.index0 %}
+              <div class="card card-body mb-2 p-2 spot-row-item">
+                <div class="d-flex gap-2 align-items-start">
+                  <input type="text" class="form-control form-control-sm" name="spot_desc_{{ i }}"
+                         value="{{ spot.description or '' }}"
+                         placeholder="Popis pozice (např. Záchranář — stanoviště 1)">
+                  <div class="form-check form-check-inline mb-0 flex-shrink-0 align-self-center">
+                    <input class="form-check-input" type="checkbox" name="spot_optional_{{ i }}" value="1"
+                           id="spot_optional_id_{{ i }}" {{ 'checked' if spot.is_optional }}>
+                    <label class="form-check-label small text-muted" for="spot_optional_id_{{ i }}">Volitelná</label>
+                  </div>
+                  <button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0 remove-spot-btn">✕</button>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-2 spot-creds">
+                  {% set spot_qual_ids = spot.required_qualifications | map(attribute='id') | list %}
+                  {% for cred in all_qualifications %}
+                  <div class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" name="spot_cred_{{ i }}"
+                           value="{{ cred.id }}" id="spot_cred_id_{{ i }}_{{ cred.id }}"
+                           {{ 'checked' if cred.id in spot_qual_ids }}>
+                    <label class="form-check-label small" for="spot_cred_id_{{ i }}_{{ cred.id }}">{{ cred.name }}</label>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endfor %}
+            {% elif template_spot_prefill is defined and template_spot_prefill %}
+              {% for st in template_spot_prefill %}
+              {% set i = loop.index0 %}
+              <div class="card card-body mb-2 p-2 spot-row-item">
+                <div class="d-flex gap-2 align-items-start">
+                  <input type="text" class="form-control form-control-sm" name="spot_desc_{{ i }}"
+                         value="{{ st.desc }}"
+                         placeholder="Popis pozice (např. Záchranář — stanoviště 1)">
+                  <div class="form-check form-check-inline mb-0 flex-shrink-0 align-self-center">
+                    <input class="form-check-input" type="checkbox" name="spot_optional_{{ i }}" value="1"
+                           id="spot_optional_id_{{ i }}" {{ 'checked' if st.optional }}>
+                    <label class="form-check-label small text-muted" for="spot_optional_id_{{ i }}">Volitelná</label>
+                  </div>
+                  <button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0 remove-spot-btn">✕</button>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-2 spot-creds">
+                  {% for cred in all_qualifications %}
+                  <div class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" name="spot_cred_{{ i }}"
+                           value="{{ cred.id }}" id="spot_cred_id_{{ i }}_{{ cred.id }}"
+                           {{ 'checked' if cred.id in st.qual_ids }}>
+                    <label class="form-check-label small" for="spot_cred_id_{{ i }}_{{ cred.id }}">{{ cred.name }}</label>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endfor %}
+            {% endif %}
+          </div>
+          <input type="hidden" name="spot_total" id="spotTotal"
+                 value="{{ request.form.get('spot_total',
+                           (event.spots | length) if event and event.spots
+                           else ((template_spot_prefill | length) if (template_spot_prefill is defined and template_spot_prefill) else 0)) }}">
+          <template id="spotRowTpl">
+            <div class="card card-body mb-2 p-2 spot-row-item">
+              <div class="d-flex gap-2 align-items-start">
+                <input type="text" class="form-control form-control-sm" name="__SPOT_DESC__"
+                       placeholder="Popis pozice (např. Záchranář — stanoviště 1)">
+                <div class="form-check form-check-inline mb-0 flex-shrink-0 align-self-center">
+                  <input class="form-check-input" type="checkbox" name="__SPOT_OPTIONAL__" value="1" id="__SPOT_OPTIONAL_ID__">
+                  <label class="form-check-label small text-muted" for="__SPOT_OPTIONAL_ID__">Volitelná</label>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0 remove-spot-btn">✕</button>
+              </div>
+              <div class="d-flex flex-wrap gap-2 mt-2 spot-creds">
+                {% for cred in all_qualifications %}
+                <div class="form-check form-check-inline mb-0">
+                  <input class="form-check-input" type="checkbox" name="__SPOT_CRED__"
+                         value="{{ cred.id }}" id="__SPOT_CRED_ID_{{ cred.id }}__">
+                  <label class="form-check-label small" for="__SPOT_CRED_ID_{{ cred.id }}__">{{ cred.name }}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </template>
+        </div>
+
+        {# ── Paid ─────────────────────────────────────────────────────────── #}
+        <div class="col-12 col-md-3 d-flex align-items-end">
+          <div class="form-check form-switch mb-2">
+            {% set default_paid = '1' if (event and event.paid) else ('1' if (template and template.paid) else '0') %}
+            <input class="form-check-input paid-toggle" type="checkbox" role="switch" id="paid" name="paid" value="1"
+                   {{ 'checked' if request.form.get('paid', default_paid) == '1' }}>
+            <label class="form-check-label fw-semibold paid-label" for="paid">Placená akce
+              {{ help_icon("Označte, pokud je akce honorována. Zobrazuje se v přehledech a výkazech.") }}
+            </label>
+          </div>
+        </div>
+
+        {# ── Address ──────────────────────────────────────────────────────── #}
+        <div class="col-12">
+          <label for="address" class="form-label">Adresa
+            {{ help_icon("Místo konání akce — zobrazuje se v detailu akce a slouží jako orientační informace pro zdravotníky.") }}
+          </label>
+          <input type="text" class="form-control" id="address" name="address"
+                 value="{{ request.form.get('address', event.address or '' if event else '') }}">
+        </div>
+
+        {# ── Contact person ───────────────────────────────────────────────── #}
+        <div class="col-12">
+          <label for="contact_person" class="form-label">Kontaktní osoba
+            {{ help_icon("Jméno a případně telefon na organizátora nebo kontaktní osobu akce (ne zdravotníka).") }}
+          </label>
+          <input type="text" class="form-control" id="contact_person" name="contact_person"
+                 value="{{ request.form.get('contact_person', event.contact_person or '' if event else '') }}">
+        </div>
+
+        {# ── Description ──────────────────────────────────────────────────── #}
+        <div class="col-12">
+          <label for="description" class="form-label">Popis
+            {{ help_icon("Volitelné doplňující informace o akci.") }}
+          </label>
+          <textarea class="form-control" id="description" name="description" rows="3">{{ request.form.get('description', event.description or '' if event else '') }}</textarea>
+        </div>
+      </div>
+
+      {# ── Equipment plan ───────────────────────────────────────────────────── #}
+      {% if all_equipment_types %}
+      <hr class="my-4">
+      <h5 class="mb-3">Vybavení
+        {{ help_icon("Plán vybavení pro akci. Uložení bude blokováno, pokud plánujete více kusů, než je k dispozici.") }}
+      </h5>
+      <div id="eqRows">
+        {% set eq_total_raw = request.form.get('eq_total', '') %}
+        {% if eq_total_raw %}
+          {% for i in range(eq_total_raw | int) %}
+            {% set tid = request.form.get('eq_type_id_' ~ i, '') %}
+            {% set qty = request.form.get('eq_qty_' ~ i, '1') %}
+            {% if tid %}
+            <div class="d-flex gap-2 align-items-center mb-2 eq-row">
+              <select name="eq_type_id_{{ i }}" class="form-select form-select-sm maxw-200" required>
+                {% for et in all_equipment_types %}
+                  <option value="{{ et.id }}" {{ 'selected' if et.id | string == tid }}>{{ et.name }}</option>
+                {% endfor %}
+              </select>
+              <input type="number" name="eq_qty_{{ i }}" value="{{ qty }}" min="1" class="form-control form-control-sm maxw-80" required>
+              <button type="button" class="btn btn-outline-secondary btn-sm remove-eq-btn">✕</button>
+            </div>
+            {% endif %}
+          {% endfor %}
+        {% elif event and event.equipment_plans %}
+          {% for plan in event.equipment_plans %}
+          <div class="d-flex gap-2 align-items-center mb-2 eq-row">
+            <select name="eq_type_id_{{ loop.index0 }}" class="form-select form-select-sm maxw-200" required>
+              {% for et in all_equipment_types %}
+                <option value="{{ et.id }}" {{ 'selected' if et.id == plan.equipment_type_id }}>{{ et.name }}</option>
+              {% endfor %}
+            </select>
+            <input type="number" name="eq_qty_{{ loop.index0 }}" value="{{ plan.quantity_required }}" min="1" class="form-control form-control-sm maxw-80" required>
+            <button type="button" class="btn btn-outline-secondary btn-sm remove-eq-btn">✕</button>
+          </div>
+          {% endfor %}
+        {% elif template_eq_plans is defined and template_eq_plans %}
+          {% for tid, qty in template_eq_plans %}
+          <div class="d-flex gap-2 align-items-center mb-2 eq-row">
+            <select name="eq_type_id_{{ loop.index0 }}" class="form-select form-select-sm maxw-200" required>
+              {% for et in all_equipment_types %}
+                <option value="{{ et.id }}" {{ 'selected' if et.id == tid }}>{{ et.name }}</option>
+              {% endfor %}
+            </select>
+            <input type="number" name="eq_qty_{{ loop.index0 }}" value="{{ qty }}" min="1" class="form-control form-control-sm maxw-80" required>
+            <button type="button" class="btn btn-outline-secondary btn-sm remove-eq-btn">✕</button>
+          </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+      <input type="hidden" name="eq_total" id="eqTotal"
+             value="{{ request.form.get('eq_total',
+                       (event.equipment_plans | length) if event and event.equipment_plans
+                       else ((template_eq_plans | length) if (template_eq_plans is defined and template_eq_plans) else 0)) }}">
+      <template id="eqRowTpl">
+        <div class="d-flex gap-2 align-items-center mb-2 eq-row">
+          <select name="__EQ_TYPE__" class="form-select form-select-sm maxw-200" required>
+            {% for et in all_equipment_types %}
+              <option value="{{ et.id }}">{{ et.name }}</option>
+            {% endfor %}
+          </select>
+          <input type="number" name="__EQ_QTY__" value="1" min="1" class="form-control form-control-sm maxw-80" required>
+          <button type="button" class="btn btn-outline-secondary btn-sm remove-eq-btn">✕</button>
+        </div>
+      </template>
+      <button type="button" class="btn btn-outline-danger btn-sm mb-2" id="addEqBtn">Přidat vybavení</button>
+      {% endif %}
+
+      {# ── Submit buttons ───────────────────────────────────────────────────── #}
+      <div class="d-flex gap-2 mt-4 flex-wrap">
+        {% if mode == "edit" %}
+          <button type="submit" class="btn btn-danger">Uložit změny</button>
+          <a href="{{ url_for('events.detail', event_id=event.id) }}" class="btn btn-outline-secondary">Zrušit</a>
+        {% else %}
+          <button type="submit" name="action" value="create" class="btn btn-danger">Vytvořit akci</button>
+          {% if current_user.has_permission("event.publish") and current_user.has_permission("event.assignments.open") %}
+          <button type="submit" name="action" value="quick_publish" class="btn btn-success">
+            Vytvořit a otevřít přihlášky
+          </button>
+          {% endif %}
+          <a href="{{ url_for('events.index') }}" class="btn btn-outline-secondary">Zrušit</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/event-form.js') }}?v={{ static_ver }}"></script>
+{% if mode == "edit" %}
+<script nonce="{{ g.csp_nonce }}">
+/* Mark spots as changed whenever any spot row is added, removed, or modified. */
+(function () {
+  var flag = document.getElementById('spots_changed');
+  if (!flag) return;
+  function markChanged() { flag.value = '1'; }
+  document.getElementById('addSpotBtn').addEventListener('click', markChanged);
+  document.getElementById('spotRows').addEventListener('change', markChanged);
+  new MutationObserver(markChanged).observe(
+    document.getElementById('spotRows'), { childList: true }
+  );
+})();
+</script>
+{% endif %}
+{% endblock %}
