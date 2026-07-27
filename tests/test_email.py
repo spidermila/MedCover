@@ -1479,7 +1479,7 @@ class TestDrainBatchedOutbox:
         assert "debriefing" in html_captured[0].lower() or "42" in html_captured[0]
 
     def test_deleted_event_row_dropped(self, app):
-        """AC-13: row with event_id=None + live row → dead row failed, live row sent, email sent."""
+        """AC-13: row with event_id=None + live row → dead row deleted, live row sent, email sent."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1502,14 +1502,12 @@ class TestDrainBatchedOutbox:
         assert result is True
         mock_send.assert_called_once()
         with app.app_context():
-            dead = db.session.get(OutboxEmail, dead_id)
+            assert db.session.get(OutboxEmail, dead_id) is None
             live = db.session.get(OutboxEmail, live_id)
-            assert dead.status == "failed"
-            assert dead.last_error == "event_deleted"
             assert live.status == "sent"
 
     def test_deleted_event_only_no_email(self, app):
-        """AC-14: only a NULL-event row → row failed, no email sent, drain returns True."""
+        """AC-14: only a NULL-event row → row deleted, no email sent, drain returns True."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1531,7 +1529,7 @@ class TestDrainBatchedOutbox:
         assert result is True
         mock_send.assert_not_called()
         with app.app_context():
-            assert db.session.get(OutboxEmail, dead_id).status == "failed"
+            assert db.session.get(OutboxEmail, dead_id) is None
 
     def test_smtp_failure_batch_retry(self, app):
         """AC-15: SMTP raises → both rows stay pending with retry_count=1, one AuditLogEntry."""

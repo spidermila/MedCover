@@ -1222,18 +1222,24 @@ def drain_batched_outbox() -> bool:
 
     rows = _load_batch_for_user(user_id)
 
-    # FR-6 — drop rows whose event has been hard-deleted (FK set to NULL).
+    # FR-6 — rows whose event has been hard-deleted (FK set to NULL) are
+    # unrecoverable: delete them outright so they don't accumulate.
     live_rows: list[OutboxEmail] = []
+    deleted_orphans = 0
     for r in rows:
         if r.event_id is None:
-            r.status = "failed"
-            r.last_error = "event_deleted"
+            db.session.delete(r)
+            deleted_orphans += 1
         else:
             live_rows.append(r)
 
     if not live_rows:
         db.session.commit()
-        log.info("drain_batched_outbox: user_id=%s had only deleted-event rows", user_id)
+        log.info(
+            "drain_batched_outbox: user_id=%s had only deleted-event rows (%d removed)",
+            user_id,
+            deleted_orphans,
+        )
         return True
 
     # to_email frozen at enqueue time (includes any g._test_notification_email override).
@@ -1272,8 +1278,7 @@ def drain_batched_outbox() -> bool:
         if r.event_id in events_by_id:
             grouped.setdefault(r.event_id, []).append(r)
         else:
-            r.status = "failed"
-            r.last_error = "event_deleted"
+            db.session.delete(r)
             orphan_rows.append(r)
 
     active_rows = [r for r in live_rows if r not in orphan_rows]

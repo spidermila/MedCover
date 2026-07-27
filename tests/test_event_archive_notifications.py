@@ -14,6 +14,8 @@ Covers:
 
 from datetime import datetime, timezone
 
+import pytest
+
 import app.mail as mailer
 from app.extensions import db
 from app.models.assignment import Assignment
@@ -23,6 +25,20 @@ from app.models.outbox import OutboxEmail
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
+
+
+@pytest.fixture(autouse=True)
+def _enable_archive_notifications(app):
+    """Other tests toggle AppSettings notify_* flags off via the admin form and
+    don't restore them, which leaks across test files. Re-enable the flags
+    this file's tests rely on before each test."""
+    with app.app_context():
+        s = get_settings()
+        s.notify_event_archived = True
+        s.notify_event_unarchived = True
+        s.notify_event_published = True
+        s.notify_event_changed = True
+        db.session.commit()
 
 
 def _mk_member(email: str, name: str = "Member") -> UserAccount:
