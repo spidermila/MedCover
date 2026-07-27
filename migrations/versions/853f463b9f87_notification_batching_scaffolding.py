@@ -1,20 +1,16 @@
-"""notification batching phase 1
+"""notification batching scaffolding
 
 Revision ID: 853f463b9f87
 Revises: 08afa74293a8
 Create Date: 2026-07-14 00:00:00.000000
 
-Adds structural scaffolding for issue #268 (batched event notifications):
+Adds structural scaffolding for batched event notifications:
 
 * outbox_email: five nullable columns (user_id, event_id, change_type,
   change_value, send_after) + composite index (status, send_after) used
-  by the future drain query.
+  by the drain query.
 * app_settings: four NOT NULL integer columns holding the proximity-tier
   delay values in minutes (defaults 5 / 60 / 360 / 1440).
-
-No behaviour change: all new outbox_email columns default to NULL and
-the existing send path leaves them unset. The delay tier values are
-read-only in the admin UI at this phase.
 """
 from alembic import op
 import sqlalchemy as sa

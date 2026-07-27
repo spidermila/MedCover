@@ -49,5 +49,8 @@ vykaz.xlsx
 !tests/fixtures/test_import.xlsx
 import_events.json
 
-# Copilot instructions (may contain personal/infra details)
+# Copilot/Claude/Cave instructions (may contain personal/infra details)
 .github/copilot-instructions.md
+.cave
+.dev-team
+CLAUDE.md

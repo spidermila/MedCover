@@ -480,7 +480,7 @@ class TestNotificationTestRoute:
         assert b"akci" in resp.data
 
 
-# ── Phase 1 (#268) — Delay tier settings + admin page block ──────────────────
+# ── Delay tier settings + admin page block ──────────────────────────────────
 
 
 class TestNotificationDelayTierDefaults:
@@ -519,7 +519,7 @@ class TestNotificationsDelayCard:
         assert "24 h" in body
 
     def test_card_has_editable_inputs(self, admin_client):
-        """Phase 2 AC-1: the delay card contains four number inputs pre-filled with defaults."""
+        """AC-1: the delay card contains four number inputs pre-filled with defaults."""
         resp = admin_client.get("/admin/notifications/")
         body = resp.data.decode()
         defaults = {
@@ -535,7 +535,7 @@ class TestNotificationsDelayCard:
 
 
 class TestDelayTierSave:
-    """Phase 2 (#268) — editable delay tier POST handler. Covers AC-1..AC-16."""
+    """Editable delay tier POST handler. Covers AC-1..AC-16."""
 
     _DEFAULTS: dict[str, int] = {
         "notify_delay_under_24h_min": 5,
@@ -793,7 +793,7 @@ class TestDelayTierSave:
             assert get_settings().notify_delay_under_24h_min == before_val
 
 
-# ── Phase 3 (#268) — "Odeslat okamžitě" checkbox ────────────────────────────
+# ── "Odeslat okamžitě" checkbox ─────────────────────────────────────────────
 
 
 class TestTestNotificationImmediate:
@@ -853,7 +853,7 @@ class TestTestNotificationImmediate:
 
 
 class TestTestFormEventChangedPayload:
-    """Phase 4 (#268) — test-form POST for event_changed creates a valid row."""
+    """Test-form POST for event_changed creates a valid row."""
 
     def test_deferred_row_has_valid_payload(self, app, admin_client):
         """AC-13: deferred mode creates row with field_edit change_type and non-empty JSON."""
