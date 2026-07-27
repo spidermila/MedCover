@@ -161,20 +161,34 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
     event_ids = [e.id for e in events_with_plans]
     type_ids = list({p.equipment_type_id for e in events_with_plans for p in e.equipment_plans})
 
-    # For each type: total pool items (not in maintenance; we'll refine per-event below).
-    # We pre-compute a "global" pool (ignoring exact window) to quickly skip types
-    # where total pool >= sum of all planned quantities — no shortage possible.
-    global_pool_rows = db.session.execute(
-        db.select(EquipmentItem.type_id, func.count(EquipmentItem.id).label("cnt"))
-        .where(
-            EquipmentItem.type_id.in_(type_ids),
-            EquipmentItem.unavailability_since.is_(None),  # quick global pre-filter (ignores window)
-        )
-        .group_by(EquipmentItem.type_id)
+    # Fetch all items for the relevant types with their maintenance windows.
+    # One query; we compute per-event pool sizes in Python to correctly handle
+    # expired maintenance windows (unavailability_since set but until <= event.start).
+    item_rows = db.session.execute(
+        db.select(
+            EquipmentItem.type_id,
+            EquipmentItem.unavailability_since,
+            EquipmentItem.unavailability_until,
+        ).where(EquipmentItem.type_id.in_(type_ids))
     ).all()
-    global_pool: dict[int, int] = {r.type_id: r.cnt for r in global_pool_rows}
+    items_by_type: dict[int, list[tuple]] = defaultdict(list)
+    for item in item_rows:
+        items_by_type[item.type_id].append((item.unavailability_since, item.unavailability_until))
 
-    # Committed quantities from events with overlapping windows (excluding self).
+    def _pool_for_window(type_id: int, start: datetime, end: datetime) -> int:
+        """Count items of *type_id* not in maintenance during [start, end)."""
+        count = 0
+        for since, until in items_by_type.get(type_id, []):
+            if since is None:
+                count += 1  # no maintenance scheduled
+            elif since >= end:
+                count += 1  # maintenance starts after event ends
+            elif until is not None and until <= start:
+                count += 1  # maintenance ended before event starts
+        return count
+
+    # Committed quantities from other events whose windows could overlap.
+    # Bounding by end_datetime > now avoids loading all historical events.
     committed_rows = db.session.execute(
         db.select(
             EventEquipmentPlan.event_id,
@@ -187,14 +201,13 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
             EventEquipmentPlan.event_id.notin_(event_ids),
             Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
             Event.archived == sa.false(),
+            Event.end_datetime > now,
         )
         .group_by(EventEquipmentPlan.event_id, EventEquipmentPlan.equipment_type_id)
     ).all()
-    # Build: committed_by_others[type_id] = [(event_start, event_end, qty)]
-    # Then for each plan, sum up overlapping committed quantities.
+    # Build: committed_windows[type_id] = [(event_start, event_end, qty)]
     committed_windows: dict[int, list[tuple]] = defaultdict(list)
     event_times: dict[int, tuple] = {e.id: (e.start_datetime, e.end_datetime) for e in events_with_plans}
-    # We need start/end for other events — load them.
     other_event_ids = list({r.event_id for r in committed_rows})
     if other_event_ids:
         other_events = db.session.execute(
@@ -214,7 +227,7 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
             continue
         for plan in event.equipment_plans:
             tid = plan.equipment_type_id
-            pool = global_pool.get(tid, 0)
+            pool = _pool_for_window(tid, event.start_datetime, event.end_datetime)
             committed = sum(
                 qty
                 for (s, e, qty) in committed_windows.get(tid, [])
