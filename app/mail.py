@@ -530,7 +530,7 @@ def enqueue_deferred(
 # ── Assignment notifications ──────────────────────────────────────────────────
 
 
-def send_assignment_confirmed(user: UserAccount, event: Event, spot_description: str = "") -> None:
+def send_assignment_confirmed(user: UserAccount, event: Event, spot_description: str | None = None) -> None:
     """Notify a user that their spot assignment was confirmed."""
     if not _is_notify_enabled("notify_assignment"):
         return
@@ -554,7 +554,7 @@ def send_assignment_confirmed(user: UserAccount, event: Event, spot_description:
     )
 
 
-def send_assignment_released(user: UserAccount, event: Event, spot_description: str = "") -> None:
+def send_assignment_released(user: UserAccount, event: Event, spot_description: str | None = None) -> None:
     """Notify a user that their assignment was released (by themselves or coordinator)."""
     if not _is_notify_enabled("notify_assignment"):
         return

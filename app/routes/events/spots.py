@@ -228,7 +228,7 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
     db.session.commit()
 
     if unassign_needed:
-        mailer.send_assignment_released(unassigned_user, event, spot_description=spot.description or "")
+        mailer.send_assignment_released(unassigned_user, event, spot_description=spot.description)
         flash(f"Pozice upravena. Uživatel {unassigned_user.name} byl automaticky odhlášen.", "warning")
     else:
         flash("Pozice upravena.", "success")
