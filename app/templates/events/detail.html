@@ -493,17 +493,25 @@
       <thead>
         <tr>
           <th>Typ</th>
-          <th>Kategorie</th>
           <th class="text-center">Požadované množství</th>
+          <th class="text-center">Volné kusy</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% for plan in event.equipment_plans %}
-        <tr>
+        {% set avail = equipment_availability.get(plan.equipment_type_id, 0) %}
+        <tr {% if avail < plan.quantity_required %}class="table-danger"{% endif %}>
           <td>{{ plan.equipment_type.name }}</td>
-          <td>{{ 'Osobní' if plan.equipment_type.category.value == 'personal' else 'Sdílené' }}</td>
           <td class="text-center">{{ plan.quantity_required }}</td>
+          <td class="text-center">
+            {% if avail < plan.quantity_required %}
+              <span class="text-danger fw-bold">{{ avail }}</span>
+              <span class="badge text-bg-danger ms-1">Nedostatek</span>
+            {% else %}
+              {{ avail }}
+            {% endif %}
+          </td>
           <td class="text-end">
             {% if current_user.has_permission('event.equipment.plan') and event.status != EventStatus.CANCELLED %}
               <form method="POST" action="{{ url_for('events.equipment_plan_remove', event_id=event.id) }}" class="d-inline">
@@ -535,90 +543,6 @@
     <button class="btn btn-outline-danger btn-sm">Přidat</button>
   </form>
   {% endif %}
-
-  {# Equipment assignments #}
-  <h6 class="text-muted mb-2">Přiřazené položky</h6>
-  {% if event.equipment_assignments %}
-  <div class="table-responsive mb-2">
-    <table class="table table-sm align-middle">
-      <thead>
-        <tr>
-          <th>Název</th>
-          <th>Typ</th>
-          <th>Sériové číslo</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ea in event.equipment_assignments %}
-        <tr {% if not ea.equipment_item.is_available %}class="table-warning"{% endif %}>
-          <td>
-            {{ ea.equipment_item.name }}
-            {% if not ea.equipment_item.is_available %}
-              <span class="badge text-bg-warning ms-1" title="{{ ea.equipment_item.unavailability_reason or '' }}">Nedostupná</span>
-            {% endif %}
-          </td>
-          <td>{{ ea.equipment_item.equipment_type.name }}</td>
-          <td class="text-muted small">{{ ea.equipment_item.serial_number or '—' }}</td>
-          <td class="text-end">
-            {% if current_user.has_permission('event.equipment.assign') and event.status != EventStatus.CANCELLED %}
-              <form method="POST" action="{{ url_for('events.equipment_unassign', event_id=event.id) }}" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="item_id" value="{{ ea.equipment_item_id }}">
-                <button class="btn btn-outline-danger btn-sm py-0">Odebrat</button>
-              </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-    <p class="text-muted small">Žádné přiřazené položky.</p>
-  {% endif %}
-
-  {# Auto-populated on page load by JS — shows conflicts/unavailability for already-assigned items #}
-  <div id="eq-assigned-check">
-  {% if equipment_warnings %}
-  <div class="alert alert-warning py-2 mt-2">
-    <strong>⚠ Upozornění na přiřazené vybavení:</strong>
-    <ul class="mb-0 mt-1">
-      {% for w in equipment_warnings %}
-      <li>
-        <strong>{{ w.item_name }}</strong>
-        {% if w.status == "unavailable" %}
-          — nedostupná: {{ w.reason or "bez udaného důvodu" }}
-        {% elif w.status == "conflict" %}
-          — přiřazena jiné akci:
-          <a href="{{ w.conflicting_event.url }}">„{{ w.conflicting_event.name }}"</a>
-          ({{ w.conflicting_event.start | localdt }} – {{ w.conflicting_event.end | localdt }})
-        {% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
-  </div>
-
-  {% if current_user.has_permission('event.equipment.assign') and event.status != EventStatus.CANCELLED %}
-  <form method="POST" action="{{ url_for('events.equipment_assign', event_id=event.id) }}"
-        id="eq-assign-form" class="d-flex gap-2 mb-2 align-items-center flex-wrap">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <select name="item_id" id="eq-item-select" class="form-select form-select-sm maxw-250" required>
-      <option value="">— položka —</option>
-      {% for item in available_equipment_items %}
-        <option value="{{ item.id }}"
-                {% if not item.is_available %}data-unavailable="1"{% endif %}>
-          {% if not item.is_available %}⚠ {% endif %}{{ item.name }} ({{ item.equipment_type.name }})
-        </option>
-      {% endfor %}
-    </select>
-    <button type="button" class="btn btn-outline-warning btn-sm" id="eq-check-btn">Zkontrolovat dostupnost</button>
-    <button class="btn btn-outline-danger btn-sm">Přiřadit</button>
-  </form>
-  <div id="eq-check-results" class="mb-2"></div>
-  {% endif %}
 </div>
 
 <div id="fillers-map-data" data-fillers-map='{{ fillers_map | tojson }}' hidden></div>
@@ -636,11 +560,4 @@ document.querySelectorAll('select.rp-select').forEach(function (sel) {
 <div id="event-nav-config" style="display:none" data-event-id="{{ event.id }}"></div>
 <script src="{{ url_for('static', filename='js/events-detail-nav.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
 
-<div id="eq-check-config" style="display:none"
-     data-check-url="{{ url_for('events.equipment_check') }}"
-     data-event-id="{{ event.id }}"
-     data-start="{{ event.start_datetime.isoformat() }}"
-     data-end="{{ event.end_datetime.isoformat() }}">
-</div>
-<script src="{{ url_for('static', filename='js/events-detail-equipment.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
 {% endblock %}

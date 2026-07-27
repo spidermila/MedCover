@@ -18,21 +18,6 @@
                required autofocus>
       </div>
 
-      <div class="mb-3">
-        <label for="category" class="form-label">Kategorie <span class="text-danger">*</span></label>
-        <select class="form-select" id="category" name="category" required>
-          <option value="">— vyberte —</option>
-          <option value="personal"
-            {{ 'selected' if (edit and et.category.value == 'personal') or (not edit and request.form.get('category') == 'personal') }}>
-            Osobní
-          </option>
-          <option value="shared"
-            {{ 'selected' if (edit and et.category.value == 'shared') or (not edit and request.form.get('category') == 'shared') }}>
-            Sdílené
-          </option>
-        </select>
-      </div>
-
       <div class="mb-4">
         <label for="description" class="form-label">Popis</label>
         <textarea class="form-control" id="description" name="description" rows="3">{{ (et.description or '') if edit else request.form.get('description', '') }}</textarea>

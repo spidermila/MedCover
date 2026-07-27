@@ -138,6 +138,31 @@
 </div>
 {% endif %}
 
+{% if equipment_shortage_events %}
+<div class="card border-warning mb-3">
+  <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold">⚠ Nedostatek vybavení ({{ equipment_shortage_events|length }})</span>
+    <a href="{{ url_for('equipment.items') }}" class="text-decoration-none small">Vybavení →</a>
+  </div>
+  <ul class="list-group list-group-flush">
+    {% for e, type_name, required, available in equipment_shortage_events %}
+    <li class="list-group-item list-group-item-action py-2">
+      <a href="{{ url_for('events.detail', event_id=e.id) }}" class="text-decoration-none stretched-link"></a>
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="fw-semibold">{{ e.name }}</div>
+          <div class="text-muted small">{{ e.start_datetime | localdt }}</div>
+        </div>
+        <div class="text-end text-warning-emphasis small">
+          {{ type_name }}: {{ available }}/{{ required }} ks
+        </div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {# ── Moje akce ─────────────────────────────────────────────────────────────── #}
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between align-items-center py-2">

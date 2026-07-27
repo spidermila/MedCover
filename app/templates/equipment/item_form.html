@@ -25,7 +25,7 @@
           {% for t in types %}
             <option value="{{ t.id }}"
               {{ 'selected' if (edit and item.type_id == t.id) or (not edit and request.form.get('type_id')|int == t.id) }}>
-              {{ t.name }} ({{ 'osobní' if t.category.value == 'personal' else 'sdílené' }})
+              {{ t.name }}
             </option>
           {% endfor %}
         </select>
@@ -50,48 +50,28 @@
 
       {% if edit and can_modify_availability %}
       <hr>
-      <h5 class="mb-3">Dostupnost</h5>
+      <h5 class="mb-3">Servis / údržba
+        {{ help_icon("Vyplňte datum začátku (a volitelně konce) servisního okna. Pokud je vyplněno, položka je v daném období automaticky vyřazena z dostupné zásoby pro plánování akcí. Prázdné = žádný servis naplánován.") if help_icon is defined else '' }}
+      </h5>
       <div class="mb-3">
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="status" id="status_available"
-                 value="AVAILABLE"
-                 {{ 'checked' if not edit or item.status == EquipmentItemStatus.AVAILABLE }}>
-          <label class="form-check-label text-success fw-semibold" for="status_available">Dostupná</label>
+        <label for="unavailability_reason" class="form-label">Důvod</label>
+        <textarea class="form-control" id="unavailability_reason" name="unavailability_reason"
+                  rows="2" placeholder="Např. čeká na opravu, výměna baterie…">{{ (item.unavailability_reason or '') if edit else '' }}</textarea>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label for="unavailability_since" class="form-label">Servis od</label>
+          <input type="text" class="form-control flatpickr-date" id="unavailability_since"
+                 name="unavailability_since"
+                 value="{{ item.unavailability_since.strftime('%Y-%m-%d') if edit and item.unavailability_since else '' }}">
         </div>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="status" id="status_unavailable"
-                 value="UNAVAILABLE"
-                 {{ 'checked' if edit and item.status == EquipmentItemStatus.UNAVAILABLE }}>
-          <label class="form-check-label text-warning fw-semibold" for="status_unavailable">Nedostupná</label>
+        <div class="col-md-6">
+          <label for="unavailability_until" class="form-label">Do (prázdné = neurčito)</label>
+          <input type="text" class="form-control flatpickr-date" id="unavailability_until"
+                 name="unavailability_until"
+                 value="{{ item.unavailability_until.strftime('%Y-%m-%d') if edit and item.unavailability_until else '' }}">
         </div>
       </div>
-      <div id="unavailability-fields" class="mb-3 {{ 'd-none' if not edit or item.status == EquipmentItemStatus.AVAILABLE }}">
-        <div class="mb-3">
-          <label for="unavailability_reason" class="form-label">Důvod nedostupnosti</label>
-          <textarea class="form-control" id="unavailability_reason" name="unavailability_reason"
-                    rows="2" placeholder="Např. čeká na opravu, baterie potřebuje výměnu…">{{ (item.unavailability_reason or '') if edit else '' }}</textarea>
-        </div>
-        <div class="mb-3">
-          <label for="unavailability_since" class="form-label">Nedostupná od</label>
-          <div class="input-group">
-            <input type="text" class="form-control flatpickr-dt" id="unavailability_since"
-                   name="unavailability_since"
-                   value="{{ item.unavailability_since.strftime('%Y-%m-%dT%H:%M') if edit and item.unavailability_since else '' }}">
-            <button type="button" class="btn btn-outline-secondary btn-fpnow">Teď</button>
-          </div>
-        </div>
-      </div>
-      <script nonce="{{ g.csp_nonce }}">
-        document.addEventListener("DOMContentLoaded", function () {
-          var radios = document.querySelectorAll('input[name="status"]');
-          var fields = document.getElementById("unavailability-fields");
-          radios.forEach(function (r) {
-            r.addEventListener("change", function () {
-              fields.classList.toggle("d-none", r.value !== "UNAVAILABLE" || !r.checked);
-            });
-          });
-        });
-      </script>
       {% endif %}
 
       <div class="d-flex gap-2">
