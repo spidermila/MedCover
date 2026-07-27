@@ -508,8 +508,8 @@ class TestNotificationsDelayCard:
     def test_all_tier_labels_present(self, admin_client):
         resp = admin_client.get("/admin/notifications/")
         assert b"Do 24 hodin do akce" in resp.data
-        assert "1\u20137 dní do akce".encode() in resp.data
-        assert "1\u20134 týdny do akce".encode() in resp.data
+        assert "1–7 dní do akce".encode() in resp.data
+        assert "1–4 týdny do akce".encode() in resp.data
         assert "Více než měsíc do akce".encode() in resp.data
 
     def test_human_friendly_values_present(self, admin_client):
