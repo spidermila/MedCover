@@ -883,9 +883,7 @@ class TestPlanAddConflictMessage:
             ev_a.name = "Blocking Event"
             ev_a.start_datetime = future_start
             ev_a.end_datetime = future_end
-            db.session.add(EventEquipmentPlan(
-                event_id=event_a_id, equipment_type_id=type_id, quantity_required=1
-            ))
+            db.session.add(EventEquipmentPlan(event_id=event_a_id, equipment_type_id=type_id, quantity_required=1))
             db.session.commit()
 
         # Event B overlaps — trying to add the same type should fail and name Event A

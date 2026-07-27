@@ -127,9 +127,7 @@ class TestDashboardEquipmentShortage:
 
         event_id = self._make_overlapping_event(app, me_id, "Shortage Event S")
         with app.app_context():
-            db.session.add(EventEquipmentPlan(
-                event_id=event_id, equipment_type_id=type_id, quantity_required=2
-            ))
+            db.session.add(EventEquipmentPlan(event_id=event_id, equipment_type_id=type_id, quantity_required=2))
             db.session.commit()
 
         resp = admin_client.get("/dashboard")
@@ -155,9 +153,7 @@ class TestDashboardEquipmentShortage:
         event_b_id = self._make_overlapping_event(app, me_id, "Shortage Event B")
         with app.app_context():
             for eid in (event_a_id, event_b_id):
-                db.session.add(EventEquipmentPlan(
-                    event_id=eid, equipment_type_id=type_id, quantity_required=1
-                ))
+                db.session.add(EventEquipmentPlan(event_id=eid, equipment_type_id=type_id, quantity_required=1))
             db.session.commit()
 
         resp = admin_client.get("/dashboard")

@@ -231,7 +231,6 @@ def build_spots(event: Event, form: dict) -> None:
         db.session.add(spot)
 
 
-
 def copy_spots_with_assignments(source: Event, target: Event) -> None:
     """Copy spots (+ qualifications + existing assignments) from source to target."""
     from app.models.assignment import Assignment  # pylint: disable=import-outside-toplevel
@@ -258,7 +257,7 @@ def parse_equipment_plans_from_form(form: dict) -> list[tuple[int, int]]:
     """Return list of (type_id, quantity) pairs from the form's eq_* fields."""
     try:
         total = int(form.get("eq_total", 0) or 0)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         total = 0
     plans: list[tuple[int, int]] = []
     seen: set[int] = set()
@@ -272,7 +271,7 @@ def parse_equipment_plans_from_form(form: dict) -> list[tuple[int, int]]:
             continue  # deduplicate
         try:
             qty = max(1, int(raw_qty))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             qty = 1
         plans.append((type_id, qty))
         seen.add(type_id)
