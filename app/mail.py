@@ -34,16 +34,19 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
-from flask import g, render_template
+from flask import g, render_template, url_for
+from flask_mail import Message
 
-from app.extensions import db
+from app.extensions import db, mail
+from app.models.audit import AuditLogEntry
+from app.models.event import Event
 from app.models.outbox import OutboxEmail
+from app.models.settings import AppSettings, get_settings
+from app.models.user import UserAccount
+from app.utils import external_url_for, get_app_tz
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment
-    from app.models.event import Event
-    from app.models.settings import AppSettings
-    from app.models.user import UserAccount
 
 log = logging.getLogger(__name__)
 
@@ -307,7 +310,6 @@ def _is_notify_enabled(settings_field: str) -> bool:
     if _is_test_notification():
         return True
     try:
-        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
         return bool(getattr(get_settings(), settings_field, True))
     except Exception:  # noqa: BLE001
@@ -316,8 +318,6 @@ def _is_notify_enabled(settings_field: str) -> bool:
 
 def _base_context() -> dict:
     """Return template context variables shared by all user-facing email templates."""
-    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
-    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
     try:
         org_name = get_settings().org_name or "MedCover"
@@ -414,7 +414,6 @@ def enqueue_deferred(
 
     Returns the row's final ``send_after`` value (may be ``None``).
     """
-    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
     # Recipient override (FR-2 / FR-9).
     override = getattr(g, "_test_notification_email", None)
@@ -728,9 +727,8 @@ def flush_and_notify_archived(event: Event) -> None:
     ).all()
     missing_ids = [uid for uid in pending_user_ids if uid not in recipients]
     if missing_ids:
-        from app.models.user import UserAccount as _UserAccount  # pylint: disable=import-outside-toplevel
 
-        extra_users = db.session.scalars(db.select(_UserAccount).where(_UserAccount.id.in_(missing_ids))).all()
+        extra_users = db.session.scalars(db.select(UserAccount).where(UserAccount.id.in_(missing_ids))).all()
         for u in extra_users:
             recipients[u.id] = u
 
@@ -761,7 +759,6 @@ def _format_event_change_value(field: str, raw: object) -> str:
     # Format ISO datetime strings to Czech local time.
     if "datetime" in field:
         try:
-            from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
 
             parsed = datetime.fromisoformat(val)
             local = parsed.astimezone(get_app_tz())
@@ -787,7 +784,6 @@ def _render_event_changed_body(
     drain time without modification.
     """
     if not event_url:
-        from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
         event_url = external_url_for("events.detail", event_id=event.id)
     formatted: list[tuple[str, str, str]] = [
@@ -889,7 +885,6 @@ def send_admin_digest(recipient_email: str, subject: str, html_body: str) -> Non
 def _write_failure_audit(row: OutboxEmail) -> None:
     """Write an AuditLogEntry when an outbox email permanently fails.
     Called inside the active DB session — no commit here."""
-    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
 
     try:
         db.session.add(
@@ -915,9 +910,6 @@ def drain_one_outbox_email() -> bool:
     Returns True if a row was processed (sent or failed), False if the queue
     was empty.  Designed to be called from both the scheduler and tests.
     """
-    from flask_mail import Message  # pylint: disable=import-outside-toplevel
-
-    from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
 
     _now_utc = datetime.now(timezone.utc)
     query = (
@@ -942,9 +934,8 @@ def drain_one_outbox_email() -> bool:
         return False
 
     # --- Dev email block check ---
-    from app.models.settings import get_settings as _get_settings  # pylint: disable=import-outside-toplevel
 
-    _settings = _get_settings()
+    _settings = get_settings()
     if not _settings.is_email_allowed(row.to_email):
         row.status = "skipped"
         row.last_error = "dev_email_block: recipient not in allowlist"
@@ -963,7 +954,7 @@ def drain_one_outbox_email() -> bool:
             msg.html = row.html_body
         if _INSTANCE_ID:
             msg.extra_headers = {"X-MedCover-Instance": _INSTANCE_ID}
-        _mail.send(msg)
+        mail.send(msg)
         row.status = "sent"
         row.sent_at = datetime.now(timezone.utc)
         log.info("Mail sent: id=%d to=%s subject=%r", row.id, row.to_email, row.subject)
@@ -1004,7 +995,6 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
         return
     if not user_can_receive_notification(user, "assignment"):
         return
-    from flask import url_for  # pylint: disable=import-outside-toplevel
 
     debriefing_url = url_for("debriefing.submit", assignment_id=assignment.id, _external=True)
     html = render_template(
@@ -1031,7 +1021,6 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
 
 def send_account_activated(user: UserAccount) -> None:
     """Enqueue an account-activation notification to the newly activated user."""
-    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
     login_url = external_url_for("auth.login")
     html_body = render_template("email/account_activated.html", user=user, login_url=login_url, **_base_context())
@@ -1145,7 +1134,6 @@ def _row_to_entry(row: OutboxEmail) -> dict:
             log.warning("debriefing outbox row id=%s missing assignment_id", row.id)
             debriefing_url = ""
         else:
-            from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
             debriefing_url = external_url_for("debriefing.submit", assignment_id=int(assignment_id))
         return {"type": "debriefing_invitation", "debriefing_url": debriefing_url}
@@ -1162,7 +1150,6 @@ def _row_to_entry(row: OutboxEmail) -> dict:
 
 def _build_event_section(event: object, rows: list) -> dict:
     """Build one event section dict for the batched email template. FR-34."""
-    from app.utils import external_url_for, get_app_tz  # pylint: disable=import-outside-toplevel
 
     return {
         "event_name": event.name,  # type: ignore[attr-defined]
@@ -1181,7 +1168,6 @@ def _write_batch_failure_audit(
     rows: list,
 ) -> None:
     """Write ONE AuditLogEntry for a batch SMTP failure (FR-12). No commit."""
-    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
 
     try:
         db.session.add(
@@ -1209,11 +1195,6 @@ def drain_batched_outbox() -> bool:
     Returns True if any state change was made (sent, dropped, failed, skipped),
     False only if no user qualified (queue empty of matured batched rows). FR-1..FR-13.
     """
-    from flask_mail import Message  # pylint: disable=import-outside-toplevel
-
-    from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
-    from app.models.event import Event as _Event  # pylint: disable=import-outside-toplevel
-    from app.models.settings import get_settings as _get_settings  # pylint: disable=import-outside-toplevel
 
     now_utc = datetime.now(timezone.utc)
     user_id = _pick_trigger_user(now_utc)
@@ -1246,13 +1227,12 @@ def drain_batched_outbox() -> bool:
     to_email = live_rows[0].to_email
 
     # Load recipient display name.
-    from app.models.user import UserAccount as _UserAccount  # pylint: disable=import-outside-toplevel
 
-    user_obj = db.session.get(_UserAccount, user_id)
+    user_obj = db.session.get(UserAccount, user_id)
     user_name = user_obj.name if user_obj is not None else ""
 
     # FR-8 — dev email block.
-    settings = _get_settings()
+    settings = get_settings()
     if not settings.is_email_allowed(to_email):
         for r in live_rows:
             r.status = "skipped"
@@ -1268,7 +1248,7 @@ def drain_batched_outbox() -> bool:
 
     # Load Event objects — one round trip (NFR-1).
     event_ids = sorted({r.event_id for r in live_rows if r.event_id is not None})
-    events = db.session.scalars(db.select(_Event).where(_Event.id.in_(event_ids))).all()
+    events = db.session.scalars(db.select(Event).where(Event.id.in_(event_ids))).all()
     events_by_id = {e.id: e for e in events}
 
     # Group live_rows by event_id; handle rows whose event vanished between load and now.
@@ -1308,7 +1288,7 @@ def drain_batched_outbox() -> bool:
         msg.html = html_body
         if _INSTANCE_ID:
             msg.extra_headers = {"X-MedCover-Instance": _INSTANCE_ID}
-        _mail.send(msg)
+        mail.send(msg)
         _now = datetime.now(timezone.utc)
         for r in active_rows:
             r.status = "sent"
