@@ -198,7 +198,7 @@ def create() -> str | Response:
         audit("create", "EventTemplate", tmpl.id, f"Vytvořena šablona akce '{tmpl.name}'")
         db.session.commit()
 
-        flash(f'Šablona „{tmpl.name}" byla vytvořena.', "success")
+        flash(f"Šablona „{tmpl.name}“ byla vytvořena.", "success")
         return redirect(url_for("templates.index"))
 
     return render_template(
@@ -319,7 +319,7 @@ def edit(template_id: int) -> str | Response:
         )
         db.session.commit()
 
-        flash(f'Šablona „{tmpl.name}" byla uložena.', "success")
+        flash(f"Šablona „{tmpl.name}“ byla uložena.", "success")
         return redirect(url_for("templates.index"))
 
     return render_template(
@@ -346,5 +346,5 @@ def delete(template_id: int) -> Response:
     db.session.delete(tmpl)
     db.session.commit()
 
-    flash(f'Šablona „{name}" byla smazána.', "success")
+    flash(f"Šablona „{name}“ byla smazána.", "success")
     return redirect(url_for("templates.index"))

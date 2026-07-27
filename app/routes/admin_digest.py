@@ -110,7 +110,7 @@ def add_block() -> Response:
         or 0
     )
     if count >= _MAX_INSTANCES_PER_TYPE:
-        flash(f'Blok "{cls.label}" lze přidat nejvýše {_MAX_INSTANCES_PER_TYPE}×.', "danger")
+        flash(f"Blok „{cls.label}“ lze přidat nejvýše {_MAX_INSTANCES_PER_TYPE}×.", "danger")
         return redirect(url_for("admin_digest.index"))
 
     max_order = (
@@ -130,7 +130,7 @@ def add_block() -> Response:
         )
     )
     db.session.commit()
-    flash(f'Blok "{cls.label}" byl přidán.', "success")
+    flash(f"Blok „{cls.label}“ byl přidán.", "success")
     return redirect(url_for("admin_digest.index"))
 
 
@@ -169,7 +169,7 @@ def save_block(block_id: int) -> Response:
     block.config_json = new_config
     block.version += 1
     db.session.commit()
-    flash(f'Blok "{cls.label}" byl uložen.', "success")
+    flash(f"Blok „{cls.label}“ byl uložen.", "success")
     return redirect(url_for("admin_digest.index"))
 
 
@@ -196,7 +196,7 @@ def delete_block(block_id: int) -> Response:
     label = cls.label if cls else block.block_type
     db.session.delete(block)
     db.session.commit()
-    flash(f'Blok "{label}" byl odstraněn.', "success")
+    flash(f"Blok „{label}“ byl odstraněn.", "success")
     return redirect(url_for("admin_digest.index"))
 
 
