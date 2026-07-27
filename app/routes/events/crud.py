@@ -456,7 +456,7 @@ def detail(event_id: int) -> str | Response:
         and not current_user.has_permission("event.assign_other")
     )
 
-    all_equipment_types = db.session.scalars(
+    eq_types_for_detail = db.session.scalars(
         db.select(EquipmentType).order_by(collate(EquipmentType.name, CS_COLLATION))
     ).all()
     # Type-level availability: two queries total (one COUNT, one SUM) regardless
@@ -530,7 +530,7 @@ def detail(event_id: int) -> str | Response:
         assigned_user_ids=assigned_user_ids,
         can_assign=can_assign,
         me_coordinated=me_coordinated,
-        all_equipment_types=all_equipment_types,
+        all_equipment_types=eq_types_for_detail,
         equipment_availability=equipment_availability,
         all_qualifications=all_qualifications,
         fillers_map=fillers_map,
