@@ -106,6 +106,11 @@ def create_app(
         """Like localdt but date-only (dd.mm.yyyy)."""
         return localdt_filter(dt, fmt="%d.%m.%Y")
 
+    @app.template_filter("localdate_iso")
+    def localdate_iso_filter(dt: datetime | None) -> str:
+        """Convert a UTC datetime to local date in ISO format (YYYY-MM-DD) for <input> values."""
+        return localdt_filter(dt, fmt="%Y-%m-%d") if dt is not None else ""
+
     @app.template_filter("midpoint_iso")
     def midpoint_iso_filter(event: object) -> str:
         """Return the midpoint between event.start_datetime and event.end_datetime
