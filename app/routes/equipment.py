@@ -39,6 +39,22 @@ from app.utils import (
 equipment_bp = Blueprint("equipment", __name__, url_prefix="/equipment")
 
 
+def _parse_avail_dt(raw: str) -> tuple[datetime | None, bool]:
+    """Parse a local date string to UTC for availability fields.
+
+    Returns ``(datetime, True)`` on success, ``(None, True)`` for empty input,
+    and ``(None, False)`` when the input is non-empty but unparseable.
+    Callers should flash an error and abort when the second element is False.
+    """
+    raw = raw.strip()
+    if not raw:
+        return None, True
+    try:
+        return datetime.fromisoformat(raw).replace(tzinfo=get_app_tz()).astimezone(timezone.utc), True
+    except ValueError:
+        return None, False
+
+
 # ── Types: List / Index ───────────────────────────────────────────────────────
 
 
@@ -292,20 +308,19 @@ def item_edit(item_id: int) -> str | Response:
         item.notes = notes
 
         if can_modify_availability:
-
-            def _parse_dt(raw: str) -> datetime | None:
-                raw = raw.strip()
-                if not raw:
-                    return None
-                try:
-                    return datetime.fromisoformat(raw).replace(tzinfo=get_app_tz()).astimezone(timezone.utc)
-                except ValueError:
-                    return None
-
             was_available = item.is_available
             item.unavailability_reason = request.form.get("unavailability_reason", "").strip() or None
-            new_since = _parse_dt(request.form.get("unavailability_since", ""))
-            new_until = _parse_dt(request.form.get("unavailability_until", ""))
+            new_since, since_ok = _parse_avail_dt(request.form.get("unavailability_since", ""))
+            new_until, until_ok = _parse_avail_dt(request.form.get("unavailability_until", ""))
+            if not since_ok or not until_ok:
+                flash("Neplatný formát data servisního okna.", "danger")
+                return render_template(
+                    "equipment/item_form.html",
+                    item=item,
+                    types=types,
+                    edit=True,
+                    can_modify_availability=can_modify_availability,
+                )
             if new_since and new_until and new_until <= new_since:
                 flash("Konec servisního okna musí být po jeho začátku.", "danger")
                 return render_template(
@@ -414,17 +429,12 @@ def item_mark_unavailable(item_id: int) -> Response:
 
     reason = request.form.get("reason", "").strip() or None
 
-    def _parse_date(raw: str) -> datetime | None:
-        raw = raw.strip()
-        if not raw:
-            return None
-        try:
-            return datetime.fromisoformat(raw).replace(tzinfo=get_app_tz()).astimezone(timezone.utc)
-        except ValueError:
-            return None
-
-    since = _parse_date(request.form.get("since", "")) or datetime.now(timezone.utc)
-    until = _parse_date(request.form.get("until", ""))
+    since_raw, since_ok = _parse_avail_dt(request.form.get("since", ""))
+    until, until_ok = _parse_avail_dt(request.form.get("until", ""))
+    if not since_ok or not until_ok:
+        flash("Neplatný formát data servisního okna.", "danger")
+        return redirect(url_for("equipment.items"))
+    since = since_raw or datetime.now(timezone.utc)
 
     if until and until <= since:
         flash("Konec servisního okna musí být po jeho začátku.", "danger")
