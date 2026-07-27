@@ -9,7 +9,7 @@ from markupsafe import Markup
 
 from app.extensions import db
 from app.models.equipment import EquipmentType, EventEquipmentPlan
-from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
+from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
@@ -228,22 +228,6 @@ def build_spots(event: Event, form: dict) -> None:
         spot.required_qualifications = list(qualifications)
         db.session.add(spot)
 
-
-def build_spots_from_template(event: Event, template: object) -> None:
-    """Create event spots and equipment plans matching a template."""
-    if not isinstance(template, EventTemplate):
-        return
-    for st in template.spot_templates:
-        spot = EventSpot(event_id=event.id, description=st.description, is_optional=st.is_optional)
-        spot.required_qualifications = list(st.required_qualifications)
-        db.session.add(spot)
-    for ep in template.equipment_plans:
-        plan = EventEquipmentPlan(
-            event_id=event.id,
-            equipment_type_id=ep.equipment_type_id,
-            quantity_required=ep.quantity_required,
-        )
-        db.session.add(plan)
 
 
 def copy_spots_with_assignments(source: Event, target: Event) -> None:
