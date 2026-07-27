@@ -61,6 +61,8 @@ class TestNotificationCatalog:
             "event_published",
             "assignments_opened",
             "event_cancelled",
+            "event_archived",
+            "event_unarchived",
             "unfilled_reminder",
             "debriefing_invitation",
             "account_activated",

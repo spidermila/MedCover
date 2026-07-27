@@ -1,0 +1,11 @@
+{% extends "email/base.html" %}
+{% block content %}
+<p>Dobrý den, {{ user_name }},</p>
+<p>akce byla obnovena z archivu:</p>
+<table class="event-info">
+  <tr><td>Název:</td><td>{{ event.name }}</td></tr>
+  <tr><td>Začátek:</td><td>{{ event.start_datetime.strftime('%d.%m.%Y %H:%M') }}</td></tr>
+  <tr><td>Konec:</td><td>{{ event.end_datetime.strftime('%d.%m.%Y %H:%M') }}</td></tr>
+</table>
+<p>V případě dotazů kontaktujte prosím koordinátora.</p>
+{% endblock %}

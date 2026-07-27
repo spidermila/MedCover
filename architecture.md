@@ -298,6 +298,9 @@ When in doubt about the correct Czech UI label or English code name for a concep
 | Spot released on an Event | RP + all eligible users | Deferred: proximity tier (5 min – 24 h; configurable at /admin/notifications/); batched per recipient |
 | User joins an Event (spot filled) | RP | Deferred: proximity tier; batched per recipient |
 | Coordinator/admin changes Event parameters | RP | Deferred: proximity tier; consecutive edits merge; batched per recipient |
+| Event archived / cancelled | Assigned users **and** users with pending notifications for the event | Immediate: any deferred rows for the event are flushed to `send_after=NULL` and go out with the archive notice in the same batched email |
+| Event unarchived / restored | Currently assigned users | Deferred: proximity tier; batched per recipient (further edits merge as usual) |
+| User archived or deactivated | (no email) | All the user's pending outbox rows are deleted; queue drained silently |
 | Unfilled spots as Event approaches | All eligible users | Configurable reminder schedule per Event (default: 1 day before start); enqueue is then deferred + batched per recipient |
 | Event Completed — debriefing | Each assigned member (personalised link) | On transition to Completed → deferred + batched per recipient |
 | User-set personal reminder | The individual user | At the user-configured time |

@@ -485,8 +485,19 @@ def deactivate(user_id: uuid.UUID) -> Response:
         return redirect(url_for("users.detail", user_id=user_id))
     user.is_active = False
     user.version += 1
+    purged = db.session.execute(
+        sa.delete(OutboxEmail).where(
+            OutboxEmail.user_id == user.id,
+            OutboxEmail.status == "pending",
+        )
+    ).rowcount
     audit(
-        "edit", "UserAccount", user.id, f"Účet {user.name} ({user.email}) byl deaktivován", {"is_active": [True, False]}
+        "edit",
+        "UserAccount",
+        user.id,
+        f"Účet {user.name} ({user.email}) byl deaktivován"
+        + (f"; z fronty odstraněno {purged} čekajících e-mailů" if purged else ""),
+        {"is_active": [True, False]},
     )
     db.session.commit()
     flash(f"Účet {user.name} byl deaktivován.", "warning")
@@ -507,11 +518,18 @@ def archive(user_id: uuid.UUID) -> Response:
     user.is_archived = True
     user.is_active = False
     user.version += 1
+    purged = db.session.execute(
+        sa.delete(OutboxEmail).where(
+            OutboxEmail.user_id == user.id,
+            OutboxEmail.status == "pending",
+        )
+    ).rowcount
     audit(
         "edit",
         "UserAccount",
         user.id,
-        f"Účet {user.name} ({user.email}) byl archivován",
+        f"Účet {user.name} ({user.email}) byl archivován"
+        + (f"; z fronty odstraněno {purged} čekajících e-mailů" if purged else ""),
         {"is_archived": [False, True], "is_active": [True, False]},
     )
     db.session.commit()

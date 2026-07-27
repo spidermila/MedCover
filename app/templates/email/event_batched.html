@@ -38,6 +38,10 @@
       <p>Přihlášky byly otevřeny.</p>
     {% elif entry.type == "event_cancelled" %}
       <p>Akce byla zrušena.</p>
+    {% elif entry.type == "event_archived" %}
+      <p>Akce byla archivována.</p>
+    {% elif entry.type == "event_unarchived" %}
+      <p>Akce byla obnovena z archivu.</p>
     {% elif entry.type == "unfilled_reminder" %}
       {% set n = entry.unfilled_count %}
       <p>Akce má <strong>{{ n }}</strong>

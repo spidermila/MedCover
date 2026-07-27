@@ -24,6 +24,7 @@ from flask import Blueprint, Response, abort, flash, jsonify, redirect, render_t
 from flask_login import current_user, login_required
 from sqlalchemy import collate
 
+import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.assignment import Assignment
@@ -238,6 +239,7 @@ def archive(me_id: int) -> Response:
             event.id,
             f"Akce '{event.name}' archivována (kaskáda archivace NA '{me.name}')",
         )
+        mailer.flush_and_notify_archived(event)
 
     db.session.commit()
 
