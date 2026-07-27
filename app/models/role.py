@@ -97,7 +97,6 @@ ALL_PERMISSIONS: list[dict] = [
         "description": "Set equipment item availability (available/unavailable)",
     },
     {"code": "event.equipment.plan", "description": "Plan required equipment for an event"},
-    {"code": "event.equipment.assign", "description": "Assign shared equipment items to an event"},
     # Debriefing
     {"code": "debriefing.submit_own", "description": "Submit own debriefing record"},
     {"code": "debriefing.view_own", "description": "View own submitted debriefing record"},
@@ -164,7 +163,6 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "equipment_item.report_own",
         "equipment_item.availability_modify",
         "event.equipment.plan",
-        "event.equipment.assign",
         "debriefing.submit_own",
         "debriefing.view_own",
         "report.view",

@@ -188,9 +188,6 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         order_by="EventSpot.is_optional, EventSpot.id",
     )
     equipment_plans = db.relationship("EventEquipmentPlan", back_populates="event", cascade="all, delete-orphan")
-    equipment_assignments = db.relationship(
-        "EventEquipmentAssignment", back_populates="event", cascade="all, delete-orphan"
-    )
 
     # ── Derived staffing status ─────────────────────────────────────────────
     @property

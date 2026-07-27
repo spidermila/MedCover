@@ -1,4 +1,3 @@
-import enum
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -9,26 +8,12 @@ if TYPE_CHECKING:
     from app.models.user import UserAccount  # noqa: F401
 
 
-class EquipmentCategory(str, enum.Enum):
-    PERSONAL = "personal"
-    SHARED = "shared"
-
-
-class EquipmentItemStatus(str, enum.Enum):
-    AVAILABLE = "available"
-    UNAVAILABLE = "unavailable"
-
-
 class EquipmentType(db.Model):  # type: ignore[misc]
     __tablename__ = "equipment_type"
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), unique=True, nullable=False)
     description = db.Column(db.Text, nullable=True)
-    category = db.Column(
-        db.Enum(EquipmentCategory, name="equipment_category_enum"),
-        nullable=False,
-    )
     version = db.Column(db.Integer, default=1, nullable=False)
     created_at = db.Column(
         db.DateTime(timezone=True),
@@ -60,14 +45,9 @@ class EquipmentItem(db.Model):  # type: ignore[misc]
     issued_to_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=True)
     issued_at = db.Column(db.DateTime(timezone=True), nullable=True)
     notes = db.Column(db.Text, nullable=True)
-    status = db.Column(
-        db.Enum(EquipmentItemStatus, name="equipment_item_status_enum"),
-        nullable=False,
-        default=EquipmentItemStatus.AVAILABLE,
-        server_default=EquipmentItemStatus.AVAILABLE.name,
-    )
     unavailability_reason = db.Column(db.Text, nullable=True)
     unavailability_since = db.Column(db.DateTime(timezone=True), nullable=True)
+    unavailability_until = db.Column(db.DateTime(timezone=True), nullable=True)
     version = db.Column(db.Integer, default=1, nullable=False)
     created_at = db.Column(
         db.DateTime(timezone=True),
@@ -83,13 +63,18 @@ class EquipmentItem(db.Model):  # type: ignore[misc]
 
     equipment_type = db.relationship("EquipmentType", back_populates="items", lazy="selectin")
     issued_to = db.relationship("UserAccount", foreign_keys=[issued_to_id], back_populates="issued_equipment")
-    event_assignments = db.relationship(
-        "EventEquipmentAssignment", back_populates="equipment_item", cascade="all, delete-orphan"
-    )
 
     @property
     def is_available(self) -> bool:
-        return self.status == EquipmentItemStatus.AVAILABLE
+        """True when no active maintenance window covers the current moment."""
+        now = datetime.now(timezone.utc)
+        if self.unavailability_since is None:
+            return True
+        if self.unavailability_since > now:
+            return True  # maintenance hasn't started yet
+        if self.unavailability_until is not None and self.unavailability_until <= now:
+            return True  # maintenance window has ended
+        return False
 
     def __repr__(self) -> str:
         return f"<EquipmentItem {self.name}>"
@@ -107,27 +92,6 @@ class EventEquipmentPlan(db.Model):  # type: ignore[misc]
 
     def __repr__(self) -> str:
         return f"<EventEquipmentPlan event={self.event_id} type={self.equipment_type_id}>"
-
-
-class EventEquipmentAssignment(db.Model):  # type: ignore[misc]
-    __tablename__ = "event_equipment_assignment"
-    __table_args__ = (db.UniqueConstraint("event_id", "equipment_item_id", name="uq_event_equipment_item"),)
-
-    id = db.Column(db.Integer, primary_key=True)
-    event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
-    equipment_item_id = db.Column(db.Integer, db.ForeignKey("equipment_item.id"), nullable=False)
-    assigned_at = db.Column(
-        db.DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-    returned_at = db.Column(db.DateTime(timezone=True), nullable=True)
-
-    event = db.relationship("Event", back_populates="equipment_assignments")
-    equipment_item = db.relationship("EquipmentItem", back_populates="event_assignments", lazy="selectin")
-
-    def __repr__(self) -> str:
-        return f"<EventEquipmentAssignment event={self.event_id} item={self.equipment_item_id}>"
 
 
 class EventTemplateEquipmentPlan(db.Model):  # type: ignore[misc]

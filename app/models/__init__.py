@@ -5,11 +5,8 @@ from .digest import DigestBlock  # noqa: F401
 from .digest import DigestMetricSnapshot  # noqa: F401
 from .digest import DigestSchedule  # noqa: F401
 from .digest import get_digest_schedule  # noqa: F401
-from .equipment import EquipmentCategory  # noqa: F401
 from .equipment import EquipmentItem  # noqa: F401
-from .equipment import EquipmentItemStatus  # noqa: F401
 from .equipment import EquipmentType  # noqa: F401
-from .equipment import EventEquipmentAssignment  # noqa: F401
 from .equipment import EventEquipmentPlan  # noqa: F401
 from .equipment import EventTemplateEquipmentPlan  # noqa: F401
 from .event import Event  # noqa: F401
