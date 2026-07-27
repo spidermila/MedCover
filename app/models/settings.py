@@ -68,6 +68,8 @@ class AppSettings(db.Model):  # type: ignore[misc]
     notify_event_published = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_assignments_opened = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_event_cancelled = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
+    notify_event_archived = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
+    notify_event_unarchived = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_event_changed = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_unfilled_reminder = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_debriefing = db.Column(db.Boolean, default=True, nullable=False, server_default="true")

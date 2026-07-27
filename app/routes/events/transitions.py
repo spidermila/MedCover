@@ -99,12 +99,8 @@ def cancel(event_id: int) -> Response:
     event.version += 1
     audit("status_change", "Event", event.id, f"Akce '{event.name}' archivována (zrušena)")
 
-    # Notify all assigned users before commit so we still have spot data
-    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
+    mailer.flush_and_notify_archived(event)
     db.session.commit()
-
-    for user in assigned_users:
-        mailer.send_event_cancelled(user, event)
 
     flash("Akce byla zrušena.", "warning")
     return redirect(url_for("events.index"))
@@ -124,6 +120,11 @@ def restore(event_id: int) -> Response:
     event.archived = False
     event.version += 1
     audit("status_change", "Event", event.id, f"Akce '{event.name}' obnovena do stavu Koncept")
+    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
+    db.session.commit()
+
+    for user in assigned_users:
+        mailer.send_event_unarchived(user, event)
     db.session.commit()
 
     flash("Akce byla obnovena.", "success")

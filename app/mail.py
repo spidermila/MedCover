@@ -160,6 +160,29 @@ NOTIFICATION_CATALOG: list[dict] = [
         "always_on": False,
     },
     {
+        "code": "event_archived",
+        "settings_field": "notify_event_archived",
+        "name_cs": "Akce archivována",
+        "description_cs": (
+            "Odesílán okamžitě přihlášeným dobrovolníkům a uživatelům s čekajícími "
+            "oznámeními k akci při jejím archivování — spolu s případnými dříve odloženými změnami."
+        ),
+        "trigger_cs": "Akce je archivována nebo zrušena",
+        "recipient_cs": "Přihlášení dobrovolníci a uživatelé s čekajícím oznámením (role: Člen)",
+        "templates": ["email/event_archived.html"],
+        "always_on": False,
+    },
+    {
+        "code": "event_unarchived",
+        "settings_field": "notify_event_unarchived",
+        "name_cs": "Akce obnovena z archivu",
+        "description_cs": "Odesílán přihlášeným dobrovolníkům při obnovení akce z archivu.",
+        "trigger_cs": "Akce je obnovena z archivu",
+        "recipient_cs": "Přihlášení dobrovolníci (role: Člen)",
+        "templates": ["email/event_unarchived.html"],
+        "always_on": False,
+    },
+    {
         "code": "event_changed",
         "settings_field": "notify_event_changed",
         "name_cs": "Změna údajů akce",
@@ -236,6 +259,8 @@ _NOTIFICATION_ALLOWED_ROLES: dict[str, set[str]] = {
     "assignment": {"Member"},  # confirmed, released
     "unfilled_reminder": {"Coordinator", "Member"},  # reminder to coordinator / RP
     "event_cancelled": {"Member"},  # cancelled → notify assigned users
+    "event_archived": {"Member"},  # archived → notify assigned + queued users
+    "event_unarchived": {"Member"},  # unarchived → notify assigned users
     "event_changed": {"Member"},  # event details changed → notify assigned users
 }
 
@@ -371,6 +396,7 @@ def enqueue_deferred(
     change_type: str | None = None,
     change_value: dict[str, Any] | None = None,
     event_url: str = "",
+    immediate: bool = False,
 ) -> datetime | None:
     """Insert or update a pending OutboxEmail row for the deferred/batched
     event-notification pipeline (issue #268).
@@ -394,11 +420,13 @@ def enqueue_deferred(
     override = getattr(g, "_test_notification_email", None)
     to_email = override or user.email
 
-    # Immediate-bypass flag (FR-6). Tolerates "outside request context".
-    try:
-        immediate = bool(getattr(g, "_test_notification_immediate", False))
-    except RuntimeError:
-        immediate = False
+    # Immediate-bypass: caller-supplied kwarg OR the test-form request-scoped
+    # flag (FR-6). g lookup tolerates "outside request context".
+    if not immediate:
+        try:
+            immediate = bool(getattr(g, "_test_notification_immediate", False))
+        except RuntimeError:
+            immediate = False
 
     computed_send_after: datetime | None
     if immediate:
@@ -617,6 +645,97 @@ def send_event_cancelled(user: UserAccount, event: Event) -> None:
         body=_PLAIN_FALLBACK,
         html_body=html,
     )
+
+
+def send_event_archived(user: UserAccount, event: Event) -> None:
+    """Notify a user that an event was archived. Enqueued for immediate send so
+    any previously deferred rows for the same recipient/event flush together."""
+    if not _is_notify_enabled("notify_event_archived"):
+        return
+    if not user_can_receive_notification(user, "event_archived"):
+        return
+    html = render_template(
+        "email/event_archived.html",
+        user_name=user.name,
+        event=event,
+        **_base_context(),
+    )
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="event_archived",
+        subject=f"MedCover — Akce archivována: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
+        immediate=True,
+    )
+
+
+def send_event_unarchived(user: UserAccount, event: Event) -> None:
+    """Notify a user that an event was restored from the archive."""
+    if not _is_notify_enabled("notify_event_unarchived"):
+        return
+    if not user_can_receive_notification(user, "event_unarchived"):
+        return
+    html = render_template(
+        "email/event_unarchived.html",
+        user_name=user.name,
+        event=event,
+        **_base_context(),
+    )
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="event_unarchived",
+        subject=f"MedCover — Akce obnovena z archivu: {event.name}",
+        body=_PLAIN_FALLBACK,
+        html_body=html,
+    )
+
+
+def flush_and_notify_archived(event: Event) -> None:
+    """Handle notification side of archiving an event.
+
+    1. Force every pending outbox row for this event to send immediately
+       (``send_after=NULL``) so already-queued edits go out with the archive
+       notice instead of being stranded.
+    2. Enqueue an ``event_archived`` notification (immediate) for the union of
+       currently-assigned users and users who have any pending outbox rows for
+       this event.
+
+    Caller is expected to commit the surrounding transaction.
+    """
+    db.session.execute(
+        sa.update(OutboxEmail)
+        .where(
+            OutboxEmail.event_id == event.id,
+            OutboxEmail.status == "pending",
+        )
+        .values(send_after=None)
+    )
+
+    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
+    recipients: dict = {u.id: u for u in assigned_users}
+
+    pending_user_ids = db.session.scalars(
+        db.select(OutboxEmail.user_id)
+        .distinct()
+        .where(
+            OutboxEmail.event_id == event.id,
+            OutboxEmail.status == "pending",
+            OutboxEmail.user_id.is_not(None),
+        )
+    ).all()
+    missing_ids = [uid for uid in pending_user_ids if uid not in recipients]
+    if missing_ids:
+        from app.models.user import UserAccount as _UserAccount  # pylint: disable=import-outside-toplevel
+
+        extra_users = db.session.scalars(db.select(_UserAccount).where(_UserAccount.id.in_(missing_ids))).all()
+        for u in extra_users:
+            recipients[u.id] = u
+
+    for user in recipients.values():
+        send_event_archived(user, event)
 
 
 # Human-readable Czech labels for event fields shown in change notifications.
@@ -994,7 +1113,13 @@ def _row_to_entry(row: OutboxEmail) -> dict:
         spot_description = payload.get("spot_description", "") or ""
         return {"type": ntype, "spot_description": spot_description}
 
-    if ntype in ("event_published", "assignments_opened", "event_cancelled"):
+    if ntype in (
+        "event_published",
+        "assignments_opened",
+        "event_cancelled",
+        "event_archived",
+        "event_unarchived",
+    ):
         return {"type": ntype}
 
     if ntype == "unfilled_reminder":
