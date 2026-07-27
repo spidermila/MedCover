@@ -30,7 +30,7 @@ except ImportError:
 from app import create_app
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
-from app.models.equipment import EquipmentCategory, EquipmentItem, EquipmentType
+from app.models.equipment import EquipmentItem, EquipmentType
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
@@ -71,10 +71,10 @@ def _get_or_create_event(name: str, **kwargs: object) -> Event:
     return ev
 
 
-def _get_or_create_equip_type(name: str, category: EquipmentCategory, description: str = "") -> EquipmentType:
+def _get_or_create_equip_type(name: str, description: str = "") -> EquipmentType:
     et = db.session.scalar(db.select(EquipmentType).where(EquipmentType.name == name))
     if not et:
-        et = EquipmentType(name=name, category=category, description=description)
+        et = EquipmentType(name=name, description=description)
         db.session.add(et)
         db.session.flush()
     return et
@@ -193,20 +193,20 @@ def seed() -> None:
         # ── Equipment types & items ───────────────────────────────────────────
         print("Seeding equipment...")
 
-        et_aed = _get_or_create_equip_type("AED", EquipmentCategory.SHARED, "AED")
-        et_batoh_m = _get_or_create_equip_type("Batoh malý", EquipmentCategory.SHARED, "malá lékárnička")
-        et_batoh_v = _get_or_create_equip_type("Batoh velký", EquipmentCategory.SHARED, "velká lékárnička")
-        _get_or_create_equip_type("KPR figurína adolescent", EquipmentCategory.SHARED, "")
-        _get_or_create_equip_type("KPR figurína dospělá standardní", EquipmentCategory.SHARED, "")
-        _get_or_create_equip_type("KPR figurína dospělá tlustá", EquipmentCategory.SHARED, "")
-        et_mimino = _get_or_create_equip_type("KPR figurína mimino", EquipmentCategory.SHARED, "")
-        _get_or_create_equip_type("Mikina", EquipmentCategory.PERSONAL, "")
-        _get_or_create_equip_type("Nosítka", EquipmentCategory.SHARED, "Skládací transportní nosítka.")
-        _get_or_create_equip_type("Sanitka", EquipmentCategory.SHARED, "")
-        et_stan = _get_or_create_equip_type("Stan", EquipmentCategory.SHARED, "")
-        _get_or_create_equip_type("Uniforma blůza", EquipmentCategory.PERSONAL, "")
-        _get_or_create_equip_type("Uniforma kalhoty", EquipmentCategory.PERSONAL, "")
-        _get_or_create_equip_type("VR sada", EquipmentCategory.SHARED, "")
+        et_aed = _get_or_create_equip_type("AED", "AED")
+        et_batoh_m = _get_or_create_equip_type("Batoh malý", "malá lékárnička")
+        et_batoh_v = _get_or_create_equip_type("Batoh velký", "velká lékárnička")
+        _get_or_create_equip_type("KPR figurína adolescent", "")
+        _get_or_create_equip_type("KPR figurína dospělá standardní", "")
+        _get_or_create_equip_type("KPR figurína dospělá tlustá", "")
+        et_mimino = _get_or_create_equip_type("KPR figurína mimino", "")
+        _get_or_create_equip_type("Mikina", "")
+        _get_or_create_equip_type("Nosítka", "Skládací transportní nosítka.")
+        _get_or_create_equip_type("Sanitka", "")
+        et_stan = _get_or_create_equip_type("Stan", "")
+        _get_or_create_equip_type("Uniforma blůza", "")
+        _get_or_create_equip_type("Uniforma kalhoty", "")
+        _get_or_create_equip_type("VR sada", "")
 
         def _add_item(
             equip_type: EquipmentType,
