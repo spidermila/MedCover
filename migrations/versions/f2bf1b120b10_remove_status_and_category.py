@@ -18,8 +18,30 @@ branch_labels = None
 depends_on = None
 
 
+def _drop_default_constraint(table: str, column: str) -> None:
+    """Drop the auto-named DEFAULT constraint SQL Server creates for nullable columns.
+
+    SQL Server assigns an unpredictable name (e.g. DF__equipment__statu__04E4BC85)
+    that cannot be hard-coded.  We discover the constraint name at runtime and
+    drop it before removing the column, which is required by SQL Server.
+    """
+    op.execute(f"""
+        DECLARE @cn NVARCHAR(256)
+        SELECT @cn = d.name
+        FROM sys.default_constraints d
+        JOIN sys.columns c
+          ON d.parent_object_id = c.object_id
+         AND d.parent_column_id = c.column_id
+        WHERE c.object_id = OBJECT_ID(N'{table}') AND c.name = N'{column}'
+        IF @cn IS NOT NULL
+            EXEC(N'ALTER TABLE [{table}] DROP CONSTRAINT [' + @cn + N']')
+    """)
+
+
 def upgrade():
+    _drop_default_constraint('equipment_item', 'status')
     op.drop_column('equipment_item', 'status')
+    _drop_default_constraint('equipment_type', 'category')
     op.drop_column('equipment_type', 'category')
 
 
