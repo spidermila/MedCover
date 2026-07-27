@@ -364,8 +364,8 @@ def apply_equipment_plans(event: Event, plans: list[tuple[int, int]]) -> None:
             db.session.add(EventEquipmentPlan(event_id=event.id, equipment_type_id=type_id, quantity_required=qty))
 
 
-def all_shared_equipment_types() -> list[EquipmentType]:
-    """Return all SHARED equipment types ordered by name (for form selectors)."""
+def all_equipment_types() -> list[EquipmentType]:
+    """Return all equipment types ordered by name (for form selectors)."""
     from sqlalchemy import collate  # pylint: disable=import-outside-toplevel
 
     from app.utils import CS_COLLATION  # pylint: disable=import-outside-toplevel
