@@ -20,7 +20,6 @@
     <thead class="table-light">
       <tr>
         <th>Název</th>
-        <th>Kategorie</th>
         <th>Popis</th>
         <th class="text-center">Položek</th>
         <th></th>
@@ -33,13 +32,6 @@
           data-href="{{ url_for('equipment.type_edit', type_id=et.id) }}"
           {% endif %}>
         <td class="fw-semibold">{{ et.name }}</td>
-        <td>
-          {% if et.category.value == 'personal' %}
-            {{ badge_info('Osobní') }}
-          {% else %}
-            {{ badge_secondary('Sdílené') }}
-          {% endif %}
-        </td>
         <td class="text-muted small">{{ et.description or '—' }}</td>
         <td class="text-center">{{ et.items | length }}</td>
         <td class="text-end">

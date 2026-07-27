@@ -46,7 +46,8 @@ document.addEventListener("DOMContentLoaded", function () {
   var tpl       = document.getElementById('spotRowTpl');
   if (!addBtn || !tpl) return;
 
-  var idx = 0;
+  // Start after any server-rendered rows (present when form is re-shown after a POST error).
+  var idx = container ? container.querySelectorAll('.spot-row-item').length : 0;
 
   function addRow() {
     var frag = tpl.content.cloneNode(true);
@@ -76,7 +77,60 @@ document.addEventListener("DOMContentLoaded", function () {
     totalInp.value = idx;
   }
 
+  /* Wire remove buttons on server-rendered rows (re-shown after POST error). */
+  container.querySelectorAll('.spot-row-item .remove-spot-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      btn.closest('.spot-row-item').remove();
+      reindex();
+    });
+  });
+
   addBtn.addEventListener('click', addRow);
+})();
+
+/* Dynamic equipment plan rows — create and edit forms. */
+(function () {
+  var addEqBtn  = document.getElementById('addEqBtn');
+  var eqContainer = document.getElementById('eqRows');
+  var eqTotal   = document.getElementById('eqTotal');
+  var eqTpl     = document.getElementById('eqRowTpl');
+  if (!addEqBtn || !eqTpl) return;
+
+  function reindexEq() {
+    eqContainer.querySelectorAll('.eq-row').forEach(function (row, i) {
+      row.querySelectorAll('[name^="eq_type_id_"]').forEach(function (el) { el.name = 'eq_type_id_' + i; });
+      row.querySelectorAll('[name^="eq_qty_"]').forEach(function (el) { el.name = 'eq_qty_' + i; });
+    });
+    eqTotal.value = eqContainer.querySelectorAll('.eq-row').length;
+  }
+
+  function addEqRow() {
+    var idx = eqContainer.querySelectorAll('.eq-row').length;
+    var frag = eqTpl.content.cloneNode(true);
+    var row = frag.querySelector('.eq-row');
+    row.innerHTML = row.innerHTML
+      .replaceAll('__EQ_TYPE__', 'eq_type_id_' + idx)
+      .replaceAll('__EQ_QTY__',  'eq_qty_' + idx);
+    row.querySelector('.remove-eq-btn').addEventListener('click', function () {
+      row.remove();
+      reindexEq();
+    });
+    eqContainer.appendChild(frag);
+    eqTotal.value = eqContainer.querySelectorAll('.eq-row').length;
+  }
+
+  /* Wire remove buttons on pre-existing rows (edit mode / restored form). */
+  eqContainer.querySelectorAll('.remove-eq-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      btn.closest('.eq-row').remove();
+      reindexEq();
+    });
+  });
+
+  /* Sync eq_total on page load (edit mode: rows pre-rendered from DB). */
+  eqTotal.value = eqContainer.querySelectorAll('.eq-row').length;
+
+  addEqBtn.addEventListener('click', addEqRow);
 })();
 
 /* Spot constraint pre-validation — blocks submit and shows inline error. */

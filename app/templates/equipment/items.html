@@ -71,7 +71,11 @@
         </td>
         <td>
           {% if not item.is_available %}
-            <span class="badge text-bg-warning" title="{{ item.unavailability_reason or '' }}">Nedostupná</span>
+            <span class="badge text-bg-warning" title="{{ item.unavailability_reason or '' }}">
+              Nedostupná
+              {% if item.unavailability_since %}od {{ item.unavailability_since | localdate }}{% endif %}
+              {% if item.unavailability_until %}do {{ item.unavailability_until | localdate }}{% endif %}
+            </span>
           {% else %}
             <span class="text-muted small">—</span>
           {% endif %}
@@ -80,7 +84,7 @@
           <div class="d-flex gap-1 justify-content-end flex-wrap">
             {% if current_user.has_permission('equipment_item.issue_personal') and not item.issued_to %}
               <form method="POST" action="{{ url_for('equipment.item_take', item_id=item.id) }}"
-                    data-confirm="Vzít položku „{{ item.name }}" s sebou?">
+                    data-confirm="Vzít položku „{{ item.name }}“ s sebou?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-primary btn-sm">Vzít s sebou</button>
               </form>
@@ -91,15 +95,30 @@
             {% endif %}
             {% if current_user.has_permission('equipment_item.issue_personal') and item.issued_to %}
               <form method="POST" action="{{ url_for('equipment.item_return', item_id=item.id) }}"
-                    data-confirm="Vrátit položku „{{ item.name }}"?">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    data-confirm="Vrátit položku „{{ item.name }}“?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-warning btn-sm">Vrátit</button>
               </form>
+            {% endif %}
+            {% if current_user.has_permission('equipment_item.availability_modify') %}
+              {% if item.is_available %}
+                <button class="btn btn-outline-secondary btn-sm" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#unavail-form-{{ item.id }}">
+                  Servis
+                </button>
+              {% else %}
+                <form method=”POST” action=”{{ url_for('equipment.item_mark_available', item_id=item.id) }}”
+                      data-confirm=”Vrátit položku „{{ item.name }}” do provozu jako dostupnou?”>
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="version" value="{{ item.version }}">
+                  <button class="btn btn-outline-success btn-sm">Vrátit do provozu</button>
+                </form>
+              {% endif %}
             {% endif %}
             {% if current_user.has_permission('equipment_item.delete') %}
               <form method="POST" action="{{ url_for('equipment.item_delete', item_id=item.id) }}"
                     class="d-inline"
-                    data-confirm="Smazat položku „{{ item.name }}"?">
+                    data-confirm="Smazat položku „{{ item.name }}“?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-danger btn-sm">Smazat</button>
               </form>
@@ -108,7 +127,7 @@
           {% if current_user.has_permission('equipment_item.issue_personal') and not item.issued_to %}
           <div class="collapse mt-1" id="issue-form-{{ item.id }}">
             <form method="POST" action="{{ url_for('equipment.item_issue', item_id=item.id) }}" class="d-flex gap-1">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <select name="user_id" class="form-select form-select-sm" required>
                 <option value="">— vyberte uživatele —</option>
                 {% for u in active_users %}
@@ -116,6 +135,31 @@
                 {% endfor %}
               </select>
               <button type="submit" class="btn btn-success btn-sm">OK</button>
+            </form>
+          </div>
+          {% endif %}
+          {% if current_user.has_permission('equipment_item.availability_modify') and item.is_available %}
+          <div class="collapse mt-1" id="unavail-form-{{ item.id }}">
+            <form method="POST" action="{{ url_for('equipment.item_mark_unavailable', item_id=item.id) }}"
+                  class="d-flex flex-wrap gap-2 align-items-end mt-1">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="version" value="{{ item.version }}">
+              <div>
+                <label class="form-label form-label-sm mb-1 text-muted small">Důvod</label>
+                <input type="text" name="reason" class="form-control form-control-sm maxw-200"
+                       placeholder="Servis, oprava…">
+              </div>
+              <div>
+                <label class="form-label form-label-sm mb-1 text-muted small">Nedostupná od</label>
+                <input type="text" name="since" class="form-control form-control-sm flatpickr-date maxw-130">
+              </div>
+              <div>
+                <label class="form-label form-label-sm mb-1 text-muted small">Do (prázdné = neurčito)</label>
+                <input type="text" name="until" class="form-control form-control-sm flatpickr-date maxw-130">
+              </div>
+              <div class="align-self-end">
+                <button type="submit" class="btn btn-warning btn-sm">Označit</button>
+              </div>
             </form>
           </div>
           {% endif %}
