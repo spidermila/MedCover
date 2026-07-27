@@ -1,7 +1,9 @@
 """Event equipment routes: plan add/remove and type-level availability check."""
 
+import sqlalchemy as sa
 from flask import Response, flash, redirect, request, url_for
 from flask_login import login_required
+from markupsafe import Markup
 
 from app.extensions import db
 from app.models.equipment import EquipmentType, EventEquipmentPlan
@@ -42,10 +44,28 @@ def equipment_plan_add(event_id: int) -> Response:
     )
 
     if quantity > available:
-        flash(
-            f"Nedostatek vybavení: typ „{et.name}“ má k dispozici {available} kusů " f"(požadováno {quantity}).",
-            "danger",
-        )
+        msg = Markup(f"Nedostatek vybavení: typ „{et.name}” má k dispozici {available} ks (požadováno {quantity}).")
+        conflicting = db.session.scalars(
+            db.select(Event)
+            .join(EventEquipmentPlan, EventEquipmentPlan.event_id == Event.id)
+            .where(
+                EventEquipmentPlan.equipment_type_id == type_id,
+                Event.id != event_id,
+                Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
+                Event.archived == sa.false(),
+                Event.start_datetime < event.end_datetime,
+                Event.end_datetime > event.start_datetime,
+            )
+            .order_by(Event.start_datetime)
+            .limit(3)
+        ).all()
+        if conflicting:
+            links = Markup(", ").join(
+                Markup('<a href="{}">{}</a>').format(url_for("events.detail", event_id=c.id), c.name)
+                for c in conflicting
+            )
+            msg = msg + Markup(" Konflikt s: ") + links + Markup(".")
+        flash(msg, "danger")
         return redirect(url_for("events.detail", event_id=event_id))
 
     existing = db.session.get(EventEquipmentPlan, (event_id, type_id))

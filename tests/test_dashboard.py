@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
+from app.models.equipment import EquipmentItem, EquipmentType, EventEquipmentPlan
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
@@ -91,3 +92,77 @@ class TestDashboardPendingActivationLink:
         assert f"/users/{inactive_id}" in body
         # The name must be wrapped in an anchor tag, not plain text
         assert f'href="/users/{inactive_id}"' in body
+
+
+class TestDashboardEquipmentShortage:
+    """Equipment shortage section must appear for events competing for the same type."""
+
+    def _make_overlapping_event(self, app, me_id: int, name: str) -> int:
+        future = datetime.now(timezone.utc) + timedelta(days=5)
+        with app.app_context():
+            ev = Event(
+                name=name,
+                master_event_id=me_id,
+                status=EventStatus.PUBLISHED,
+                start_datetime=future,
+                end_datetime=future + timedelta(hours=8),
+            )
+            db.session.add(ev)
+            db.session.commit()
+            return ev.id
+
+    def test_single_event_shortage_shown(self, app, admin_client):
+        """One item, one event needing two → shortage must appear on dashboard."""
+        with app.app_context():
+            me = MasterEvent(name="Shortage ME Single")
+            db.session.add(me)
+            db.session.flush()
+            me_id = me.id
+            et = EquipmentType(name="Shortage Type S")
+            db.session.add(et)
+            db.session.flush()
+            db.session.add(EquipmentItem(name="Shortage Item S", type_id=et.id))
+            db.session.commit()
+            type_id = et.id
+
+        event_id = self._make_overlapping_event(app, me_id, "Shortage Event S")
+        with app.app_context():
+            db.session.add(EventEquipmentPlan(
+                event_id=event_id, equipment_type_id=type_id, quantity_required=2
+            ))
+            db.session.commit()
+
+        resp = admin_client.get("/dashboard")
+        assert resp.status_code == 200
+        assert "Shortage Event S" in resp.data.decode()
+        assert "Nedostatek vybavení" in resp.data.decode() or "Nedostatek" in resp.data.decode()
+
+    def test_two_overlapping_events_both_flagged(self, app, admin_client):
+        """Two overlapping events each needing the only item must both appear as short."""
+        with app.app_context():
+            me = MasterEvent(name="Shortage ME Two")
+            db.session.add(me)
+            db.session.flush()
+            me_id = me.id
+            et = EquipmentType(name="Shortage Type T")
+            db.session.add(et)
+            db.session.flush()
+            db.session.add(EquipmentItem(name="Shortage Item T", type_id=et.id))
+            db.session.commit()
+            type_id = et.id
+
+        event_a_id = self._make_overlapping_event(app, me_id, "Shortage Event A")
+        event_b_id = self._make_overlapping_event(app, me_id, "Shortage Event B")
+        with app.app_context():
+            for eid in (event_a_id, event_b_id):
+                db.session.add(EventEquipmentPlan(
+                    event_id=eid, equipment_type_id=type_id, quantity_required=1
+                ))
+            db.session.commit()
+
+        resp = admin_client.get("/dashboard")
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        # Both events compete for the one item — both must be shown as short
+        assert "Shortage Event A" in body
+        assert "Shortage Event B" in body
