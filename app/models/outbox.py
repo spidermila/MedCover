@@ -22,7 +22,7 @@ class OutboxEmail(db.Model):  # type: ignore[misc]
     instance_name = db.Column(db.String(64), nullable=True, index=True)
 
     # ── Notification batching (issue #268) ────────────────────────────────
-    # Populated by the deferred enqueue path (Phase 3+); NULL on legacy rows
+    # Populated by the deferred enqueue path; NULL on legacy rows
     # and on non-event / immediate notifications (invite, reset, activation,
     # admin digest). FK ondelete=SET NULL is defensive — entities are archived
     # rather than hard-deleted in practice.
@@ -37,10 +37,10 @@ class OutboxEmail(db.Model):  # type: ignore[misc]
         nullable=True,
     )
     # Symbolic tag for the kind of change carried by change_value.
-    # Examples (populated Phase 3+): "field_edit", "assignment", "unfilled_reminder".
+    # Examples: "field_edit", "assignment", "unfilled_reminder".
     change_type = db.Column(db.String(64), nullable=True)
     # JSON-serialised payload. MSSQL has no native JSON type — we store text
-    # and use json.dumps/json.loads at the application boundary (Phase 3+).
+    # and use json.dumps/json.loads at the application boundary.
     change_value = db.Column(db.Text, nullable=True)
     # NULL means "send immediately" (matches legacy behaviour). When set, the
     # drain skips the row until now() >= send_after.

@@ -65,10 +65,10 @@ _TIER_2_UPPER: timedelta = timedelta(days=7)
 _TIER_3_UPPER: timedelta = timedelta(days=28)
 
 # Stored in outbox_email.change_type for rows whose change_value is a
-# field-level {field: [old, new]} JSON diff (issue #268 Phase 4).
+# field-level {field: [old, new]} JSON diff.
 _EVENT_CHANGED_CHANGE_TYPE: str = "field_edit"
 
-# Phase 5 (#268) — change_type tokens for batched drain dispatch.
+# change_type tokens for batched drain dispatch.
 _ASSIGNMENT_CHANGE_TYPE: str = "assignment"
 _UNFILLED_REMINDER_CHANGE_TYPE: str = "unfilled_reminder"
 _DEBRIEFING_CHANGE_TYPE: str = "debriefing"
@@ -455,7 +455,7 @@ def enqueue_deferred(
                     existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
                     existing.html_body = _render_event_changed_body(user, event, change_value, event_url)
             else:
-                # Cell 1 / 3: Phase 3 overwrite behaviour.
+                # Cell 1 / 3: overwrite behaviour.
                 existing.html_body = html_body
                 existing.change_type = change_type
                 if change_value is not None:
@@ -665,7 +665,7 @@ def _render_event_changed_body(
 
     Called from send_event_changed (first-insert path) and the merge branch
     inside enqueue_deferred (update path).  Designed to be callable from
-    drain time in Phase 5 without modification.
+    drain time without modification.
     """
     if not event_url:
         from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
@@ -806,7 +806,7 @@ def drain_one_outbox_email() -> bool:
         .where(
             OutboxEmail.status == "pending",
             OutboxEmail.retry_count < OutboxEmail.MAX_RETRIES,
-            OutboxEmail.user_id.is_(None),  # Phase 5 (#268) guard — FR-16
+            OutboxEmail.user_id.is_(None),  # FR-16 guard
             sa.or_(
                 OutboxEmail.send_after.is_(None),
                 OutboxEmail.send_after <= _now_utc,
@@ -925,7 +925,7 @@ def send_account_activated(user: UserAccount) -> None:
     )
 
 
-# ── Batched drain (issue #268 Phase 5) ────────────────────────────────────────
+# ── Batched drain ─────────────────────────────────────────────────────────────
 
 
 def _pick_trigger_user(now_utc: datetime) -> object:
@@ -1025,7 +1025,7 @@ def _row_to_entry(row: OutboxEmail) -> dict:
             debriefing_url = external_url_for("debriefing.submit", assignment_id=int(assignment_id))
         return {"type": "debriefing_invitation", "debriefing_url": debriefing_url}
 
-    # Fallback — pre-Phase-5 rows or unknown types: inline pre-rendered html_body.
+    # Fallback — legacy rows or unknown types: inline pre-rendered html_body.
     log.warning(
         "Unknown notification_type=%r change_type=%r for outbox row id=%s — using legacy html_body fallback",
         ntype,

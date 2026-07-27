@@ -42,7 +42,7 @@ def _logged_task(name: str, fn: Callable[[], None]) -> Callable[[], None]:
 def process_email_queue() -> None:
     """Drain the outbox_email queue.
 
-    Priority (issue #268 Phase 5):
+    Priority:
       1. drain_batched_outbox() — one batched email per triggering recipient.
       2. Fall through to drain_one_outbox_email() for user_id=NULL legacy rows.
 

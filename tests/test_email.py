@@ -534,10 +534,10 @@ class TestOutboxEmailModel:
             assert "pending" in repr(row)
 
 
-# ── Phase 1 (#268) — OutboxEmail new columns ─────────────────────────────────
+# ── OutboxEmail new columns ──────────────────────────────────────────────────
 
 
-class TestOutboxEmailPhase1Columns:
+class TestOutboxEmailNewColumns:
     """AC-3 / AC-12: new columns default to NULL; populated values round-trip."""
 
     def test_new_columns_default_null(self, app):
@@ -590,7 +590,7 @@ class TestOutboxEmailPhase1Columns:
             assert fetched.send_after is not None
 
 
-# ── Phase 3 (#268) — non-event helper columns null ───────────────────────────
+# ── non-event helper columns null ────────────────────────────────────────────
 
 
 class TestNonEventHelperNullColumns:
@@ -607,7 +607,7 @@ class TestNonEventHelperNullColumns:
             assert row.event_id is None
 
 
-# ── Phase 3 (#268) — enqueue_deferred helper ─────────────────────────────────
+# ── enqueue_deferred helper ──────────────────────────────────────────────────
 
 
 def _make_ed_event(delta_hours: float | None = None) -> tuple[UserAccount, Event]:
@@ -637,7 +637,7 @@ def _make_ed_event(delta_hours: float | None = None) -> tuple[UserAccount, Event
 
 
 class TestEnqueueDeferred:
-    """Phase 3 (#268) — enqueue_deferred tier logic, upsert, and immediate bypass."""
+    """enqueue_deferred tier logic, upsert, and immediate bypass."""
 
     def test_tier1_delta_12h_yields_5min(self, app):
         with app.app_context():
@@ -842,7 +842,7 @@ class TestEnqueueDeferred:
             assert count == 0
 
 
-# ── Phase 3 (#268) — drain send_after filter ─────────────────────────────────
+# ── drain send_after filter ──────────────────────────────────────────────────
 
 
 class TestDrainSendAfterFilter:
@@ -886,7 +886,7 @@ class TestDrainSendAfterFilter:
             assert row.status == "sent"
 
 
-# ── Phase 4 (#268) — structured change_value + merge for event_changed ────────
+# ── structured change_value + merge for event_changed ───────────────────────
 
 
 class TestMergeEventChangedPayloads:
@@ -918,7 +918,7 @@ class TestMergeEventChangedPayloads:
 
 
 class TestEventChangedMerge:
-    """Phase 4 (#268) — structured change_value + merge for event_changed."""
+    """structured change_value + merge for event_changed."""
 
     def test_first_call_stores_field_edit_and_payload(self, app):
         """AC-1, AC-11: first call creates row with change_type=field_edit and JSON payload."""
@@ -1029,7 +1029,7 @@ class TestEventChangedMerge:
         """AC-7: existing row with change_value=NULL adopts incoming payload (no merge)."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
-            # Seed a Phase-3-era row with NULL change_value.
+            # Seed a legacy row with NULL change_value.
             row = OutboxEmail(
                 to_email=user.email,
                 subject="Old",
@@ -1143,7 +1143,7 @@ class TestEventChangedMerge:
 
 
 class TestEventChangedBodyRerender:
-    """Phase 4 (#268) — after merge, html_body reflects merged state."""
+    """After merge, html_body reflects merged state."""
 
     def test_html_body_reflects_merged_endpoints(self, app):
         """AC-12: intermediate value absent; earliest old and latest new present."""
@@ -1160,7 +1160,7 @@ class TestEventChangedBodyRerender:
             assert "Prostřední" not in row.html_body
 
 
-# ── Phase 5 (#268) — batched drain + aggregated template ─────────────────────
+# ── batched drain + aggregated template ──────────────────────────────────────
 
 
 def _make_batched_row(
@@ -1191,7 +1191,7 @@ def _make_batched_row(
 
 
 class TestDrainBatchedOutbox:
-    """Phase 5 (#268) — drain_batched_outbox() behaviour: AC-1..AC-17, AC-27..AC-29."""
+    """drain_batched_outbox() behaviour: AC-1..AC-17, AC-27..AC-29."""
 
     def test_matured_row_triggers_batch(self, app):
         """AC-1: one matured pending row → drain sends it and returns True."""
@@ -1728,7 +1728,7 @@ class TestDrainBatchedOutbox:
 
 
 class TestLegacyDrainGuard:
-    """Phase 5 (#268) — drain_one_outbox_email ignores batched rows; drain_batched_outbox ignores NULL-user rows.
+    """drain_one_outbox_email ignores batched rows; drain_batched_outbox ignores NULL-user rows.
     AC-18, AC-19, AC-20."""
 
     def test_batched_drain_ignores_user_null_rows(self, app):
@@ -1774,7 +1774,7 @@ class TestLegacyDrainGuard:
 
 
 class TestBatchedPayloadCallers:
-    """Phase 5 (#268) — send_* helpers store structured change_value in the row. AC-23..AC-26."""
+    """send_* helpers store structured change_value in the row. AC-23..AC-26."""
 
     def test_send_assignment_confirmed_stores_change_value(self, app):
         """AC-23: confirmed row has change_type='assignment' and action/spot_description."""
@@ -1851,10 +1851,10 @@ class TestBatchedPayloadCallers:
 class TestSchedulerRequestContextBoundary:
     """Regression: process_email_queue must provide its own request context.
 
-    B-1/B-2 fix: scheduler/main.py wraps the drain in app.test_request_context.
-    Two-phase test:
-      1. Proves the bug exists — drain raises RuntimeError without a request context.
-      2. Proves the fix works — process_email_queue succeeds because it provides one.
+        B-1/B-2 fix: scheduler/main.py wraps the drain in app.test_request_context.
+    Two-part test:
+          1. Proves the bug exists — drain raises RuntimeError without a request context.
+          2. Proves the fix works — process_email_queue succeeds because it provides one.
     """
 
     def test_drain_without_request_context_succeeds(self, app):
@@ -1869,14 +1869,14 @@ class TestSchedulerRequestContextBoundary:
         saved = app.config.get("SERVER_NAME")
         app.config["SERVER_NAME"] = None
         try:
-            # Phase 1: drain_batched_outbox needs a request context; without one it raises.
+            # Part 1: drain_batched_outbox needs a request context; without one it raises.
             # This proves the bug is real — if the scheduler called the drain bare, it
             # would crash in production (no SERVER_NAME in ProductionConfig).
             with app.app_context():
                 with pytest.raises(RuntimeError):
                     drain_batched_outbox()
 
-            # Phase 2: import process_email_queue with the test app injected so that
+            # Part 2: import process_email_queue with the test app injected so that
             # scheduler.main.app points at the test DB. process_email_queue wraps the
             # drain in app.test_request_context, so it must NOT raise.
             sys.modules.pop("scheduler.main", None)
