@@ -68,7 +68,6 @@ _RESTORE_ORDER: list[str] = [
     "spot_qualifications",
     "spot_template_qualifications",
     "event_equipment_plan",
-    "event_equipment_assignment",
     "event_template_equipment_plan",
     # Leaf tables
     "assignment",
