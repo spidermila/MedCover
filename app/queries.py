@@ -132,14 +132,13 @@ def available_quantity_for_type(
     end_dt: datetime,
     exclude_event_id: int | None = None,
 ) -> int:
-    """Return how many SHARED items of *type_id* are still free for the given window.
+    """Return how many items of *type_id* are still free for the given window.
 
     Positive = surplus; zero = exact fit; negative = shortage.
 
     An item is *available* for [start_dt, end_dt) when it is not in a maintenance
     window that overlaps the query window.  Issued items are included — the person
-    carrying the item may bring it to the event.  Personal-category types are
-    always excluded.
+    carrying the item may bring it to the event.
     """
     total = (
         db.session.scalar(

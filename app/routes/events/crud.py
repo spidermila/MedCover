@@ -45,7 +45,7 @@ from ._helpers import (
     PER_PAGE,
     STATUS_BADGE_COLORS,
     STATUS_COLORS,
-    all_shared_equipment_types,
+    all_equipment_types,
     apply_equipment_plans,
     build_spots,
     can_view,
@@ -324,7 +324,7 @@ def create() -> str | Response:
         .where(Qualification.is_deleted == sa.false())
         .order_by(collate(Qualification.name, CS_COLLATION))
     ).all()
-    eq_types = all_shared_equipment_types()
+    eq_types = all_equipment_types()
 
     def _render_create(**extra: object) -> str:
         return render_template(
@@ -415,7 +415,7 @@ def create_from_template(template_id: int) -> str | Response:
         users=users,
         template=tmpl,
         all_qualifications=all_qualifications,
-        all_equipment_types=all_shared_equipment_types(),
+        all_equipment_types=all_equipment_types(),
         # Pre-fill spot rows from the template's spot templates.
         template_spot_prefill=[
             {
@@ -554,7 +554,7 @@ def edit(event_id: int) -> str | Response:
 
     master_events = active_master_events_list()
     users = rp_eligible_users_list()
-    eq_types = all_shared_equipment_types()
+    eq_types = all_equipment_types()
     all_qualifications = db.session.scalars(
         db.select(Qualification)
         .where(Qualification.is_deleted == sa.false())
