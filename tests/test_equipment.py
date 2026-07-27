@@ -1,27 +1,23 @@
 """Tests for equipment inventory CRUD and permissions."""
 
-import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
 from app.models.equipment import (
-    EquipmentCategory,
     EquipmentItem,
-    EquipmentItemStatus,
     EquipmentType,
-    EventEquipmentAssignment,
     EventEquipmentPlan,
 )
 from app.models.event import Event, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
-from app.routes.events._helpers import equipment_warnings_for_event
-from tests.conftest import _make_event_in_status, _make_rp_qual
+from app.queries import available_quantity_for_type
+from tests.conftest import _make_event_in_status
 
 
-def _make_type(app, name: str = "Test Type", category: EquipmentCategory = EquipmentCategory.SHARED) -> int:
+def _make_type(app, name: str = "Test Type") -> int:
     with app.app_context():
-        et = EquipmentType(name=name, category=category)
+        et = EquipmentType(name=name)
         db.session.add(et)
         db.session.commit()
         return et.id
@@ -61,19 +57,18 @@ class TestEquipmentTypeCreate:
     def test_admin_can_create_type(self, app, admin_client):
         response = admin_client.post(
             "/equipment/types/create",
-            data={"name": "Defibrilátor", "category": "shared", "description": ""},
+            data={"name": "Defibrilátor", "description": ""},
             follow_redirects=False,
         )
         assert response.status_code == 302
         with app.app_context():
             et = db.session.scalar(db.select(EquipmentType).where(EquipmentType.name == "Defibrilátor"))
             assert et is not None
-            assert et.category == EquipmentCategory.SHARED
 
     def test_create_type_missing_name(self, admin_client):
         response = admin_client.post(
             "/equipment/types/create",
-            data={"name": "", "category": "shared"},
+            data={"name": ""},
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -81,7 +76,7 @@ class TestEquipmentTypeCreate:
     def test_member_cannot_create_type(self, member_client):
         response = member_client.post(
             "/equipment/types/create",
-            data={"name": "Test", "category": "shared"},
+            data={"name": "Test"},
         )
         assert response.status_code == 403
 
@@ -91,20 +86,19 @@ class TestEquipmentTypeEdit:
         type_id = _make_type(app, "Old Name")
         response = admin_client.post(
             f"/equipment/types/{type_id}/edit",
-            data={"name": "New Name", "category": "personal", "version": "1"},
+            data={"name": "New Name", "version": "1"},
             follow_redirects=False,
         )
         assert response.status_code == 302
         with app.app_context():
             et = db.session.get(EquipmentType, type_id)
             assert et.name == "New Name"
-            assert et.category == EquipmentCategory.PERSONAL
 
     def test_optimistic_lock_conflict(self, app, admin_client):
         type_id = _make_type(app)
         response = admin_client.post(
             f"/equipment/types/{type_id}/edit",
-            data={"name": "New Name", "category": "shared", "version": "99"},
+            data={"name": "New Name", "version": "99"},
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -159,7 +153,7 @@ class TestEquipmentItemCreate:
 
 class TestEquipmentItemIssue:
     def test_admin_can_issue_item(self, app, admin_client):
-        type_id = _make_type(app, category=EquipmentCategory.PERSONAL)
+        type_id = _make_type(app)
         item_id = _make_item(app, type_id)
         # get user id
 
@@ -177,7 +171,7 @@ class TestEquipmentItemIssue:
             assert item.issued_to_id is not None
 
     def test_admin_can_return_item(self, app, admin_client):
-        type_id = _make_type(app, category=EquipmentCategory.PERSONAL)
+        type_id = _make_type(app)
         item_id = _make_item(app, type_id)
 
         with app.app_context():
@@ -199,6 +193,8 @@ class TestEquipmentItemIssue:
 class TestEventEquipmentPlan:
     def test_admin_can_add_plan_entry(self, app, admin_client):
         type_id = _make_type(app)
+        _make_item(app, type_id, "Plan Item 1")
+        _make_item(app, type_id, "Plan Item 2")
         event_id = _make_event_in_status(app)
         response = admin_client.post(
             f"/events/{event_id}/equipment/plan",
@@ -222,56 +218,15 @@ class TestEventEquipmentPlan:
         assert response.status_code == 403
 
 
-class TestEventEquipmentAssign:
-    def test_admin_can_assign_item(self, app, admin_client):
-        type_id = _make_type(app)
-        item_id = _make_item(app, type_id)
-        event_id = _make_event_in_status(app)
-        response = admin_client.post(
-            f"/events/{event_id}/equipment/assign",
-            data={"item_id": str(item_id)},
-            follow_redirects=False,
-        )
-        assert response.status_code == 302
-
-        with app.app_context():
-            ea = db.session.scalar(
-                db.select(EventEquipmentAssignment).where(
-                    EventEquipmentAssignment.event_id == event_id,
-                    EventEquipmentAssignment.equipment_item_id == item_id,
-                )
-            )
-            assert ea is not None
-
-    def test_member_cannot_assign_item(self, app, member_client):
-        type_id = _make_type(app)
-        item_id = _make_item(app, type_id)
-        event_id = _make_event_in_status(app)
-        response = member_client.post(
-            f"/events/{event_id}/equipment/assign",
-            data={"item_id": str(item_id)},
-        )
-        assert response.status_code == 403
-
-
 # ── Type create: validation edge cases ───────────────────────────────────────
 
 
 class TestEquipmentTypeCreateExtended:
-    def test_invalid_category_flashes(self, admin_client):
-        response = admin_client.post(
-            "/equipment/types/create",
-            data={"name": "Valid Name", "category": "not_a_category"},
-            follow_redirects=True,
-        )
-        assert response.status_code == 200
-        assert "kategorie" in response.data.decode()
-
     def test_duplicate_name_flashes(self, app, admin_client):
         _make_type(app, "Duplicate Type")
         response = admin_client.post(
             "/equipment/types/create",
-            data={"name": "Duplicate Type", "category": "shared"},
+            data={"name": "Duplicate Type"},
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -291,19 +246,6 @@ class TestEquipmentTypeEditExtended:
         response = admin_client.get("/equipment/types/999999/edit")
         assert response.status_code == 404
 
-    def test_edit_invalid_category_flashes(self, app, admin_client):
-        type_id = _make_type(app)
-        with app.app_context():
-            et = db.session.get(EquipmentType, type_id)
-            version = et.version
-        response = admin_client.post(
-            f"/equipment/types/{type_id}/edit",
-            data={"name": "Valid", "category": "bad_cat", "version": str(version)},
-            follow_redirects=True,
-        )
-        assert response.status_code == 200
-        assert "kategorie" in response.data.decode()
-
     def test_edit_duplicate_name_flashes(self, app, admin_client):
         type_id = _make_type(app, "Type A")
         _make_type(app, "Type B")
@@ -312,7 +254,7 @@ class TestEquipmentTypeEditExtended:
             version = et.version
         response = admin_client.post(
             f"/equipment/types/{type_id}/edit",
-            data={"name": "Type B", "category": "shared", "version": str(version)},
+            data={"name": "Type B", "version": str(version)},
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -324,7 +266,7 @@ class TestEquipmentTypeEditExtended:
             version = db.session.get(EquipmentType, type_id).version
         response = admin_client.post(
             f"/equipment/types/{type_id}/edit",
-            data={"name": "", "category": "shared", "version": str(version)},
+            data={"name": "", "version": str(version)},
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -524,6 +466,33 @@ class TestEquipmentItemDeleteExtended:
         response = member_client.post(f"/equipment/items/{item_id}/delete")
         assert response.status_code == 403
 
+    def test_delete_blocked_when_future_event_would_be_short(self, app, admin_client):
+        """Deleting the only item of a type must be blocked if a future event plans that type."""
+
+        type_id = _make_type(app, "Del Guard Type")
+        item_id = _make_item(app, type_id, "Del Guard Item")
+        event_id = _make_event_in_status(app, EventStatus.PUBLISHED)
+        future_start = datetime.now(timezone.utc) + timedelta(days=3)
+        future_end = future_start + timedelta(hours=8)
+        with app.app_context():
+            db.session.add(
+                EventEquipmentPlan(
+                    event_id=event_id,
+                    equipment_type_id=type_id,
+                    quantity_required=1,
+                )
+            )
+            event = db.session.get(Event, event_id)
+            event.start_datetime = future_start
+            event.end_datetime = future_end
+            db.session.commit()
+
+        resp = admin_client.post(f"/equipment/items/{item_id}/delete", follow_redirects=True)
+        assert resp.status_code == 200
+        assert "Nelze smazat" in resp.data.decode()
+        with app.app_context():
+            assert db.session.get(EquipmentItem, item_id) is not None
+
 
 # ── Item issue/return: extended ───────────────────────────────────────────────
 
@@ -579,13 +548,6 @@ class TestEquipmentItemReturnExtended:
 # ── Availability ──────────────────────────────────────────────────────────────
 
 
-def _assign_item_to_event(app, event_id: int, item_id: int) -> None:
-    with app.app_context():
-        assn = EventEquipmentAssignment(event_id=event_id, equipment_item_id=item_id)
-        db.session.add(assn)
-        db.session.commit()
-
-
 class TestEquipmentItemAvailabilityModel:
     def test_is_available_default(self, app):
         type_id = _make_type(app)
@@ -593,14 +555,14 @@ class TestEquipmentItemAvailabilityModel:
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)
             assert item.is_available is True
-            assert item.status == EquipmentItemStatus.AVAILABLE
+            assert item.unavailability_since is None
 
     def test_is_available_false_when_unavailable(self, app):
         type_id = _make_type(app)
         item_id = _make_item(app, type_id)
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)
-            item.status = EquipmentItemStatus.UNAVAILABLE
+            item.unavailability_since = datetime.now(timezone.utc) - timedelta(minutes=1)
             item.unavailability_reason = "Čeká na opravu"
             db.session.commit()
         with app.app_context():
@@ -622,7 +584,6 @@ class TestEquipmentItemAvailabilityEdit:
                 "name": "AED Test",
                 "type_id": type_id,
                 "version": version,
-                "status": "UNAVAILABLE",
                 "unavailability_reason": "Baterie potřebuje výměnu",
                 "unavailability_since": "2030-01-01T10:00",
             },
@@ -631,7 +592,7 @@ class TestEquipmentItemAvailabilityEdit:
         assert response.status_code == 200
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)
-            assert item.status == EquipmentItemStatus.UNAVAILABLE
+            assert item.unavailability_since is not None
             assert item.unavailability_reason == "Baterie potřebuje výměnu"
 
     def test_set_available_clears_reason(self, app, admin_client):
@@ -639,7 +600,7 @@ class TestEquipmentItemAvailabilityEdit:
         item_id = _make_item(app, type_id, name="AED Clr")
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)
-            item.status = EquipmentItemStatus.UNAVAILABLE
+            item.unavailability_since = datetime.now(timezone.utc) - timedelta(minutes=1)
             item.unavailability_reason = "Stará závada"
             db.session.commit()
             version = item.version
@@ -650,463 +611,253 @@ class TestEquipmentItemAvailabilityEdit:
                 "name": "AED Clr",
                 "type_id": type_id,
                 "version": version,
-                "status": "AVAILABLE",
             },
             follow_redirects=True,
         )
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)
-            assert item.status == EquipmentItemStatus.AVAILABLE
+            assert item.is_available is True
             assert item.unavailability_reason is None
+            assert item.unavailability_since is None
 
 
-class TestEquipmentCheckEndpoint:
-    def _post_check(self, client, payload: dict):
-        return client.post(
-            "/events/equipment-check",
-            data=json.dumps(payload),
-            content_type="application/json",
-            headers={"X-CSRFToken": "ignored"},
-        )
+# ── Type-level availability check ─────────────────────────────────────────────
 
-    def test_available_item_returns_ok(self, app, admin_client):
-        type_id = _make_type(app, name="Typ check ok")
-        item_id = _make_item(app, type_id, name="Item OK")
-        response = admin_client.post(
-            "/events/equipment-check",
-            data=json.dumps(
-                {
-                    "item_ids": [item_id],
-                    "start_datetime": "2030-07-01T10:00:00",
-                    "end_datetime": "2030-07-01T18:00:00",
-                }
-            ),
-            content_type="application/json",
-        )
-        assert response.status_code == 200
-        data = response.get_json()
-        assert data["results"][0]["status"] == "ok"
 
-    def test_unavailable_item_returns_unavailable(self, app, admin_client):
-        type_id = _make_type(app, name="Typ unavail")
-        item_id = _make_item(app, type_id, name="Item Unavail")
+class TestAvailableQuantityForType:
+    """Unit tests for the available_quantity_for_type helper."""
+
+    def _make_event_with_plan(self, app, type_id, qty, start, end, status=EventStatus.PUBLISHED):
+        with app.app_context():
+            me = MasterEvent(name=f"AQ ME {start}")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name=f"AQ Event {start}",
+                master_event_id=me.id,
+                status=status,
+                start_datetime=start,
+                end_datetime=end,
+            )
+            db.session.add(event)
+            db.session.flush()
+            db.session.add(EventEquipmentPlan(event_id=event.id, equipment_type_id=type_id, quantity_required=qty))
+            db.session.commit()
+            return event.id
+
+    def test_single_available_item_no_overlap(self, app):
+        type_id = _make_type(app, "AQ Type A")
+        _make_item(app, type_id, "AQ Item 1")
+        start = datetime(2034, 1, 1, 10, tzinfo=timezone.utc)
+        end = datetime(2034, 1, 1, 18, tzinfo=timezone.utc)
+        with app.app_context():
+            result = available_quantity_for_type(type_id, start, end)
+        assert result == 1
+
+    def test_overlapping_event_reduces_availability(self, app):
+        type_id = _make_type(app, "AQ Type B")
+        _make_item(app, type_id, "AQ Item B1")
+        _make_item(app, type_id, "AQ Item B2")
+        s = datetime(2034, 2, 1, 10, tzinfo=timezone.utc)
+        e = datetime(2034, 2, 1, 18, tzinfo=timezone.utc)
+        self._make_event_with_plan(app, type_id, 1, s, e)
+        with app.app_context():
+            result = available_quantity_for_type(type_id, s, e)
+        assert result == 1  # 2 items - 1 committed
+
+    def test_cancelled_event_not_counted(self, app):
+        type_id = _make_type(app, "AQ Type C")
+        _make_item(app, type_id, "AQ Item C")
+        s = datetime(2034, 3, 1, 10, tzinfo=timezone.utc)
+        e = datetime(2034, 3, 1, 18, tzinfo=timezone.utc)
+        self._make_event_with_plan(app, type_id, 1, s, e, status=EventStatus.CANCELLED)
+        with app.app_context():
+            result = available_quantity_for_type(type_id, s, e)
+        assert result == 1  # cancelled event doesn't consume the item
+
+    def test_completed_event_not_counted(self, app):
+        type_id = _make_type(app, "AQ Type D")
+        _make_item(app, type_id, "AQ Item D")
+        s = datetime(2034, 4, 1, 10, tzinfo=timezone.utc)
+        e = datetime(2034, 4, 1, 18, tzinfo=timezone.utc)
+        self._make_event_with_plan(app, type_id, 1, s, e, status=EventStatus.COMPLETED)
+        with app.app_context():
+            result = available_quantity_for_type(type_id, s, e)
+        assert result == 1
+
+    def test_unavailable_item_excluded_from_pool(self, app):
+        type_id = _make_type(app, "AQ Type E")
+        item_id = _make_item(app, type_id, "AQ Item E")
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)
-            item.status = EquipmentItemStatus.UNAVAILABLE
-            item.unavailability_reason = "Oprava"
+            item.unavailability_since = datetime.now(timezone.utc) - timedelta(hours=1)
             db.session.commit()
-
-        response = admin_client.post(
-            "/events/equipment-check",
-            data=json.dumps(
-                {
-                    "item_ids": [item_id],
-                    "start_datetime": "2030-07-01T10:00:00",
-                    "end_datetime": "2030-07-01T18:00:00",
-                }
-            ),
-            content_type="application/json",
-        )
-        data = response.get_json()
-        assert data["results"][0]["status"] == "unavailable"
-        assert "Oprava" in data["results"][0]["reason"]
-
-    def test_conflict_detected(self, app, admin_client):
-        type_id = _make_type(app, name="Typ conflict")
-        item_id = _make_item(app, type_id, name="Item Conflict")
-        # Existing event: 10:00–18:00 on 2030-08-01
-        existing_event_id = _make_event_in_status(
-            app,
-            EventStatus.PUBLISHED,
-            name="Existing Event",
-            start=datetime(2030, 8, 1, 10, 0, tzinfo=timezone.utc),
-            end=datetime(2030, 8, 1, 18, 0, tzinfo=timezone.utc),
-        )
-        _assign_item_to_event(app, existing_event_id, item_id)
-
-        # Check for overlapping window 12:00–16:00 same day
-        response = admin_client.post(
-            "/events/equipment-check",
-            data=json.dumps(
-                {
-                    "item_ids": [item_id],
-                    "start_datetime": "2030-08-01T12:00:00",
-                    "end_datetime": "2030-08-01T16:00:00",
-                }
-            ),
-            content_type="application/json",
-        )
-        data = response.get_json()
-        assert data["results"][0]["status"] == "conflict"
-        assert data["results"][0]["conflicting_event"]["name"] == "Existing Event"
-
-    def test_conflict_excluded_for_own_event(self, app, admin_client):
-        """When editing an event, its own assignment should not be a conflict."""
-        type_id = _make_type(app, name="Typ self excl")
-        item_id = _make_item(app, type_id, name="Item Self")
-        event_id = _make_event_in_status(
-            app,
-            EventStatus.PUBLISHED,
-            start=datetime(2030, 9, 1, 10, 0, tzinfo=timezone.utc),
-            end=datetime(2030, 9, 1, 18, 0, tzinfo=timezone.utc),
-        )
-        _assign_item_to_event(app, event_id, item_id)
-
-        response = admin_client.post(
-            "/events/equipment-check",
-            data=json.dumps(
-                {
-                    "item_ids": [item_id],
-                    "start_datetime": "2030-09-01T10:00:00",
-                    "end_datetime": "2030-09-01T18:00:00",
-                    "exclude_event_id": event_id,
-                }
-            ),
-            content_type="application/json",
-        )
-        data = response.get_json()
-        assert data["results"][0]["status"] == "ok"
-
-    def test_no_conflict_for_non_overlapping(self, app, admin_client):
-        type_id = _make_type(app, name="Typ no ovlp")
-        item_id = _make_item(app, type_id, name="Item NoOvlp")
-        existing_event_id = _make_event_in_status(
-            app,
-            EventStatus.PUBLISHED,
-            start=datetime(2030, 10, 1, 10, 0, tzinfo=timezone.utc),
-            end=datetime(2030, 10, 1, 14, 0, tzinfo=timezone.utc),
-        )
-        _assign_item_to_event(app, existing_event_id, item_id)
-
-        # New event starts after existing ends — no overlap
-        response = admin_client.post(
-            "/events/equipment-check",
-            data=json.dumps(
-                {
-                    "item_ids": [item_id],
-                    "start_datetime": "2030-10-01T15:00:00",
-                    "end_datetime": "2030-10-01T20:00:00",
-                }
-            ),
-            content_type="application/json",
-        )
-        data = response.get_json()
-        assert data["results"][0]["status"] == "ok"
-
-    def test_assign_unavailable_item_blocked(self, app, admin_client):
-        """Assigning an unavailable item to an event should be blocked."""
-        type_id = _make_type(app, name="Typ block assign")
-        item_id = _make_item(app, type_id, name="Blocked Item")
-        event_id = _make_event_in_status(
-            app,
-            EventStatus.PUBLISHED,
-            start=datetime(2030, 11, 1, 10, 0, tzinfo=timezone.utc),
-            end=datetime(2030, 11, 1, 18, 0, tzinfo=timezone.utc),
-        )
+        s = datetime(2034, 5, 1, 10, tzinfo=timezone.utc)
+        e = datetime(2034, 5, 1, 18, tzinfo=timezone.utc)
         with app.app_context():
-            item = db.session.get(EquipmentItem, item_id)
-            item.status = EquipmentItemStatus.UNAVAILABLE
-            item.unavailability_reason = "Poškozeno"
-            db.session.commit()
+            result = available_quantity_for_type(type_id, s, e)
+        assert result == 0
 
-        response = admin_client.post(
-            f"/events/{event_id}/equipment/assign",
-            data={"item_id": item_id},
+    def test_issued_item_included_in_pool(self, app, admin_client):
+        type_id = _make_type(app, "AQ Type F")
+        item_id = _make_item(app, type_id, "AQ Item F")
+        with app.app_context():
+            u = db.session.scalar(db.select(UserAccount).limit(1))
+            item = db.session.get(EquipmentItem, item_id)
+            item.issued_to_id = u.id
+            db.session.commit()
+        s = datetime(2034, 6, 1, 10, tzinfo=timezone.utc)
+        e = datetime(2034, 6, 1, 18, tzinfo=timezone.utc)
+        with app.app_context():
+            result = available_quantity_for_type(type_id, s, e)
+        assert result == 1  # issued items are still in the pool (person may bring it to the event)
+
+    def test_exclude_event_id_frees_own_quantity(self, app):
+        type_id = _make_type(app, "AQ Type G")
+        _make_item(app, type_id, "AQ Item G")
+        s = datetime(2034, 7, 1, 10, tzinfo=timezone.utc)
+        e = datetime(2034, 7, 1, 18, tzinfo=timezone.utc)
+        event_id = self._make_event_with_plan(app, type_id, 1, s, e)
+        with app.app_context():
+            without_exclude = available_quantity_for_type(type_id, s, e)
+            with_exclude = available_quantity_for_type(type_id, s, e, exclude_event_id=event_id)
+        assert without_exclude == 0
+        assert with_exclude == 1
+
+
+# ── Plan add rejects when stock is insufficient ───────────────────────────────
+
+
+class TestEquipmentPlanAvailabilityEnforcement:
+    """The plan-add route must reject quantities exceeding available stock."""
+
+    def test_plan_add_rejected_when_no_stock(self, app, admin_client):
+        type_id = _make_type(app, "Enf Type A")
+        # No items of this type → available = 0
+        event_id = _make_event_in_status(app, EventStatus.PUBLISHED)
+        resp = admin_client.post(
+            f"/events/{event_id}/equipment/plan",
+            data={"type_id": str(type_id), "quantity": "1"},
             follow_redirects=True,
         )
-        assert response.status_code == 200
-        assert "nedostupná" in response.data.decode().lower()
-        # Item must NOT be assigned
+        assert resp.status_code == 200
+        assert "Nedostatek" in resp.data.decode() or "vybavení" in resp.data.decode()
         with app.app_context():
-            assn = db.session.scalar(
-                db.select(EventEquipmentAssignment).where(
-                    EventEquipmentAssignment.event_id == event_id,
-                    EventEquipmentAssignment.equipment_item_id == item_id,
+            plan = db.session.get(EventEquipmentPlan, (event_id, type_id))
+            assert plan is None
+
+    def test_plan_add_succeeds_when_stock_sufficient(self, app, admin_client):
+        type_id = _make_type(app, "Enf Type B")
+        _make_item(app, type_id, "Enf Item B")
+        event_id = _make_event_in_status(app, EventStatus.PUBLISHED)
+        resp = admin_client.post(
+            f"/events/{event_id}/equipment/plan",
+            data={"type_id": str(type_id), "quantity": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            plan = db.session.get(EventEquipmentPlan, (event_id, type_id))
+            assert plan is not None
+            assert plan.quantity_required == 1
+
+    def test_plan_update_cannot_exceed_total_pool(self, app, admin_client):
+        """Updating an existing plan row cannot request more items than exist."""
+        type_id = _make_type(app, "Upd Type")
+        _make_item(app, type_id, "Upd Item 1")  # only 1 item in pool
+        event_id = _make_event_in_status(app, EventStatus.PUBLISHED)
+        # First add: qty=1 succeeds (pool = 1, requesting 1)
+        admin_client.post(
+            f"/events/{event_id}/equipment/plan",
+            data={"type_id": str(type_id), "quantity": "1"},
+        )
+        # Update attempt: qty=2 must be rejected (only 1 item exists)
+        resp = admin_client.post(
+            f"/events/{event_id}/equipment/plan",
+            data={"type_id": str(type_id), "quantity": "2"},
+            follow_redirects=True,
+        )
+        assert "Nedostatek" in resp.data.decode()
+        with app.app_context():
+            plan = db.session.get(EventEquipmentPlan, (event_id, type_id))
+            assert plan.quantity_required == 1  # unchanged
+
+
+# ── Unavailability warning for future events ──────────────────────────────────
+
+
+class TestUnavailabilityFutureEventWarning:
+    """Marking an item unavailable shows a warning if future events would be short."""
+
+    def test_warning_shown_when_future_event_becomes_short(self, app, admin_client):
+
+        type_id = _make_type(app, "Warn Type A")
+        item_id = _make_item(app, type_id, "Warn Item A")
+        # One item available; create a future event that needs 1
+        future_start = datetime.now(timezone.utc) + timedelta(days=5)
+        future_end = future_start + timedelta(hours=8)
+        event_id = _make_event_in_status(app)
+        with app.app_context():
+            db.session.add(
+                EventEquipmentPlan(
+                    event_id=event_id,
+                    equipment_type_id=type_id,
+                    quantity_required=1,
                 )
             )
-            assert assn is None
-
-
-class TestEventCreateWithEquipment:
-    """Equipment pre-assignment on the /events/create page."""
-
-    def test_create_form_shows_equipment_section_for_admin(self, app, admin_client):
-        type_id = _make_type(app, name="Typ formulář create")
-        _make_item(app, type_id, name="Item formulář create")
-        response = admin_client.get("/events/create")
-        assert response.status_code == 200
-        assert b"equipment_item_ids" in response.data
-
-    def test_create_event_with_equipment_assigns_items(self, app, admin_client):
-        type_id = _make_type(app, name="Typ pre-assign")
-        item_id = _make_item(app, type_id, name="Item pre-assign")
-        rp_qual_id = _make_rp_qual(app, name="RP Qual equipment pre-assign")
-        with app.app_context():
-            me = MasterEvent(name="ME pre-assign")
-            db.session.add(me)
+            event = db.session.get(Event, event_id)
+            event.start_datetime = future_start
+            event.end_datetime = future_end
             db.session.commit()
-            me_id = me.id
 
-        response = admin_client.post(
-            "/events/create",
+        resp = admin_client.post(
+            f"/equipment/items/{item_id}/edit",
             data={
-                "name": "Akce s vybavením",
-                "event_type": "MEDICAL_COVER",
-                "master_event_id": str(me_id),
-                "start_datetime": "2035-07-01T10:00",
-                "end_datetime": "2035-07-01T18:00",
-                "spot_total": "1",
-                "spot_desc_0": "Zdravotník",
-                "spot_cred_0": str(rp_qual_id),
-                "action": "create",
-                "equipment_item_ids": str(item_id),
+                "name": "Warn Item A",
+                "type_id": str(type_id),
+                "version": "1",
+                "unavailability_reason": "Oprava",
+                "unavailability_since": "2026-01-01",
             },
-            follow_redirects=False,
+            follow_redirects=True,
         )
-        assert response.status_code == 302
+        assert resp.status_code == 200
+        assert "archivováno" not in resp.data.decode()
+        assert "Upozornění" in resp.data.decode() or "nedostatek" in resp.data.decode()
+
+    def test_no_warning_when_enough_stock_remains(self, app, admin_client):
+
+        type_id = _make_type(app, "Warn Type B")
+        item1_id = _make_item(app, type_id, "Warn Item B1")
+        _make_item(app, type_id, "Warn Item B2")  # second item keeps pool at 1
+        future_start = datetime.now(timezone.utc) + timedelta(days=5)
+        future_end = future_start + timedelta(hours=8)
+        event_id = _make_event_in_status(app)
         with app.app_context():
-            event = db.session.scalar(db.select(Event).where(Event.name == "Akce s vybavením"))
-            assert event is not None
-            assn = db.session.scalar(
-                db.select(EventEquipmentAssignment).where(
-                    EventEquipmentAssignment.event_id == event.id,
-                    EventEquipmentAssignment.equipment_item_id == item_id,
+            db.session.add(
+                EventEquipmentPlan(
+                    event_id=event_id,
+                    equipment_type_id=type_id,
+                    quantity_required=1,
                 )
             )
-            assert assn is not None
-
-    def test_create_event_skips_unavailable_equipment(self, app, admin_client):
-        type_id = _make_type(app, name="Typ unavail create")
-        item_id = _make_item(app, type_id, name="Item unavail create")
-        rp_qual_id = _make_rp_qual(app, name="RP Qual equipment unavail")
-        with app.app_context():
-            item = db.session.get(EquipmentItem, item_id)
-            item.status = EquipmentItemStatus.UNAVAILABLE
-            item.unavailability_reason = "V opravě"
-            me = MasterEvent(name="ME unavail create")
-            db.session.add(me)
+            event = db.session.get(Event, event_id)
+            event.start_datetime = future_start
+            event.end_datetime = future_end
             db.session.commit()
-            me_id = me.id
 
-        response = admin_client.post(
-            "/events/create",
+        resp = admin_client.post(
+            f"/equipment/items/{item1_id}/edit",
             data={
-                "name": "Akce se zakázaným vybavením",
-                "event_type": "MEDICAL_COVER",
-                "master_event_id": str(me_id),
-                "start_datetime": "2035-08-01T10:00",
-                "end_datetime": "2035-08-01T18:00",
-                "spot_total": "1",
-                "spot_desc_0": "Zdravotník",
-                "spot_cred_0": str(rp_qual_id),
-                "action": "create",
-                "equipment_item_ids": str(item_id),
+                "name": "Warn Item B1",
+                "type_id": str(type_id),
+                "version": "1",
+                "unavailability_reason": "Oprava",
+                "unavailability_since": "2026-01-01",
             },
-            follow_redirects=False,
+            follow_redirects=True,
         )
-        assert response.status_code == 302
-        with app.app_context():
-            event = db.session.scalar(db.select(Event).where(Event.name == "Akce se zakázaným vybavením"))
-            assert event is not None
-            assn = db.session.scalar(
-                db.select(EventEquipmentAssignment).where(
-                    EventEquipmentAssignment.event_id == event.id,
-                    EventEquipmentAssignment.equipment_item_id == item_id,
-                )
-            )
-            assert assn is None
-
-
-class TestEquipmentConflictExclusion:
-    """Cancelled/archived events should not cause equipment conflicts."""
-
-    def test_cancelled_event_does_not_cause_conflict(self, app, admin_client):
-
-        type_id = _make_type(app, "Conflict Type")
-        item_id = _make_item(app, type_id, "Conflict Item")
-
-        with app.app_context():
-            me = MasterEvent(name="Conflict ME")
-            db.session.add(me)
-            db.session.flush()
-
-            # Cancelled event with the item assigned (overlapping time)
-            cancelled = Event(
-                name="Cancelled Event",
-                master_event_id=me.id,
-                status=EventStatus.CANCELLED,
-                archived=True,
-                start_datetime=datetime(2031, 1, 1, 10, 0, tzinfo=timezone.utc),
-                end_datetime=datetime(2031, 1, 1, 18, 0, tzinfo=timezone.utc),
-            )
-            db.session.add(cancelled)
-            db.session.flush()
-            db.session.add(EventEquipmentAssignment(event_id=cancelled.id, equipment_item_id=item_id))
-
-            # Active event with the same item (overlapping time)
-            active = Event(
-                name="Active Event",
-                master_event_id=me.id,
-                status=EventStatus.PUBLISHED,
-                start_datetime=datetime(2031, 1, 1, 9, 0, tzinfo=timezone.utc),
-                end_datetime=datetime(2031, 1, 1, 20, 0, tzinfo=timezone.utc),
-            )
-            db.session.add(active)
-            db.session.flush()
-            db.session.add(EventEquipmentAssignment(event_id=active.id, equipment_item_id=item_id))
-            db.session.commit()
-
-            # Warnings for the active event should NOT include the cancelled one
-            warnings = equipment_warnings_for_event(active)
-            conflict_names = [w["conflicting_event"]["name"] for w in warnings if w["status"] == "conflict"]
-            assert "Cancelled Event" not in conflict_names
-
-    def test_archived_event_does_not_cause_conflict(self, app, admin_client):
-
-        type_id = _make_type(app, "Archived Type")
-        item_id = _make_item(app, type_id, "Archived Item")
-
-        with app.app_context():
-            me = MasterEvent(name="Archived ME")
-            db.session.add(me)
-            db.session.flush()
-
-            # Archived (but completed) event with the item
-            archived = Event(
-                name="Archived Event",
-                master_event_id=me.id,
-                status=EventStatus.COMPLETED,
-                archived=True,
-                start_datetime=datetime(2032, 3, 1, 10, 0, tzinfo=timezone.utc),
-                end_datetime=datetime(2032, 3, 1, 18, 0, tzinfo=timezone.utc),
-            )
-            db.session.add(archived)
-            db.session.flush()
-            db.session.add(EventEquipmentAssignment(event_id=archived.id, equipment_item_id=item_id))
-
-            # New event at the same time
-            new_event = Event(
-                name="New Event",
-                master_event_id=me.id,
-                status=EventStatus.DRAFT,
-                start_datetime=datetime(2032, 3, 1, 9, 0, tzinfo=timezone.utc),
-                end_datetime=datetime(2032, 3, 1, 20, 0, tzinfo=timezone.utc),
-            )
-            db.session.add(new_event)
-            db.session.flush()
-            db.session.add(EventEquipmentAssignment(event_id=new_event.id, equipment_item_id=item_id))
-            db.session.commit()
-
-            warnings = equipment_warnings_for_event(new_event)
-            conflict_names = [w["conflicting_event"]["name"] for w in warnings if w["status"] == "conflict"]
-            assert "Archived Event" not in conflict_names
-
-
-class TestEquipmentCheckEndpointExclusion:
-    """AJAX equipment-check endpoint should ignore cancelled/archived events."""
-
-    def test_check_excludes_cancelled_event(self, app, admin_client):
-        type_id = _make_type(app, "Check Cancel Type")
-        item_id = _make_item(app, type_id, "Check Cancel Item")
-
-        with app.app_context():
-            me = MasterEvent(name="Check Cancel ME")
-            db.session.add(me)
-            db.session.flush()
-
-            # Cancelled event with the item
-            cancelled = Event(
-                name="Cancelled Overlap",
-                master_event_id=me.id,
-                status=EventStatus.CANCELLED,
-                start_datetime=datetime(2033, 5, 1, 10, 0, tzinfo=timezone.utc),
-                end_datetime=datetime(2033, 5, 1, 18, 0, tzinfo=timezone.utc),
-            )
-            db.session.add(cancelled)
-            db.session.flush()
-            db.session.add(EventEquipmentAssignment(event_id=cancelled.id, equipment_item_id=item_id))
-            db.session.commit()
-
-        # Check availability for the same time window — should report no conflict
-        resp = admin_client.post(
-            "/events/equipment-check",
-            json={
-                "item_ids": [item_id],
-                "start_datetime": "2033-05-01T09:00:00+00:00",
-                "end_datetime": "2033-05-01T20:00:00+00:00",
-            },
-        )
+        # 2 items → marking 1 unavailable still leaves 1 available → no shortage
         assert resp.status_code == 200
-        data = resp.get_json()
-        statuses = [r["status"] for r in data["results"]]
-        assert "conflict" not in statuses
-
-    def test_check_excludes_archived_event(self, app, admin_client):
-        type_id = _make_type(app, "Check Archive Type")
-        item_id = _make_item(app, type_id, "Check Archive Item")
-
-        with app.app_context():
-            me = MasterEvent(name="Check Archive ME")
-            db.session.add(me)
-            db.session.flush()
-
-            archived = Event(
-                name="Archived Overlap",
-                master_event_id=me.id,
-                status=EventStatus.COMPLETED,
-                archived=True,
-                start_datetime=datetime(2033, 6, 1, 10, 0, tzinfo=timezone.utc),
-                end_datetime=datetime(2033, 6, 1, 18, 0, tzinfo=timezone.utc),
-            )
-            db.session.add(archived)
-            db.session.flush()
-            db.session.add(EventEquipmentAssignment(event_id=archived.id, equipment_item_id=item_id))
-            db.session.commit()
-
-        resp = admin_client.post(
-            "/events/equipment-check",
-            json={
-                "item_ids": [item_id],
-                "start_datetime": "2033-06-01T09:00:00+00:00",
-                "end_datetime": "2033-06-01T20:00:00+00:00",
-            },
-        )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        statuses = [r["status"] for r in data["results"]]
-        assert "conflict" not in statuses
-
-    def test_check_still_reports_active_conflict(self, app, admin_client):
-        """Sanity check: active overlapping event DOES produce a conflict."""
-        type_id = _make_type(app, "Check Active Type")
-        item_id = _make_item(app, type_id, "Check Active Item")
-
-        with app.app_context():
-            me = MasterEvent(name="Check Active ME")
-            db.session.add(me)
-            db.session.flush()
-
-            active = Event(
-                name="Active Overlap",
-                master_event_id=me.id,
-                status=EventStatus.PUBLISHED,
-                start_datetime=datetime(2033, 7, 1, 10, 0, tzinfo=timezone.utc),
-                end_datetime=datetime(2033, 7, 1, 18, 0, tzinfo=timezone.utc),
-            )
-            db.session.add(active)
-            db.session.flush()
-            db.session.add(EventEquipmentAssignment(event_id=active.id, equipment_item_id=item_id))
-            db.session.commit()
-
-        resp = admin_client.post(
-            "/events/equipment-check",
-            json={
-                "item_ids": [item_id],
-                "start_datetime": "2033-07-01T09:00:00+00:00",
-                "end_datetime": "2033-07-01T20:00:00+00:00",
-            },
-        )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        statuses = [r["status"] for r in data["results"]]
-        assert "conflict" in statuses
+        body = resp.data.decode()
+        assert "nedostatek" not in body.lower() or "Upozornění" not in body

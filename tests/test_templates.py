@@ -388,6 +388,16 @@ class TestCreateEventFromTemplate:
         me_id = _make_master_event(app)
         data = _event_form_data(me_id, name="From Template Event")
         data["template_id"] = str(tmpl_id)
+        # Simulate spots pre-filled from template (as form.html does on GET)
+        data.update(
+            {
+                "spot_total": "3",
+                "spot_desc_0": "Pozice 1",
+                "spot_cred_0": str(rp_qual_id),
+                "spot_desc_1": "Pozice 2",
+                "spot_desc_2": "Pozice 3",
+            }
+        )
         response = admin_client.post(
             "/events/create",
             data=data,
@@ -414,10 +424,20 @@ class TestCreateEventFromTemplate:
             db.session.add(EventSpotTemplate(template_id=tmpl.id, description="Řidič"))
             db.session.commit()
             tmpl_id = tmpl.id
+            rp_qual_id = rp_qual.id
 
         me_id = _make_master_event(app)
         data = _event_form_data(me_id, name="Desc Template Event")
         data["template_id"] = str(tmpl_id)
+        # Simulate spots pre-filled from template (as form.html does on GET)
+        data.update(
+            {
+                "spot_total": "2",
+                "spot_desc_0": "Záchranář",
+                "spot_cred_0": str(rp_qual_id),
+                "spot_desc_1": "Řidič",
+            }
+        )
         admin_client.post("/events/create", data=data, follow_redirects=True)
 
         with app.app_context():
