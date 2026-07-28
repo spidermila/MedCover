@@ -1908,9 +1908,9 @@ class TestProcessEmailQueueDispatch:
     def test_batched_drain_called_first(self, app):
         """AC-21: drain_batched_outbox returns True → drain_one_outbox_email NOT called."""
         with (
-            patch("app.mail.drain_batched_outbox", return_value=True) as mock_batch,
-            patch("app.mail.drain_one_outbox_email") as mock_legacy,
-            patch("app.models.settings.get_settings"),
+            patch.object(self._sm, "drain_batched_outbox", return_value=True) as mock_batch,
+            patch.object(self._sm, "drain_one_outbox_email") as mock_legacy,
+            patch.object(self._sm, "get_settings"),
         ):
             self._sm.process_email_queue()
         mock_batch.assert_called_once()
@@ -1919,9 +1919,9 @@ class TestProcessEmailQueueDispatch:
     def test_legacy_drain_called_when_batch_returns_false(self, app):
         """AC-22: drain_batched_outbox returns False → drain_one_outbox_email IS called."""
         with (
-            patch("app.mail.drain_batched_outbox", return_value=False) as mock_batch,
-            patch("app.mail.drain_one_outbox_email") as mock_legacy,
-            patch("app.models.settings.get_settings"),
+            patch.object(self._sm, "drain_batched_outbox", return_value=False) as mock_batch,
+            patch.object(self._sm, "drain_one_outbox_email") as mock_legacy,
+            patch.object(self._sm, "get_settings"),
         ):
             self._sm.process_email_queue()
         mock_batch.assert_called_once()
