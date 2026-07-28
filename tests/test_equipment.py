@@ -621,6 +621,57 @@ class TestEquipmentItemAvailabilityEdit:
             assert item.unavailability_since is None
 
 
+class TestFutureMaintenanceCancellation:
+    """Cancelling a future (scheduled) maintenance window via mark-available route."""
+
+    def test_mark_available_clears_future_window(self, app, admin_client):
+        """item_mark_available must clear a future window even though is_available=True."""
+        type_id = _make_type(app, "Future Cancel Type")
+        item_id = _make_item(app, type_id, "Future Cancel Item")
+        future = datetime.now(timezone.utc) + timedelta(days=7)
+        with app.app_context():
+            item = db.session.get(EquipmentItem, item_id)
+            item.unavailability_since = future
+            item.unavailability_reason = "Plánovaný servis"
+            db.session.commit()
+            version = item.version
+            # Confirm item is still available (future window)
+            assert item.is_available is True
+
+        resp = admin_client.post(
+            f"/equipment/items/{item_id}/mark-available",
+            data={"version": str(version)},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.body if hasattr(resp, "body") else resp.data.decode()
+        assert "zrušen" in body
+        with app.app_context():
+            item = db.session.get(EquipmentItem, item_id)
+            assert item.unavailability_since is None
+            assert item.unavailability_reason is None
+            assert item.is_available is True
+
+    def test_mark_available_without_window_flashes_warning(self, app, admin_client):
+        """Posting to mark-available when no maintenance window exists flashes a warning."""
+        type_id = _make_type(app, "No Window Type")
+        item_id = _make_item(app, type_id, "No Window Item")
+        with app.app_context():
+            version = db.session.get(EquipmentItem, item_id).version
+
+        resp = admin_client.post(
+            f"/equipment/items/{item_id}/mark-available",
+            data={"version": str(version)},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "žádný" in resp.data.decode()
+        with app.app_context():
+            # Item unchanged
+            item = db.session.get(EquipmentItem, item_id)
+            assert item.unavailability_since is None
+
+
 # ── Type-level availability check ─────────────────────────────────────────────
 
 
