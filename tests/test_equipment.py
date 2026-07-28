@@ -878,7 +878,7 @@ class TestPlanAddConflictMessage:
         future_end = future_start + timedelta(hours=8)
 
         # Event A occupies the only item in its window
-        event_a_id = _make_event_in_status(app, EventStatus.PUBLISHED)
+        event_a_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Conflict Event A")
         with app.app_context():
             ev_a = db.session.get(Event, event_a_id)
             ev_a.name = "Blocking Event"
@@ -888,7 +888,7 @@ class TestPlanAddConflictMessage:
             db.session.commit()
 
         # Event B overlaps — trying to add the same type should fail and name Event A
-        event_b_id = _make_event_in_status(app, EventStatus.PUBLISHED)
+        event_b_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Conflict Event B")
         with app.app_context():
             ev_b = db.session.get(Event, event_b_id)
             ev_b.start_datetime = future_start
