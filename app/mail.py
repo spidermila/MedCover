@@ -68,7 +68,7 @@ _INSTANCE_ID: str = os.environ.get("INSTANCE_ID", "")
 _PLAIN_FALLBACK = "Tento e-mail obsahuje formátovaný obsah. Otevřete jej v e-mailovém klientovi s podporou HTML."
 
 # ── Notification-delay tier boundaries (issue #268) ──────────────────────────
-# Boundary semantics (REQUIREMENTS FR-4):
+# Boundary semantics:
 #   delta < 24h                → tier 1 (past events fall here — delta <= 0)
 #   24h <= delta < 7d          → tier 2
 #   7d  <= delta < 28d         → tier 3
@@ -375,7 +375,7 @@ def _merge_event_changed_payloads(
 ) -> dict[str, list] | None:
     """Merge two event_changed field-diff payloads.
 
-    Rules (REQUIREMENTS FR-3, FR-4):
+    Rules:
       1. Fields present in both: keep existing's [0] (earliest old_val),
          overwrite with incoming's [1] (latest new_val).
       2. Fields present only in incoming: take incoming pair as-is.
@@ -411,12 +411,12 @@ def _merge_into_existing(
     event_url: str,
     computed_send_after: datetime | None,
 ) -> datetime | None:
-    """Update an already-pending OutboxEmail row per FR-3, FR-4, FR-8.
+    """Update an already-pending OutboxEmail row.
 
     Returns the row's post-merge send_after, or None if the merged
     event_changed payload collapsed to empty and the row was deleted.
     """
-    # FR-8 — merge send_after: immediate wins; else min().
+    # merge send_after: immediate wins; else min().
     if existing.send_after is None:
         merged_send_after: datetime | None = None
     elif computed_send_after is None:
@@ -434,7 +434,7 @@ def _merge_into_existing(
         and isinstance(change_value, dict)
     ):
         if existing.change_value:
-            # Cell 4: merge structured payloads (FR-3 / FR-4).
+            # Cell 4: merge structured payloads.
             merged_payload = _merge_event_changed_payloads(existing.change_value, change_value)
             if merged_payload is None:
                 db.session.delete(existing)
@@ -444,7 +444,7 @@ def _merge_into_existing(
             existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
             existing.html_body = _render_event_changed_body(user, event, merged_payload, event_url)
         else:
-            # Cell 2: FR-5 transitional — NULL existing, adopt incoming.
+            # Cell 2: transitional — NULL existing, adopt incoming.
             existing.change_value = json.dumps(change_value, ensure_ascii=False, sort_keys=True)
             existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
             existing.html_body = _render_event_changed_body(user, event, change_value, event_url)
@@ -489,23 +489,23 @@ def enqueue_deferred(
     Lookup key: (user_id, event_id, notification_type, status='pending').
     On lookup hit: overwrites rendered content and takes ``min(existing,
     computed)`` on ``send_after`` (immediate — NULL — always wins over any
-    future timestamp per FR-8).
+    future timestamp).
 
     On lookup miss: inserts a new row with ``send_after`` computed from
     proximity tier settings, or ``NULL`` if the request-scoped
     ``g._test_notification_immediate`` flag is set.
 
-    Notification-gate checks must have been evaluated by the caller (FR-3).
+    Notification-gate checks must have been evaluated by the caller.
 
     Returns the row's final ``send_after`` value (may be ``None``).
     """
 
-    # Recipient override (FR-2 / FR-9).
+    # Recipient override.
     override = getattr(g, "_test_notification_email", None)
     to_email = override or user.email
 
     # Immediate-bypass: caller-supplied kwarg OR the test-form request-scoped
-    # flag (FR-6). g lookup tolerates "outside request context".
+    # flag. g lookup tolerates "outside request context".
     if not immediate:
         try:
             immediate = bool(getattr(g, "_test_notification_immediate", False))
@@ -997,7 +997,7 @@ def drain_one_outbox_email() -> bool:
         .where(
             OutboxEmail.status == "pending",
             OutboxEmail.retry_count < OutboxEmail.MAX_RETRIES,
-            OutboxEmail.user_id.is_(None),  # FR-16 guard
+            OutboxEmail.user_id.is_(None),  # legacy non-event rows only
             sa.or_(
                 OutboxEmail.send_after.is_(None),
                 OutboxEmail.send_after <= _now_utc,
@@ -1118,7 +1118,7 @@ def send_account_activated(user: UserAccount) -> None:
 
 def _pick_trigger_batch(now_utc: datetime) -> tuple[object, str] | None:
     """Return the (user_id, to_email) pair whose oldest qualifying matured-pending
-    row is earliest in the queue, or None if no batch qualifies (FR-3).
+    row is earliest in the queue, or None if no batch qualifies.
 
     Grouping on (user_id, to_email) rather than user_id alone prevents cross-
     recipient leakage: the admin test form can set g._test_notification_email
@@ -1149,7 +1149,7 @@ def _pick_trigger_batch(now_utc: datetime) -> tuple[object, str] | None:
 
 def _load_batch_for_user(user_id: object, to_email: str) -> list:
     """Load and UPDLOCK-lock all pending rows for the (user_id, to_email) batch
-    (matured + immature). FR-4, NFR-2."""
+    (matured + immature).."""
     stmt = (
         db.select(OutboxEmail)
         .where(
@@ -1165,7 +1165,7 @@ def _load_batch_for_user(user_id: object, to_email: str) -> list:
 
 def _row_to_entry(row: OutboxEmail) -> dict:
     """Translate one OutboxEmail row into a template entry dict.
-    Dispatches on notification_type + change_type with defensive parsing (FR-35)."""
+    Dispatches on notification_type + change_type with defensive parsing."""
     ntype = row.notification_type or ""
     ctype = row.change_type or ""
 
@@ -1241,7 +1241,7 @@ def _row_to_entry(row: OutboxEmail) -> dict:
 
 
 def _build_event_section(event: object, rows: list) -> dict:
-    """Build one event section dict for the batched email template. FR-34."""
+    """Build one event section dict for the batched email template.."""
 
     return {
         "event_name": event.name,  # type: ignore[attr-defined]
@@ -1259,7 +1259,7 @@ def _write_batch_failure_audit(
     error_str: str,
     rows: list,
 ) -> None:
-    """Write ONE AuditLogEntry for a batch SMTP failure (FR-12). No commit."""
+    """Write ONE AuditLogEntry for a batch SMTP failure. No commit."""
 
     try:
         db.session.add(
@@ -1285,7 +1285,7 @@ def drain_batched_outbox() -> bool:
     """Send one batched email to one triggering recipient.
 
     Returns True if any state change was made (sent, dropped, failed, skipped),
-    False only if no user qualified (queue empty of matured batched rows). FR-1..FR-13.
+    False only if no user qualified (queue empty of matured batched rows)..
     """
 
     now_utc = datetime.now(timezone.utc)
@@ -1296,7 +1296,7 @@ def drain_batched_outbox() -> bool:
 
     rows = _load_batch_for_user(user_id, to_email)
 
-    # FR-6 — rows whose event has been hard-deleted (FK set to NULL) are
+    # rows whose event has been hard-deleted (FK set to NULL) are
     # unrecoverable: delete them outright so they don't accumulate.
     live_rows: list[OutboxEmail] = []
     deleted_orphans = 0
@@ -1322,7 +1322,7 @@ def drain_batched_outbox() -> bool:
     user_obj = db.session.get(UserAccount, user_id)
     user_name = user_obj.name if user_obj is not None else ""
 
-    # FR-8 — dev email block.
+    # dev email block.
     settings = get_settings()
     if not settings.is_email_allowed(to_email):
         for r in live_rows:
@@ -1337,7 +1337,7 @@ def drain_batched_outbox() -> bool:
         )
         return True
 
-    # Load Event objects — one round trip (NFR-1).
+    # Load Event objects — one round trip.
     event_ids = sorted({r.event_id for r in live_rows if r.event_id is not None})
     events = db.session.scalars(db.select(Event).where(Event.id.in_(event_ids))).all()
     events_by_id = {e.id: e for e in events}
@@ -1357,11 +1357,11 @@ def drain_batched_outbox() -> bool:
         db.session.commit()
         return True
 
-    # Sort event sections by event.start_datetime ASC (FR-5, AC-29).
+    # Sort event sections by event.start_datetime ASC.
     ordered_events = sorted(events_by_id.values(), key=lambda e: e.start_datetime)
     event_sections = [_build_event_section(e, grouped[e.id]) for e in ordered_events if e.id in grouped]
 
-    # Subject line (FR-10, AC-6, AC-7).
+    # Subject line.
     if len(event_sections) == 1:
         subject = f"MedCover — Změny v akci: {ordered_events[0].name}"
     else:

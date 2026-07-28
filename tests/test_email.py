@@ -433,7 +433,7 @@ class TestProcessEmailQueue:
         mock_send.assert_not_called()
 
     def test_empty_queue_returns_false(self, app):
-        """drain_one_outbox_email on an empty outbox must return False."""
+        """Drain_one_outbox_email on an empty outbox must return False."""
         with app.app_context():
             with patch("flask_mail.Mail.send") as mock_send:
 
@@ -539,7 +539,7 @@ class TestOutboxEmailModel:
 
 
 class TestOutboxEmailNewColumns:
-    """AC-3 / AC-12: new columns default to NULL; populated values round-trip."""
+    """New columns default to NULL; populated values round-trip."""
 
     def test_new_columns_default_null(self, app):
         """Creating an OutboxEmail with only legacy args leaves all new cols NULL."""
@@ -595,7 +595,7 @@ class TestOutboxEmailNewColumns:
 
 
 class TestNonEventHelperNullColumns:
-    """AC-14: non-event send_* helpers produce rows with send_after/user_id/event_id all NULL."""
+    """Non-event send_* helpers produce rows with send_after/user_id/event_id all NULL."""
 
     def test_non_event_helper_has_null_batching_columns(self, app):
         with app.app_context():
@@ -638,7 +638,7 @@ def _make_ed_event(delta_hours: float | None = None) -> tuple[UserAccount, Event
 
 
 class TestEnqueueDeferred:
-    """enqueue_deferred tier logic, upsert, and immediate bypass."""
+    """Enqueue_deferred tier logic, upsert, and immediate bypass."""
 
     def test_tier1_delta_12h_yields_5min(self, app):
         with app.app_context():
@@ -844,7 +844,7 @@ class TestEnqueueDeferred:
 
 
 class TestEnqueueDeferredErrorPolicy:
-    """enqueue_deferred: IntegrityError triggers retry-via-merge; other exceptions propagate."""
+    """Enqueue_deferred: IntegrityError triggers retry-via-merge; other exceptions propagate."""
 
     def test_integrity_error_falls_back_to_merge(self, app):
         """IntegrityError on insert → rollback, re-select finds the winning row,
@@ -1008,7 +1008,7 @@ class TestOutboxPendingUniqueIndex:
 
 
 class TestDrainSendAfterFilter:
-    """AC-11 / AC-12 / AC-13: rows with future send_after are held; past/null are sent."""
+    """Rows with future send_after are held; past/null are sent."""
 
     def _seed(self, app, send_after: datetime | None) -> int:
         with app.app_context():
@@ -1080,10 +1080,10 @@ class TestMergeEventChangedPayloads:
 
 
 class TestEventChangedMerge:
-    """structured change_value + merge for event_changed."""
+    """Structured change_value + merge for event_changed."""
 
     def test_first_call_stores_field_edit_and_payload(self, app):
-        """AC-1, AC-11: first call creates row with change_type=field_edit and JSON payload."""
+        """First call creates row with change_type=field_edit and JSON payload."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
@@ -1099,7 +1099,7 @@ class TestEventChangedMerge:
             assert row.send_after is not None
 
     def test_two_edits_same_field_merge_endpoints(self, app):
-        """AC-2: second edit to same field keeps earliest old, latest new."""
+        """Second edit to same field keeps earliest old, latest new."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
@@ -1120,7 +1120,7 @@ class TestEventChangedMerge:
             assert "C" in row.html_body
 
     def test_two_edits_different_fields_both_kept(self, app):
-        """AC-3: second edit to a different field adds it alongside the first."""
+        """Second edit to a different field adds it alongside the first."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
@@ -1136,7 +1136,7 @@ class TestEventChangedMerge:
             assert "Y" in row.html_body
 
     def test_full_revert_deletes_row(self, app):
-        """AC-4: reverting all changed fields deletes the pending row."""
+        """Reverting all changed fields deletes the pending row."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
@@ -1152,7 +1152,7 @@ class TestEventChangedMerge:
             assert count == 0
 
     def test_partial_revert_keeps_other_fields(self, app):
-        """AC-5: reverting one field keeps the other field's row."""
+        """Reverting one field keeps the other field's row."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             send_event_changed(user, event, {"name": ["A", "B"], "address": ["X", "Y"]}, event_url="http://x/e")
@@ -1166,7 +1166,7 @@ class TestEventChangedMerge:
             assert "Název akce" not in row.html_body
 
     def test_three_consecutive_edits_merge_to_endpoints(self, app):
-        """AC-6: three chained edits collapse to earliest old, latest new."""
+        """Three chained edits collapse to earliest old, latest new."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             t0, t1, t2, t3 = "2025-01-01T10:00:00", "2025-01-01T11:00:00", "2025-01-01T12:00:00", "2025-01-01T13:00:00"
@@ -1188,7 +1188,7 @@ class TestEventChangedMerge:
             assert payload == {"start_datetime": [t0, t3]}
 
     def test_null_change_value_row_upgraded_no_merge(self, app):
-        """AC-7: existing row with change_value=NULL adopts incoming payload (no merge)."""
+        """Existing row with change_value=NULL adopts incoming payload (no merge)."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             # Seed a legacy row with NULL change_value.
@@ -1219,7 +1219,7 @@ class TestEventChangedMerge:
             assert payload == {"name": ["A", "B"]}
 
     def test_immediate_flag_still_merges(self, app):
-        """AC-8: g._test_notification_immediate=True still triggers merge; send_after=NULL wins."""
+        """G._test_notification_immediate=True still triggers merge; send_after=NULL wins."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
@@ -1243,7 +1243,7 @@ class TestEventChangedMerge:
             assert row.send_after is None
 
     def test_two_users_change_values_isolated(self, app):
-        """AC-9: edits for different users create isolated rows."""
+        """Edits for different users create isolated rows."""
         with app.app_context():
             user1, event = _make_ed_event(delta_hours=72)
             role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
@@ -1264,7 +1264,7 @@ class TestEventChangedMerge:
             assert payloads[user2.email] == {"name": ["A", "Z"]}
 
     def test_two_events_change_values_isolated(self, app):
-        """AC-10: edits for different events create isolated rows."""
+        """Edits for different events create isolated rows."""
         with app.app_context():
             user, event1 = _make_ed_event(delta_hours=72)
             me2 = MasterEvent(name="EC-ME2")
@@ -1291,7 +1291,7 @@ class TestEventChangedMerge:
             assert payloads[event2.id] == {"name": ["X", "Y"]}
 
     def test_gate_off_produces_no_row(self, app):
-        """AC-16: notify_event_changed=False → no row created."""
+        """Notify_event_changed=False → no row created."""
         with app.app_context():
             settings = get_settings()
             settings.notify_event_changed = False
@@ -1308,7 +1308,7 @@ class TestEventChangedBodyRerender:
     """After merge, html_body reflects merged state."""
 
     def test_html_body_reflects_merged_endpoints(self, app):
-        """AC-12: intermediate value absent; earliest old and latest new present."""
+        """Intermediate value absent; earliest old and latest new present."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             send_event_changed(user, event, {"name": ["Původní", "Prostřední"]}, event_url="http://x/e")
@@ -1353,10 +1353,10 @@ def _make_batched_row(
 
 
 class TestDrainBatchedOutbox:
-    """drain_batched_outbox() behaviour: AC-1..AC-17, AC-27..AC-29."""
+    """Drain_batched_outbox() behaviour:."""
 
     def test_matured_row_triggers_batch(self, app):
-        """AC-1: one matured pending row → drain sends it and returns True."""
+        """One matured pending row → drain sends it and returns True."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=5)
@@ -1373,7 +1373,7 @@ class TestDrainBatchedOutbox:
             assert r.status == "sent"
 
     def test_immature_rows_join_batch(self, app):
-        """AC-2: one matured + one immature row → both sent in one call."""
+        """One matured + one immature row → both sent in one call."""
         with app.app_context():
             user, event1 = _make_ed_event(delta_hours=72)
             me2 = MasterEvent(name="B5-ME2")
@@ -1410,7 +1410,7 @@ class TestDrainBatchedOutbox:
                 assert db.session.get(OutboxEmail, rid).status == "sent"
 
     def test_only_immature_no_trigger(self, app):
-        """AC-3: only immature rows → drain returns False, row stays pending."""
+        """Only immature rows → drain returns False, row stays pending."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             future = datetime.now(timezone.utc) + timedelta(hours=2)
@@ -1426,13 +1426,13 @@ class TestDrainBatchedOutbox:
             assert db.session.get(OutboxEmail, row_id).status == "pending"
 
     def test_empty_queue_returns_false(self, app):
-        """AC-4: empty outbox → drain returns False."""
+        """Empty outbox → drain returns False."""
         with app.app_context():
             result = drain_batched_outbox()
         assert result is False
 
     def test_multiple_events_two_sections(self, app):
-        """AC-5: rows for two events → both event names in the rendered HTML."""
+        """Rows for two events → both event names in the rendered HTML."""
         with app.app_context():
             user, event1 = _make_ed_event(delta_hours=72)
             event1.name = "Akce Jedna"
@@ -1465,7 +1465,7 @@ class TestDrainBatchedOutbox:
         assert "Akce Dvě" in html_captured[0]
 
     def test_subject_single_event(self, app):
-        """AC-6: one event section → subject includes event name."""
+        """One event section → subject includes event name."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             event.name = "Plavecký závod"
@@ -1484,7 +1484,7 @@ class TestDrainBatchedOutbox:
         assert msgs_captured[0].subject == "MedCover — Změny v akci: Plavecký závod"
 
     def test_subject_multiple_events(self, app):
-        """AC-7: two event sections → subject is the N-event summary format."""
+        """Two event sections → subject is the N-event summary format."""
         with app.app_context():
             user, event1 = _make_ed_event(delta_hours=72)
             me2 = MasterEvent(name="B5-ME4")
@@ -1515,7 +1515,7 @@ class TestDrainBatchedOutbox:
         assert msgs_captured[0].subject == "MedCover — Souhrn změn (2 akcí)"
 
     def test_event_changed_diff_table_rendered(self, app):
-        """AC-8: event_changed row with field_edit → HTML contains field label + old/new values."""
+        """Event_changed row with field_edit → HTML contains field label + old/new values."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1542,7 +1542,7 @@ class TestDrainBatchedOutbox:
         assert "Nová akce" in html_captured[0]
 
     def test_assignment_confirmed_spot_description(self, app):
-        """AC-9: assignment_confirmed row → HTML contains confirmation sentence with spot name."""
+        """Assignment_confirmed row → HTML contains confirmation sentence with spot name."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1567,7 +1567,7 @@ class TestDrainBatchedOutbox:
         assert "přihlášeni" in html_captured[0]
 
     def test_assignment_released_spot_description(self, app):
-        """AC-10: assignment_released row → HTML contains release sentence with spot name."""
+        """Assignment_released row → HTML contains release sentence with spot name."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1592,7 +1592,7 @@ class TestDrainBatchedOutbox:
         assert "odhlášeni" in html_captured[0]
 
     def test_unfilled_reminder_count(self, app):
-        """AC-11: unfilled_reminder row → HTML contains count and Czech word."""
+        """Unfilled_reminder row → HTML contains count and Czech word."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1617,7 +1617,7 @@ class TestDrainBatchedOutbox:
         assert "neobsazen" in html_captured[0]
 
     def test_debriefing_invitation_link(self, app):
-        """AC-12: debriefing_invitation row → HTML contains a debriefing link."""
+        """Debriefing_invitation row → HTML contains a debriefing link."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1641,7 +1641,7 @@ class TestDrainBatchedOutbox:
         assert "debriefing" in html_captured[0].lower() or "42" in html_captured[0]
 
     def test_deleted_event_row_dropped(self, app):
-        """AC-13: row with event_id=None + live row → dead row deleted, live row sent, email sent."""
+        """Row with event_id=None + live row → dead row deleted, live row sent, email sent."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1669,7 +1669,7 @@ class TestDrainBatchedOutbox:
             assert live.status == "sent"
 
     def test_deleted_event_only_no_email(self, app):
-        """AC-14: only a NULL-event row → row deleted, no email sent, drain returns True."""
+        """Only a NULL-event row → row deleted, no email sent, drain returns True."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1694,7 +1694,7 @@ class TestDrainBatchedOutbox:
             assert db.session.get(OutboxEmail, dead_id) is None
 
     def test_smtp_failure_batch_retry(self, app):
-        """AC-15: SMTP raises → both rows stay pending with retry_count=1, one AuditLogEntry."""
+        """SMTP raises → both rows stay pending with retry_count=1, one AuditLogEntry."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1717,7 +1717,7 @@ class TestDrainBatchedOutbox:
             assert audit_count == 1
 
     def test_smtp_permanent_failure_all_failed(self, app):
-        """AC-16: rows at MAX_RETRIES-1 → after SMTP failure, both status='failed', one audit."""
+        """Rows at MAX_RETRIES-1 → after SMTP failure, both status='failed', one audit."""
         max_r = OutboxEmail.MAX_RETRIES
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
@@ -1740,7 +1740,7 @@ class TestDrainBatchedOutbox:
             assert set(ids).issubset(set(cj["row_ids"]))
 
     def test_dev_email_block_batch_skipped(self, app):
-        """AC-17: dev_email_block blocks recipient → both rows skipped, no send."""
+        """Dev_email_block blocks recipient → both rows skipped, no send."""
         with app.app_context():
             s = get_settings()
             s.dev_email_block = True
@@ -1769,7 +1769,7 @@ class TestDrainBatchedOutbox:
             db.session.commit()
 
     def test_one_user_per_tick(self, app):
-        """AC-27: two users → exactly one email per drain call, other user's rows still pending."""
+        """Two users → exactly one email per drain call, other user's rows still pending."""
         with app.app_context():
             role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
             userA = UserAccount(email="userA_b5@test.cz", name="User A", is_active=True)
@@ -1819,7 +1819,7 @@ class TestDrainBatchedOutbox:
             assert len(pending_rows) == 1
 
     def test_missing_change_value_graceful(self, app):
-        """AC-28: assignment_confirmed with change_value=None → row sent, no crash."""
+        """Assignment_confirmed with change_value=None → row sent, no crash."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -1842,7 +1842,7 @@ class TestDrainBatchedOutbox:
             assert db.session.get(OutboxEmail, row_id).status == "sent"
 
     def test_event_sections_sorted_by_start_datetime(self, app):
-        """AC-29: two events — earlier start_datetime section appears first in HTML."""
+        """Two events — earlier start_datetime section appears first in HTML."""
         with app.app_context():
             user, _ = _make_ed_event(delta_hours=72)
             me2 = MasterEvent(name="B5-sort-ME")
@@ -1939,11 +1939,10 @@ class TestBatchKeyIncludesToEmail:
 
 
 class TestLegacyDrainGuard:
-    """drain_one_outbox_email ignores batched rows; drain_batched_outbox ignores NULL-user rows.
-    AC-18, AC-19, AC-20."""
+    """Drain_one_outbox_email ignores batched rows; drain_batched_outbox ignores NULL-user rows.."""
 
     def test_batched_drain_ignores_user_null_rows(self, app):
-        """AC-18: row with user_id=None → drain_batched_outbox returns False."""
+        """Row with user_id=None → drain_batched_outbox returns False."""
         with app.app_context():
             row = OutboxEmail(to_email="legacy@test.cz", subject="S", body="B")
             db.session.add(row)
@@ -1956,7 +1955,7 @@ class TestLegacyDrainGuard:
             assert db.session.get(OutboxEmail, row_id).status == "pending"
 
     def test_legacy_drain_handles_user_null_row(self, app):
-        """AC-19: row with user_id=None → drain_one_outbox_email sends it."""
+        """Row with user_id=None → drain_one_outbox_email sends it."""
         with app.app_context():
             row = OutboxEmail(to_email="legacy2@test.cz", subject="S2", body="B2")
             db.session.add(row)
@@ -1969,7 +1968,7 @@ class TestLegacyDrainGuard:
             assert db.session.get(OutboxEmail, row_id).status == "sent"
 
     def test_legacy_drain_ignores_batched_rows(self, app):
-        """AC-20: row with user_id set → drain_one_outbox_email leaves it pending."""
+        """Row with user_id set → drain_one_outbox_email leaves it pending."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             row = _make_batched_row(user, event, "event_published")
@@ -1985,10 +1984,10 @@ class TestLegacyDrainGuard:
 
 
 class TestBatchedPayloadCallers:
-    """send_* helpers store structured change_value in the row. AC-23..AC-26."""
+    """Send_* helpers store structured change_value in the row.."""
 
     def test_send_assignment_confirmed_stores_change_value(self, app):
-        """AC-23: confirmed row has change_type='assignment' and action/spot_description."""
+        """Confirmed row has change_type='assignment' and action/spot_description."""
         with app.app_context():
             event = _make_event("Payload Test Event")
             user = _make_member_user("payload_a@test.cz", "Payload User A")
@@ -2003,7 +2002,7 @@ class TestBatchedPayloadCallers:
             assert payload == {"action": "confirmed", "spot_description": "Záchranář"}
 
     def test_send_assignment_released_stores_change_value(self, app):
-        """AC-24: released row has change_type='assignment' and action/spot_description."""
+        """Released row has change_type='assignment' and action/spot_description."""
         with app.app_context():
             event = _make_event("Payload Test Event 2")
             user = _make_member_user("payload_b@test.cz", "Payload User B")
@@ -2018,7 +2017,7 @@ class TestBatchedPayloadCallers:
             assert payload == {"action": "released", "spot_description": "Řidič"}
 
     def test_send_unfilled_spots_reminder_stores_count(self, app):
-        """AC-25: unfilled_reminder row has change_type='unfilled_reminder' and count."""
+        """Unfilled_reminder row has change_type='unfilled_reminder' and count."""
         with app.app_context():
             event = _make_event("Unfilled Event")
             user = _make_member_user("payload_c@test.cz", "Payload User C")
@@ -2035,7 +2034,7 @@ class TestBatchedPayloadCallers:
             assert payload == {"unfilled_count": 2}
 
     def test_send_debriefing_invitation_stores_assignment_id(self, app):
-        """AC-26: debriefing_invitation row has change_type='debriefing' and assignment_id."""
+        """Debriefing_invitation row has change_type='debriefing' and assignment_id."""
         with app.app_context():
             event = _make_event("Debriefing Event")
             user = _make_member_user("payload_d@test.cz", "Payload User D")
@@ -2119,7 +2118,7 @@ class TestProcessEmailQueueDispatch:
         sys.modules.pop("scheduler.main", None)
 
     def test_batched_drain_called_first(self, app):
-        """AC-21: drain_batched_outbox returns True → drain_one_outbox_email NOT called."""
+        """Drain_batched_outbox returns True → drain_one_outbox_email NOT called."""
         with (
             patch.object(self._sm, "drain_batched_outbox", return_value=True) as mock_batch,
             patch.object(self._sm, "drain_one_outbox_email") as mock_legacy,
@@ -2130,7 +2129,7 @@ class TestProcessEmailQueueDispatch:
         mock_legacy.assert_not_called()
 
     def test_legacy_drain_called_when_batch_returns_false(self, app):
-        """AC-22: drain_batched_outbox returns False → drain_one_outbox_email IS called."""
+        """Drain_batched_outbox returns False → drain_one_outbox_email IS called."""
         with (
             patch.object(self._sm, "drain_batched_outbox", return_value=False) as mock_batch,
             patch.object(self._sm, "drain_one_outbox_email") as mock_legacy,
