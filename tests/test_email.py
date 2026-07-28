@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
 from app.extensions import db
 from app.mail import (
@@ -840,6 +841,46 @@ class TestEnqueueDeferred:
             db.session.commit()
             count = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
             assert count == 0
+
+
+class TestEnqueueDeferredErrorPolicy:
+    """enqueue_deferred: IntegrityError is tolerated; other exceptions propagate."""
+
+    def test_integrity_error_is_swallowed_and_returns_none(self, app):
+        """IntegrityError on the racing-insert path is logged, rolled back, returns None."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            db.session.commit()
+            with patch.object(db.session, "flush", side_effect=IntegrityError("stmt", {}, Exception("boom"))):
+                result = enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
+            assert result is None
+
+    def test_operational_error_propagates(self, app):
+        """Non-integrity DB errors must NOT be swallowed — they signal infrastructure problems."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            db.session.commit()
+            with patch.object(db.session, "flush", side_effect=OperationalError("stmt", {}, Exception("conn lost"))):
+                with pytest.raises(OperationalError):
+                    enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
+
+    def test_programming_error_propagates(self, app):
+        """ProgrammingError (bad SQL, developer bug) must NOT be swallowed."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            db.session.commit()
+            with patch.object(db.session, "flush", side_effect=ProgrammingError("stmt", {}, Exception("bad sql"))):
+                with pytest.raises(ProgrammingError):
+                    enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
+
+    def test_value_error_propagates(self, app):
+        """Non-DB exceptions (e.g. template render bug) must NOT be swallowed."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            db.session.commit()
+            with patch.object(db.session, "flush", side_effect=ValueError("boom")):
+                with pytest.raises(ValueError):
+                    enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
 
 
 # ── drain send_after filter ──────────────────────────────────────────────────
