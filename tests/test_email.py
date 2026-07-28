@@ -844,16 +844,48 @@ class TestEnqueueDeferred:
 
 
 class TestEnqueueDeferredErrorPolicy:
-    """enqueue_deferred: IntegrityError is tolerated; other exceptions propagate."""
+    """enqueue_deferred: IntegrityError triggers retry-via-merge; other exceptions propagate."""
 
-    def test_integrity_error_is_swallowed_and_returns_none(self, app):
-        """IntegrityError on the racing-insert path is logged, rolled back, returns None."""
+    def test_integrity_error_falls_back_to_merge(self, app):
+        """IntegrityError on insert → rollback, re-select finds the winning row,
+        merge branch runs, no exception propagates."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             db.session.commit()
-            with patch.object(db.session, "flush", side_effect=IntegrityError("stmt", {}, Exception("boom"))):
-                result = enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
-            assert result is None
+
+            # Seed a winning row that the re-select after rollback will find.
+            winner = OutboxEmail(
+                to_email=user.email,
+                subject="winner",
+                body="winner-body",
+                notification_type="event_published",
+                user_id=user.id,
+                event_id=event.id,
+                send_after=datetime.now(timezone.utc) + timedelta(minutes=999),
+            )
+            db.session.add(winner)
+            db.session.commit()
+            winner_id = winner.id
+
+            # Real flush; the racing IntegrityError is simulated on the INSERT path.
+            real_flush = db.session.flush
+            calls = {"n": 0}
+
+            def flaky_flush(*args, **kwargs):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise IntegrityError("stmt", {}, Exception("unique violation"))
+                return real_flush(*args, **kwargs)
+
+            with patch.object(db.session, "flush", side_effect=flaky_flush):
+                result = enqueue_deferred(user, event, "event_published", "newer", "newer-body", html_body="<p>x</p>")
+
+            # Merge branch ran; winner row's subject was overwritten.
+            db.session.commit()
+            row = db.session.get(OutboxEmail, winner_id)
+            assert row is not None
+            assert row.subject == "newer"
+            assert result is not None  # merged send_after
 
     def test_operational_error_propagates(self, app):
         """Non-integrity DB errors must NOT be swallowed — they signal infrastructure problems."""
@@ -881,6 +913,95 @@ class TestEnqueueDeferredErrorPolicy:
             with patch.object(db.session, "flush", side_effect=ValueError("boom")):
                 with pytest.raises(ValueError):
                     enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
+
+
+class TestOutboxPendingUniqueIndex:
+    """Filtered unique index uq_outbox_pending_by_user_event_type behaviour."""
+
+    def test_two_pending_rows_same_triple_raises_integrity_error(self, app):
+        """Two pending rows with identical (user_id, event_id, notification_type) violate the index."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            db.session.commit()
+            db.session.add(
+                OutboxEmail(
+                    to_email=user.email,
+                    subject="a",
+                    body="b",
+                    notification_type="event_published",
+                    user_id=user.id,
+                    event_id=event.id,
+                )
+            )
+            db.session.flush()
+            db.session.add(
+                OutboxEmail(
+                    to_email=user.email,
+                    subject="a2",
+                    body="b2",
+                    notification_type="event_published",
+                    user_id=user.id,
+                    event_id=event.id,
+                )
+            )
+            with pytest.raises(IntegrityError):
+                db.session.flush()
+            db.session.rollback()
+
+    def test_pending_and_sent_can_coexist(self, app):
+        """A sent row plus a new pending row on the same triple must be allowed."""
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            db.session.commit()
+            db.session.add(
+                OutboxEmail(
+                    to_email=user.email,
+                    subject="old",
+                    body="b",
+                    notification_type="event_published",
+                    user_id=user.id,
+                    event_id=event.id,
+                    status="sent",
+                )
+            )
+            db.session.flush()
+            db.session.add(
+                OutboxEmail(
+                    to_email=user.email,
+                    subject="new",
+                    body="b",
+                    notification_type="event_published",
+                    user_id=user.id,
+                    event_id=event.id,
+                    status="pending",
+                )
+            )
+            db.session.flush()  # must not raise
+            db.session.rollback()
+
+    def test_null_user_and_event_rows_can_coexist(self, app):
+        """Legacy pending rows with NULL user_id/event_id (invite, digest, ...) do not collide."""
+        with app.app_context():
+            db.session.add_all(
+                [
+                    OutboxEmail(
+                        to_email="a@x.cz",
+                        subject="a",
+                        body="b",
+                        notification_type="auth",
+                        status="pending",
+                    ),
+                    OutboxEmail(
+                        to_email="b@x.cz",
+                        subject="a",
+                        body="b",
+                        notification_type="auth",
+                        status="pending",
+                    ),
+                ]
+            )
+            db.session.flush()  # must not raise
+            db.session.rollback()
 
 
 # ── drain send_after filter ──────────────────────────────────────────────────

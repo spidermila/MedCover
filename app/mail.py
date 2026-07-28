@@ -397,6 +397,72 @@ def _merge_event_changed_payloads(
     return merged or None
 
 
+def _merge_into_existing(
+    existing: OutboxEmail,
+    user: UserAccount,
+    event: Event,
+    notification_type: str,
+    to_email: str,
+    subject: str,
+    body: str,
+    html_body: str | None,
+    change_type: str | None,
+    change_value: dict[str, Any] | None,
+    event_url: str,
+    computed_send_after: datetime | None,
+) -> datetime | None:
+    """Update an already-pending OutboxEmail row per FR-3, FR-4, FR-8.
+
+    Returns the row's post-merge send_after, or None if the merged
+    event_changed payload collapsed to empty and the row was deleted.
+    """
+    # FR-8 — merge send_after: immediate wins; else min().
+    if existing.send_after is None:
+        merged_send_after: datetime | None = None
+    elif computed_send_after is None:
+        merged_send_after = None
+    else:
+        merged_send_after = min(existing.send_after, computed_send_after)
+    existing.send_after = merged_send_after
+    existing.to_email = to_email
+    existing.subject = subject
+    existing.body = body
+
+    if (
+        notification_type == "event_changed"
+        and change_type == _EVENT_CHANGED_CHANGE_TYPE
+        and isinstance(change_value, dict)
+    ):
+        if existing.change_value:
+            # Cell 4: merge structured payloads (FR-3 / FR-4).
+            merged_payload = _merge_event_changed_payloads(existing.change_value, change_value)
+            if merged_payload is None:
+                db.session.delete(existing)
+                db.session.flush()
+                return None
+            existing.change_value = json.dumps(merged_payload, ensure_ascii=False, sort_keys=True)
+            existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
+            existing.html_body = _render_event_changed_body(user, event, merged_payload, event_url)
+        else:
+            # Cell 2: FR-5 transitional — NULL existing, adopt incoming.
+            existing.change_value = json.dumps(change_value, ensure_ascii=False, sort_keys=True)
+            existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
+            existing.html_body = _render_event_changed_body(user, event, change_value, event_url)
+    else:
+        # Cell 1 / 3: overwrite behaviour.
+        existing.html_body = html_body
+        existing.change_type = change_type
+        if change_value is not None:
+            existing.change_value = (
+                json.dumps(change_value, ensure_ascii=False, sort_keys=True)
+                if isinstance(change_value, dict)
+                else change_value
+            )
+
+    db.session.flush()
+    return existing.send_after
+
+
 def enqueue_deferred(
     user: UserAccount,
     event: Event,
@@ -411,6 +477,14 @@ def enqueue_deferred(
 ) -> datetime | None:
     """Insert or update a pending OutboxEmail row for the deferred/batched
     event-notification pipeline (issue #268).
+
+    Uniqueness of the pending row per (user_id, event_id, notification_type)
+    is enforced by the ``uq_outbox_pending_by_user_event_type`` filtered
+    unique index (see app/models/outbox.py). The
+    ``WITH (UPDLOCK, HOLDLOCK, ROWLOCK)`` hint on the SELECT keeps the
+    common case single-round-trip; if two workers race past the hint an
+    IntegrityError is raised and this function falls back into the merge
+    branch after re-loading the winning row.
 
     Lookup key: (user_id, event_id, notification_type, status='pending').
     On lookup hit: overwrites rendered content and takes ``min(existing,
@@ -445,67 +519,19 @@ def enqueue_deferred(
         now_utc = datetime.now(timezone.utc)
         computed_send_after = _compute_send_after(event.start_datetime, now_utc, get_settings())
 
-    try:
-        lookup = (
-            db.select(OutboxEmail)
-            .where(
-                OutboxEmail.user_id == user.id,
-                OutboxEmail.event_id == event.id,
-                OutboxEmail.notification_type == notification_type,
-                OutboxEmail.status == "pending",
-            )
-            .limit(1)
-            .with_hint(OutboxEmail, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+    lookup = (
+        db.select(OutboxEmail)
+        .where(
+            OutboxEmail.user_id == user.id,
+            OutboxEmail.event_id == event.id,
+            OutboxEmail.notification_type == notification_type,
+            OutboxEmail.status == "pending",
         )
-        existing = db.session.scalars(lookup).first()
+        .limit(1)
+        .with_hint(OutboxEmail, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+    )
 
-        if existing is not None:
-            # FR-8 — merge send_after: immediate wins; else min().
-            if existing.send_after is None:
-                merged_send_after: datetime | None = None
-            elif computed_send_after is None:
-                merged_send_after = None
-            else:
-                merged_send_after = min(existing.send_after, computed_send_after)
-            existing.send_after = merged_send_after
-            existing.to_email = to_email
-            existing.subject = subject
-            existing.body = body
-
-            if (
-                notification_type == "event_changed"
-                and change_type == _EVENT_CHANGED_CHANGE_TYPE
-                and isinstance(change_value, dict)
-            ):
-                if existing.change_value:
-                    # Cell 4: merge structured payloads (FR-3 / FR-4).
-                    merged_payload = _merge_event_changed_payloads(existing.change_value, change_value)
-                    if merged_payload is None:
-                        db.session.delete(existing)
-                        db.session.flush()
-                        return None
-                    existing.change_value = json.dumps(merged_payload, ensure_ascii=False, sort_keys=True)
-                    existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
-                    existing.html_body = _render_event_changed_body(user, event, merged_payload, event_url)
-                else:
-                    # Cell 2: FR-5 transitional — NULL existing, adopt incoming.
-                    existing.change_value = json.dumps(change_value, ensure_ascii=False, sort_keys=True)
-                    existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
-                    existing.html_body = _render_event_changed_body(user, event, change_value, event_url)
-            else:
-                # Cell 1 / 3: overwrite behaviour.
-                existing.html_body = html_body
-                existing.change_type = change_type
-                if change_value is not None:
-                    existing.change_value = (
-                        json.dumps(change_value, ensure_ascii=False, sort_keys=True)
-                        if isinstance(change_value, dict)
-                        else change_value
-                    )
-
-            db.session.flush()
-            return existing.send_after
-
+    def _insert_new() -> OutboxEmail:
         row = OutboxEmail(
             to_email=to_email,
             subject=subject,
@@ -525,17 +551,59 @@ def enqueue_deferred(
         )
         db.session.add(row)
         db.session.flush()
+        return row
+
+    try:
+        existing = db.session.scalars(lookup).first()
+        if existing is not None:
+            return _merge_into_existing(
+                existing,
+                user,
+                event,
+                notification_type,
+                to_email,
+                subject,
+                body,
+                html_body,
+                change_type,
+                change_value,
+                event_url,
+                computed_send_after,
+            )
+        _insert_new()
         return computed_send_after
+
     except IntegrityError as exc:
+        # A racing worker won the insert (uq_outbox_pending_by_user_event_type).
+        # Roll back, re-load the winning row, and take the merge branch.
         db.session.rollback()
-        log.warning(
-            "enqueue_deferred: IntegrityError, skipping (user_id=%s event_id=%s type=%s) — %s",
+        log.info(
+            "enqueue_deferred: race lost on unique index, retrying via merge (user_id=%s event_id=%s type=%s) — %s",
             getattr(user, "id", None),
             getattr(event, "id", None),
             notification_type,
             exc,
         )
-        return None
+        winner = db.session.scalars(lookup).first()
+        if winner is not None:
+            return _merge_into_existing(
+                winner,
+                user,
+                event,
+                notification_type,
+                to_email,
+                subject,
+                body,
+                html_body,
+                change_type,
+                change_value,
+                event_url,
+                computed_send_after,
+            )
+        # Very unlikely: the winner was drained-and-marked-sent between our
+        # rollback and this reload. No conflict is possible now.
+        _insert_new()
+        return computed_send_after
 
 
 # ── Assignment notifications ──────────────────────────────────────────────────

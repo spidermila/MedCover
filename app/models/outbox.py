@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import sqlalchemy as sa
+
 from app.extensions import db
 
 
@@ -64,7 +66,26 @@ class OutboxEmail(db.Model):  # type: ignore[misc]
 
     MAX_RETRIES: int = 3
 
-    __table_args__ = (db.Index("ix_outbox_email_status_send_after", "status", "send_after"),)
+    __table_args__ = (
+        db.Index("ix_outbox_email_status_send_after", "status", "send_after"),
+        # DB-enforced upsert key for enqueue_deferred: at most one pending row
+        # per (user_id, event_id, notification_type). The filter clause also
+        # makes this a covering range-lock target for the WITH (UPDLOCK,
+        # HOLDLOCK, ROWLOCK) hint in the enqueue SELECT.
+        db.Index(
+            "uq_outbox_pending_by_user_event_type",
+            "user_id",
+            "event_id",
+            "notification_type",
+            unique=True,
+            mssql_where=sa.text(
+                "status = 'pending' "
+                "AND user_id IS NOT NULL "
+                "AND event_id IS NOT NULL "
+                "AND notification_type IS NOT NULL"
+            ),
+        ),
+    )
 
     def __repr__(self) -> str:
         return f"<OutboxEmail id={self.id} to={self.to_email!r} status={self.status}>"
