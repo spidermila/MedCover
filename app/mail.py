@@ -10,7 +10,16 @@ rate limits of any standard SMTP relay (e.g. Microsoft 365: 30/min).
 Usage (inside a Flask app context):
     from app.mail import send_assignment_confirmed, send_event_published, ...
 
-All functions are fire-and-forget — exceptions are logged, never raised.
+Enqueue error policy: ``IntegrityError`` (racing insert, or FK violation
+from a target entity being hard-deleted mid-request) is tolerated — the
+row is skipped, the session is rolled back, and the caller's business
+transaction continues. Any other exception (OperationalError,
+ProgrammingError, DB timeout, developer bug, template render failure
+etc.) propagates to the caller so infrastructure problems surface in
+logs and error trackers instead of being swallowed as WARN lines.
+Callers are expected to commit their own business transaction *before*
+calling any ``send_*`` helper, so a propagated exception only affects
+the notification path.
 
 NOTIFICATION CATALOG
 --------------------
@@ -36,6 +45,7 @@ from typing import TYPE_CHECKING, Any
 import sqlalchemy as sa
 from flask import g, render_template, url_for
 from flask_mail import Message
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db, mail
 from app.models.audit import AuditLogEntry
@@ -354,8 +364,9 @@ def _enqueue(
             )
         )
         db.session.flush()  # assign id without a separate commit
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Failed to enqueue mail to %s — %s", to, exc)
+    except IntegrityError as exc:
+        db.session.rollback()
+        log.warning("Failed to enqueue mail to %s — IntegrityError, skipping: %s", to, exc)
 
 
 def _merge_event_changed_payloads(
@@ -515,9 +526,10 @@ def enqueue_deferred(
         db.session.add(row)
         db.session.flush()
         return computed_send_after
-    except Exception as exc:  # noqa: BLE001
+    except IntegrityError as exc:
+        db.session.rollback()
         log.warning(
-            "Failed to enqueue_deferred (user_id=%s event_id=%s type=%s) — %s",
+            "enqueue_deferred: IntegrityError, skipping (user_id=%s event_id=%s type=%s) — %s",
             getattr(user, "id", None),
             getattr(event, "id", None),
             notification_type,
