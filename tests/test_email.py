@@ -1725,6 +1725,57 @@ class TestDrainBatchedOutbox:
         assert idx_earlier < idx_later, "Earlier-start event section must appear before later-start event section"
 
 
+class TestBatchKeyIncludesToEmail:
+    """Regression: batches must be keyed on (user_id, to_email), not user_id alone.
+
+    The admin test-notification form can set g._test_notification_email so a row
+    is stored with user_id=<admin> but to_email=<tester@example.com>. If the
+    batched drain groups on user_id alone, that row's tester address would be
+    reused as the recipient for the admin's own real notifications (or vice
+    versa). Each distinct to_email must produce its own batch.
+    """
+
+    def test_rows_with_different_to_email_do_not_batch(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            # Row 1: normal notification for the admin — real address.
+            row_admin = _make_batched_row(user, event, "event_published", send_after=past)
+            # Row 2: same user_id, but redirected to a tester address (mimics the
+            # test-form's g._test_notification_email override).
+            row_test = OutboxEmail(
+                to_email="tester@example.com",
+                subject="MedCover — test",
+                body="fallback",
+                html_body="<p>test</p>",
+                notification_type="assignment_confirmed",
+                user_id=user.id,
+                event_id=event.id,
+                send_after=past,
+            )
+            db.session.add(row_test)
+            db.session.commit()
+            admin_email = user.email
+            row_admin_id = row_admin.id
+            row_test_id = row_test.id
+
+        seen_recipients: list[str] = []
+
+        def capture_send(msg):
+            seen_recipients.extend(msg.recipients)
+
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=capture_send):
+                for _ in range(5):
+                    if not drain_batched_outbox():
+                        break
+
+        assert sorted(seen_recipients) == sorted([admin_email, "tester@example.com"])
+        with app.app_context():
+            assert db.session.get(OutboxEmail, row_admin_id).status == "sent"
+            assert db.session.get(OutboxEmail, row_test_id).status == "sent"
+
+
 class TestLegacyDrainGuard:
     """drain_one_outbox_email ignores batched rows; drain_batched_outbox ignores NULL-user rows.
     AC-18, AC-19, AC-20."""
