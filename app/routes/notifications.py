@@ -102,28 +102,28 @@ def save_delay_tiers() -> Response:
         raw = request.form.get(field, "").strip()
 
         if not raw:
-            flash(f'Hodnota pro „{label}" nesmí být prázdná.', "warning")
+            flash(f"Hodnota pro „{label}“ nesmí být prázdná.", "warning")
             return redirect(url_for("notifications.index"))
 
         try:
             value = int(raw)
         except ValueError:
             flash(
-                f'Hodnota pro „{label}" musí být celé číslo (zadáno: „{raw}").',
+                f"Hodnota pro „{label}“ musí být celé číslo (zadáno: „{raw}“).",
                 "warning",
             )
             return redirect(url_for("notifications.index"))
 
         if value < _DELAY_TIER_MIN:
             flash(
-                f'Hodnota pro „{label}" musí být alespoň 1 minuta (zadáno: {value}).',
+                f"Hodnota pro „{label}“ musí být alespoň 1 minuta (zadáno: {value}).",
                 "warning",
             )
             return redirect(url_for("notifications.index"))
 
         if value > _DELAY_TIER_MAX:
             flash(
-                f'Hodnota pro „{label}" nesmí překročit 20 160 minut (zadáno: {value}).',
+                f"Hodnota pro „{label}“ nesmí překročit 20 160 minut (zadáno: {value}).",
                 "warning",
             )
             return redirect(url_for("notifications.index"))
