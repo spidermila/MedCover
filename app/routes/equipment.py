@@ -469,18 +469,28 @@ def item_mark_available(item_id: int) -> Response:
         flash("Položka byla mezitím změněna jiným uživatelem.", "danger")
         return redirect(url_for("equipment.items"))
 
-    if item.is_available:
-        flash("Položka je již dostupná.", "warning")
+    # Allow clearing both active and future maintenance windows.
+    if item.is_available and not item.unavailability_since:
+        flash("Položka nemá naplánovaný žádný servis.", "warning")
         return redirect(url_for("equipment.items"))
 
+    was_future = item.is_available  # True → future window; False → active window
     item.unavailability_reason = None
     item.unavailability_since = None
     item.unavailability_until = None
     item.version += 1
-    audit("edit", "EquipmentItem", str(item.id), f"Položka '{item.name}' vrácena na sklad (dostupná)")
+    audit(
+        "edit",
+        "EquipmentItem",
+        str(item.id),
+        f"Položka '{item.name}' {'plánovaný servis zrušen' if was_future else 'vrácena na sklad (dostupná)'}",
+    )
     db.session.commit()
 
-    flash(f"Položka „{item.name}“ je opět dostupná.", "success")
+    if was_future:
+        flash(f"Plánovaný servis položky „{item.name}” byl zrušen.", "success")
+    else:
+        flash(f"Položka „{item.name}” je opět dostupná.", "success")
     return redirect(url_for("equipment.items"))
 
 
