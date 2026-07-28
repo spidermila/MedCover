@@ -1036,11 +1036,18 @@ def send_account_activated(user: UserAccount) -> None:
 # ── Batched drain ─────────────────────────────────────────────────────────────
 
 
-def _pick_trigger_user(now_utc: datetime) -> object:
-    """Return the user_id whose oldest qualifying matured-pending row is
-    earliest in the queue, or None if no user qualifies (FR-3)."""
+def _pick_trigger_batch(now_utc: datetime) -> tuple[object, str] | None:
+    """Return the (user_id, to_email) pair whose oldest qualifying matured-pending
+    row is earliest in the queue, or None if no batch qualifies (FR-3).
+
+    Grouping on (user_id, to_email) rather than user_id alone prevents cross-
+    recipient leakage: the admin test form can set g._test_notification_email
+    to redirect a row to a third-party address while user_id still points at
+    the admin, so two rows sharing a user_id may have distinct to_email
+    values. They must not be batched into the same email.
+    """
     stmt = (
-        db.select(OutboxEmail.user_id)
+        db.select(OutboxEmail.user_id, OutboxEmail.to_email)
         .where(
             OutboxEmail.status == "pending",
             OutboxEmail.user_id.is_not(None),
@@ -1050,20 +1057,25 @@ def _pick_trigger_user(now_utc: datetime) -> object:
                 OutboxEmail.send_after <= now_utc,
             ),
         )
-        .group_by(OutboxEmail.user_id)
+        .group_by(OutboxEmail.user_id, OutboxEmail.to_email)
         .order_by(sa.func.min(OutboxEmail.created_at).asc())
         .limit(1)
     )
-    return db.session.scalars(stmt).first()
+    row = db.session.execute(stmt).first()
+    if row is None:
+        return None
+    return row.user_id, row.to_email
 
 
-def _load_batch_for_user(user_id: object) -> list:
-    """Load and UPDLOCK-lock all pending rows for user_id (matured + immature). FR-4, NFR-2."""
+def _load_batch_for_user(user_id: object, to_email: str) -> list:
+    """Load and UPDLOCK-lock all pending rows for the (user_id, to_email) batch
+    (matured + immature). FR-4, NFR-2."""
     stmt = (
         db.select(OutboxEmail)
         .where(
             OutboxEmail.status == "pending",
             OutboxEmail.user_id == user_id,
+            OutboxEmail.to_email == to_email,
         )
         .order_by(OutboxEmail.created_at.asc())
         .with_hint(OutboxEmail, "WITH (UPDLOCK, ROWLOCK)")
@@ -1197,11 +1209,12 @@ def drain_batched_outbox() -> bool:
     """
 
     now_utc = datetime.now(timezone.utc)
-    user_id = _pick_trigger_user(now_utc)
-    if user_id is None:
+    trigger = _pick_trigger_batch(now_utc)
+    if trigger is None:
         return False
+    user_id, to_email = trigger
 
-    rows = _load_batch_for_user(user_id)
+    rows = _load_batch_for_user(user_id, to_email)
 
     # FR-6 — rows whose event has been hard-deleted (FK set to NULL) are
     # unrecoverable: delete them outright so they don't accumulate.
@@ -1217,14 +1230,12 @@ def drain_batched_outbox() -> bool:
     if not live_rows:
         db.session.commit()
         log.info(
-            "drain_batched_outbox: user_id=%s had only deleted-event rows (%d removed)",
+            "drain_batched_outbox: user_id=%s to=%s had only deleted-event rows (%d removed)",
             user_id,
+            to_email,
             deleted_orphans,
         )
         return True
-
-    # to_email frozen at enqueue time (includes any g._test_notification_email override).
-    to_email = live_rows[0].to_email
 
     # Load recipient display name.
 
