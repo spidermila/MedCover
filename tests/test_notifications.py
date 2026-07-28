@@ -490,7 +490,7 @@ class TestNotificationTestRoute:
 
 
 class TestNotificationDelayTierDefaults:
-    """AC-4 / AC-5: AppSettings delay tier columns have the expected defaults."""
+    """AppSettings delay tier columns have the expected defaults."""
 
     def test_delay_tier_defaults(self, app):
         with app.app_context():
@@ -502,7 +502,7 @@ class TestNotificationDelayTierDefaults:
 
 
 class TestNotificationsDelayCard:
-    """AC-6 / AC-7 / AC-8 / AC-9: admin page renders the read-only delay card."""
+    """Admin page renders the read-only delay card."""
 
     def test_card_header_present(self, admin_client):
         resp = admin_client.get("/admin/notifications/")
@@ -525,7 +525,7 @@ class TestNotificationsDelayCard:
         assert "24 h" in body
 
     def test_card_has_editable_inputs(self, admin_client):
-        """AC-1: the delay card contains four number inputs pre-filled with defaults."""
+        """The delay card contains four number inputs pre-filled with defaults."""
         resp = admin_client.get("/admin/notifications/")
         body = resp.data.decode()
         defaults = {
@@ -541,7 +541,7 @@ class TestNotificationsDelayCard:
 
 
 class TestDelayTierSave:
-    """Editable delay tier POST handler. Covers AC-1..AC-16."""
+    """Editable delay tier POST handler. Covers."""
 
     _DEFAULTS: dict[str, int] = {
         "notify_delay_under_24h_min": 5,
@@ -643,7 +643,7 @@ class TestDelayTierSave:
             assert get_settings().notify_delay_1_7_days_min == before_val
 
     def test_post_delay_tiers_partial_input(self, app, admin_client):
-        """AC-6 / FR-10: an empty field flashes and no persistence occurs."""
+        """An empty field flashes and no persistence occurs."""
         with app.app_context():
             before = {f: getattr(get_settings(), f) for f in self._DEFAULTS}
         csrf = self._get_csrf_for_form(admin_client)
@@ -672,9 +672,9 @@ class TestDelayTierSave:
         with app.app_context():
             assert get_settings().notify_delay_under_24h_min == before_val
 
-    # --- AC-5: no-op save still writes audit + fires flash -------------------
+    # --- no-op save still writes audit + fires flash -------------------
     def test_post_delay_tiers_noop_audit(self, app, admin_client):
-        """AC-5: submitting the same four values as current DB still audits."""
+        """Submitting the same four values as current DB still audits."""
         with app.app_context():
             s = get_settings()
             noop_data = {f: getattr(s, f) for f in self._DEFAULTS}
@@ -697,9 +697,9 @@ class TestDelayTierSave:
             assert entry is not None
             assert entry.action_type == "edit"
 
-    # --- AC-12: whitespace-only rejected as empty ----------------------------
+    # --- whitespace-only rejected as empty ----------------------------
     def test_post_delay_tiers_whitespace_only(self, app, admin_client):
-        """AC-12: whitespace-only value treated as empty."""
+        """Whitespace-only value treated as empty."""
         with app.app_context():
             before_val = get_settings().notify_delay_under_24h_min
         csrf = self._get_csrf_for_form(admin_client)
@@ -713,9 +713,9 @@ class TestDelayTierSave:
         with app.app_context():
             assert get_settings().notify_delay_under_24h_min == before_val
 
-    # --- AC-13: exactly at max (20160) accepted ------------------------------
+    # --- exactly at max (20160) accepted ------------------------------
     def test_post_delay_tiers_boundary_max(self, app, admin_client):
-        """AC-13: value 20160 is accepted (on the boundary)."""
+        """Value 20160 is accepted (on the boundary)."""
         csrf = self._get_csrf_for_form(admin_client)
         resp = admin_client.post(
             "/admin/notifications/delay-tiers",
@@ -727,9 +727,9 @@ class TestDelayTierSave:
         with app.app_context():
             assert get_settings().notify_delay_under_24h_min == 20160
 
-    # --- AC-14: exactly at min (1) accepted ----------------------------------
+    # --- exactly at min (1) accepted ----------------------------------
     def test_post_delay_tiers_boundary_min(self, app, admin_client):
-        """AC-14: value 1 is accepted (on the minimum boundary)."""
+        """Value 1 is accepted (on the minimum boundary)."""
         csrf = self._get_csrf_for_form(admin_client)
         resp = admin_client.post(
             "/admin/notifications/delay-tiers",
@@ -751,9 +751,9 @@ class TestDelayTierSave:
             assert s.notify_delay_1_4_weeks_min == 1
             assert s.notify_delay_over_month_min == 1
 
-    # --- AC-8: decimal string (5.5) rejected as non-integer ------------------
+    # --- decimal string (5.5) rejected as non-integer ------------------
     def test_post_delay_tiers_decimal_rejected(self, app, admin_client):
-        """AC-8: '5.5' is rejected as non-parseable integer."""
+        """'5.5' is rejected as non-parseable integer."""
         with app.app_context():
             before_val = get_settings().notify_delay_1_4_weeks_min
         csrf = self._get_csrf_for_form(admin_client)
@@ -767,9 +767,9 @@ class TestDelayTierSave:
         with app.app_context():
             assert get_settings().notify_delay_1_4_weeks_min == before_val
 
-    # --- AC-9/10: zero and negative rejected (below minimum) -----------------
+    # --- zero and negative rejected (below minimum) --------------------------
     def test_post_delay_tiers_zero_rejected(self, app, admin_client):
-        """AC-9: 0 is below minimum (1)."""
+        """0 is below minimum (1)."""
         with app.app_context():
             before_val = get_settings().notify_delay_over_month_min
         csrf = self._get_csrf_for_form(admin_client)
@@ -784,7 +784,7 @@ class TestDelayTierSave:
             assert get_settings().notify_delay_over_month_min == before_val
 
     def test_post_delay_tiers_negative_rejected(self, app, admin_client):
-        """AC-10: negative value is below minimum."""
+        """Negative value is below minimum."""
         with app.app_context():
             before_val = get_settings().notify_delay_under_24h_min
         csrf = self._get_csrf_for_form(admin_client)
@@ -803,7 +803,7 @@ class TestDelayTierSave:
 
 
 class TestTestNotificationImmediate:
-    """AC-17 / AC-18 / AC-19: send_immediately checkbox + flash message."""
+    """Send_immediately checkbox + flash message."""
 
     def test_checkbox_present_default_unchecked(self, admin_client):
         resp = admin_client.get("/admin/notifications/")
@@ -855,14 +855,14 @@ class TestTestNotificationImmediate:
             assert row.send_after is None
 
 
-# ── AC-13 / AC-14: test-form event_changed produces structured payload ────────
+# ── test-form event_changed produces structured payload ────────
 
 
 class TestTestFormEventChangedPayload:
     """Test-form POST for event_changed creates a valid row."""
 
     def test_deferred_row_has_valid_payload(self, app, admin_client):
-        """AC-13: deferred mode creates row with field_edit change_type and non-empty JSON."""
+        """Deferred mode creates row with field_edit change_type and non-empty JSON."""
         event_id = _make_event_for_test(app)
         with app.app_context():
             before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
@@ -890,7 +890,7 @@ class TestTestFormEventChangedPayload:
             assert row.html_body is not None
 
     def test_immediate_row_has_null_send_after(self, app, admin_client):
-        """AC-14: immediate mode creates row with send_after=NULL."""
+        """Immediate mode creates row with send_after=NULL."""
         event_id = _make_event_for_test(app)
         resp = admin_client.post(
             "/admin/notifications/test/event_changed",
