@@ -123,6 +123,8 @@ class TestNotificationsToggle:
             settings = db.session.get(AppSettings, 1)
             assert settings.notify_assignment is False
             assert settings.notify_event_published is True
+            assert settings.notify_event_archived is True
+            assert settings.notify_event_unarchived is True
 
     def test_enable_all_succeeds(self, app, admin_client):
         csrf = _get_csrf(admin_client, "/admin/notifications/")
@@ -147,6 +149,8 @@ class TestNotificationsToggle:
             settings = db.session.get(AppSettings, 1)
             assert settings.notify_assignment is True
             assert settings.notify_debriefing is True
+            assert settings.notify_event_archived is True
+            assert settings.notify_event_unarchived is True
 
     def test_save_flashes_success(self, admin_client):
         csrf = _get_csrf(admin_client, "/admin/notifications/")
