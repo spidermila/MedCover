@@ -842,6 +842,16 @@ def flush_and_notify_cancelled(event: Event) -> None:
     _flush_and_notify(event, send_event_cancelled)
 
 
+def notify_unarchived(event: Event) -> None:
+    """Notify all currently-assigned users that an event was restored/
+    unarchived. Caller is expected to commit the surrounding business
+    transaction before calling this, then commit again afterward to
+    persist the enqueued rows (send_event_unarchived only flushes)."""
+    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
+    for user in assigned_users:
+        send_event_unarchived(user, event)
+
+
 # Human-readable Czech labels for event fields shown in change notifications.
 _EVENT_FIELD_LABELS: dict[str, str] = {
     "name": "Název akce",
