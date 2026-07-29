@@ -788,6 +788,17 @@ def _flush_and_notify(event: Event, send_fn: Callable[[UserAccount, Event], None
 
     Caller is expected to commit the surrounding transaction.
     """
+    # synchronize_session="fetch" is explicit on purpose: this bulk UPDATE
+    # bypasses the ORM's per-object unit-of-work, so any OutboxEmail already
+    # loaded into the session's identity map (e.g. a caller/test that queried
+    # a row before calling this) would otherwise keep a stale in-memory
+    # send_after unless the ORM is told to reconcile it. Leaving this on the
+    # implicit default ("auto") happens to work today only because the WHERE
+    # clause is simple equality that the "evaluate" strategy can resolve in
+    # Python — a future edit to the WHERE clause (e.g. a subquery or OR) would
+    # silently change that behaviour. "fetch" issues one extra SELECT to
+    # identify the matched rows and always refreshes them, regardless of
+    # WHERE-clause shape, so this stays correct independent of future edits.
     db.session.execute(
         sa.update(OutboxEmail)
         .where(
@@ -795,6 +806,7 @@ def _flush_and_notify(event: Event, send_fn: Callable[[UserAccount, Event], None
             OutboxEmail.status == "pending",
         )
         .values(send_after=None)
+        .execution_options(synchronize_session="fetch")
     )
 
     assigned_users = [s.assignment.user for s in event.spots if s.assignment]
