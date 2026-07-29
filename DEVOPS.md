@@ -36,8 +36,8 @@ MedCover/
 │   │   ├── audit.py            # AuditLogEntry
 │   │   ├── settings.py         # AppSettings (SMTP, setup flag, Fernet-encrypted creds)
 │   │   ├── invite.py           # Invite (invite-only registration tokens)
-│   │   ├── outbox.py           # EmailOutbox (queued emails, retry logic)
-│   │   ├── digest.py           # DigestSubscription (weekly overview email)
+│   │   ├── outbox.py           # OutboxEmail (queued emails, retry logic, batched-notification fields)
+│   │   ├── digest.py           # DigestSchedule, DigestBlock, DigestMetricSnapshot (admin digest email)
 │   │   ├── debriefing.py       # DebriefingRecord, DebriefingQuestion
 │   │   └── feedback.py         # UserFeedback
 │   ├── routes/                 # Flask blueprints (one per feature area)
@@ -284,7 +284,7 @@ The embedded summary below reflects the actual file. Key points:
 
 - `web` uses `flask run --debug` (hot reload) in dev; production uses gunicorn via `CMD` in the Dockerfile
 - Both containers mount `.:/app` so local code changes reflect immediately
-- Both containers have healthchecks; the scheduler checks a heartbeat file written every ~10 s
+- Both containers have healthchecks; the scheduler checks a heartbeat file written every ~5 s
 - `db` uses **MSSQL 2022 Express** (`mcr.microsoft.com/mssql/server:2022-latest`) with Czech collation and RCSI enabled
 
 ```yaml
@@ -743,7 +743,7 @@ Both the English `CHANGELOG.md` and the Czech `changelog.html` must be updated t
 
 ## Notification Catalog
 
-The app sends 10 types of email notifications.  The **authoritative source of truth** is
+The app sends 13 types of email notifications.  The **authoritative source of truth** is
 `NOTIFICATION_CATALOG` in `app/mail.py`.  The admin UI at `/admin/notifications/` renders
 this list and exposes per-type toggles stored in `AppSettings`.
 
@@ -765,17 +765,22 @@ behaviour of the application.
 
 ### Notification toggles
 
-Five toggle groups are stored in `AppSettings`:
+Nine toggle fields are stored in `AppSettings` (one per togglable catalog entry; each
+maps 1:1 to a `notify_<code>` column, per the rule above):
 
 | Field | Controls |
 |---|---|
 | `notify_assignment` | `send_assignment_confirmed`, `send_assignment_released` |
-| `notify_event_lifecycle` | `send_event_published`, `send_assignments_opened` |
+| `notify_event_published` | `send_event_published` |
+| `notify_assignments_opened` | `send_assignments_opened` |
 | `notify_event_cancelled` | `send_event_cancelled` |
+| `notify_event_archived` | `send_event_archived` |
+| `notify_event_unarchived` | `send_event_unarchived` |
+| `notify_event_changed` | `send_event_changed` |
 | `notify_unfilled_reminder` | `send_unfilled_spots_reminder` (scheduler) |
 | `notify_debriefing` | `send_debriefing_invitation` |
 
-Auth-related notifications (`account_activated`, invite, password reset, admin digest)
+Auth-related notifications (`account_activated`, invite/password reset (`auth`), `admin_digest`)
 are always-on and cannot be toggled.
 
 ---
