@@ -121,11 +121,9 @@ def restore(event_id: int) -> Response:
     event.archived = False
     event.version += 1
     audit("status_change", "Event", event.id, f"Akce '{event.name}' obnovena do stavu Koncept")
-    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
     db.session.commit()
 
-    for user in assigned_users:
-        mailer.send_event_unarchived(user, event)
+    mailer.notify_unarchived(event)
     db.session.commit()
 
     flash("Akce byla obnovena.", "success")

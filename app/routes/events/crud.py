@@ -791,11 +791,9 @@ def unarchive_event(event_id: int) -> Response:
     event.archived = False
     event.version += 1
     audit("unarchive", "Event", event.id, f"Akce '{name}' obnovena z archivu")
-    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
     db.session.commit()
 
-    for user in assigned_users:
-        mailer.send_event_unarchived(user, event)
+    mailer.notify_unarchived(event)
     db.session.commit()
 
     flash(f"Akce „{name}“ byla obnovena z archivu.", "success")
