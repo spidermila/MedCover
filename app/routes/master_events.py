@@ -239,8 +239,10 @@ def archive(me_id: int) -> Response:
             event.id,
             f"Akce '{event.name}' archivována (kaskáda archivace NA '{me.name}')",
         )
-        mailer.flush_and_notify_archived(event)
+    db.session.commit()
 
+    for event in affected_events:
+        mailer.flush_and_notify_archived(event)
     db.session.commit()
 
     flash(f"Nadřazená akce „{me.name}“ byla archivována.", "success")

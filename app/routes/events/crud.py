@@ -708,6 +708,8 @@ def archive_event(event_id: int) -> Response:
     event.archived = True
     event.version += 1
     audit("archive", "Event", event.id, f"Akce '{name}' archivována")
+    db.session.commit()
+
     mailer.flush_and_notify_archived(event)
     db.session.commit()
 
