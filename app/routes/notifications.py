@@ -148,10 +148,20 @@ def save_delay_tiers() -> Response:
     return redirect(url_for("notifications.index"))
 
 
+_RECENT_EVENTS_LIMIT: int = 100
+
+
 def _recent_events() -> list[Event]:
-    """Return all non-archived events for the test dropdown, most recent first."""
+    """Return the most recent non-archived events for the test dropdown.
+
+    Bounded to _RECENT_EVENTS_LIMIT to keep the query and the rendered
+    <select> from growing unbounded as event history accumulates over years.
+    """
     return db.session.scalars(
-        db.select(Event).where(Event.archived == sa.false()).order_by(Event.start_datetime.desc())
+        db.select(Event)
+        .where(Event.archived == sa.false())
+        .order_by(Event.start_datetime.desc())
+        .limit(_RECENT_EVENTS_LIMIT)
     ).all()
 
 
@@ -242,6 +252,7 @@ def test_notification(code: str) -> Response:
             .where(
                 OutboxEmail.to_email == test_email,
                 OutboxEmail.notification_type == code,
+                OutboxEmail.event_id == event.id,
                 OutboxEmail.status == "pending",
             )
             .order_by(OutboxEmail.created_at.desc())
