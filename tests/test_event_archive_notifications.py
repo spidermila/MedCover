@@ -299,7 +299,7 @@ class TestFlushAndNotifyArchived:
 
 class TestArchiveRouteWiring:
     def test_archive_event_enqueues_archive_notice(self, app, admin_client):
-        event_id, uids = _mk_event_with_assignments(app, ["route-arch@test.cz"])
+        event_id, _uids = _mk_event_with_assignments(app, ["route-arch@test.cz"])
         resp = admin_client.post(f"/events/{event_id}/archive", follow_redirects=True)
         assert resp.status_code == 200
         with app.app_context():
@@ -313,7 +313,7 @@ class TestArchiveRouteWiring:
             assert row.send_after is None
 
     def test_cancel_event_flushes_and_notifies_via_cancelled(self, app, admin_client):
-        event_id, uids = _mk_event_with_assignments(app, ["route-cancel@test.cz"])
+        event_id, _uids = _mk_event_with_assignments(app, ["route-cancel@test.cz"])
         resp = admin_client.post(f"/events/{event_id}/cancel", follow_redirects=True)
         assert resp.status_code == 200
         with app.app_context():
@@ -337,7 +337,7 @@ class TestArchiveRouteWiring:
             assert archived is None
 
     def test_unarchive_event_enqueues_unarchive_notice(self, app, admin_client):
-        event_id, uids = _mk_event_with_assignments(app, ["route-unarch@test.cz"])
+        event_id, _uids = _mk_event_with_assignments(app, ["route-unarch@test.cz"])
         admin_client.post(f"/events/{event_id}/archive", follow_redirects=True)
         resp = admin_client.post(f"/events/{event_id}/unarchive", follow_redirects=True)
         assert resp.status_code == 200
@@ -352,7 +352,7 @@ class TestArchiveRouteWiring:
             assert row.send_after is not None
 
     def test_restore_event_enqueues_unarchive_notice(self, app, admin_client):
-        event_id, uids = _mk_event_with_assignments(app, ["route-restore@test.cz"])
+        event_id, _uids = _mk_event_with_assignments(app, ["route-restore@test.cz"])
         admin_client.post(f"/events/{event_id}/cancel", follow_redirects=True)
         resp = admin_client.post(f"/events/{event_id}/restore", follow_redirects=True)
         assert resp.status_code == 200
