@@ -39,6 +39,7 @@ When adding a new send_* function:
 import json
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -705,7 +706,9 @@ def send_assignments_opened(user: UserAccount, event: Event) -> None:
 
 
 def send_event_cancelled(user: UserAccount, event: Event) -> None:
-    """Notify an assigned user that an event was cancelled."""
+    """Notify an assigned user that an event was cancelled. Enqueued for
+    immediate send so any previously deferred rows for the same recipient/event
+    flush together (matches send_event_archived's semantics)."""
     if not _is_notify_enabled("notify_event_cancelled"):
         return
     if not user_can_receive_notification(user, "event_cancelled"):
@@ -723,6 +726,7 @@ def send_event_cancelled(user: UserAccount, event: Event) -> None:
         subject=f"MedCover — Akce zrušena: {event.name}",
         body=_PLAIN_FALLBACK,
         html_body=html,
+        immediate=True,
     )
 
 
@@ -772,15 +776,15 @@ def send_event_unarchived(user: UserAccount, event: Event) -> None:
     )
 
 
-def flush_and_notify_archived(event: Event) -> None:
-    """Handle notification side of archiving an event.
+def _flush_and_notify(event: Event, send_fn: Callable[[UserAccount, Event], None]) -> None:
+    """Shared notification plumbing for event-state-change routes (archive/cancel).
 
     1. Force every pending outbox row for this event to send immediately
-       (``send_after=NULL``) so already-queued edits go out with the archive
-       notice instead of being stranded.
-    2. Enqueue an ``event_archived`` notification (immediate) for the union of
-       currently-assigned users and users who have any pending outbox rows for
-       this event.
+       (``send_after=NULL``) so already-queued edits go out with the
+       notification instead of being stranded.
+    2. Call ``send_fn(user, event)`` (immediate) for the union of currently-
+       assigned users and users who have any pending outbox rows for this
+       event.
 
     Caller is expected to commit the surrounding transaction.
     """
@@ -813,7 +817,17 @@ def flush_and_notify_archived(event: Event) -> None:
             recipients[u.id] = u
 
     for user in recipients.values():
-        send_event_archived(user, event)
+        send_fn(user, event)
+
+
+def flush_and_notify_archived(event: Event) -> None:
+    """Handle notification side of archiving an event (see `_flush_and_notify`)."""
+    _flush_and_notify(event, send_event_archived)
+
+
+def flush_and_notify_cancelled(event: Event) -> None:
+    """Handle notification side of cancelling an event (see `_flush_and_notify`)."""
+    _flush_and_notify(event, send_event_cancelled)
 
 
 # Human-readable Czech labels for event fields shown in change notifications.

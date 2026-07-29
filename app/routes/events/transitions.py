@@ -99,7 +99,7 @@ def cancel(event_id: int) -> Response:
     event.version += 1
     audit("status_change", "Event", event.id, f"Akce '{event.name}' archivována (zrušena)")
 
-    mailer.flush_and_notify_archived(event)
+    mailer.flush_and_notify_cancelled(event)
     db.session.commit()
 
     flash("Akce byla zrušena.", "warning")
