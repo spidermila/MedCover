@@ -312,19 +312,29 @@ class TestArchiveRouteWiring:
             assert row is not None
             assert row.send_after is None
 
-    def test_cancel_event_flushes_and_notifies_via_archive(self, app, admin_client):
+    def test_cancel_event_flushes_and_notifies_via_cancelled(self, app, admin_client):
         event_id, uids = _mk_event_with_assignments(app, ["route-cancel@test.cz"])
         resp = admin_client.post(f"/events/{event_id}/cancel", follow_redirects=True)
         assert resp.status_code == 200
         with app.app_context():
-            arch = db.session.scalar(
+            cancelled = db.session.scalar(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.event_id == event_id,
+                    OutboxEmail.notification_type == "event_cancelled",
+                )
+            )
+            assert cancelled is not None
+            assert cancelled.send_after is None
+            # Cancellation must not be reported as an archive notice — the two
+            # have distinct templates and admin toggles (notify_event_cancelled
+            # vs notify_event_archived).
+            archived = db.session.scalar(
                 db.select(OutboxEmail).where(
                     OutboxEmail.event_id == event_id,
                     OutboxEmail.notification_type == "event_archived",
                 )
             )
-            assert arch is not None
-            assert arch.send_after is None
+            assert archived is None
 
     def test_unarchive_event_enqueues_unarchive_notice(self, app, admin_client):
         event_id, uids = _mk_event_with_assignments(app, ["route-unarch@test.cz"])
