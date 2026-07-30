@@ -189,7 +189,7 @@ def test_notification(code: str) -> Response:
     if event_id:
         try:
             event = db.session.get(Event, int(event_id))
-        except (ValueError, TypeError):  # fmt: skip
+        except ValueError, TypeError:
             event = None
     if event is None:
         event = db.session.scalar(
