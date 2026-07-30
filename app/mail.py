@@ -1208,7 +1208,7 @@ def _row_to_entry(row: OutboxEmail) -> dict:
     if ntype == "event_changed" and ctype == _EVENT_CHANGED_CHANGE_TYPE:
         try:
             payload = json.loads(row.change_value or "{}")
-        except (ValueError, TypeError):  # fmt: skip
+        except ValueError, TypeError:
             log.warning("Bad event_changed payload on outbox row id=%s", row.id)
             payload = {}
         changes = [
@@ -1224,7 +1224,7 @@ def _row_to_entry(row: OutboxEmail) -> dict:
     if ntype in ("assignment_confirmed", "assignment_released"):
         try:
             payload = json.loads(row.change_value or "{}")
-        except (ValueError, TypeError):  # fmt: skip
+        except ValueError, TypeError:
             log.warning("Missing/bad change_value on outbox row id=%s (type=%s)", row.id, ntype)
             payload = {}
         spot_description = payload.get("spot_description", "") or ""
@@ -1242,19 +1242,19 @@ def _row_to_entry(row: OutboxEmail) -> dict:
     if ntype == "unfilled_reminder":
         try:
             payload = json.loads(row.change_value or "{}")
-        except (ValueError, TypeError):  # fmt: skip
+        except ValueError, TypeError:
             log.warning("Missing/bad change_value on outbox row id=%s (unfilled_reminder)", row.id)
             payload = {}
         try:
             count = int(payload.get("unfilled_count", 0))
-        except (ValueError, TypeError):  # fmt: skip
+        except ValueError, TypeError:
             count = 0
         return {"type": "unfilled_reminder", "unfilled_count": count}
 
     if ntype == "debriefing_invitation":
         try:
             payload = json.loads(row.change_value or "{}")
-        except (ValueError, TypeError):  # fmt: skip
+        except ValueError, TypeError:
             log.warning("Missing/bad change_value on outbox row id=%s (debriefing_invitation)", row.id)
             payload = {}
         assignment_id = payload.get("assignment_id")
