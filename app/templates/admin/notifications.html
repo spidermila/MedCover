@@ -17,10 +17,9 @@
 {% macro minutes_to_human(m) -%}
   {%- if m is none -%}—
   {%- elif m < 60 -%}{{ m }} min
-  {%- elif m < 1440 -%}
+  {%- elif m <= 1440 -%}
     {%- set h = m // 60 -%}{%- set rem = m % 60 -%}
     {%- if rem == 0 -%}{{ h }} h{%- else -%}{{ h }} h {{ rem }} min{%- endif -%}
-  {%- elif m == 1440 -%}24 h
   {%- else -%}
     {%- set d = m // 1440 -%}{%- set rem_h = (m % 1440) // 60 -%}
     {%- if rem_h == 0 -%}{{ d }} d{%- else -%}{{ d }} d {{ rem_h }} h{%- endif -%}
