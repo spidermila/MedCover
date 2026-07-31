@@ -891,7 +891,6 @@ class TestTestFormEventChangedPayload:
             assert isinstance(payload, dict) and payload
             assert "description" in payload
             assert payload["description"] == ["—", "Zkušební oznámení"]
-            assert row.html_body is not None
 
     def test_immediate_row_has_null_send_after(self, app, admin_client):
         """Immediate mode creates row with send_after=NULL."""

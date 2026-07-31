@@ -44,7 +44,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
-from flask import g, render_template, url_for
+from flask import g, render_template
 from flask_mail import Message
 from sqlalchemy.exc import IntegrityError
 
@@ -130,7 +130,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         ),
         "trigger_cs": "Přihlášení na místo ve službě",
         "recipient_cs": "Přihlášený dobrovolník (role: Člen)",
-        "templates": ["email/assignment_confirmed.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -140,7 +140,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán dobrovolníkovi při odhlášení z místa ve službě (jím samotným nebo koordinátorem).",
         "trigger_cs": "Odhlášení z místa ve službě",
         "recipient_cs": "Odhlášený dobrovolník (role: Člen)",
-        "templates": ["email/assignment_released.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -150,7 +150,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán všem aktivním členům a koordinátorům při zveřejnění akce.",
         "trigger_cs": "Akce přejde do stavu Zveřejněno",
         "recipient_cs": "Všichni aktivní uživatelé (role: Koordinátor, Člen)",
-        "templates": ["email/event_published.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -160,7 +160,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán všem aktivním členům a koordinátorům při otevření přihlášek na akci.",
         "trigger_cs": "Akce přejde do stavu Přihlášky otevřeny",
         "recipient_cs": "Všichni aktivní uživatelé (role: Koordinátor, Člen)",
-        "templates": ["email/assignments_opened.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -170,7 +170,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán přihlášeným dobrovolníkům při zrušení akce.",
         "trigger_cs": "Akce je zrušena",
         "recipient_cs": "Přihlášení dobrovolníci (role: Člen)",
-        "templates": ["email/event_cancelled.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -183,7 +183,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         ),
         "trigger_cs": "Akce je archivována nebo zrušena",
         "recipient_cs": "Přihlášení dobrovolníci a uživatelé s čekajícím oznámením (role: Člen)",
-        "templates": ["email/event_archived.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -193,7 +193,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán přihlášeným dobrovolníkům při obnovení akce z archivu.",
         "trigger_cs": "Akce je obnovena z archivu",
         "recipient_cs": "Přihlášení dobrovolníci (role: Člen)",
-        "templates": ["email/event_unarchived.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -203,7 +203,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán přihlášeným dobrovolníkům při změně údajů akce (název, čas, místo, popis apod.).",
         "trigger_cs": "Uložení změny akce (editace existující akce)",
         "recipient_cs": "Přihlášení dobrovolníci (role: Člen)",
-        "templates": ["email/event_changed.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -215,7 +215,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         ),
         "trigger_cs": "Automaticky plánovačem (periodická kontrola)",
         "recipient_cs": "Tvůrce akce a zodpovědná osoba (role: Koordinátor, Člen)",
-        "templates": ["email/unfilled_spots_reminder.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -225,7 +225,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán přihlášeným dobrovolníkům po skončení akce s odkazem na formulář debriefingu.",
         "trigger_cs": "Akce přejde do stavu Dokončeno",
         "recipient_cs": "Přihlášení dobrovolníci (role: Člen)",
-        "templates": ["email/debriefing_invitation.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -400,16 +400,12 @@ def _merge_event_changed_payloads(
 
 def _merge_into_existing(
     existing: OutboxEmail,
-    user: UserAccount,
-    event: Event,
     notification_type: str,
     to_email: str,
     subject: str,
     body: str,
-    html_body: str | None,
     change_type: str | None,
     change_value: dict[str, Any] | None,
-    event_url: str,
     computed_send_after: datetime | None,
 ) -> datetime | None:
     """Update an already-pending OutboxEmail row.
@@ -446,9 +442,7 @@ def _merge_into_existing(
 
         existing.change_value = json.dumps(effective_payload, ensure_ascii=False, sort_keys=True)
         existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
-        existing.html_body = _render_event_changed_body(user, event, effective_payload, event_url)
     else:
-        existing.html_body = html_body
         existing.change_type = change_type
         if change_value is not None:
             existing.change_value = (
@@ -467,10 +461,8 @@ def enqueue_deferred(
     notification_type: str,
     subject: str,
     body: str,
-    html_body: str | None = None,
     change_type: str | None = None,
     change_value: dict[str, Any] | None = None,
-    event_url: str = "",
     immediate: bool = False,
 ) -> datetime | None:
     """Insert or update a pending OutboxEmail row for the deferred/batched
@@ -485,9 +477,9 @@ def enqueue_deferred(
     branch after re-loading the winning row.
 
     Lookup key: (user_id, event_id, notification_type, status='pending').
-    On lookup hit: overwrites rendered content and takes ``min(existing,
-    computed)`` on ``send_after`` (immediate — NULL — always wins over any
-    future timestamp).
+    On lookup hit: overwrites the row's subject/body/change_value and takes
+    ``min(existing, computed)`` on ``send_after`` (immediate — NULL — always
+    wins over any future timestamp).
 
     On lookup miss: inserts a new row with ``send_after`` computed from
     proximity tier settings, or ``NULL`` if the request-scoped
@@ -534,7 +526,6 @@ def enqueue_deferred(
             to_email=to_email,
             subject=subject,
             body=body,
-            html_body=html_body,
             notification_type=notification_type,
             user_id=user.id,
             event_id=event.id,
@@ -556,16 +547,12 @@ def enqueue_deferred(
         if existing is not None:
             return _merge_into_existing(
                 existing,
-                user,
-                event,
                 notification_type,
                 to_email,
                 subject,
                 body,
-                html_body,
                 change_type,
                 change_value,
-                event_url,
                 computed_send_after,
             )
         _insert_new()
@@ -586,16 +573,12 @@ def enqueue_deferred(
         if winner is not None:
             return _merge_into_existing(
                 winner,
-                user,
-                event,
                 notification_type,
                 to_email,
                 subject,
                 body,
-                html_body,
                 change_type,
                 change_value,
-                event_url,
                 computed_send_after,
             )
         # Very unlikely: the winner was drained-and-marked-sent between our
@@ -613,19 +596,12 @@ def send_assignment_confirmed(user: UserAccount, event: Event, spot_description:
         return
     if not user_can_receive_notification(user, "assignment"):
         return
-    html = render_template(
-        "email/assignment_confirmed.html",
-        user_name=user.name,
-        event=event,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="assignment_confirmed",
         subject=f"MedCover — Přihlášení na akci: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
         change_type=_ASSIGNMENT_CHANGE_TYPE,
         change_value={"action": "confirmed", "spot_description": spot_description or ""},
     )
@@ -637,19 +613,12 @@ def send_assignment_released(user: UserAccount, event: Event, spot_description: 
         return
     if not user_can_receive_notification(user, "assignment"):
         return
-    html = render_template(
-        "email/assignment_released.html",
-        user_name=user.name,
-        event=event,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="assignment_released",
         subject=f"MedCover — Odhlášení z akce: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
         change_type=_ASSIGNMENT_CHANGE_TYPE,
         change_value={"action": "released", "spot_description": spot_description or ""},
     )
@@ -664,19 +633,12 @@ def send_event_published(user: UserAccount, event: Event) -> None:
         return
     if not user_can_receive_notification(user, "event_published"):
         return
-    html = render_template(
-        "email/event_published.html",
-        user_name=user.name,
-        event=event,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="event_published",
         subject=f"MedCover — Nová akce: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
     )
 
 
@@ -686,19 +648,12 @@ def send_assignments_opened(user: UserAccount, event: Event) -> None:
         return
     if not user_can_receive_notification(user, "assignments_opened"):
         return
-    html = render_template(
-        "email/assignments_opened.html",
-        user_name=user.name,
-        event=event,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="assignments_opened",
         subject=f"MedCover — Otevřeny přihlášky: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
     )
 
 
@@ -710,19 +665,12 @@ def send_event_cancelled(user: UserAccount, event: Event) -> None:
         return
     if not user_can_receive_notification(user, "event_cancelled"):
         return
-    html = render_template(
-        "email/event_cancelled.html",
-        user_name=user.name,
-        event=event,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="event_cancelled",
         subject=f"MedCover — Akce zrušena: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
         immediate=True,
     )
 
@@ -734,19 +682,12 @@ def send_event_archived(user: UserAccount, event: Event) -> None:
         return
     if not user_can_receive_notification(user, "event_archived"):
         return
-    html = render_template(
-        "email/event_archived.html",
-        user_name=user.name,
-        event=event,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="event_archived",
         subject=f"MedCover — Akce archivována: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
         immediate=True,
     )
 
@@ -757,19 +698,12 @@ def send_event_unarchived(user: UserAccount, event: Event) -> None:
         return
     if not user_can_receive_notification(user, "event_unarchived"):
         return
-    html = render_template(
-        "email/event_unarchived.html",
-        user_name=user.name,
-        event=event,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="event_unarchived",
         subject=f"MedCover — Akce obnovena z archivu: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
     )
 
 
@@ -884,44 +818,10 @@ def _format_event_change_value(field: str, raw: object) -> str:
     return val
 
 
-def _render_event_changed_body(
-    user: UserAccount,
-    event: Event,
-    payload: dict[str, list],
-    event_url: str,
-) -> str:
-    """Translate a field-diff payload into a rendered HTML email body.
-
-    Called from send_event_changed (first-insert path) and the merge branch
-    inside enqueue_deferred (update path).  Designed to be callable from
-    drain time without modification.
-    """
-    if not event_url:
-
-        event_url = external_url_for("events.detail", event_id=event.id)
-    formatted: list[tuple[str, str, str]] = [
-        (
-            _EVENT_FIELD_LABELS.get(field, field),
-            _format_event_change_value(field, pair[0]),
-            _format_event_change_value(field, pair[1]),
-        )
-        for field, pair in payload.items()
-    ]
-    return render_template(
-        "email/event_changed.html",
-        user_name=user.name,
-        event=event,
-        event_url=event_url,
-        changes=formatted,
-        **_base_context(),
-    )
-
-
 def send_event_changed(
     user: UserAccount,
     event: Event,
     changes: dict[str, list[object]],
-    event_url: str = "",
 ) -> None:
     """Notify an assigned user that event details have changed.
 
@@ -933,17 +833,14 @@ def send_event_changed(
         return
     if not user_can_receive_notification(user, "event_changed"):
         return
-    html_body = _render_event_changed_body(user, event, changes, event_url)
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="event_changed",
         subject=f"MedCover — Změna akce: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html_body,
         change_type=_EVENT_CHANGED_CHANGE_TYPE,
         change_value=changes,
-        event_url=event_url,
     )
 
 
@@ -960,21 +857,12 @@ def send_unfilled_spots_reminder(
         return
     if not user_can_receive_notification(user, "unfilled_reminder"):
         return
-    html = render_template(
-        "email/unfilled_spots_reminder.html",
-        user_name=user.name,
-        coordinator_name=user.name,
-        event=event,
-        unfilled=unfilled,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="unfilled_reminder",
         subject=f"MedCover — Připomínka: volná místa na akci {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
         change_type=_UNFILLED_REMINDER_CHANGE_TYPE,
         change_value={"unfilled_count": len(unfilled)},
     )
@@ -1109,21 +997,12 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
     if not user_can_receive_notification(user, "assignment"):
         return
 
-    debriefing_url = url_for("debriefing.submit", assignment_id=assignment.id, _external=True)
-    html = render_template(
-        "email/debriefing_invitation.html",
-        user_name=user.name,
-        event=event,
-        debriefing_url=debriefing_url,
-        **_base_context(),
-    )
     enqueue_deferred(
         user=user,
         event=event,
         notification_type="debriefing_invitation",
         subject=f"MedCover — debriefing: {event.name}",
         body=_PLAIN_FALLBACK,
-        html_body=html,
         change_type=_DEBRIEFING_CHANGE_TYPE,
         change_value={"assignment_id": assignment.id},
     )

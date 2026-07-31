@@ -90,7 +90,6 @@ class TestEnqueueDeferredImmediateKwarg:
                 notification_type="event_archived",
                 subject="s",
                 body="b",
-                html_body="<p>h</p>",
                 immediate=True,
             )
             db.session.commit()
@@ -115,7 +114,6 @@ class TestEnqueueDeferredImmediateKwarg:
                 notification_type="event_published",
                 subject="s",
                 body="b",
-                html_body="<p>h</p>",
             )
             db.session.commit()
             initial = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.event_id == event_id))
@@ -127,7 +125,6 @@ class TestEnqueueDeferredImmediateKwarg:
                 notification_type="event_published",
                 subject="s2",
                 body="b2",
-                html_body="<p>h2</p>",
                 immediate=True,
             )
             db.session.commit()
@@ -145,7 +142,6 @@ class TestEnqueueDeferredImmediateKwarg:
                 notification_type="event_published",
                 subject="s",
                 body="b",
-                html_body="<p>h</p>",
             )
             db.session.commit()
             row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.event_id == event_id))
@@ -224,7 +220,6 @@ class TestFlushAndNotifyArchived:
                 notification_type="event_changed",
                 subject="pending edit",
                 body="b",
-                html_body="<p>edit</p>",
                 change_type=mailer._EVENT_CHANGED_CHANGE_TYPE,
                 change_value={"name": ["A", "B"]},
             )
@@ -274,7 +269,6 @@ class TestFlushAndNotifyArchived:
                     to_email="union-ghost@test.cz",
                     subject="old change",
                     body="b",
-                    html_body="<p>old</p>",
                     notification_type="event_changed",
                     user_id=ghost_id,
                     event_id=event_id,
