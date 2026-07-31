@@ -9,15 +9,17 @@ Strategy:
     function transitions rows through pending → sent / failed correctly.
 """
 
+import importlib
 import json
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
+from flask import g as flask_g
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
+import scheduler.main as scheduler_main
 from app.extensions import db
 from app.mail import (
     _EVENT_CHANGED_CHANGE_TYPE,
@@ -705,8 +707,6 @@ class TestEnqueueDeferred:
         with app.app_context():
             user, event = _make_ed_event(delta_hours=12)
             with app.test_request_context("/"):
-                from flask import g as flask_g  # pylint: disable=import-outside-toplevel
-
                 flask_g._test_notification_immediate = True
                 enqueue_deferred(user, event, "assignment_confirmed", "Subj", "body")
             db.session.commit()
@@ -752,8 +752,6 @@ class TestEnqueueDeferred:
         with app.app_context():
             user, event = _make_ed_event(delta_hours=12)
             with app.test_request_context("/"):
-                from flask import g as flask_g  # pylint: disable=import-outside-toplevel
-
                 flask_g._test_notification_immediate = True
                 enqueue_deferred(user, event, "event_changed", "Subj v1", "body")
             db.session.flush()
@@ -1207,8 +1205,6 @@ class TestEventChangedMerge:
             send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.flush()
             with app.test_request_context("/"):
-                from flask import g as flask_g  # pylint: disable=import-outside-toplevel
-
                 flask_g._test_notification_immediate = True
                 send_event_changed(user, event, {"name": ["B", "C"]})
             db.session.commit()
@@ -2050,22 +2046,20 @@ class TestSchedulerRequestContextBoundary:
                 with pytest.raises(RuntimeError):
                     drain_batched_outbox()
 
-            # Part 2: import process_email_queue with the test app injected so that
-            # scheduler.main.app points at the test DB. process_email_queue wraps the
+            # Part 2: reload scheduler.main with the test app injected so that
+            # scheduler_main.app points at the test DB. process_email_queue wraps the
             # drain in app.test_request_context, so it must NOT raise.
-            sys.modules.pop("scheduler.main", None)
             with patch("app.create_app", return_value=app):
-                import scheduler.main as sm  # pylint: disable=import-outside-toplevel  # noqa: PLC0415
+                importlib.reload(scheduler_main)
 
             with patch("flask_mail.Mail.send"):
-                sm.process_email_queue()  # must not raise
+                scheduler_main.process_email_queue()  # must not raise
 
             with app.app_context():
                 r = db.session.get(OutboxEmail, row_id)
                 assert r.status == "sent"
         finally:
             app.config["SERVER_NAME"] = saved
-            sys.modules.pop("scheduler.main", None)
 
 
 class TestProcessEmailQueueDispatch:
@@ -2073,13 +2067,11 @@ class TestProcessEmailQueueDispatch:
 
     @pytest.fixture(autouse=True)
     def _import_scheduler(self, app):
-        """Import scheduler.main fresh per test with the test app injected."""
-        sys.modules.pop("scheduler.main", None)
+        """Reload scheduler.main per test with the test app injected."""
         with patch("app.create_app", return_value=app):
-            import scheduler.main as sm  # pylint: disable=import-outside-toplevel  # noqa: PLC0415
-        self._sm = sm
+            importlib.reload(scheduler_main)
+        self._sm = scheduler_main
         yield
-        sys.modules.pop("scheduler.main", None)
 
     def test_batched_drain_called_first(self, app):
         """Drain_batched_outbox returns True → drain_one_outbox_email NOT called."""
