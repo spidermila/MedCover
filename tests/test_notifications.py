@@ -254,9 +254,7 @@ class TestEventChangedNotification:
             before_count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
-            send_event_changed(
-                user, event, {"name": ["Stará akce", "Nová akce"]}, event_url="http://example.com/events/1"
-            )
+            send_event_changed(user, event, {"name": ["Stará akce", "Nová akce"]})
 
             after_count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
@@ -299,7 +297,7 @@ class TestEventChangedNotification:
             before_count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
-            send_event_changed(user, event, {"name": ["Old", "New"]}, event_url="http://example.com/events/1")
+            send_event_changed(user, event, {"name": ["Old", "New"]})
 
             after_count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
