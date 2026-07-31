@@ -436,22 +436,18 @@ def _merge_into_existing(
         and isinstance(change_value, dict)
     ):
         if existing.change_value:
-            # Cell 4: merge structured payloads.
-            merged_payload = _merge_event_changed_payloads(existing.change_value, change_value)
-            if merged_payload is None:
+            effective_payload = _merge_event_changed_payloads(existing.change_value, change_value)
+            if effective_payload is None:
                 db.session.delete(existing)
                 db.session.flush()
                 return None
-            existing.change_value = json.dumps(merged_payload, ensure_ascii=False, sort_keys=True)
-            existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
-            existing.html_body = _render_event_changed_body(user, event, merged_payload, event_url)
         else:
-            # Cell 2: transitional — NULL existing, adopt incoming.
-            existing.change_value = json.dumps(change_value, ensure_ascii=False, sort_keys=True)
-            existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
-            existing.html_body = _render_event_changed_body(user, event, change_value, event_url)
+            effective_payload = change_value
+
+        existing.change_value = json.dumps(effective_payload, ensure_ascii=False, sort_keys=True)
+        existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
+        existing.html_body = _render_event_changed_body(user, event, effective_payload, event_url)
     else:
-        # Cell 1 / 3: overwrite behaviour.
         existing.html_body = html_body
         existing.change_type = change_type
         if change_value is not None:
