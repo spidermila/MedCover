@@ -668,12 +668,9 @@ def edit(event_id: int) -> str | Response:
         # Notify assigned users about the change (only if something actually changed).
         actual_changes = diff_changes(before, after)
         if actual_changes:
-            from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
-
-            event_url = external_url_for("events.detail", event_id=event.id)
             assigned_users = [spot.assignment.user for spot in event.spots if spot.assignment is not None]
             for u in assigned_users:
-                mailer.send_event_changed(u, event, actual_changes, event_url=event_url)
+                mailer.send_event_changed(u, event, actual_changes)
             db.session.commit()  # commit the enqueued outbox rows
 
         flash("Akce byla uložena.", "success")

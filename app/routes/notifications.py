@@ -200,7 +200,6 @@ def test_notification(code: str) -> Response:
         return redirect(url_for("notifications.index"))
 
     import app.mail as mailer  # pylint: disable=import-outside-toplevel
-    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
     send_immediately_raw = request.form.get("send_immediately", "0")
     send_immediately = send_immediately_raw == "1"
@@ -222,9 +221,8 @@ def test_notification(code: str) -> Response:
         elif code == "event_cancelled":
             mailer.send_event_cancelled(current_user, event)
         elif code == "event_changed":
-            event_url = external_url_for("events.detail", event_id=event.id)
             fake_changes: dict = {"description": ["—", "Zkušební oznámení"]}
-            mailer.send_event_changed(current_user, event, fake_changes, event_url=event_url)
+            mailer.send_event_changed(current_user, event, fake_changes)
         elif code == "unfilled_reminder":
             from app.models.event import EventSpot  # pylint: disable=import-outside-toplevel
 

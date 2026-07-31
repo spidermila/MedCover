@@ -96,7 +96,7 @@ class TestOutboxEnqueue:
             assert row.to_email == "jan@test.cz"
             assert "Závody 2026" in row.subject
             assert row.status == "pending"
-            assert "Jan Novák" in row.html_body
+            assert row.html_body is None
 
     def test_send_assignment_released_enqueues_row(self, app):
 
@@ -159,7 +159,9 @@ class TestOutboxEnqueue:
             row = db.session.scalars(db.select(OutboxEmail)).first()
             assert row is not None
             assert "coord@test.cz" == row.to_email
-            assert "3" in row.html_body
+            assert row.change_type == "unfilled_reminder"
+            payload = json.loads(row.change_value)
+            assert payload == {"unfilled_count": 3}
 
     def test_multiple_enqueues_all_pending(self, app):
         """All enqueued rows start as 'pending'."""
@@ -767,9 +769,9 @@ class TestEnqueueDeferred:
     def test_two_calls_same_triple_single_row(self, app):
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/1")
+            send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.flush()
-            send_event_changed(user, event, {"name": ["B", "C"]}, event_url="http://x/1")
+            send_event_changed(user, event, {"name": ["B", "C"]})
             db.session.commit()
             count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(
@@ -819,17 +821,6 @@ class TestEnqueueDeferred:
             )
             assert count == 2
 
-    def test_html_body_overwritten_on_update(self, app):
-        with app.app_context():
-            user, event = _make_ed_event(delta_hours=72)
-            enqueue_deferred(user, event, "event_changed", "Subj", "body", html_body="<p>v1</p>")
-            db.session.flush()
-            enqueue_deferred(user, event, "event_changed", "Subj", "body", html_body="<p>v2</p>")
-            db.session.commit()
-            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
-            assert row is not None
-            assert row.html_body == "<p>v2</p>"
-
     def test_gate_off_no_row_created(self, app):
         with app.app_context():
             settings = get_settings()
@@ -878,7 +869,7 @@ class TestEnqueueDeferredErrorPolicy:
                 return real_flush(*args, **kwargs)
 
             with patch.object(db.session, "flush", side_effect=flaky_flush):
-                result = enqueue_deferred(user, event, "event_published", "newer", "newer-body", html_body="<p>x</p>")
+                result = enqueue_deferred(user, event, "event_published", "newer", "newer-body")
 
             # Merge branch ran; winner row's subject was overwritten.
             db.session.commit()
@@ -894,7 +885,7 @@ class TestEnqueueDeferredErrorPolicy:
             db.session.commit()
             with patch.object(db.session, "flush", side_effect=OperationalError("stmt", {}, Exception("conn lost"))):
                 with pytest.raises(OperationalError):
-                    enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
+                    enqueue_deferred(user, event, "event_published", "S", "B")
 
     def test_programming_error_propagates(self, app):
         """ProgrammingError (bad SQL, developer bug) must NOT be swallowed."""
@@ -903,16 +894,16 @@ class TestEnqueueDeferredErrorPolicy:
             db.session.commit()
             with patch.object(db.session, "flush", side_effect=ProgrammingError("stmt", {}, Exception("bad sql"))):
                 with pytest.raises(ProgrammingError):
-                    enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
+                    enqueue_deferred(user, event, "event_published", "S", "B")
 
     def test_value_error_propagates(self, app):
-        """Non-DB exceptions (e.g. template render bug) must NOT be swallowed."""
+        """Non-DB exceptions must NOT be swallowed."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             db.session.commit()
             with patch.object(db.session, "flush", side_effect=ValueError("boom")):
                 with pytest.raises(ValueError):
-                    enqueue_deferred(user, event, "event_published", "S", "B", html_body="<p>x</p>")
+                    enqueue_deferred(user, event, "event_published", "S", "B")
 
 
 class TestOutboxPendingUniqueIndex:
@@ -1086,7 +1077,7 @@ class TestEventChangedMerge:
         """First call creates row with change_type=field_edit and JSON payload."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.commit()
             row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
             assert row is not None
@@ -1094,17 +1085,15 @@ class TestEventChangedMerge:
             assert row.change_type == "field_edit"
             payload = json.loads(row.change_value)
             assert payload == {"name": ["A", "B"]}
-            assert "A" in row.html_body
-            assert "B" in row.html_body
             assert row.send_after is not None
 
     def test_two_edits_same_field_merge_endpoints(self, app):
         """Second edit to same field keeps earliest old, latest new."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.flush()
-            send_event_changed(user, event, {"name": ["B", "C"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["B", "C"]})
             db.session.commit()
             count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(
@@ -1116,32 +1105,26 @@ class TestEventChangedMerge:
             row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
             payload = json.loads(row.change_value)
             assert payload == {"name": ["A", "C"]}
-            assert "A" in row.html_body
-            assert "C" in row.html_body
 
     def test_two_edits_different_fields_both_kept(self, app):
         """Second edit to a different field adds it alongside the first."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.flush()
-            send_event_changed(user, event, {"name": ["B", "C"], "address": ["X", "Y"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["B", "C"], "address": ["X", "Y"]})
             db.session.commit()
             row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
             payload = json.loads(row.change_value)
             assert payload == {"address": ["X", "Y"], "name": ["A", "C"]}
-            assert "A" in row.html_body
-            assert "C" in row.html_body
-            assert "X" in row.html_body
-            assert "Y" in row.html_body
 
     def test_full_revert_deletes_row(self, app):
         """Reverting all changed fields deletes the pending row."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.flush()
-            send_event_changed(user, event, {"name": ["B", "A"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["B", "A"]})
             db.session.commit()
             count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(
@@ -1155,26 +1138,25 @@ class TestEventChangedMerge:
         """Reverting one field keeps the other field's row."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["A", "B"], "address": ["X", "Y"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["A", "B"], "address": ["X", "Y"]})
             db.session.flush()
-            send_event_changed(user, event, {"name": ["B", "A"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["B", "A"]})
             db.session.commit()
             row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
             assert row is not None
             payload = json.loads(row.change_value)
             assert payload == {"address": ["X", "Y"]}
-            assert "Název akce" not in row.html_body
 
     def test_three_consecutive_edits_merge_to_endpoints(self, app):
         """Three chained edits collapse to earliest old, latest new."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             t0, t1, t2, t3 = "2025-01-01T10:00:00", "2025-01-01T11:00:00", "2025-01-01T12:00:00", "2025-01-01T13:00:00"
-            send_event_changed(user, event, {"start_datetime": [t0, t1]}, event_url="http://x/e")
+            send_event_changed(user, event, {"start_datetime": [t0, t1]})
             db.session.flush()
-            send_event_changed(user, event, {"start_datetime": [t1, t2]}, event_url="http://x/e")
+            send_event_changed(user, event, {"start_datetime": [t1, t2]})
             db.session.flush()
-            send_event_changed(user, event, {"start_datetime": [t2, t3]}, event_url="http://x/e")
+            send_event_changed(user, event, {"start_datetime": [t2, t3]})
             db.session.commit()
             count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(
@@ -1204,7 +1186,7 @@ class TestEventChangedMerge:
             )
             db.session.add(row)
             db.session.flush()
-            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.commit()
             count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(
@@ -1222,13 +1204,13 @@ class TestEventChangedMerge:
         """G._test_notification_immediate=True still triggers merge; send_after=NULL wins."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.flush()
             with app.test_request_context("/"):
                 from flask import g as flask_g  # pylint: disable=import-outside-toplevel
 
                 flask_g._test_notification_immediate = True
-                send_event_changed(user, event, {"name": ["B", "C"]}, event_url="http://x/e")
+                send_event_changed(user, event, {"name": ["B", "C"]})
             db.session.commit()
             count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(
@@ -1252,8 +1234,8 @@ class TestEventChangedMerge:
             user2.roles = [role]
             db.session.add(user2)
             db.session.flush()
-            send_event_changed(user1, event, {"name": ["A", "B"]}, event_url="http://x/e")
-            send_event_changed(user2, event, {"name": ["A", "Z"]}, event_url="http://x/e")
+            send_event_changed(user1, event, {"name": ["A", "B"]})
+            send_event_changed(user2, event, {"name": ["A", "Z"]})
             db.session.commit()
             rows = db.session.scalars(
                 db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed")
@@ -1279,8 +1261,8 @@ class TestEventChangedMerge:
             )
             db.session.add(event2)
             db.session.flush()
-            send_event_changed(user, event1, {"name": ["A", "B"]}, event_url="http://x/e")
-            send_event_changed(user, event2, {"name": ["X", "Y"]}, event_url="http://x/e")
+            send_event_changed(user, event1, {"name": ["A", "B"]})
+            send_event_changed(user, event2, {"name": ["X", "Y"]})
             db.session.commit()
             rows = db.session.scalars(
                 db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed")
@@ -1298,28 +1280,10 @@ class TestEventChangedMerge:
             db.session.commit()
 
             user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["A", "B"]}, event_url="http://x/e")
+            send_event_changed(user, event, {"name": ["A", "B"]})
             db.session.commit()
             count = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
             assert count == 0
-
-
-class TestEventChangedBodyRerender:
-    """After merge, html_body reflects merged state."""
-
-    def test_html_body_reflects_merged_endpoints(self, app):
-        """Intermediate value absent; earliest old and latest new present."""
-        with app.app_context():
-            user, event = _make_ed_event(delta_hours=72)
-            send_event_changed(user, event, {"name": ["Původní", "Prostřední"]}, event_url="http://x/e")
-            db.session.flush()
-            send_event_changed(user, event, {"name": ["Prostřední", "Finální"]}, event_url="http://x/e")
-            db.session.commit()
-            row = db.session.scalar(db.select(OutboxEmail).where(OutboxEmail.notification_type == "event_changed"))
-            assert row is not None
-            assert "Původní" in row.html_body
-            assert "Finální" in row.html_body
-            assert "Prostřední" not in row.html_body
 
 
 # ── batched drain + aggregated template ──────────────────────────────────────
