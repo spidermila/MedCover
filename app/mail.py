@@ -417,10 +417,11 @@ def _merge_into_existing(
     Returns the row's post-merge send_after, or None if the merged
     event_changed payload collapsed to empty and the row was deleted.
     """
-    # merge send_after: immediate wins; else min().
-    if existing.send_after is None:
-        merged_send_after: datetime | None = None
-    elif computed_send_after is None:
+    # merge send_after: NULL means "send immediately" (see OutboxEmail.send_after
+    # and the drain queries), so if either side is immediate, immediate wins
+    # otherwise take the earlier of the two future timestamps.
+    merged_send_after: datetime | None
+    if existing.send_after is None or computed_send_after is None:
         merged_send_after = None
     else:
         merged_send_after = min(existing.send_after, computed_send_after)
