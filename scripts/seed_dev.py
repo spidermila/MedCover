@@ -384,7 +384,7 @@ def seed() -> None:
                             submitted_by_id=submitted_by.id if submitted_by else a.user_id,
                             actual_hours=hours,
                             patients_treated=0,
-                            feedback="Výjezd proběhl bez komplikací.",
+                            feedback="Akce proběhla bez komplikací.",
                         )
                     )
 
