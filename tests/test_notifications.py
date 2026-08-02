@@ -452,6 +452,36 @@ class TestNotificationTestRoute:
             after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
         assert after == before + 1
 
+    def test_event_archived_enqueues(self, app, admin_client):
+
+        event_id = _make_event_for_test(app)
+        with app.app_context():
+            before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        resp = admin_client.post(
+            "/admin/notifications/test/event_archived",
+            data={"test_email": "t@test.com", "test_event_id": str(event_id)},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        assert after == before + 1
+
+    def test_event_unarchived_enqueues(self, app, admin_client):
+
+        event_id = _make_event_for_test(app)
+        with app.app_context():
+            before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        resp = admin_client.post(
+            "/admin/notifications/test/event_unarchived",
+            data={"test_email": "t@test.com", "test_event_id": str(event_id)},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        assert after == before + 1
+
     def test_unfilled_reminder_enqueues(self, app, admin_client):
 
         event_id = _make_event_for_test(app)

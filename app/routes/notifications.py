@@ -220,6 +220,10 @@ def test_notification(code: str) -> Response:
             mailer.send_assignments_opened(current_user, event)
         elif code == "event_cancelled":
             mailer.send_event_cancelled(current_user, event)
+        elif code == "event_archived":
+            mailer.send_event_archived(current_user, event)
+        elif code == "event_unarchived":
+            mailer.send_event_unarchived(current_user, event)
         elif code == "event_changed":
             fake_changes: dict = {"description": ["—", "Zkušební oznámení"]}
             mailer.send_event_changed(current_user, event, fake_changes)
@@ -243,6 +247,11 @@ def test_notification(code: str) -> Response:
                 flash("Akce nemá žádné přihlášení — nelze odeslat zkušební pozvánku k debriefingu.", "warning")
                 return redirect(url_for("notifications.index"))
             mailer.send_debriefing_invitation(fake_assignment, event)
+        else:
+            # Safety net: _TESTABLE_CODES should always have a matching branch above.
+            # Fail loudly instead of silently no-op'ing and reporting false success.
+            flash(f"Zkušební oznámení pro typ '{code}' není v kódu implementováno.", "danger")
+            return redirect(url_for("notifications.index"))
         db.session.commit()
 
         latest = db.session.scalar(
