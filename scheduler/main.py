@@ -39,6 +39,11 @@ INSTANCE_ID: str = os.environ.get("INSTANCE_ID", "")
 # 3 s ≈ 20 emails/min — safely under typical relay limits (e.g. MS365: 30/min).
 MAIL_QUEUE_INTERVAL_SECONDS: int = int(os.environ.get("MAIL_QUEUE_INTERVAL_SECONDS", "3"))
 
+# How often to write the scheduler heartbeat (DB row + local file), in seconds.
+# Kept independent of the main loop's poll interval (below) so that polling more
+# often to honor short schedule.every(...) intervals doesn't multiply DB writes.
+HEARTBEAT_INTERVAL_SECONDS: int = 5
+
 
 def _logged_task(name: str, fn: Callable[[], None]) -> Callable[[], None]:
     """Wrap a scheduled task to emit an INFO log line each time it fires."""
@@ -188,6 +193,7 @@ if __name__ == "__main__":
     )
 
     _last_alive_log: float = 0.0  # monotonic timestamp of last hourly alive message
+    _last_heartbeat: float = 0.0  # monotonic timestamp of last heartbeat write
 
     while True:
         schedule.run_pending()
@@ -202,17 +208,24 @@ if __name__ == "__main__":
             )
             _last_alive_log = _now_mono
 
-        # Write heartbeat so the admin dashboard can confirm the scheduler is alive
-        try:
-            with app.app_context():
-                s = get_settings()
-                s.scheduler_last_seen = datetime.now(timezone.utc)
-                db.session.commit()
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Heartbeat write failed: %s", exc)
-        # Also touch a local file so Docker healthcheck can verify without a DB query
-        try:
-            Path("/tmp/scheduler_heartbeat").touch()
-        except Exception:
-            pass
-        time.sleep(5)  # short sleep so email queue is drained promptly
+        if _now_mono - _last_heartbeat >= HEARTBEAT_INTERVAL_SECONDS:
+            # Write heartbeat so the admin dashboard can confirm the scheduler is alive
+            try:
+                with app.app_context():
+                    s = get_settings()
+                    s.scheduler_last_seen = datetime.now(timezone.utc)
+                    db.session.commit()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Heartbeat write failed: %s", exc)
+            # Also touch a local file so Docker healthcheck can verify without a DB query
+            try:
+                Path("/tmp/scheduler_heartbeat").touch()
+            except Exception:
+                pass
+            _last_heartbeat = _now_mono
+
+        # Poll interval must stay below MAIL_QUEUE_INTERVAL_SECONDS (and every other
+        # schedule.every(...) interval) — schedule.run_pending() only fires a job once
+        # this loop notices it's due, so a coarser sleep here would silently cap how
+        # often the mail queue (and any other job) can actually run.
+        time.sleep(1)

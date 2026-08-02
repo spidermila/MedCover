@@ -592,7 +592,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
         - Bulk sends are automatically spread over time, eliminating burst rate-limit risk.
         - Recipient-triggered batching means a user receives at most one event-notification email per drain tick, regardless of how many events changed for them.
         - `outbox_email` rows provide a permanent delivery audit trail viewable by admins. Merged `change_value` payloads preserve the initial-old value and the newest-new value for each field.
-        - The scheduler's main loop sleep was reduced from 30 s to 5 s so the queue is drained promptly.
+        - The scheduler's main loop sleep was reduced from 30 s to 5 s, then to 1 s, so that `schedule.run_pending()` polls often enough to honor `MAIL_QUEUE_INTERVAL_SECONDS` (and any other `schedule.every(...)` interval shorter than the old 5 s poll rate). The heartbeat DB write / file touch is throttled independently (`HEARTBEAT_INTERVAL_SECONDS`, still ~5 s) so the faster poll loop doesn't multiply DB writes.
         - Admin can preview the deferred pipeline end-to-end via the test-notification form at `/admin/notifications/`: the "Odeslat okamžitě" checkbox (default OFF) enqueues the notification through the normal deferred path; when checked, it bypasses the delay for template preview.
 
 - AD16 Google Sheets Event Import Strategy
