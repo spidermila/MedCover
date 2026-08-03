@@ -920,6 +920,9 @@ class TestUnavailabilityFutureEventWarning:
 
     # ── Diff-based warning tests ────────────────────────────────────
 
+    # Counter to generate unique event names across calls within the same test session.
+    _event_counter: int = 0
+
     def _make_event_with_plan(
         self,
         app,
@@ -928,10 +931,13 @@ class TestUnavailabilityFutureEventWarning:
         duration_hours: float = 8,
     ) -> int:
         """Create a future event with a single equipment plan for type_id.
-        Returns the event_id."""
+        Returns the event_id. Uses a unique name per call to avoid the master-event
+        unique-name constraint when a single test creates multiple events."""
+        TestUnavailabilityFutureEventWarning._event_counter += 1
+        name = f"Warn Event {TestUnavailabilityFutureEventWarning._event_counter}"
         future_start = datetime.now(timezone.utc) + timedelta(days=start_offset_days)
         future_end = future_start + timedelta(hours=duration_hours)
-        event_id = _make_event_in_status(app)
+        event_id = _make_event_in_status(app, name=name)
         with app.app_context():
             db.session.add(EventEquipmentPlan(event_id=event_id, equipment_type_id=type_id, quantity_required=1))
             ev = db.session.get(Event, event_id)
