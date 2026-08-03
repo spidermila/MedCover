@@ -131,11 +131,12 @@ def _attention_events_section(now: datetime, horizon: datetime) -> list[Event]:
     ]
 
 
-def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[Event, str, int, int]]:
+def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[Event, str, int, int, int]]:
     """Events in the planning horizon with an equipment shortage.
 
-    Returns list of (event, type_name, required, available) tuples.
-    Only one entry per event (the first shortage found).
+    Returns list of (event, type_name, required, available, extra_count) tuples.
+    One entry per event: the worst (first) shortage plus a count of additional
+    shortages so the dashboard can show "… a N další".
     """
     if not current_user.has_any_permission("event.equipment.plan", "event.view"):
         return []
@@ -224,10 +225,9 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
             committed_windows[r.equipment_type_id].append((r.event_id, s, e, r.committed))
 
     result = []
-    seen: set[int] = set()
     for event in events_with_plans:
-        if event.id in seen:
-            continue
+        first: tuple[Event, str, int, int] | None = None
+        extra_count = 0
         for plan in event.equipment_plans:
             tid = plan.equipment_type_id
             pool = _pool_for_window(tid, event.start_datetime, event.end_datetime)
@@ -238,9 +238,12 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
             )
             avail = pool - committed
             if avail < plan.quantity_required:
-                result.append((event, plan.equipment_type.name, plan.quantity_required, max(0, avail)))
-                seen.add(event.id)
-                break
+                if first is None:
+                    first = (event, plan.equipment_type.name, plan.quantity_required, max(0, avail))
+                else:
+                    extra_count += 1
+        if first is not None:
+            result.append((*first, extra_count))
     return result
 
 

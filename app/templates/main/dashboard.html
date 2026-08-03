@@ -145,7 +145,7 @@
     <a href="{{ url_for('equipment.items') }}" class="text-decoration-none small">Vybavení →</a>
   </div>
   <ul class="list-group list-group-flush">
-    {% for e, type_name, required, available in equipment_shortage_events %}
+    {% for e, type_name, required, available, extra in equipment_shortage_events %}
     <li class="list-group-item list-group-item-action py-2">
       <a href="{{ url_for('events.detail', event_id=e.id) }}" class="text-decoration-none stretched-link" aria-label="{{ e.name }}"></a>
       <div class="d-flex justify-content-between align-items-start">
@@ -155,6 +155,7 @@
         </div>
         <div class="text-end text-warning-emphasis small">
           {{ type_name }}: {{ available }}/{{ required }} ks
+          {% if extra %}<br><span class="text-muted">… a {{ extra }} další</span>{% endif %}
         </div>
       </div>
     </li>
