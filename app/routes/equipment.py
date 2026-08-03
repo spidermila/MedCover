@@ -301,6 +301,17 @@ def item_edit(item_id: int) -> str | Response:
             "unavailability_since": str(item.unavailability_since),
         }
 
+        # Snapshot which events are already short BEFORE any mutation so the
+        # post-commit diff only warns about newly introduced shortages.
+        old_short_ids: set[int] = set()
+        if can_modify_availability:
+            old_short_ids = {
+                e.id
+                for e in _compute_short_events_for_window(
+                    item.type_id, item.unavailability_since, item.unavailability_until
+                )
+            }
+
         item.name = name
         item.type_id = type_id
         item.serial_number = serial_number
@@ -308,7 +319,6 @@ def item_edit(item_id: int) -> str | Response:
         item.notes = notes
 
         if can_modify_availability:
-            was_available = item.is_available
             item.unavailability_reason = request.form.get("unavailability_reason", "").strip() or None
             new_since, since_ok = _parse_avail_dt(request.form.get("unavailability_since", ""))
             new_until, until_ok = _parse_avail_dt(request.form.get("unavailability_until", ""))
@@ -353,9 +363,12 @@ def item_edit(item_id: int) -> str | Response:
 
         flash(f"Položka vybavení „{item.name}“ byla uložena.", "success")
 
-        # Warn about shortages if the item just entered a maintenance window.
-        if can_modify_availability and was_available and not item.is_available:
-            _flash_unavailability_shortage_warning(item)
+        if can_modify_availability:
+            new_short_events = _compute_short_events_for_window(
+                item.type_id, item.unavailability_since, item.unavailability_until
+            )
+            newly_short = [e for e in new_short_events if e.id not in old_short_ids]
+            _flash_new_shortage_warning(newly_short)
 
         return redirect(url_for("equipment.items"))
 
@@ -367,46 +380,54 @@ def item_edit(item_id: int) -> str | Response:
 # ── Shared availability helpers ───────────────────────────────────────────────
 
 
-def _flash_unavailability_shortage_warning(item: EquipmentItem) -> None:
-    """Flash a warning if the item's maintenance window leaves future events short.
+def _compute_short_events_for_window(
+    type_id: int,
+    since: datetime | None,
+    until: datetime | None,
+) -> list[Event]:
+    """Return future events that are short of *type_id* given maintenance window
+    [since, until). Reads committed DB state.
 
-    Only events that overlap with [unavailability_since, unavailability_until]
-    (or all future events when until is NULL) are checked.
+    Returns [] when *since* is None -- no active/scheduled window means this item
+    contributes to the pool for all events (nothing is short due to it).
     """
+    if since is None:
+        return []
     now = datetime.now(timezone.utc)
     query = (
         db.select(Event)
         .join(EventEquipmentPlan, EventEquipmentPlan.event_id == Event.id)
         .where(
-            EventEquipmentPlan.equipment_type_id == item.type_id,
+            EventEquipmentPlan.equipment_type_id == type_id,
             Event.end_datetime > now,
             Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
             Event.archived == sa.false(),
+            Event.end_datetime > since,
         )
     )
-    # Narrow to events that overlap the maintenance window.
-    if item.unavailability_since is not None:
-        query = query.where(Event.end_datetime > item.unavailability_since)
-    if item.unavailability_until is not None:
-        query = query.where(Event.start_datetime < item.unavailability_until)
+    if until is not None:
+        query = query.where(Event.start_datetime < until)
     future_events = db.session.scalars(query.distinct()).all()
-    short = [
-        e for e in future_events if available_quantity_for_type(item.type_id, e.start_datetime, e.end_datetime) < 0
-    ]
-    if short:
-        event_links = Markup(", ").join(
-            Markup('<a href="{}">{}</a>').format(url_for("events.detail", event_id=e.id), e.name) for e in short[:3]
+    return [e for e in future_events if available_quantity_for_type(type_id, e.start_datetime, e.end_datetime) < 0]
+
+
+def _flash_new_shortage_warning(newly_short: list[Event]) -> None:
+    """Flash a warning listing events newly made short by a maintenance window change."""
+    if not newly_short:
+        return
+    event_links = Markup(", ").join(
+        Markup('<a href="{}">{}</a>').format(url_for("events.detail", event_id=e.id), e.name) for e in newly_short[:3]
+    )
+    suffix = Markup(" a další…") if len(newly_short) > 3 else Markup("")
+    flash(
+        Markup("Upozornění: servisní okno způsobí nedostatek vybavení pro {} akci/akce/akcí: ").format(
+            len(newly_short),
         )
-        suffix = Markup(" a další…") if len(short) > 3 else Markup("")
-        flash(
-            Markup("Upozornění: označení jako nedostupné způsobí nedostatek vybavení pro {} akci/akce/akcí: ").format(
-                len(short),
-            )
-            + event_links
-            + suffix
-            + Markup("."),
-            "warning",
-        )
+        + event_links
+        + suffix
+        + Markup("."),
+        "warning",
+    )
 
 
 # ── Items: Mark unavailable / available ──────────────────────────────────────
@@ -454,7 +475,12 @@ def item_mark_unavailable(item_id: int) -> Response:
     db.session.commit()
 
     flash(f"Položka „{item.name}“ byla označena jako nedostupná.", "success")
-    _flash_unavailability_shortage_warning(item)
+    # Item had no active window before this call (enforced by the is_available guard
+    # above), so old_short is always empty -- every short event is newly short.
+    new_short_events = _compute_short_events_for_window(
+        item.type_id, item.unavailability_since, item.unavailability_until
+    )
+    _flash_new_shortage_warning(new_short_events)
     return redirect(url_for("equipment.items"))
 
 

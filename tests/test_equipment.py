@@ -918,6 +918,167 @@ class TestUnavailabilityFutureEventWarning:
         assert "Upozornění" not in body
         assert "nedostatek" not in body.lower()
 
+    # ── Diff-based warning tests ────────────────────────────────────
+
+    def _make_event_with_plan(
+        self,
+        app,
+        type_id: int,
+        start_offset_days: float,
+        duration_hours: float = 8,
+    ) -> int:
+        """Create a future event with a single equipment plan for type_id.
+        Returns the event_id."""
+        future_start = datetime.now(timezone.utc) + timedelta(days=start_offset_days)
+        future_end = future_start + timedelta(hours=duration_hours)
+        event_id = _make_event_in_status(app)
+        with app.app_context():
+            db.session.add(EventEquipmentPlan(event_id=event_id, equipment_type_id=type_id, quantity_required=1))
+            ev = db.session.get(Event, event_id)
+            ev.start_datetime = future_start
+            ev.end_datetime = future_end
+            db.session.commit()
+        return event_id
+
+    def test_extending_active_window_warns_only_for_newly_covered_events(self, app, admin_client):
+        """Case 2: item already in maintenance; edit extends until to cover a new event.
+        Warning fires only for the newly covered event, not the one already short."""
+        type_id = _make_type(app, "ExtWin Type")
+        item_id = _make_item(app, type_id, "ExtWin Item")
+
+        # E1 starts in 5 days — will be inside old AND new window
+        # E2 starts in 15 days — will be outside old window (until=+10d) but inside new (until=+20d)
+        self._make_event_with_plan(app, type_id, start_offset_days=5)
+        event2_id = self._make_event_with_plan(app, type_id, start_offset_days=15)
+
+        # Seed old maintenance window: since = yesterday, until = +10 days
+        with app.app_context():
+            now = datetime.now(timezone.utc)
+            item = db.session.get(EquipmentItem, item_id)
+            item.unavailability_since = now - timedelta(days=1)
+            item.unavailability_until = now + timedelta(days=10)
+            db.session.commit()
+            version = item.version
+
+        # Edit: extend until to +20 days (now covers E2 too)
+        resp = admin_client.post(
+            f"/equipment/items/{item_id}/edit",
+            data={
+                "name": "ExtWin Item",
+                "type_id": str(type_id),
+                "version": str(version),
+                "unavailability_reason": "Oprava",
+                "unavailability_since": (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d"),
+                "unavailability_until": (datetime.now(timezone.utc) + timedelta(days=20)).strftime("%Y-%m-%d"),
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        # A warning must fire (E2 is newly short)
+        assert "Upozornění" in body or "nedostatek" in body.lower()
+
+        with app.app_context():
+            ev2 = db.session.get(Event, event2_id)
+            # The warning should mention E2's name
+            assert ev2.name in body
+
+    def test_shortening_window_no_new_warning(self, app, admin_client):
+        """Case 6: edit shortens the maintenance window, freeing future events.
+        No NEW warning should fire because no new events became short."""
+        type_id = _make_type(app, "ShortenWin Type")
+        item_id = _make_item(app, type_id, "ShortenWin Item")
+
+        # Two future events — both initially within the window
+        self._make_event_with_plan(app, type_id, start_offset_days=5)
+        event2_id = self._make_event_with_plan(app, type_id, start_offset_days=15)  # noqa: F841
+
+        # Seed window covering both events: since=yesterday, until=+20d
+        with app.app_context():
+            now = datetime.now(timezone.utc)
+            item = db.session.get(EquipmentItem, item_id)
+            item.unavailability_since = now - timedelta(days=1)
+            item.unavailability_until = now + timedelta(days=20)
+            db.session.commit()
+            version = item.version
+
+        # Edit: shorten until to +10 days (E2 at +15d is now freed)
+        resp = admin_client.post(
+            f"/equipment/items/{item_id}/edit",
+            data={
+                "name": "ShortenWin Item",
+                "type_id": str(type_id),
+                "version": str(version),
+                "unavailability_reason": "Oprava",
+                "unavailability_since": (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d"),
+                "unavailability_until": (datetime.now(timezone.utc) + timedelta(days=10)).strftime("%Y-%m-%d"),
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        # No NEW warning — no new events became short
+        assert "Upozornění" not in body
+        assert "nedostatek" not in body.lower()
+
+    def test_reason_only_edit_no_warning(self, app, admin_client):
+        """Case 7: only the reason text changes; no window dates are set.
+        No warning should fire."""
+        type_id = _make_type(app, "ReasonOnly Type")
+        item_id = _make_item(app, type_id, "ReasonOnly Item")
+        self._make_event_with_plan(app, type_id, start_offset_days=5)
+
+        with app.app_context():
+            version = db.session.get(EquipmentItem, item_id).version
+
+        resp = admin_client.post(
+            f"/equipment/items/{item_id}/edit",
+            data={
+                "name": "ReasonOnly Item",
+                "type_id": str(type_id),
+                "version": str(version),
+                # No unavailability_since / until → window stays cleared
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        assert "Upozornění" not in body
+        assert "nedostatek" not in body.lower()
+
+    def test_rescheduling_expired_window_to_future_warns(self, app, admin_client):
+        """Case 5: expired window is rescheduled to cover a future event.
+        Warning should fire because the future event is newly short."""
+        type_id = _make_type(app, "Reschedule Type")
+        item_id = _make_item(app, type_id, "Reschedule Item")
+        event_id = self._make_event_with_plan(app, type_id, start_offset_days=5)  # noqa: F841
+
+        # Seed an already-expired window (both dates in the past)
+        with app.app_context():
+            now = datetime.now(timezone.utc)
+            item = db.session.get(EquipmentItem, item_id)
+            item.unavailability_since = now - timedelta(days=60)
+            item.unavailability_until = now - timedelta(days=1)
+            db.session.commit()
+            version = item.version
+
+        # Reschedule to a future window that covers the event
+        resp = admin_client.post(
+            f"/equipment/items/{item_id}/edit",
+            data={
+                "name": "Reschedule Item",
+                "type_id": str(type_id),
+                "version": str(version),
+                "unavailability_reason": "Oprava",
+                "unavailability_since": (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d"),
+                "unavailability_until": (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d"),
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        assert "Upozornění" in body or "nedostatek" in body.lower()
+
 
 # ── Plan-add conflict message includes conflicting event ──────────────────────
 
