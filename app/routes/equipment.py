@@ -292,6 +292,16 @@ def item_edit(item_id: int) -> str | Response:
                 can_modify_availability=can_modify_availability,
             )
 
+        if not type_id:
+            flash("Typ vybavení je povinný.", "danger")
+            return render_template(
+                "equipment/item_form.html",
+                item=item,
+                types=types,
+                edit=True,
+                can_modify_availability=can_modify_availability,
+            )
+
         before = {
             "name": item.name,
             "type_id": item.type_id,
