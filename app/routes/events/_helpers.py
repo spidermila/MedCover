@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
-from flask import url_for
+from flask import flash, url_for
 from flask_login import current_user
 from markupsafe import Markup
 from sqlalchemy import collate
@@ -268,10 +268,16 @@ def parse_equipment_plans_from_form(form: dict) -> list[tuple[int, int]]:
             continue
         type_id = int(raw_type)
         if type_id in seen:
-            continue  # deduplicate
+            et = db.session.get(EquipmentType, type_id)
+            type_name = et.name if et else str(type_id)
+            flash(f"Typ vybavení „{type_name}“ byl zadán vícekrát — zachován první výskyt.", "warning")
+            continue
         try:
             qty = max(1, int(raw_qty))
         except ValueError:
+            et = db.session.get(EquipmentType, type_id)
+            type_name = et.name if et else str(type_id)
+            flash(f"Množství pro typ vybavení „{type_name}“ nebylo možné načíst — použita hodnota 1.", "warning")
             qty = 1
         plans.append((type_id, qty))
         seen.add(type_id)
