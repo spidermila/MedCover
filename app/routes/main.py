@@ -5,6 +5,7 @@ import sqlalchemy as sa
 from flask import Blueprint, Response, jsonify, render_template
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
+from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.assignment import Assignment
@@ -141,6 +142,7 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
 
     events_with_plans = db.session.scalars(
         db.select(Event)
+        .options(selectinload(Event.equipment_plans))  # type: ignore[arg-type]
         .where(
             Event.start_datetime > now,
             Event.start_datetime <= horizon,
