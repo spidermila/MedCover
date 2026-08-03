@@ -471,6 +471,17 @@ def item_mark_unavailable(item_id: int) -> Response:
         flash("Konec servisního okna musí být po jeho začátku.", "danger")
         return redirect(url_for("equipment.items"))
 
+    # Snapshot events already short under the current window before mutating.
+    # For the normal UI flow unavailability_since is None here (the template shows
+    # the inline form only when the item has no window at all), so this returns []
+    # immediately with no DB round-trip. The snapshot is taken defensively to handle
+    # direct POSTs for items that have a future or expired window — in those cases the
+    # diff prevents spurious warnings for shortages that pre-existed the change.
+    old_short_ids = {
+        e.id
+        for e in _compute_short_events_for_window(item.type_id, item.unavailability_since, item.unavailability_until)
+    }
+
     item.unavailability_reason = reason
     item.unavailability_since = since
     item.unavailability_until = until
@@ -485,12 +496,11 @@ def item_mark_unavailable(item_id: int) -> Response:
     db.session.commit()
 
     flash(f"Položka „{item.name}“ byla označena jako nedostupná.", "success")
-    # Item had no active window before this call (enforced by the is_available guard
-    # above), so old_short is always empty -- every short event is newly short.
     new_short_events = _compute_short_events_for_window(
         item.type_id, item.unavailability_since, item.unavailability_until
     )
-    _flash_new_shortage_warning(new_short_events)
+    newly_short = [e for e in new_short_events if e.id not in old_short_ids]
+    _flash_new_shortage_warning(newly_short)
     return redirect(url_for("equipment.items"))
 
 
