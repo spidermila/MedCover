@@ -1,7 +1,7 @@
 """Event equipment routes: plan add/remove and type-level availability check."""
 
 import sqlalchemy as sa
-from flask import Response, flash, redirect, request, url_for
+from flask import Response, abort, flash, redirect, request, url_for
 from flask_login import login_required
 from markupsafe import Markup
 
@@ -32,7 +32,11 @@ def equipment_plan_add(event_id: int) -> Response:
         flash("Zadejte platný typ a množství.", "danger")
         return redirect(url_for("events.detail", event_id=event_id))
 
-    et = get_or_404(EquipmentType, type_id)
+    # Pessimistic lock: serializes concurrent plan-add requests for the same type,
+    # preventing the check-then-insert TOCTOU race (mirrors spot assignment locking).
+    et = db.session.scalar(db.select(EquipmentType).where(EquipmentType.id == type_id).with_for_update())
+    if et is None:
+        abort(404)
 
     # exclude_event_id already excludes this event's own committed quantity from
     # the calculation, so `available` is exactly what remains after other events.

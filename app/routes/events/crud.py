@@ -370,6 +370,15 @@ def create() -> str | Response:
 
         # Parse and validate equipment plans submitted in the form.
         eq_plans = parse_equipment_plans_from_form(request.form)
+        # Pessimistic lock: acquire UPDLOCK on each planned type row in a consistent
+        # order before the availability check to prevent TOCTOU races.
+        if eq_plans:
+            db.session.scalars(
+                db.select(EquipmentType)
+                .where(EquipmentType.id.in_(sorted({t for t, _ in eq_plans})))
+                .order_by(EquipmentType.id)
+                .with_for_update()
+            ).all()
         eq_errors = check_equipment_conflicts(eq_plans, event.start_datetime, event.end_datetime)
         if eq_errors:
             db.session.rollback()
@@ -617,6 +626,15 @@ def edit(event_id: int) -> str | Response:
 
         # Validate and apply equipment plans.
         eq_plans = parse_equipment_plans_from_form(request.form)
+        # Pessimistic lock: acquire UPDLOCK on each planned type row in a consistent
+        # order before the availability check to prevent TOCTOU races.
+        if eq_plans:
+            db.session.scalars(
+                db.select(EquipmentType)
+                .where(EquipmentType.id.in_(sorted({t for t, _ in eq_plans})))
+                .order_by(EquipmentType.id)
+                .with_for_update()
+            ).all()
         eq_errors = check_equipment_conflicts(
             eq_plans, event.start_datetime, event.end_datetime, exclude_event_id=event.id
         )
