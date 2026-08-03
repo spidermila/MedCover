@@ -622,6 +622,7 @@ def edit(event_id: int) -> str | Response:
         )
         if eq_errors:
             db.session.rollback()
+            db.session.refresh(event)
             for msg in eq_errors:
                 flash(msg, "danger")
             return _render_edit()
@@ -638,6 +639,7 @@ def edit(event_id: int) -> str | Response:
             spot_error = validate_event_spots_config(list(event.spots))
             if spot_error:
                 db.session.rollback()
+                db.session.refresh(event)
                 flash(spot_error, "danger")
                 return _render_edit()
 
