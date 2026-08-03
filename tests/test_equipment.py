@@ -644,7 +644,7 @@ class TestFutureMaintenanceCancellation:
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        body = resp.body if hasattr(resp, "body") else resp.data.decode()
+        body = resp.data.decode()
         assert "zrušen" in body
         with app.app_context():
             item = db.session.get(EquipmentItem, item_id)
