@@ -162,3 +162,33 @@ class TestDashboardEquipmentShortage:
         # Both events compete for the one item — both must be shown as short
         assert "Shortage Event A" in body
         assert "Shortage Event B" in body
+
+    def test_multiple_shortages_per_event_shows_extra_hint(self, app, admin_client):
+        """Event with two shortage types → first type shown, '… a 1 další' hint visible."""
+        with app.app_context():
+            me = MasterEvent(name="Shortage ME Multi")
+            db.session.add(me)
+            db.session.flush()
+            me_id = me.id
+            et1 = EquipmentType(name="Shortage Multi Type 1")
+            et2 = EquipmentType(name="Shortage Multi Type 2")
+            db.session.add_all([et1, et2])
+            db.session.flush()
+            # One item of each type — events will need 2 of each → shortage on both
+            db.session.add(EquipmentItem(name="Multi Item 1", type_id=et1.id))
+            db.session.add(EquipmentItem(name="Multi Item 2", type_id=et2.id))
+            db.session.commit()
+            type1_id, type2_id = et1.id, et2.id
+
+        event_id = self._make_overlapping_event(app, me_id, "Shortage Multi Event")
+        with app.app_context():
+            db.session.add(EventEquipmentPlan(event_id=event_id, equipment_type_id=type1_id, quantity_required=2))
+            db.session.add(EventEquipmentPlan(event_id=event_id, equipment_type_id=type2_id, quantity_required=2))
+            db.session.commit()
+
+        resp = admin_client.get("/dashboard")
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        assert "Shortage Multi Event" in body
+        # The "… a 1 další" hint must appear because there are two shortage types
+        assert "další" in body
