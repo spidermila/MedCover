@@ -861,12 +861,14 @@ class TestUnavailabilityFutureEventWarning:
             event.end_datetime = future_end
             db.session.commit()
 
+        with app.app_context():
+            version = db.session.get(EquipmentItem, item_id).version
         resp = admin_client.post(
             f"/equipment/items/{item_id}/edit",
             data={
                 "name": "Warn Item A",
                 "type_id": str(type_id),
-                "version": "1",
+                "version": str(version),
                 "unavailability_reason": "Oprava",
                 "unavailability_since": "2026-01-01",
             },
@@ -897,12 +899,14 @@ class TestUnavailabilityFutureEventWarning:
             event.end_datetime = future_end
             db.session.commit()
 
+        with app.app_context():
+            version = db.session.get(EquipmentItem, item1_id).version
         resp = admin_client.post(
             f"/equipment/items/{item1_id}/edit",
             data={
                 "name": "Warn Item B1",
                 "type_id": str(type_id),
-                "version": "1",
+                "version": str(version),
                 "unavailability_reason": "Oprava",
                 "unavailability_since": "2026-01-01",
             },
