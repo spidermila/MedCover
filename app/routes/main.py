@@ -238,7 +238,7 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
             )
             avail = pool - committed
             if avail < plan.quantity_required:
-                result.append((event, plan.equipment_type.name, plan.quantity_required, avail))
+                result.append((event, plan.equipment_type.name, plan.quantity_required, max(0, avail)))
                 seen.add(event.id)
                 break
     return result
