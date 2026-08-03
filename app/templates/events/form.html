@@ -417,12 +417,14 @@
 (function () {
   var flag = document.getElementById('spots_changed');
   if (!flag) return;
-  function markChanged() { flag.value = '1'; }
+  function markChanged() {
+    flag.value = '1';
+    obs.disconnect();
+  }
+  var obs = new MutationObserver(markChanged);
   document.getElementById('addSpotBtn').addEventListener('click', markChanged);
   document.getElementById('spotRows').addEventListener('change', markChanged);
-  new MutationObserver(markChanged).observe(
-    document.getElementById('spotRows'), { childList: true }
-  );
+  obs.observe(document.getElementById('spotRows'), { childList: true });
 })();
 </script>
 {% endif %}
