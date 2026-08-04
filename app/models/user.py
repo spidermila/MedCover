@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from flask_login import UserMixin
-from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapped, deferred
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
@@ -55,6 +55,11 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     )
     dashboard_horizon_days = db.Column(db.Integer, default=30, nullable=False, server_default="30")
     dark_mode = db.Column(db.Boolean, default=False, nullable=False, server_default="false")
+    # Handwritten-signature image (PNG bytes, mode L, ≤ 50 KB) embedded into the
+    # user's work-report xlsx. Deferred so it never rides along with normal
+    # UserAccount selects; loaded only when explicitly accessed.
+    signature_image = deferred(db.Column(db.LargeBinary, nullable=True))
+    signature_mimetype = db.Column(db.String(50), nullable=True)
     # Optimistic locking — increment on every write; catch StaleDataError → HTTP 409
     version = db.Column(db.Integer, default=1, nullable=False)
     # Single-use password reset: nonce is set when a reset link is issued and

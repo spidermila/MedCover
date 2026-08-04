@@ -17,3 +17,5 @@ pytz
 holidays
 openpyxl
 icalendar
+Pillow
+pillow-heif
