@@ -1227,6 +1227,10 @@ def _build_event_section(event: Event, rows: list, fillable_qual_ids: set[int] |
                 unfilled_spots_cache = _summarise_spots(event.unfilled_spots)
             entry["spots"] = unfilled_spots_cache
             entry["show_spots"] = not unfilled_spots_table_claimed
+            # Override the payload's stale unfilled_count with the live value so
+            # the sentence never contradicts the table (spots may have been
+            # filled between enqueue and drain).
+            entry["unfilled_count"] = len(unfilled_spots_cache)
             unfilled_spots_table_claimed = True
 
     return {

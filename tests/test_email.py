@@ -1552,11 +1552,15 @@ class TestDrainBatchedOutbox:
         assert "Řidič" in html_captured[0]
         assert "odhlášeni" in html_captured[0]
 
-    def test_unfilled_reminder_count(self, app):
-        """Unfilled_reminder row → HTML contains count and Czech word."""
+    def test_unfilled_reminder_count_matches_live_spots(self, app):
+        """Unfilled_reminder → HTML count reflects live unfilled_spots, not the
+        stale payload value captured at enqueue time."""
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
+            _add_spot(event, "Volná A", [])
+            _add_spot(event, "Volná B", [])
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            # Payload claims 3 (stale); live truth is 2.
             _make_batched_row(
                 user,
                 event,
@@ -1574,8 +1578,11 @@ class TestDrainBatchedOutbox:
         with app.app_context():
             with patch("flask_mail.Mail.send", side_effect=capture_send):
                 drain_batched_outbox()
-        assert "3" in html_captured[0]
-        assert "neobsazen" in html_captured[0]
+        html = html_captured[0]
+        # The count sentence must reflect the live spot list, not the stale payload.
+        assert "<strong>2</strong>" in html
+        assert "<strong>3</strong>" not in html
+        assert "neobsazen" in html
 
     def test_debriefing_invitation_link(self, app):
         """Debriefing_invitation row → HTML contains a debriefing link."""
@@ -2221,6 +2228,9 @@ class TestUnfilledReminderSpotTable:
         html = html_captured[0]
         assert "Všechna povinná místa jsou nyní obsazená." in html
         assert "Požadovaná kvalifikace" not in html
+        # No stale "Akce má 0 neobsazených pozic" sentence should appear
+        # — the reassurance line stands alone.
+        assert "neobsazen" not in html
 
 
 class TestBatchKeyIncludesToEmail:
