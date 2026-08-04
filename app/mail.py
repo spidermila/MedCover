@@ -54,6 +54,7 @@ from app.models.event import Event
 from app.models.outbox import OutboxEmail
 from app.models.settings import AppSettings, get_settings
 from app.models.user import UserAccount
+from app.queries import user_fillable_qual_ids
 from app.utils import external_url_for, get_app_tz
 
 if TYPE_CHECKING:
@@ -1187,28 +1188,40 @@ def _format_event_datetime_range(event: Event) -> str:
     return f"{start} – {end}"
 
 
-def _build_event_section(event: Event, rows: list) -> dict:
+def _build_event_section(event: Event, rows: list, fillable_qual_ids: set[int] | None) -> dict:
     """Build one event section dict for the batched email template.
 
     Entries whose type benefits from listing spot qualification requirements
-    (event_published / assignments_opened → all spots; unfilled_reminder
-    → only unfilled mandatory spots) receive a live spot snapshot. If
-    several entries in the same section would repeat the same table, only
-    the first renders it (``show_spots``) so recipients don't see duplicates.
+    (event_published / assignments_opened → spots the recipient is eligible
+    for; unfilled_reminder → all unfilled mandatory spots regardless of
+    recipient eligibility, since that goes to coordinators) receive a live
+    spot snapshot. If several entries in the same section would repeat the
+    same table, only the first renders it (``show_spots``) so recipients
+    don't see duplicates.
+
+    ``fillable_qual_ids`` is the recipient's fillable qualification set (from
+    :func:`app.queries.user_fillable_qual_ids`); pass ``None`` when the
+    recipient can't be resolved, in which case the eligibility filter degrades
+    to "show nothing" so we don't accidentally advertise ineligible spots.
     """
     entries = [_row_to_entry(r) for r in rows]
-    all_spots_cache: list[dict[str, Any]] | None = None
+    eligible_spots_cache: list[dict[str, Any]] | None = None
     unfilled_spots_cache: list[dict[str, Any]] | None = None
-    all_spots_table_claimed = False
+    eligible_spots_table_claimed = False
     unfilled_spots_table_claimed = False
     for entry in entries:
         etype = entry.get("type")
         if etype in _ALL_SPOTS_ENTRY_TYPES:
-            if all_spots_cache is None:
-                all_spots_cache = _summarise_spots(event.spots)
-            entry["spots"] = all_spots_cache
-            entry["show_spots"] = not all_spots_table_claimed
-            all_spots_table_claimed = True
+            if eligible_spots_cache is None:
+                if fillable_qual_ids is None:
+                    eligible = []
+                else:
+                    eligible = [s for s in event.spots if s.is_eligible_for(fillable_qual_ids)]
+                eligible_spots_cache = _summarise_spots(eligible)
+            entry["spots"] = eligible_spots_cache
+            entry["show_spots"] = not eligible_spots_table_claimed
+            entry["total_spot_count"] = len(event.spots)
+            eligible_spots_table_claimed = True
         elif etype in _UNFILLED_SPOTS_ENTRY_TYPES:
             if unfilled_spots_cache is None:
                 unfilled_spots_cache = _summarise_spots(event.unfilled_spots)
@@ -1330,7 +1343,10 @@ def drain_batched_outbox() -> bool:
 
     # Sort event sections by event.start_datetime ASC.
     ordered_events = sorted(events_by_id.values(), key=lambda e: e.start_datetime)
-    event_sections = [_build_event_section(e, grouped[e.id]) for e in ordered_events if e.id in grouped]
+    fillable_qual_ids = user_fillable_qual_ids(user_obj) if user_obj is not None else None
+    event_sections = [
+        _build_event_section(e, grouped[e.id], fillable_qual_ids) for e in ordered_events if e.id in grouped
+    ]
 
     # Subject line.
     if len(event_sections) == 1:

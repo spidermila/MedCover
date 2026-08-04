@@ -54,10 +54,24 @@
       <p>Byli jste odhlášeni z pozice <strong>{{ entry.spot_description }}</strong>.</p>
     {% elif entry.type == "event_published" %}
       <p>Akce byla zveřejněna.</p>
-      {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}
+      {% if entry.show_spots and entry.total_spot_count %}
+        {% if entry.spots %}
+          <p>Seznam pozic, pro které splňujete požadavky:</p>
+          {{ spot_table(entry.spots) }}
+        {% else %}
+          <p>Nesplňujete požadavky žádné z pozic této akce.</p>
+        {% endif %}
+      {% endif %}
     {% elif entry.type == "assignments_opened" %}
       <p>Přihlášky byly otevřeny.</p>
-      {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}
+      {% if entry.show_spots and entry.total_spot_count %}
+        {% if entry.spots %}
+          <p>Seznam pozic, pro které splňujete požadavky:</p>
+          {{ spot_table(entry.spots) }}
+        {% else %}
+          <p>Nesplňujete požadavky žádné z pozic této akce.</p>
+        {% endif %}
+      {% endif %}
     {% elif entry.type == "event_cancelled" %}
       <p>Akce byla zrušena.</p>
     {% elif entry.type == "event_archived" %}
