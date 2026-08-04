@@ -33,7 +33,7 @@
     <a href="{{ section.event_url }}">{{ section.event_name }}</a>
   </h3>
   <div style="color:#555555;font-size:12px;margin-bottom:8px;">
-    {{ section.start_datetime_local }}
+    {{ section.datetime_range_local }}
   </div>
 
   {% for entry in section.rows %}
@@ -71,6 +71,10 @@
         {%- elif n < 5 %} neobsazené pozice
         {%- else %} neobsazených pozic
         {%- endif -%}.</p>
+      {% if entry.show_spots %}
+        {% if entry.spots %}{{ spot_table(entry.spots) }}
+        {% else %}<p>Všechna povinná místa jsou nyní obsazená.</p>{% endif %}
+      {% endif %}
     {% elif entry.type == "debriefing_invitation" %}
       <p><a href="{{ entry.debriefing_url }}">Vyplňte prosím debriefing.</a></p>
     {% else %}
