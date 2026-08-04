@@ -1151,7 +1151,7 @@ def _row_to_entry(row: OutboxEmail) -> dict:
 
 
 def _build_event_section(event: object, rows: list) -> dict:
-    """Build one event section dict for the batched email template.."""
+    """Build one event section dict for the batched email template."""
 
     return {
         "event_name": event.name,  # type: ignore[attr-defined]
