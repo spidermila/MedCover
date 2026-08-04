@@ -220,8 +220,8 @@ if __name__ == "__main__":
             # Also touch a local file so Docker healthcheck can verify without a DB query
             try:
                 Path("/tmp/scheduler_heartbeat").touch()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Heartbeat file touch failed: %s", exc)
             _last_heartbeat = _now_mono
 
         # Poll interval must stay below MAIL_QUEUE_INTERVAL_SECONDS (and every other
