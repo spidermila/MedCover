@@ -42,6 +42,7 @@ from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.outbox import OutboxEmail
+from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
@@ -1845,6 +1846,169 @@ class TestDrainBatchedOutbox:
         idx_earlier = html.index("Earlier Event")
         idx_later = html.index("Later Event")
         assert idx_earlier < idx_later, "Earlier-start event section must appear before later-start event section"
+
+
+def _add_spot(
+    event: Event,
+    description: str,
+    qualifications: list[Qualification] | None = None,
+    is_optional: bool = False,
+) -> EventSpot:
+    spot = EventSpot(event_id=event.id, description=description, is_optional=is_optional)
+    if qualifications:
+        spot.required_qualifications = qualifications
+    db.session.add(spot)
+    db.session.flush()
+    return spot
+
+
+class TestBatchedSpotQualificationsInEmail:
+    """event_published / assignments_opened emails must list each spot's
+    description, required qualifications, and current fill state so recipients
+    can decide whether to open the app."""
+
+    def test_event_published_lists_spots_with_qualifications(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            q_med = Qualification(name="Lékař")
+            q_drv = Qualification(name="Řidič")
+            db.session.add_all([q_med, q_drv])
+            db.session.flush()
+            _add_spot(event, "Stanoviště 1", [q_med, q_drv])
+            _add_spot(event, "Doprava", [q_drv])
+            _add_spot(event, "Volný pomocník", [])
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        html = html_captured[0]
+        assert "Stanoviště 1" in html
+        assert "Doprava" in html
+        assert "Volný pomocník" in html
+        assert "Lékař" in html
+        assert "Řidič" in html
+        assert "Bez požadavků" in html
+        assert "Volné" in html
+
+    def test_assignments_opened_lists_spots_with_qualifications(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            q_med = Qualification(name="Lékař")
+            db.session.add(q_med)
+            db.session.flush()
+            _add_spot(event, "Stanoviště A", [q_med])
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "assignments_opened", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        html = html_captured[0]
+        assert "Stanoviště A" in html
+        assert "Lékař" in html
+        assert "Požadovaná kvalifikace" in html
+
+    def test_deleted_qualification_hidden_from_email(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            q_alive = Qualification(name="Aktivní")
+            q_dead = Qualification(name="Zrušená", is_deleted=True)
+            db.session.add_all([q_alive, q_dead])
+            db.session.flush()
+            _add_spot(event, "Pozice X", [q_alive, q_dead])
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        html = html_captured[0]
+        assert "Aktivní" in html
+        assert "Zrušená" not in html
+
+    def test_optional_spot_marked_in_email(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            _add_spot(event, "Rezerva", [], is_optional=True)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        assert "(volitelná)" in html_captured[0]
+
+    def test_filled_spot_shown_as_obsazeno(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            spot = _add_spot(event, "Zapln\u011bn\u00e1 pozice", [])
+            other = UserAccount(email="filler@test.cz", name="Filler", is_active=True)
+            other.set_password("x")
+            other.roles = [db.session.scalar(db.select(Role).where(Role.name == "Member"))]
+            db.session.add(other)
+            db.session.flush()
+            db.session.add(Assignment(spot_id=spot.id, user_id=other.id))
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        assert "Obsazeno" in html_captured[0]
+
+    def test_event_without_spots_omits_spot_table(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        html = html_captured[0]
+        assert "Požadovaná kvalifikace" not in html
+        assert "Akce byla zveřejněna." in html
+
+    def test_published_and_assignments_opened_render_spot_table_once(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            q = Qualification(name="Sanitář")
+            db.session.add(q)
+            db.session.flush()
+            _add_spot(event, "Jediná pozice", [q])
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            _make_batched_row(user, event, "assignments_opened", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        html = html_captured[0]
+        assert html.count("Jediná pozice") == 1
+        assert html.count("Požadovaná kvalifikace") == 1
 
 
 class TestBatchKeyIncludesToEmail:
