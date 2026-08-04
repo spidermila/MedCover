@@ -1150,17 +1150,19 @@ def _row_to_entry(row: OutboxEmail) -> dict:
     return {"type": "legacy", "legacy_html": row.html_body or ""}
 
 
-_SPOT_INFO_ENTRY_TYPES = frozenset({"event_published", "assignments_opened"})
+_ALL_SPOTS_ENTRY_TYPES = frozenset({"event_published", "assignments_opened"})
+_UNFILLED_SPOTS_ENTRY_TYPES = frozenset({"unfilled_reminder"})
+_SPOT_INFO_ENTRY_TYPES = _ALL_SPOTS_ENTRY_TYPES | _UNFILLED_SPOTS_ENTRY_TYPES
 
 
-def _build_spot_summaries(event: Event) -> list[dict[str, Any]]:
-    """Snapshot the event's spots for inclusion in the batched email.
+def _summarise_spots(spots: Any) -> list[dict[str, Any]]:
+    """Snapshot an iterable of EventSpot rows for the batched email.
 
     Deleted qualifications are filtered silently (email is a decision aid,
     not an audit view).
     """
     summaries: list[dict[str, Any]] = []
-    for spot in event.spots:
+    for spot in spots:
         active_quals = [q.name for q in spot.required_qualifications if not q.is_deleted]
         summaries.append(
             {
@@ -1173,31 +1175,51 @@ def _build_spot_summaries(event: Event) -> list[dict[str, Any]]:
     return summaries
 
 
+def _format_event_datetime_range(event: Event) -> str:
+    """Return the event's start–end window in local time.
+
+    Format: ``dd.mm.yyyy HH:MM – dd.mm.yyyy HH:MM`` (en-dash separator, both
+    dates always spelled out so multi-day events read naturally).
+    """
+    tz = get_app_tz()
+    start = event.start_datetime.astimezone(tz).strftime("%d.%m.%Y %H:%M")
+    end = event.end_datetime.astimezone(tz).strftime("%d.%m.%Y %H:%M")
+    return f"{start} – {end}"
+
+
 def _build_event_section(event: Event, rows: list) -> dict:
     """Build one event section dict for the batched email template.
 
-    For entries whose type benefits from listing spot qualification
-    requirements (event_published, assignments_opened), attach a live
-    spot snapshot. If several such entries land in the same section,
-    only the first renders the table (``show_spots``) so recipients
-    don't see duplicates.
+    Entries whose type benefits from listing spot qualification requirements
+    (event_published / assignments_opened → all spots; unfilled_reminder
+    → only unfilled mandatory spots) receive a live spot snapshot. If
+    several entries in the same section would repeat the same table, only
+    the first renders it (``show_spots``) so recipients don't see duplicates.
     """
     entries = [_row_to_entry(r) for r in rows]
-    spots: list[dict[str, Any]] | None = None
-    spot_table_claimed = False
+    all_spots_cache: list[dict[str, Any]] | None = None
+    unfilled_spots_cache: list[dict[str, Any]] | None = None
+    all_spots_table_claimed = False
+    unfilled_spots_table_claimed = False
     for entry in entries:
-        if entry.get("type") not in _SPOT_INFO_ENTRY_TYPES:
-            continue
-        if spots is None:
-            spots = _build_spot_summaries(event)
-        entry["spots"] = spots
-        entry["show_spots"] = not spot_table_claimed
-        spot_table_claimed = True
+        etype = entry.get("type")
+        if etype in _ALL_SPOTS_ENTRY_TYPES:
+            if all_spots_cache is None:
+                all_spots_cache = _summarise_spots(event.spots)
+            entry["spots"] = all_spots_cache
+            entry["show_spots"] = not all_spots_table_claimed
+            all_spots_table_claimed = True
+        elif etype in _UNFILLED_SPOTS_ENTRY_TYPES:
+            if unfilled_spots_cache is None:
+                unfilled_spots_cache = _summarise_spots(event.unfilled_spots)
+            entry["spots"] = unfilled_spots_cache
+            entry["show_spots"] = not unfilled_spots_table_claimed
+            unfilled_spots_table_claimed = True
 
     return {
         "event_name": event.name,
         "event_url": external_url_for("events.detail", event_id=event.id),
-        "start_datetime_local": event.start_datetime.astimezone(get_app_tz()).strftime("%d.%m.%Y %H:%M"),
+        "datetime_range_local": _format_event_datetime_range(event),
         "rows": entries,
     }
 

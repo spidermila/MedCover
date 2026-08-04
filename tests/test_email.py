@@ -2011,6 +2011,127 @@ class TestBatchedSpotQualificationsInEmail:
         assert html.count("Požadovaná kvalifikace") == 1
 
 
+class TestBatchedEventDatetimeRange:
+    """Every event section header must show the start–end window in local
+    time so recipients can gauge availability without opening the app."""
+
+    def test_datetime_range_rendered_in_section_header(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            event.start_datetime = datetime(2026, 8, 1, 8, 0, tzinfo=timezone.utc)
+            event.end_datetime = datetime(2026, 8, 1, 18, 30, tzinfo=timezone.utc)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        html = html_captured[0]
+        # Local time is UTC+2 in August (CEST) in the default app TZ (Europe/Prague).
+        assert "01.08.2026 10:00 – 01.08.2026 20:30" in html
+
+    def test_datetime_range_spans_multiple_days(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            event.start_datetime = datetime(2026, 8, 1, 8, 0, tzinfo=timezone.utc)
+            event.end_datetime = datetime(2026, 8, 3, 16, 0, tzinfo=timezone.utc)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(user, event, "event_published", send_after=past)
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        assert "01.08.2026 10:00 – 03.08.2026 18:00" in html_captured[0]
+
+
+class TestUnfilledReminderSpotTable:
+    """unfilled_reminder must list the individual unfilled mandatory spots
+    with the same table shape used by event_published, so the coordinator
+    knows what's still open without opening the app."""
+
+    def test_unfilled_reminder_lists_only_unfilled_mandatory_spots(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            q_med = Qualification(name="Lékař")
+            q_drv = Qualification(name="Řidič")
+            db.session.add_all([q_med, q_drv])
+            db.session.flush()
+            # unfilled + mandatory → shown
+            _add_spot(event, "Volná pozice", [q_med])
+            _add_spot(event, "Volná doprava", [q_drv])
+            # filled mandatory → hidden
+            filled = _add_spot(event, "Obsazená pozice", [q_med])
+            other = UserAccount(email="filler2@test.cz", name="Filler", is_active=True)
+            other.set_password("x")
+            other.roles = [db.session.scalar(db.select(Role).where(Role.name == "Member"))]
+            db.session.add(other)
+            db.session.flush()
+            db.session.add(Assignment(spot_id=filled.id, user_id=other.id))
+            # optional → hidden even if empty
+            _add_spot(event, "Volitelná rezerva", [], is_optional=True)
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(
+                user,
+                event,
+                "unfilled_reminder",
+                change_type="unfilled_reminder",
+                change_value={"unfilled_count": 2},
+                send_after=past,
+            )
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        html = html_captured[0]
+        assert "Volná pozice" in html
+        assert "Volná doprava" in html
+        assert "Lékař" in html
+        assert "Řidič" in html
+        assert "Obsazená pozice" not in html
+        assert "Volitelná rezerva" not in html
+        # Table header rendered too
+        assert "Požadovaná kvalifikace" in html
+
+    def test_unfilled_reminder_all_filled_shows_reassurance(self, app):
+        with app.app_context():
+            user, event = _make_ed_event(delta_hours=72)
+            spot = _add_spot(event, "Jediná pozice", [])
+            other = UserAccount(email="filler3@test.cz", name="Filler", is_active=True)
+            other.set_password("x")
+            other.roles = [db.session.scalar(db.select(Role).where(Role.name == "Member"))]
+            db.session.add(other)
+            db.session.flush()
+            db.session.add(Assignment(spot_id=spot.id, user_id=other.id))
+            past = datetime.now(timezone.utc) - timedelta(minutes=1)
+            _make_batched_row(
+                user,
+                event,
+                "unfilled_reminder",
+                change_type="unfilled_reminder",
+                change_value={"unfilled_count": 0},
+                send_after=past,
+            )
+            db.session.commit()
+
+        html_captured: list[str] = []
+        with app.app_context():
+            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
+                drain_batched_outbox()
+
+        html = html_captured[0]
+        assert "Všechna povinná místa jsou nyní obsazená." in html
+        assert "Požadovaná kvalifikace" not in html
+
+
 class TestBatchKeyIncludesToEmail:
     """Regression: batches must be keyed on (user_id, to_email), not user_id alone.
 
