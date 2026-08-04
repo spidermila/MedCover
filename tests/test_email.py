@@ -1313,7 +1313,7 @@ def _make_batched_row(
 
 
 class TestDrainBatchedOutbox:
-    """Drain_batched_outbox() behaviour:."""
+    """Drain_batched_outbox() behaviour."""
 
     def test_matured_row_triggers_batch(self, app):
         """One matured pending row → drain sends it and returns True."""
