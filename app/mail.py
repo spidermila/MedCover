@@ -1059,7 +1059,7 @@ def _pick_trigger_batch(now_utc: datetime) -> tuple[object, str] | None:
 
 def _load_batch_for_user(user_id: object, to_email: str) -> list:
     """Load and UPDLOCK-lock all pending rows for the (user_id, to_email) batch
-    (matured + immature).."""
+    (matured + immature)."""
     stmt = (
         db.select(OutboxEmail)
         .where(
