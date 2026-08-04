@@ -19,10 +19,11 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
-from app.models.event import Event, EventStatus, EventType
+from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.utils import audit, diff_changes, get_app_tz, get_or_404, quick_date_ranges, require_permission
 
 debriefing_bp = Blueprint("debriefing", __name__, url_prefix="/debriefing")
@@ -233,7 +234,17 @@ def manage() -> str:
     from_date_str = request.args.get("from_date", "").strip()
     to_date_str = request.args.get("to_date", "").strip()
 
-    query = db.select(Event).where(Event.status == EventStatus.COMPLETED).order_by(Event.start_datetime.desc())
+    query = (
+        db.select(Event)
+        .where(Event.status == EventStatus.COMPLETED)
+        .order_by(Event.start_datetime.desc())
+        # Eager-load the whole spot → assignment → debriefing chain so the
+        # template's selectattr('debriefing') / rejectattr('debriefing')
+        # filters don't fire one lazy SELECT per assignment.
+        .options(
+            selectinload(Event.spots).selectinload(EventSpot.assignment).selectinload(Assignment.debriefing),
+        )
+    )
 
     if from_date_str:
         try:
