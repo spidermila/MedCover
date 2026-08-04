@@ -1902,7 +1902,6 @@ class TestBatchedSpotQualificationsInEmail:
         assert "Řidič" in html
         assert "Bez požadavků" in html
         assert "Volné" in html
-        assert "Seznam pozic, pro které splňujete požadavky:" in html
 
     def test_assignments_opened_lists_spots_with_qualifications(self, app):
         with app.app_context():
@@ -1998,8 +1997,6 @@ class TestBatchedSpotQualificationsInEmail:
 
         html = html_captured[0]
         assert "Požadovaná kvalifikace" not in html
-        assert "Seznam pozic" not in html
-        assert "Nesplňujete" not in html
         assert "Akce byla zveřejněna." in html
 
     def test_published_and_assignments_opened_render_spot_table_once(self, app):
@@ -2023,16 +2020,15 @@ class TestBatchedSpotQualificationsInEmail:
         html = html_captured[0]
         assert html.count("Jediná pozice") == 1
         assert html.count("Požadovaná kvalifikace") == 1
-        assert html.count("Seznam pozic, pro které splňujete požadavky:") == 1
 
 
-class TestBatchedEligibleSpotsOnly:
-    """event_published / assignments_opened must show only the spots the
-    recipient is qualified for, and add a preamble explaining the list.
-    An event with spots but none matching the user's qualifications must
-    render an explicit \"not eligible\" message instead of an empty table."""
+class TestBatchedAllSpotsListed:
+    """event_published / assignments_opened list every spot on the event,
+    regardless of the recipient's qualifications. The recipient decides
+    for themselves what they can fill from the required-qualification
+    column."""
 
-    def test_only_eligible_spots_listed(self, app):
+    def test_all_spots_listed_regardless_of_recipient_qualifications(self, app):
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             q_med = Qualification(name="Lékař")
@@ -2053,13 +2049,11 @@ class TestBatchedEligibleSpotsOnly:
                 drain_batched_outbox()
 
         html = html_captured[0]
+        assert "Pouze pro lékaře" in html
         assert "Pouze pro řidiče" in html
         assert "Kdokoli" in html
-        assert "Pouze pro lékaře" not in html
-        assert "Seznam pozic, pro které splňujete požadavky:" in html
-        assert "Nesplňujete" not in html
 
-    def test_user_qualifies_for_none_shows_fallback_message(self, app):
+    def test_user_without_matching_qualifications_still_sees_full_table(self, app):
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
             q_med = Qualification(name="Lékař")
@@ -2077,36 +2071,9 @@ class TestBatchedEligibleSpotsOnly:
                 drain_batched_outbox()
 
         html = html_captured[0]
-        assert "Nesplňujete požadavky žádné z pozic této akce." in html
-        assert "Seznam pozic" not in html
-        assert "Požadovaná kvalifikace" not in html
-        assert "Pouze pro lékaře" not in html
-
-    def test_qualification_hierarchy_respected(self, app):
-        """A user holding a parent (substitute) qualification is eligible for
-        spots requiring the child. Verified via user_fillable_qual_ids."""
-        with app.app_context():
-            user, event = _make_ed_event(delta_hours=72)
-            q_first_aider = Qualification(name="První pomoc")
-            q_doctor = Qualification(name="Lékař")
-            db.session.add_all([q_first_aider, q_doctor])
-            db.session.flush()
-            # Doctor is a parent of First Aider → doctor can fill first-aider spots.
-            q_first_aider.parents = [q_doctor]
-            user.qualifications = [q_doctor]
-            _add_spot(event, "Pomocník první pomoci", [q_first_aider])
-            past = datetime.now(timezone.utc) - timedelta(minutes=1)
-            _make_batched_row(user, event, "event_published", send_after=past)
-            db.session.commit()
-
-        html_captured: list[str] = []
-        with app.app_context():
-            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
-                drain_batched_outbox()
-
-        html = html_captured[0]
-        assert "Pomocník první pomoci" in html
-        assert "Seznam pozic, pro které splňujete požadavky:" in html
+        assert "Pouze pro lékaře" in html
+        assert "Lékař" in html
+        assert "Požadovaná kvalifikace" in html
 
 
 class TestBatchedEventDatetimeRange:
