@@ -250,7 +250,7 @@ def test_notification(code: str) -> Response:
         else:
             # Safety net: _TESTABLE_CODES should always have a matching branch above.
             # Fail loudly instead of silently no-op'ing and reporting false success.
-            flash(f"Zkušební oznámení pro typ '{code}' není v kódu implementováno.", "danger")
+            flash(f"Zkušební oznámení pro typ „{code}“ není v kódu implementováno.", "danger")
             return redirect(url_for("notifications.index"))
         db.session.commit()
 
