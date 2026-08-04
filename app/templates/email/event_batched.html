@@ -1,4 +1,24 @@
 {% extends "email/base.html" %}
+{% macro spot_table(spots) %}
+<table style="border-collapse:collapse;font-size:13px;margin:6px 0 10px 0;">
+  <thead>
+    <tr>
+      <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #dddddd;">Popis</th>
+      <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #dddddd;">Požadovaná kvalifikace</th>
+      <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #dddddd;">Stav</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in spots %}
+    <tr>
+      <td style="padding:4px 8px;vertical-align:top;">{{ s.description }}{% if s.is_optional %} (volitelná){% endif %}</td>
+      <td style="padding:4px 8px;vertical-align:top;">{% if s.qualifications %}{{ s.qualifications|join(", ") }}{% else %}Bez požadavků{% endif %}</td>
+      <td style="padding:4px 8px;vertical-align:top;">{% if s.is_filled %}Obsazeno{% else %}Volné{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
 {% block content %}
 <p>Dobrý den, {{ user_name }},</p>
 {% if event_sections|length == 1 %}
@@ -34,8 +54,10 @@
       <p>Byli jste odhlášeni z pozice <strong>{{ entry.spot_description }}</strong>.</p>
     {% elif entry.type == "event_published" %}
       <p>Akce byla zveřejněna.</p>
+      {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}
     {% elif entry.type == "assignments_opened" %}
       <p>Přihlášky byly otevřeny.</p>
+      {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}
     {% elif entry.type == "event_cancelled" %}
       <p>Akce byla zrušena.</p>
     {% elif entry.type == "event_archived" %}
