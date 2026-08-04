@@ -80,11 +80,13 @@
       <p>Akce byla obnovena z archivu.</p>
     {% elif entry.type == "unfilled_reminder" %}
       {% set n = entry.unfilled_count %}
-      <p>Akce má <strong>{{ n }}</strong>
-        {%- if n == 1 %} neobsazenou pozici
-        {%- elif n < 5 %} neobsazené pozice
-        {%- else %} neobsazených pozic
-        {%- endif -%}.</p>
+      {% if n > 0 %}
+        <p>Akce má <strong>{{ n }}</strong>
+          {%- if n == 1 %} neobsazenou pozici
+          {%- elif n < 5 %} neobsazené pozice
+          {%- else %} neobsazených pozic
+          {%- endif -%}.</p>
+      {% endif %}
       {% if entry.show_spots %}
         {% if entry.spots %}{{ spot_table(entry.spots) }}
         {% else %}<p>Všechna povinná místa jsou nyní obsazená.</p>{% endif %}
