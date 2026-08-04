@@ -999,7 +999,7 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
         user=user,
         event=event,
         notification_type="debriefing_invitation",
-        subject=f"MedCover — debriefing: {event.name}",
+        subject=f"MedCover — Pozvánka k debriefingu: {event.name}",
         body=_PLAIN_FALLBACK,
         change_type=_DEBRIEFING_CHANGE_TYPE,
         change_value={"assignment_id": assignment.id},
