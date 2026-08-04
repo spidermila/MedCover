@@ -130,6 +130,17 @@ def save_delay_tiers() -> Response:
 
         parsed[field] = value
 
+    # Tiers are ordered from nearest to farthest event; delays must be non-decreasing.
+    for prev, curr in zip(_DELAY_TIER_FIELDS, _DELAY_TIER_FIELDS[1:]):
+        if parsed[prev] > parsed[curr]:
+            flash(
+                f"Hodnota pro „{_DELAY_TIER_LABELS_CS[prev]}“ "
+                f"({parsed[prev]}) nesmí být větší než hodnota pro "
+                f"„{_DELAY_TIER_LABELS_CS[curr]}“ ({parsed[curr]}).",
+                "warning",
+            )
+            return redirect(url_for("notifications.index"))
+
     before = {f: getattr(settings, f) for f in _DELAY_TIER_FIELDS}
     for field in _DELAY_TIER_FIELDS:
         setattr(settings, field, parsed[field])

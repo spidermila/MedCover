@@ -751,7 +751,13 @@ class TestDelayTierSave:
         csrf = self._get_csrf_for_form(admin_client)
         resp = admin_client.post(
             "/admin/notifications/delay-tiers",
-            data=self._valid_form(csrf, notify_delay_under_24h_min=20160),
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=20160,
+                notify_delay_1_7_days_min=20160,
+                notify_delay_1_4_weeks_min=20160,
+                notify_delay_over_month_min=20160,
+            ),
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -829,6 +835,91 @@ class TestDelayTierSave:
         assert "alespoň 1 minuta".encode() in resp.data
         with app.app_context():
             assert get_settings().notify_delay_under_24h_min == before_val
+
+    # --- monotonicity: nearer tier must not exceed farther tier -------
+    def test_post_delay_tiers_strictly_increasing_accepted(self, app, admin_client):
+        """Strictly increasing values across all tiers are accepted."""
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=5,
+                notify_delay_1_7_days_min=60,
+                notify_delay_1_4_weeks_min=360,
+                notify_delay_over_month_min=1440,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Nastavení zpoždění notifikací bylo uloženo".encode() in resp.data
+
+    def test_post_delay_tiers_all_equal_accepted(self, app, admin_client):
+        """Equal adjacent tier values are accepted (non-decreasing rule)."""
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=100,
+                notify_delay_1_7_days_min=100,
+                notify_delay_1_4_weeks_min=100,
+                notify_delay_over_month_min=100,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Nastavení zpoždění notifikací bylo uloženo".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            assert s.notify_delay_under_24h_min == 100
+            assert s.notify_delay_over_month_min == 100
+
+    def test_post_delay_tiers_inversion_rejected(self, app, admin_client):
+        """A nearer tier delay greater than a farther tier delay is rejected."""
+        with app.app_context():
+            before = {f: getattr(get_settings(), f) for f in self._DEFAULTS}
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=1440,
+                notify_delay_1_7_days_min=60,
+                notify_delay_1_4_weeks_min=360,
+                notify_delay_over_month_min=1440,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "nesmí být větší než hodnota pro".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            for field, val in before.items():
+                assert getattr(s, field) == val, f"{field} was unexpectedly changed"
+
+    def test_post_delay_tiers_inversion_last_pair_rejected(self, app, admin_client):
+        """Inversion at the last tier pair is rejected too."""
+        with app.app_context():
+            before = {f: getattr(get_settings(), f) for f in self._DEFAULTS}
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=5,
+                notify_delay_1_7_days_min=60,
+                notify_delay_1_4_weeks_min=1440,
+                notify_delay_over_month_min=360,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "nesmí být větší než hodnota pro".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            for field, val in before.items():
+                assert getattr(s, field) == val, f"{field} was unexpectedly changed"
 
 
 # ── "Odeslat okamžitě" checkbox ─────────────────────────────────────────────
