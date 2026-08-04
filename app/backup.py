@@ -254,6 +254,15 @@ def restore_from_zip(zip_path: str | Path) -> None:
                 qt = preparer.quote(t)
                 conn.execute(sa.text(f"ALTER TABLE {qt} CHECK CONSTRAINT ALL"))
 
+        # Columns typed as LargeBinary were exported as hex strings by
+        # _serialize_value; decode them back to bytes here so pyodbc binds
+        # them as VARBINARY parameters.
+        binary_columns_by_table: dict[str, set[str]] = {}
+        for t, sa_table in sa_metadata.tables.items():
+            bin_cols = {col.name for col in sa_table.columns if isinstance(col.type, sa.LargeBinary)}
+            if bin_cols:
+                binary_columns_by_table[t] = bin_cols
+
         # Re-insert rows, skipping columns that no longer exist in the schema.
         for table_name in restore_sequence:
             rows = tables_data.get(table_name, [])
@@ -266,10 +275,15 @@ def restore_from_zip(zip_path: str | Path) -> None:
             qt = preparer.quote(table_name)
             has_identity = table_name in identity_tables
             sa_table = sa_metadata.tables[table_name]
+            binary_cols = binary_columns_by_table.get(table_name, set())
             if has_identity:
                 conn.execute(sa.text(f"SET IDENTITY_INSERT {qt} ON"))
             for row in rows:
                 filtered = {k: v for k, v in row.items() if k in current_columns}
+                for col_name in binary_cols:
+                    val = filtered.get(col_name)
+                    if isinstance(val, str):
+                        filtered[col_name] = bytes.fromhex(val)
                 if filtered:
                     conn.execute(sa_table.insert().values(filtered))
             if has_identity:

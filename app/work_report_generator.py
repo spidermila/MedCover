@@ -15,6 +15,7 @@ the file and scheduling cleanup (files older than 1 day should be removed).
 """
 
 import calendar
+import io
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -24,8 +25,13 @@ import holidays
 import sqlalchemy as sa
 from flask import current_app
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XlsxImage
+from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
+from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils.units import cm_to_EMU, pixels_to_EMU
 from openpyxl.worksheet.worksheet import Worksheet
+from PIL import Image as PILImage
 
 if TYPE_CHECKING:
     from app.models import UserAccount
@@ -476,6 +482,7 @@ def _build_totals_and_signatures(
     month: int,
     days_in_month: int,
     events_by_day: dict[int, tuple[Decimal, list[str]]],
+    signature_image: bytes | None = None,
 ) -> None:
     """Write the totals row and signature rows below the day grid."""
     total_row = _FIRST_DATA_ROW + days_in_month
@@ -508,6 +515,84 @@ def _build_totals_and_signatures(
     )
     _write_cell(ws, sig_boss, 1, "Datum a podpis nadřízeného pracovníka:", font=_BOLD_FONT)
 
+    if signature_image:
+        _embed_signature(ws, signature_image, sig_worker)
+
+
+_SIGNATURE_TARGET_HEIGHT_PX = 60
+_SIGNATURE_ROW_HEIGHT_PT = 50
+_SIGNATURE_COLUMNS = "ABCDE"  # image is right-aligned near the right edge of column E
+# Nudge the image ~0.3 cm to the right of column E's right edge so it visually
+# clears the column border on the printed page.
+_SIGNATURE_RIGHT_NUDGE_CM = 0.3
+
+
+def _col_width_to_pixels(width_chars: float) -> int:
+    """Approximate Excel column width in characters to pixels for Calibri 11.
+
+    Uses the widely cited Excel formula (MDW=7): px = round(w*7 + 5) for w >= 1.
+    Good enough for image placement; users can nudge manually if needed.
+    """
+    if width_chars < 1:
+        return round(12 * width_chars)
+    return round(width_chars * 7 + 5)
+
+
+def _embed_signature(ws: Worksheet, signature_image: bytes, sig_row: int) -> None:
+    """Anchor the user's signature image at the bottom-right of the signature row.
+
+    Scaled to a fixed row-friendly height preserving aspect ratio, then
+    positioned so:
+      - the bottom of the image sits on the bottom edge of the signature row;
+      - the right edge is ~0.3 cm past the right edge of column E (nudged
+        rightward so the border of column E is clearly visible next to it).
+    Users can still drag the image after opening the xlsx for fine-tuning.
+    """
+    pil = PILImage.open(io.BytesIO(signature_image))
+    ratio = _SIGNATURE_TARGET_HEIGHT_PX / pil.height
+    img_w_px = max(1, round(pil.width * ratio))
+
+    # Horizontal target: right edge = (sum of column widths A..E) + nudge.
+    col_widths_emu = [pixels_to_EMU(_col_width_to_pixels(_COL_WIDTHS[c])) for c in _SIGNATURE_COLUMNS]
+    right_edge_emu = sum(col_widths_emu) + cm_to_EMU(_SIGNATURE_RIGHT_NUDGE_CM)
+    left_emu = max(0, right_edge_emu - pixels_to_EMU(img_w_px))
+
+    # Walk columns (extending beyond E with default-width columns) to find the
+    # anchor cell and offset within it. Column indices in AnchorMarker are
+    # 0-based.
+    default_col_width_emu = pixels_to_EMU(_col_width_to_pixels(8.43))
+    running = 0
+    col_idx = 0
+    while True:
+        w = col_widths_emu[col_idx] if col_idx < len(col_widths_emu) else default_col_width_emu
+        if left_emu < running + w:
+            break
+        running += w
+        col_idx += 1
+    offset_within_col_emu = left_emu - running
+
+    # Vertical target: bottom of image on bottom edge of signature row.
+    # Row height in points; 1 pt = 1/72 inch; EMU per inch = 914400.
+    row_height_emu = round(_SIGNATURE_ROW_HEIGHT_PT * 914400 / 72)
+    img_h_emu = pixels_to_EMU(_SIGNATURE_TARGET_HEIGHT_PX)
+    row_off_emu = max(0, row_height_emu - img_h_emu)
+
+    img = XlsxImage(io.BytesIO(signature_image))
+    marker = AnchorMarker(
+        col=col_idx,
+        colOff=offset_within_col_emu,
+        row=sig_row - 1,
+        rowOff=row_off_emu,
+    )
+    ext = XDRPositiveSize2D(
+        cx=pixels_to_EMU(img_w_px),
+        cy=img_h_emu,
+    )
+    img.anchor = OneCellAnchor(_from=marker, ext=ext)
+
+    ws.row_dimensions[sig_row].height = _SIGNATURE_ROW_HEIGHT_PT
+    ws.add_image(img)
+
 
 # ── Core generator ────────────────────────────────────────────────────────────
 
@@ -532,7 +617,7 @@ def generate_work_report(user: UserAccount, year: int, month: int) -> Path:
     _build_header_block(ws, user, month_name, year)
     _build_column_headers(ws)
     _build_day_rows(ws, year, month, days_in_month, cz_holidays, events_by_day)
-    _build_totals_and_signatures(ws, year, month, days_in_month, events_by_day)
+    _build_totals_and_signatures(ws, year, month, days_in_month, events_by_day, signature_image=user.signature_image)
 
     instance_path = Path(current_app.instance_path)
     out_dir = instance_path / "work_report" / str(user.id)

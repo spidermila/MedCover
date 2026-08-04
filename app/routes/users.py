@@ -2,10 +2,11 @@ import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from typing import Any
 
 import sqlalchemy as sa
-from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import collate
 from sqlalchemy.orm import selectinload
@@ -17,6 +18,11 @@ from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
 from app.models.role import Role
 from app.models.user import CalendarView, UserAccount
+from app.signature import (
+    MAX_UPLOAD_BYTES,
+    SignatureError,
+    process_signature_upload,
+)
 from app.utils import (
     CS_COLLATION,
     audit,
@@ -57,6 +63,10 @@ def profile() -> str | Response:
             return _update_profile(user)
         if action == "password":
             return _change_password(user)
+        if action == "signature_upload":
+            return _upload_signature(user)
+        if action == "signature_remove":
+            return _remove_signature(user)
     from app.models.equipment import EquipmentItem  # pylint: disable=import-outside-toplevel
 
     issued_items = db.session.scalars(db.select(EquipmentItem).where(EquipmentItem.issued_to_id == user.id)).all()
@@ -87,6 +97,7 @@ def profile() -> str | Response:
         token_created = True
     ical_url = external_url_for("calendar.feed", token=user.ical_token)
     ical_all_url = external_url_for("calendar.feed_all", token=user.ical_all_token)
+    has_signature = user.signature_image is not None
     return render_template(
         "users/profile.html",
         user=user,
@@ -97,6 +108,7 @@ def profile() -> str | Response:
         ical_all_url=ical_all_url,
         token_created=token_created,
         min_password_length=MIN_PASSWORD_LENGTH,
+        has_signature=has_signature,
     )
 
 
@@ -140,6 +152,77 @@ def _update_profile(user: UserAccount) -> Response:
     db.session.commit()
     flash("Profil byl uložen.", "success")
     return redirect(url_for("users.profile"))
+
+
+def _upload_signature(user: UserAccount) -> Response:
+    if request.content_length is not None and request.content_length > MAX_UPLOAD_BYTES:
+        flash(
+            f"Soubor je příliš velký (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB).",
+            "danger",
+        )
+        return redirect(url_for("users.profile"))
+    file = request.files.get("signature")
+    if not file or not file.filename:
+        flash("Nebyl vybrán žádný soubor.", "danger")
+        return redirect(url_for("users.profile"))
+    raw = file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        flash(
+            f"Soubor je příliš velký (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB).",
+            "danger",
+        )
+        return redirect(url_for("users.profile"))
+    try:
+        processed = process_signature_upload(raw)
+    except SignatureError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("users.profile"))
+    had_signature_before = user.signature_image is not None
+    user.signature_image = processed
+    user.signature_mimetype = "image/png"
+    user.version += 1
+    audit(
+        "edit",
+        "UserAccount",
+        user.id,
+        f"Uživatel {user.name} nahrál podpis",
+        {"signature": ["set" if had_signature_before else None, "set"]},
+    )
+    db.session.commit()
+    flash("Podpis byl uložen.", "success")
+    return redirect(url_for("users.profile"))
+
+
+def _remove_signature(user: UserAccount) -> Response:
+    if user.signature_image is None:
+        return redirect(url_for("users.profile"))
+    user.signature_image = None
+    user.signature_mimetype = None
+    user.version += 1
+    audit(
+        "edit",
+        "UserAccount",
+        user.id,
+        f"Uživatel {user.name} smazal podpis",
+        {"signature": ["set", None]},
+    )
+    db.session.commit()
+    flash("Podpis byl smazán.", "success")
+    return redirect(url_for("users.profile"))
+
+
+@users_bp.route("/profile/signature")
+@login_required
+def signature_preview() -> Response:
+    user: UserAccount = current_user  # type: ignore[assignment]
+    if user.signature_image is None:
+        abort(404)
+    resp = send_file(
+        BytesIO(user.signature_image),
+        mimetype=user.signature_mimetype or "image/png",
+    )
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
 
 
 def _change_password(user: UserAccount) -> Response:
