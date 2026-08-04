@@ -31,7 +31,7 @@ rm -f "$DB_CHECK_FILE"
 echo "=== E2E: Running database migrations ==="
 echo "  Creating MSSQL database (if not exists)..."
 python << 'PYEOF'
-import os, pyodbc, re, sys
+import os, pyodbc, re, sys, time
 url = os.environ.get("DATABASE_URL", "")
 m = re.match(r"mssql\+pyodbc://([^:]+):([^@]+)@([^:]+):(\d+)/([^?]+)", url)
 if not m:
@@ -50,7 +50,19 @@ c.execute(f"ALTER DATABASE [{db}] SET READ_COMMITTED_SNAPSHOT ON")
 safe_pwd = pwd.replace("'", "''")
 c.execute(f"IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name='{user}') CREATE LOGIN [{user}] WITH PASSWORD='{safe_pwd}'")
 conn.close()
-conn2 = pyodbc.connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};DATABASE={db};UID=sa;PWD={sa_pwd};Encrypt=no;TrustServerCertificate=yes", autocommit=True)
+# SET READ_COMMITTED_SNAPSHOT ON forces the database briefly offline while
+# it waits for existing connections to drain; a race with our immediate
+# reconnect surfaces as "Cannot open database ... The login failed. (4060)".
+last_err = None
+for attempt in range(30):
+    try:
+        conn2 = pyodbc.connect(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};DATABASE={db};UID=sa;PWD={sa_pwd};Encrypt=no;TrustServerCertificate=yes", autocommit=True, timeout=5)
+        break
+    except pyodbc.Error as e:
+        last_err = e
+        time.sleep(1)
+else:
+    sys.exit(f"Database '{db}' never became reachable after ALTER: {last_err}")
 c2 = conn2.cursor()
 c2.execute(f"IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name='{user}') BEGIN CREATE USER [{user}] FOR LOGIN [{user}]; ALTER ROLE db_owner ADD MEMBER [{user}]; END")
 conn2.close()
