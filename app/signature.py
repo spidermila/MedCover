@@ -34,6 +34,10 @@ Image.MAX_IMAGE_PIXELS = 25_000_000
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MiB — request-body cap before decode
 MAX_STORED_BYTES = 50 * 1024  # 50 KiB — hard cap on the persisted PNG
 TARGET_HEIGHT_PX = 200  # signature strip height in the final PNG
+# Aspect-ratio cap: rejects pathological inputs (e.g. 1×N strips) whose
+# height-normalised width would blow up allocation during resize. A real
+# signature strip is at most ~6:1; 20:1 leaves headroom for odd scans.
+MAX_ASPECT_RATIO = 20
 # MPO is a multi-frame JPEG container iPhones produce in HDR mode; the primary
 # frame is a normal JPEG, which is what Pillow returns from Image.open().
 ACCEPTED_FORMATS = frozenset({"PNG", "JPEG", "MPO", "HEIF", "HEIC"})
@@ -111,7 +115,11 @@ def process_signature_upload(raw_bytes: bytes) -> bytes:
             )
             img = img.crop(padded)
 
-    # Resize to target height, preserve aspect ratio.
+    # Resize to target height, preserve aspect ratio. Reject extreme aspect
+    # ratios up-front so a huge new_w can't allocate a giant output buffer
+    # before the MAX_STORED_BYTES check ever runs.
+    if img.width > img.height * MAX_ASPECT_RATIO:
+        raise SignatureError("Obrázek má neobvyklý poměr stran. Ořízněte jej blíže k podpisu.")
     if img.height != TARGET_HEIGHT_PX:
         new_w = max(1, round(img.width * TARGET_HEIGHT_PX / img.height))
         img = img.resize((new_w, TARGET_HEIGHT_PX), Image.Resampling.LANCZOS)
