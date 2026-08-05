@@ -83,8 +83,11 @@ class TestSignaturePipeline:
         # Palette-mode PNG with a transparent index (common GIF-style export).
         # Without the P+info["transparency"] branch the transparent pixels
         # would collapse to black on RGB conversion.
+        # Palette 0 is *black* and marked transparent: without the RGBA
+        # composite the background would land as black, not white, and the
+        # corner assertion would fail.
         img = Image.new("P", (400, 200), 0)
-        img.putpalette([255, 255, 255, 0, 0, 0])  # 0 = white, 1 = black
+        img.putpalette([0, 0, 0, 0, 0, 0])  # 0 = black (transparent), 1 = black
         d = ImageDraw.Draw(img)
         d.line([(20, 100), (380, 100)], fill=1, width=4)
         buf = io.BytesIO()
