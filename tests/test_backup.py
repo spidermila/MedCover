@@ -161,6 +161,32 @@ class TestRestoreFromZip:
             assert isinstance(restored.reminder_sent_json, dict)
             assert "24" in restored.reminder_sent_json
 
+    def test_restore_roundtrips_binary_column(self, app, tmp_path):
+        """LargeBinary columns (e.g. signature_image) are hex-encoded on export by
+        _serialize_value; restore must decode them back to bytes, not leave them as
+        hex strings (which pyodbc would reject as VARBINARY params)."""
+
+        with app.app_context():
+            user = _make_user("binary_roundtrip@example.com", "Binary Roundtrip", Role.MEMBER)
+            user.signature_image = b"\x89PNG\r\n\x1a\n\x00\x01\xff\xfe"
+            user.signature_mimetype = "image/png"
+            _db.session.commit()
+            user_id = user.id
+
+            zip_path = export_to_zip(tmp_path)
+
+            user.signature_image = None
+            user.signature_mimetype = None
+            _db.session.commit()
+
+            restore_from_zip(zip_path)
+
+            _db.session.expire_all()
+            restored = _db.session.get(UserAccount, user_id)
+            assert restored is not None
+            assert restored.signature_image == b"\x89PNG\r\n\x1a\n\x00\x01\xff\xfe"
+            assert restored.signature_mimetype == "image/png"
+
 
 class TestPruneOldBackups:
     def test_prune_keeps_n_files(self, app, tmp_path):
