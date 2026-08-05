@@ -551,6 +551,8 @@ def _handle_advance_status(event: Event) -> Response:
     elif target_status == EventStatus.ASSIGNMENTS_OPEN:
         for u in active_users:
             mailer.send_assignments_opened(u, event)
+    # enqueue_deferred only flushes; commit so the pending outbox rows persist.
+    db.session.commit()
     return jsonify({"ok": True})
 
 

@@ -7,6 +7,7 @@ from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.outbox import OutboxEmail
 from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _make_user
@@ -600,6 +601,46 @@ class TestTableManager:
         )
         assert response.status_code == 400
         assert response.get_json()["ok"] is False
+
+    def test_advance_draft_to_published_commits_outbox_rows(self, app, admin_client):
+        """Regression: table-manager advance_status must commit the
+        event_published outbox rows enqueued by send_event_published."""
+        me_id, _, _ = _setup_table_manager(app)
+        with app.app_context():
+            _make_user("m-tm-pub@test.com", "Member TM Pub", Role.MEMBER)
+        event_id = self._make_draft_event(app, me_id)
+        admin_client.post(
+            f"/master-events/{me_id}/table/event/{event_id}/update",
+            data={"field": "advance_status"},
+        )
+        with app.app_context():
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.event_id == event_id,
+                    OutboxEmail.notification_type == "event_published",
+                )
+            ).all()
+            assert rows, "event_published outbox rows were not persisted after commit"
+
+    def test_advance_published_to_open_commits_outbox_rows(self, app, admin_client):
+        """Regression: table-manager advance_status must commit the
+        assignments_opened outbox rows."""
+        me_id, _, _ = _setup_table_manager(app)
+        with app.app_context():
+            _make_user("m-tm-open@test.com", "Member TM Open", Role.MEMBER)
+        event_id = self._make_published_event(app, me_id)
+        admin_client.post(
+            f"/master-events/{me_id}/table/event/{event_id}/update",
+            data={"field": "advance_status"},
+        )
+        with app.app_context():
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.event_id == event_id,
+                    OutboxEmail.notification_type == "assignments_opened",
+                )
+            ).all()
+            assert rows, "assignments_opened outbox rows were not persisted after commit"
 
 
 class TestTableEventClone:
