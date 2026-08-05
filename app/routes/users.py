@@ -99,7 +99,7 @@ def profile() -> str | Response:
         token_created = True
     ical_url = external_url_for("calendar.feed", token=user.ical_token)
     ical_all_url = external_url_for("calendar.feed_all", token=user.ical_all_token)
-    has_signature = user.signature_image is not None
+    has_signature = user.signature_mimetype is not None
     return render_template(
         "users/profile.html",
         user=user,
