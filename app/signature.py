@@ -4,7 +4,7 @@ Pipeline for uploads to the profile signature field:
   1. Reject oversized requests early (handled in the route).
   2. Sniff format from bytes; accept PNG, JPEG, HEIC/HEIF.
   3. EXIF auto-orient (phone photos come sideways).
-  4. Convert to grayscale (mode L).
+  4. Flatten transparency onto white; keep colour (mode RGB).
   5. Auto-crop white borders (with a safety valve for false positives).
   6. Resize to a fixed target height, preserving aspect ratio.
   7. Re-encode as PNG.
@@ -49,7 +49,7 @@ def process_signature_upload(raw_bytes: bytes) -> bytes:
         raw_bytes: Bytes read from the uploaded file.
 
     Returns:
-        PNG-encoded bytes ready to persist to the DB (mode L, height
+        PNG-encoded bytes ready to persist to the DB (mode RGB, height
         `TARGET_HEIGHT_PX`, size at most `MAX_STORED_BYTES`).
 
     Raises:
@@ -71,20 +71,23 @@ def process_signature_upload(raw_bytes: bytes) -> bytes:
     # EXIF auto-orient — must run before crop/resize.
     img: Image.Image = ImageOps.exif_transpose(source) or source
 
-    # Grayscale conversion. If the source has alpha, composite onto white
-    # first so transparent areas don't become black after mode-L conversion.
+    # Flatten transparency onto white so alpha regions don't turn black
+    # after mode conversion, then normalise to RGB (keep colour).
     if img.mode in ("RGBA", "LA", "PA"):
         background = Image.new("RGB", img.size, (255, 255, 255))
         background.paste(img, mask=img.split()[-1])
         img = background
-    img = img.convert("L")
+    else:
+        img = img.convert("RGB")
 
     # Auto-crop white borders. Threshold at ~200 so photo backgrounds (which
     # are rarely pure white) still get trimmed. Safety valve: if the trim
     # would remove more than 70% of the area, assume it's a false positive
     # (e.g. a dark photo of a signature) and keep the original bounds.
+    # Border detection runs on a grayscale copy; the stored image stays RGB.
     orig_w, orig_h = img.size
-    inverted = ImageOps.invert(img).point(lambda p: 255 if p > (255 - 200) else 0)
+    gray_for_bbox = img.convert("L")
+    inverted = ImageOps.invert(gray_for_bbox).point(lambda p: 255 if p > (255 - 200) else 0)
     bbox = inverted.getbbox()
     if bbox is not None:
         crop_w = bbox[2] - bbox[0]

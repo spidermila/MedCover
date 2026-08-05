@@ -41,10 +41,10 @@ class TestSignaturePipeline:
         out = process_signature_upload(_png_bytes())
         assert out.startswith(b"\x89PNG")
 
-    def test_output_is_grayscale_and_target_height(self) -> None:
+    def test_output_is_rgb_and_target_height(self) -> None:
         out = process_signature_upload(_png_bytes())
         img = Image.open(io.BytesIO(out))
-        assert img.mode == "L"
+        assert img.mode == "RGB"
         assert img.height == 200
 
     def test_output_within_stored_cap(self) -> None:
@@ -72,7 +72,8 @@ class TestSignaturePipeline:
         out = process_signature_upload(buf.getvalue())
         result = Image.open(io.BytesIO(out))
         # Corners should be white (background composited), not black.
-        assert result.getpixel((0, 0)) > 200
+        corner = result.getpixel((0, 0))
+        assert all(c > 200 for c in corner)
 
     def test_exif_orientation_is_applied(self) -> None:
         # Portrait-oriented JPEG with orientation=6 (rotate 270 CW) should end
