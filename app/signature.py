@@ -65,6 +65,13 @@ def process_signature_upload(raw_bytes: bytes) -> bytes:
     except (UnidentifiedImageError, OSError) as exc:
         raise SignatureError("Soubor není platný obrázek.") from exc
     except Image.DecompressionBombError as exc:
+        # Legitimate photos never hit this — it requires a header advertising
+        # a resolution far beyond any real camera/scanner, so treat it as a
+        # probable malicious upload rather than an ordinary validation miss.
+        log.warning(
+            "Rejected oversized image (%d bytes) — possible decompression bomb",
+            len(raw_bytes),
+        )
         raise SignatureError("Obrázek je příliš velký (rozlišení).") from exc
 
     if source.format not in ACCEPTED_FORMATS:
