@@ -34,7 +34,7 @@ Image.MAX_IMAGE_PIXELS = 25_000_000
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MiB — request-body cap before decode
 MAX_STORED_BYTES = 50 * 1024  # 50 KiB — hard cap on the persisted PNG
 TARGET_HEIGHT_PX = 200  # signature strip height in the final PNG
-# Aspect-ratio cap: rejects pathological inputs (e.g. 1×N strips) whose
+# Aspect-ratio cap: rejects pathological inputs (e.g. 1xN strips) whose
 # height-normalised width would blow up allocation during resize. A real
 # signature strip is at most ~6:1; 20:1 leaves headroom for odd scans.
 MAX_ASPECT_RATIO = 20
