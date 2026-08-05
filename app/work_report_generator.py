@@ -239,6 +239,12 @@ _COL_WIDTHS = {
 _FIRST_DATA_ROW = 10  # row index of day-1 (1-based)
 _HEADER_ROW = 9  # column header row
 
+_SIGNATURE_TARGET_HEIGHT_PX = 60
+_SIGNATURE_ROW_HEIGHT_PT = 50
+# Nudge the image ~0.3 cm to the right of the last _COL_WIDTHS column's right
+# edge so it visually clears the column border on the printed page.
+_SIGNATURE_RIGHT_NUDGE_CM = 0.3
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -519,14 +525,6 @@ def _build_totals_and_signatures(
         _embed_signature(ws, signature_image, sig_worker)
 
 
-_SIGNATURE_TARGET_HEIGHT_PX = 60
-_SIGNATURE_ROW_HEIGHT_PT = 50
-_SIGNATURE_COLUMNS = "ABCDE"  # image is right-aligned near the right edge of column E
-# Nudge the image ~0.3 cm to the right of column E's right edge so it visually
-# clears the column border on the printed page.
-_SIGNATURE_RIGHT_NUDGE_CM = 0.3
-
-
 def _col_width_to_pixels(width_chars: float) -> int:
     """Approximate Excel column width in characters to pixels for Calibri 11.
 
@@ -541,19 +539,19 @@ def _col_width_to_pixels(width_chars: float) -> int:
 def _embed_signature(ws: Worksheet, signature_image: bytes, sig_row: int) -> None:
     """Anchor the user's signature image at the bottom-right of the signature row.
 
-    Scaled to a fixed row-friendly height preserving aspect ratio, then
-    positioned so:
+    Anchored so:
       - the bottom of the image sits on the bottom edge of the signature row;
-      - the right edge is ~0.3 cm past the right edge of column E (nudged
-        rightward so the border of column E is clearly visible next to it).
+      - the right edge is ~0.3 cm past the right edge of the last
+        _COL_WIDTHS column (nudged rightward so that column's border is
+        clearly visible next to it).
     Users can still drag the image after opening the xlsx for fine-tuning.
     """
     pil = PILImage.open(io.BytesIO(signature_image))
     ratio = _SIGNATURE_TARGET_HEIGHT_PX / pil.height
     img_w_px = max(1, round(pil.width * ratio))
 
-    # Horizontal target: right edge = (sum of column widths A..E) + nudge.
-    col_widths_emu = [pixels_to_EMU(_col_width_to_pixels(_COL_WIDTHS[c])) for c in _SIGNATURE_COLUMNS]
+    # Horizontal target: right edge = (sum of _COL_WIDTHS columns) + nudge.
+    col_widths_emu = [pixels_to_EMU(_col_width_to_pixels(w)) for w in _COL_WIDTHS.values()]
     right_edge_emu = sum(col_widths_emu) + cm_to_EMU(_SIGNATURE_RIGHT_NUDGE_CM)
     left_emu = max(0, right_edge_emu - pixels_to_EMU(img_w_px))
 

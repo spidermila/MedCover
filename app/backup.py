@@ -283,7 +283,13 @@ def restore_from_zip(zip_path: str | Path) -> None:
                 for col_name in binary_cols:
                     val = filtered.get(col_name)
                     if isinstance(val, str):
-                        filtered[col_name] = bytes.fromhex(val)
+                        try:
+                            filtered[col_name] = bytes.fromhex(val)
+                        except ValueError as exc:
+                            raise ValueError(
+                                f"Malformed binary data for {table_name}.{col_name} in backup "
+                                f"{zip_path.name!r}: not a valid hex string"
+                            ) from exc
                 if filtered:
                     conn.execute(sa_table.insert().values(filtered))
             if has_identity:
