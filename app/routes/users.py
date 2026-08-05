@@ -64,8 +64,10 @@ def profile() -> str | Response:
         if action == "password":
             return _change_password(user)
         if action == "signature_upload":
+            require_permission("work_report.generate")
             return _upload_signature(user)
         if action == "signature_remove":
+            require_permission("work_report.generate")
             return _remove_signature(user)
     from app.models.equipment import EquipmentItem  # pylint: disable=import-outside-toplevel
 
