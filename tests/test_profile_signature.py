@@ -79,6 +79,21 @@ class TestSignaturePipeline:
         corner = result.getpixel((0, 0))
         assert all(c > 200 for c in corner)
 
+    def test_transparent_palette_png_composited_on_white(self) -> None:
+        # Palette-mode PNG with a transparent index (common GIF-style export).
+        # Without the P+info["transparency"] branch the transparent pixels
+        # would collapse to black on RGB conversion.
+        img = Image.new("P", (400, 200), 0)
+        img.putpalette([255, 255, 255, 0, 0, 0])  # 0 = white, 1 = black
+        d = ImageDraw.Draw(img)
+        d.line([(20, 100), (380, 100)], fill=1, width=4)
+        buf = io.BytesIO()
+        img.save(buf, "PNG", transparency=0)
+        out = process_signature_upload(buf.getvalue())
+        result = Image.open(io.BytesIO(out)).convert("RGB")
+        corner = result.getpixel((0, 0))
+        assert all(c > 200 for c in corner)
+
     def test_real_phone_photo_fits_stored_cap(self) -> None:
         # Real iPhone HDR photo of a cropped signature on paper. Exercises the
         # realistic compression path (photo noise + palette quantisation) that

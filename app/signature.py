@@ -85,7 +85,11 @@ def process_signature_upload(raw_bytes: bytes) -> bytes:
     img: Image.Image = ImageOps.exif_transpose(source) or source
 
     # Flatten transparency onto white so alpha regions don't turn black
-    # after mode conversion, then normalise to RGB (keep colour).
+    # after mode conversion, then normalise to RGB (keep colour). Palette
+    # images (mode "P") can carry transparency via img.info; promote them
+    # to RGBA first so the alpha channel exists to composite against.
+    if img.mode == "P" and "transparency" in img.info:
+        img = img.convert("RGBA")
     if img.mode in ("RGBA", "LA", "PA"):
         background = Image.new("RGB", img.size, (255, 255, 255))
         background.paste(img, mask=img.split()[-1])
