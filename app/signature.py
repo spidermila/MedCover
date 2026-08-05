@@ -4,10 +4,10 @@ Pipeline for uploads to the profile signature field:
   1. Reject oversized requests early (handled in the route).
   2. Sniff format from bytes; accept PNG, JPEG, HEIC/HEIF.
   3. EXIF auto-orient (phone photos come sideways).
-  4. Flatten transparency onto white; keep colour (mode RGB).
+  4. Flatten transparency onto white; keep colour.
   5. Auto-crop white borders (with a safety valve for false positives).
   6. Resize to a fixed target height, preserving aspect ratio.
-  7. Re-encode as PNG.
+  7. Quantise to a 64-colour adaptive palette and re-encode as PNG.
   8. Enforce final size cap.
 
 The stored blob is always a PNG; the mimetype column is kept for future
@@ -34,7 +34,9 @@ Image.MAX_IMAGE_PIXELS = 25_000_000
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MiB — request-body cap before decode
 MAX_STORED_BYTES = 50 * 1024  # 50 KiB — hard cap on the persisted PNG
 TARGET_HEIGHT_PX = 200  # signature strip height in the final PNG
-ACCEPTED_FORMATS = frozenset({"PNG", "JPEG", "HEIF", "HEIC"})
+# MPO is a multi-frame JPEG container iPhones produce in HDR mode; the primary
+# frame is a normal JPEG, which is what Pillow returns from Image.open().
+ACCEPTED_FORMATS = frozenset({"PNG", "JPEG", "MPO", "HEIF", "HEIC"})
 ACCEPTED_MIMETYPES = frozenset({"image/png", "image/jpeg", "image/heic", "image/heif"})
 
 
@@ -49,8 +51,8 @@ def process_signature_upload(raw_bytes: bytes) -> bytes:
         raw_bytes: Bytes read from the uploaded file.
 
     Returns:
-        PNG-encoded bytes ready to persist to the DB (mode RGB, height
-        `TARGET_HEIGHT_PX`, size at most `MAX_STORED_BYTES`).
+        PNG-encoded bytes ready to persist to the DB (adaptive-palette PNG,
+        height `TARGET_HEIGHT_PX`, size at most `MAX_STORED_BYTES`).
 
     Raises:
         SignatureError: If the bytes are not a recognised image, use a
@@ -107,8 +109,12 @@ def process_signature_upload(raw_bytes: bytes) -> bytes:
         new_w = max(1, round(img.width * TARGET_HEIGHT_PX / img.height))
         img = img.resize((new_w, TARGET_HEIGHT_PX), Image.Resampling.LANCZOS)
 
+    # Quantise to an adaptive 64-colour palette before encoding. A signature
+    # is ink + paper + antialiasing, so 64 colours is visually indistinguishable
+    # from the full RGB image while shrinking a photo-sourced PNG by ~2.5×.
+    quantised = img.quantize(colors=64, method=Image.Quantize.FASTOCTREE)
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    quantised.save(buf, format="PNG", optimize=True)
     out = buf.getvalue()
 
     if len(out) > MAX_STORED_BYTES:
