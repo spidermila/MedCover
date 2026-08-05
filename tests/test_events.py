@@ -21,7 +21,7 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from tests.conftest import _get_csrf, _login, _make_event_in_status, _make_master_event, _make_rp_qual
+from tests.conftest import _get_csrf, _login, _make_event_in_status, _make_master_event, _make_rp_qual, _make_user
 
 
 def _event_form_data(master_event_id: int, name: str = "Test Event", rp_qual_id: int | None = None) -> dict:
@@ -192,6 +192,51 @@ class TestEventLifecycle:
             data={"target_status": "Zveřejněná"},
         )
         assert response.status_code == 403
+
+    def test_transition_to_published_commits_outbox_rows(self, app, admin_client):
+        """Regression: DRAFT → PUBLISHED must commit the event_published outbox
+        rows enqueued by send_event_published (which only flushes)."""
+        with app.app_context():
+            _make_user("m-pub@test.com", "Member Pub", Role.MEMBER)
+        event_id = self._create_event(app, admin_client)
+        admin_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Zveřejněná"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.event_id == event_id,
+                    OutboxEmail.notification_type == "event_published",
+                )
+            ).all()
+            assert rows, "event_published outbox rows were not persisted after commit"
+
+    def test_transition_to_assignments_open_commits_outbox_rows(self, app, admin_client):
+        """Regression: PUBLISHED → ASSIGNMENTS_OPEN must commit the
+        assignments_opened outbox rows."""
+        with app.app_context():
+            _make_user("m-open@test.com", "Member Open", Role.MEMBER)
+        event_id = self._create_event(app, admin_client)
+        admin_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Zveřejněná"},
+            follow_redirects=False,
+        )
+        admin_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Přihlášky otevřeny"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.event_id == event_id,
+                    OutboxEmail.notification_type == "assignments_opened",
+                )
+            ).all()
+            assert rows, "assignments_opened outbox rows were not persisted after commit"
 
     def test_cannot_skip_status(self, app, admin_client):
         event_id = self._create_event(app, admin_client)
