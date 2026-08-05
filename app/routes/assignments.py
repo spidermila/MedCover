@@ -214,6 +214,7 @@ def do_unassign_user(
         return AssignResult(ok=False, error="Tuto akci řídí koordinátor — odhlašování není povoleno.", event=event)
 
     user = assignment.user
+    spot_description = assignment.spot.description
     if unassigned_by is not None and unassigned_by.id != user.id:
         summary = f"'{unassigned_by.name}' odhlásil '{user.name}' z akce '{event.name}'"
     else:
@@ -225,7 +226,7 @@ def do_unassign_user(
 
     db.session.commit()
 
-    mailer.send_assignment_released(user, event, spot_description=assignment.spot.description)
+    mailer.send_assignment_released(user, event, spot_description=spot_description)
     return AssignResult(ok=True, event=event, user=user)
 
 
