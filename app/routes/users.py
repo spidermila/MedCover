@@ -179,7 +179,7 @@ def _upload_signature(user: UserAccount) -> Response:
     except SignatureError as exc:
         flash(str(exc), "danger")
         return redirect(url_for("users.profile"))
-    had_signature_before = user.signature_image is not None
+    had_signature_before = user.signature_mimetype is not None
     user.signature_image = processed
     user.signature_mimetype = "image/png"
     user.version += 1
@@ -196,7 +196,7 @@ def _upload_signature(user: UserAccount) -> Response:
 
 
 def _remove_signature(user: UserAccount) -> Response:
-    if user.signature_image is None:
+    if user.signature_mimetype is None:
         return redirect(url_for("users.profile"))
     user.signature_image = None
     user.signature_mimetype = None
