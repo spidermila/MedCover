@@ -1,6 +1,7 @@
 """Tests for the profile signature upload/remove/serve feature."""
 
 import io
+from pathlib import Path
 
 import openpyxl
 import pytest
@@ -12,6 +13,8 @@ from app.models.user import UserAccount
 from app.signature import MAX_STORED_BYTES, SignatureError, process_signature_upload
 from app.work_report_generator import generate_work_report
 from tests.conftest import _make_user
+
+SIGNATURE_PHOTO_FIXTURE = Path(__file__).parent / "fixtures" / "signature_photo.jpeg"
 
 
 def _png_bytes(w: int = 800, h: int = 300, color: str = "white") -> bytes:
@@ -41,10 +44,11 @@ class TestSignaturePipeline:
         out = process_signature_upload(_png_bytes())
         assert out.startswith(b"\x89PNG")
 
-    def test_output_is_rgb_and_target_height(self) -> None:
+    def test_output_is_palette_and_target_height(self) -> None:
         out = process_signature_upload(_png_bytes())
         img = Image.open(io.BytesIO(out))
-        assert img.mode == "RGB"
+        # Adaptive-palette PNG (mode P) keeps colour while fitting the stored cap.
+        assert img.mode == "P"
         assert img.height == 200
 
     def test_output_within_stored_cap(self) -> None:
@@ -70,10 +74,28 @@ class TestSignaturePipeline:
         buf = io.BytesIO()
         img.save(buf, "PNG")
         out = process_signature_upload(buf.getvalue())
-        result = Image.open(io.BytesIO(out))
+        result = Image.open(io.BytesIO(out)).convert("RGB")
         # Corners should be white (background composited), not black.
         corner = result.getpixel((0, 0))
         assert all(c > 200 for c in corner)
+
+    def test_real_phone_photo_fits_stored_cap(self) -> None:
+        # Real iPhone HDR photo of a cropped signature on paper. Exercises the
+        # realistic compression path (photo noise + palette quantisation) that
+        # synthetic ImageDraw PNGs never hit.
+        raw = SIGNATURE_PHOTO_FIXTURE.read_bytes()
+        out = process_signature_upload(raw)
+        assert len(out) <= MAX_STORED_BYTES
+        result = Image.open(io.BytesIO(out))
+        assert result.height == 200
+
+    def test_mpo_container_is_accepted(self) -> None:
+        # iPhone HDR photos come out of Pillow as format="MPO" (multi-frame
+        # JPEG container). Guard against regressing the whitelist.
+        raw = SIGNATURE_PHOTO_FIXTURE.read_bytes()
+        with Image.open(io.BytesIO(raw)) as im:
+            assert im.format == "MPO"
+        process_signature_upload(raw)  # must not raise
 
     def test_exif_orientation_is_applied(self) -> None:
         # Portrait-oriented JPEG with orientation=6 (rotate 270 CW) should end
