@@ -1,7 +1,7 @@
 """add signature_image and signature_mimetype to user_account
 
 Revision ID: 1d73232b0f18
-Revises: f2bf1b120b10
+Revises: 2a50c6233c4c
 Create Date: 2026-08-04 00:00:00.000000
 
 Stores an optional handwritten-signature image per user. The image is embedded
@@ -13,7 +13,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = '1d73232b0f18'
-down_revision = 'f2bf1b120b10'
+down_revision = '2a50c6233c4c'
 branch_labels = None
 depends_on = None
 
