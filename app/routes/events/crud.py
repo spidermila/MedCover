@@ -18,7 +18,7 @@ from app.models.equipment import (
     EquipmentType,
     EventEquipmentPlan,
 )
-from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType, spot_qualifications
+from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.user import UserAccount
