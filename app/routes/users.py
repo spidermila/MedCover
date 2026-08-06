@@ -223,7 +223,7 @@ def signature_preview() -> Response:
         BytesIO(user.signature_image),
         mimetype=user.signature_mimetype or "image/png",
     )
-    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["Cache-Control"] = "private"
     return resp
 
 

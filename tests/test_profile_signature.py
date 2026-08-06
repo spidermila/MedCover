@@ -7,6 +7,7 @@ import openpyxl
 import pytest
 from PIL import Image, ImageDraw
 
+from app import signature as signature_module
 from app.extensions import db
 from app.models.role import Role
 from app.models.user import UserAccount
@@ -66,6 +67,15 @@ class TestSignaturePipeline:
     def test_rejects_empty(self) -> None:
         with pytest.raises(SignatureError):
             process_signature_upload(b"")
+
+    def test_rejects_oversized_by_header(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Header-based pre-decode guard: a real photo below Pillow's own 2×
+        # DecompressionBombError threshold still gets rejected as soon as its
+        # advertised dimensions exceed our exact MAX_IMAGE_PIXELS cap.
+        monkeypatch.setattr(signature_module, "MAX_IMAGE_PIXELS", 10_000)
+        raw = _png_bytes(200, 200)  # 40_000 px > 10_000
+        with pytest.raises(SignatureError, match="rozlišení"):
+            process_signature_upload(raw)
 
     def test_transparent_png_composited_on_white(self) -> None:
         img = Image.new("RGBA", (400, 200), (0, 0, 0, 0))
@@ -193,7 +203,7 @@ class TestSignatureRoutes:
         assert resp.status_code == 200
         assert resp.mimetype == "image/png"
         assert resp.data.startswith(b"\x89PNG")
-        assert resp.headers.get("Cache-Control") == "private, no-store"
+        assert resp.headers.get("Cache-Control") == "private"
 
     def test_preview_404_when_no_signature(self, member_client: object) -> None:
         resp = member_client.get("/users/profile/signature")
