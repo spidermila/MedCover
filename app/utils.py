@@ -2,9 +2,11 @@
 
 from calendar import monthrange
 from datetime import date
-from typing import TypeVar
+from typing import Any, TypeVar
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
+
+import sqlalchemy as sa
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -35,6 +37,16 @@ def get_app_tz() -> ZoneInfo:
 
 # Collation name for ORDER BY on user-visible text columns (MSSQL Czech sort order).
 CS_COLLATION: str = "Czech_100_CI_AS_SC_UTF8"
+
+
+def order_by_nulls_last(expr: Any, *, descending: bool = False) -> tuple[Any, Any]:
+    # T-SQL has no NULLS LAST; SQLAlchemy's mssql dialect emits .nulls_last()
+    # verbatim and the server rejects it. Emulate by prefixing with a
+    # 0/1 null-flag key so NULLs sort after non-NULLs in both directions.
+    null_flag = sa.case((expr.is_(None), 1), else_=0)
+    direction = expr.desc() if descending else expr.asc()
+    return null_flag, direction
+
 
 # Czech alphabet in correct order including digraph 'ch'.
 _CS_ALPHABET: list[str] = [

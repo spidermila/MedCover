@@ -30,6 +30,7 @@ from app.utils import (
     diff_changes,
     external_url_for,
     get_or_404,
+    order_by_nulls_last,
     require_permission,
 )
 
@@ -286,13 +287,13 @@ def index() -> str:
         "last_login": UserAccount.last_login_at,
     }[sort]
     if sort == "last_login":
-        order = sort_col.asc().nulls_last() if sort_dir == "asc" else sort_col.desc().nulls_last()
+        order: tuple[Any, ...] = order_by_nulls_last(sort_col, descending=sort_dir == "desc")
     else:
-        order = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
+        order = (sort_col.asc() if sort_dir == "asc" else sort_col.desc(),)
 
     from app.models.user import user_roles as user_roles_table  # pylint: disable=import-outside-toplevel
 
-    query = db.select(UserAccount).order_by(order)
+    query = db.select(UserAccount).order_by(*order)
     if not show_archived:
         query = query.where(UserAccount.is_archived == sa.false())
     else:

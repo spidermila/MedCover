@@ -64,6 +64,18 @@ class TestEventListPermissions:
         response = admin_client.get("/events/?statuses=DRAFT")
         assert b"data-me=" in response.data
 
+    def test_event_list_sort_me_name_and_rp_do_not_error(self, app, admin_client):
+        # Regression: me_name and rp sorts previously used .nulls_last() which
+        # emits invalid T-SQL and 500'd on MSSQL. Cover both directions and
+        # exercise archived toggle too since it changes the underlying WHERE.
+        me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
+        for sort in ("me_name", "rp"):
+            for direction in ("asc", "desc"):
+                resp = admin_client.get(f"/events/?sort={sort}&dir={direction}&statuses=DRAFT")
+                assert resp.status_code == 200, (sort, direction, resp.data[:400])
+
 
 class TestEventCreate:
     def test_create_page_loads_for_admin(self, admin_client):
