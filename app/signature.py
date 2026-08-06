@@ -25,10 +25,14 @@ log = logging.getLogger(__name__)
 # Register HEIC/HEIF openers with Pillow so Image.open() handles iPhone photos.
 register_heif_opener()
 
-# Guardrails against decompression bombs. Applied to the Image class globally
-# on module import; a value that comfortably fits any real phone photo (12 MP
-# is ~12 M pixels) but rejects pathological inputs.
-Image.MAX_IMAGE_PIXELS = 25_000_000
+# Guardrails against decompression bombs. Comfortably fits any real phone
+# photo (12 MP is ~12 M pixels) but rejects pathological inputs. Pillow's own
+# Image.MAX_IMAGE_PIXELS only raises at 2× the limit (below that it just emits
+# a warning), so we enforce the exact cap ourselves from the lazy-loaded
+# header and keep Pillow's check as a second line of defence in case the
+# header lies about the real pixel count.
+MAX_IMAGE_PIXELS = 25_000_000
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 # Public constants; used by the route and template.
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MiB — request-body cap before decode
@@ -41,7 +45,6 @@ MAX_ASPECT_RATIO = 20
 # MPO is a multi-frame JPEG container iPhones produce in HDR mode; the primary
 # frame is a normal JPEG, which is what Pillow returns from Image.open().
 ACCEPTED_FORMATS = frozenset({"PNG", "JPEG", "MPO", "HEIF", "HEIC"})
-ACCEPTED_MIMETYPES = frozenset({"image/png", "image/jpeg", "image/heic", "image/heif"})
 
 
 class SignatureError(ValueError):
@@ -65,13 +68,22 @@ def process_signature_upload(raw_bytes: bytes) -> bytes:
     """
     try:
         source = Image.open(io.BytesIO(raw_bytes))
+        # Image.open is lazy and only reads the header, so .size is available
+        # without decoding pixels. Reject oversized images before load().
+        if source.width * source.height > MAX_IMAGE_PIXELS:
+            log.warning(
+                "Rejected oversized image (%dx%d, %d bytes)",
+                source.width,
+                source.height,
+                len(raw_bytes),
+            )
+            raise SignatureError("Obrázek je příliš velký (rozlišení).")
         source.load()  # force decode so format errors surface here
     except (UnidentifiedImageError, OSError) as exc:
         raise SignatureError("Soubor není platný obrázek.") from exc
     except Image.DecompressionBombError as exc:
-        # Legitimate photos never hit this — it requires a header advertising
-        # a resolution far beyond any real camera/scanner, so treat it as a
-        # probable malicious upload rather than an ordinary validation miss.
+        # Failsafe: header under-reported the pixel count and Pillow tripped
+        # its own guard (fires at 2× MAX_IMAGE_PIXELS) during decode.
         log.warning(
             "Rejected oversized image (%d bytes) — possible decompression bomb",
             len(raw_bytes),
