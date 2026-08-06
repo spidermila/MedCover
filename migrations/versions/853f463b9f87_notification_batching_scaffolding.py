@@ -1,7 +1,7 @@
 """notification batching scaffolding
 
 Revision ID: 853f463b9f87
-Revises: 08afa74293a8
+Revises: f2bf1b120b10
 Create Date: 2026-07-14 00:00:00.000000
 
 Adds structural scaffolding for batched event notifications:
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 
 revision = '853f463b9f87'
-down_revision = '08afa74293a8'
+down_revision = 'f2bf1b120b10'
 branch_labels = None
 depends_on = None
 
