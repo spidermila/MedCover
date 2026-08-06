@@ -3,7 +3,7 @@
 import importlib.util
 import json
 import sys
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import openpyxl
@@ -202,16 +202,19 @@ class TestExtractFunction:
         # Should have date suffixes
         assert "1.10." in fotbal[0]["name"] or "15.10." in fotbal[0]["name"]
 
-    def test_midnight_end_time_treated_as_null(self):
-        """Issue #340: midnight (00:00) end time is treated as unspecified."""
+    def test_midnight_end_time_preserved(self):
+        """Issue #340: midnight (00:00) end time must be kept as '00:00', not coerced to null,
+        and the event must carry end_date = start_date + 1 day."""
         fixture = Path(__file__).parent / "fixtures" / "test_import.xlsx"
         wb = openpyxl.load_workbook(str(fixture), data_only=True)
         events = _script.extract(wb)
-        # Noční akce (row 11) has end_time=time(0,0)
+        # Noční akce (row 11) has start_time=20:00 and end_time=time(0,0)
         nocni = next(e for e in events if "Noční akce" in e["name"])
         assert nocni["start_time"] == "20:00"
-        # Current code converts midnight to None — this tests the CURRENT behavior
-        assert nocni["end_time"] is None
+        assert nocni["end_time"] == "00:00"
+        # Midnight-spanning: end_date must be start_date + 1 day
+        expected_end_date = (date.fromisoformat(nocni["date"]) + timedelta(days=1)).strftime("%Y-%m-%d")
+        assert nocni["end_date"] == expected_end_date
 
     def test_cutoff_filters_events(self):
 

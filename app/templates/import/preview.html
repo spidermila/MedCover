@@ -312,7 +312,8 @@
           {# Date (read-only display + hidden) #}
           <td>
             <input type="hidden" name="ev_{{ i }}_date" value="{{ row.date }}">
-            <span class="small">{{ row.date }}</span>
+            {% if row.end_date %}<input type="hidden" name="ev_{{ i }}_end_date" value="{{ row.end_date }}">{% endif %}
+            <span class="small">{{ row.date }}{% if row.end_date %} → {{ row.end_date }}{% endif %}</span>
           </td>
 
           {# Start time #}
