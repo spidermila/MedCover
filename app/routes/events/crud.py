@@ -37,6 +37,7 @@ from app.utils import (
     diff_changes,
     get_app_tz,
     get_or_404,
+    order_by_nulls_last,
     require_permission,
 )
 
@@ -130,8 +131,7 @@ def _apply_index_order(
             .correlate(Event)
             .scalar_subquery()
         )
-        order_expr = me_name_expr.asc() if _asc else me_name_expr.desc()
-        return query.order_by(order_expr.nulls_last())
+        return query.order_by(*order_by_nulls_last(me_name_expr, descending=not _asc))
     if sort_col == "total":
         spot_count_sq = (
             db.select(func.count(EventSpot.id))
@@ -147,8 +147,7 @@ def _apply_index_order(
             .correlate(Event)
             .scalar_subquery()
         )
-        order_expr = rp_name_sq.asc() if _asc else rp_name_sq.desc()
-        return query.order_by(order_expr.nulls_last())
+        return query.order_by(*order_by_nulls_last(rp_name_sq, descending=not _asc))
     # start (default)
     return query.order_by(Event.start_datetime.asc() if _asc else Event.start_datetime.desc())
 

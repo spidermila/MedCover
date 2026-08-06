@@ -1,6 +1,7 @@
 """Tests for user profile and admin user-management routes."""
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 import sqlalchemy as sa
@@ -963,6 +964,55 @@ class TestUserListFiltersAndSort:
         resp = admin_client.get("/users/?q=xyzunlikelysubstring")
         assert resp.status_code == 200
         assert b"admin@test.com" not in resp.data
+
+    def test_sort_by_last_login_puts_never_logged_in_last(self, app, admin_client):
+        # Regression: T-SQL has no NULLS LAST; earlier code emitted invalid SQL
+        # for the last_login sort and 500'd whenever the sorted set contained
+        # users who had never logged in (last_login_at IS NULL).
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == "Member"))
+            recent = UserAccount(
+                email="recent@test.cz",
+                name="Recent Login",
+                is_active=True,
+                last_login_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            )
+            recent.set_password("pass")
+            recent.roles = [role]
+            old = UserAccount(
+                email="old@test.cz",
+                name="Old Login",
+                is_active=True,
+                last_login_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            )
+            old.set_password("pass")
+            old.roles = [role]
+            never = UserAccount(
+                email="never@test.cz",
+                name="Never Logged In",
+                is_active=True,
+                last_login_at=None,
+            )
+            never.set_password("pass")
+            never.roles = [role]
+            db.session.add_all([recent, old, never])
+            db.session.commit()
+
+        for direction in ("asc", "desc"):
+            resp = admin_client.get(f"/users/?sort=last_login&dir={direction}")
+            assert resp.status_code == 200, (direction, resp.data[:400])
+            html = resp.data.decode()
+            pos_recent = html.find("recent@test.cz")
+            pos_old = html.find("old@test.cz")
+            pos_never = html.find("never@test.cz")
+            assert pos_recent != -1 and pos_old != -1 and pos_never != -1
+            # Nulls last in both directions.
+            assert pos_recent < pos_never, direction
+            assert pos_old < pos_never, direction
+            if direction == "asc":
+                assert pos_old < pos_recent
+            else:
+                assert pos_recent < pos_old
 
 
 # ── Archive / Unarchive ───────────────────────────────────────────────────────
