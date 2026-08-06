@@ -144,13 +144,15 @@ def save_block(block_id: int) -> Response:
     from app.models.digest import DigestBlock, get_digest_schedule  # pylint: disable=import-outside-toplevel
 
     schedule = get_digest_schedule()
+    # SQLAlchemy's mssql dialect silently drops .with_for_update(); use an
+    # explicit T-SQL row-level UPDLOCK to serialize concurrent edits.
     block = db.session.scalar(
         sa.select(DigestBlock)
         .where(
             DigestBlock.id == block_id,
             DigestBlock.digest_schedule_id == schedule.id,
         )
-        .with_for_update()
+        .with_hint(DigestBlock, "WITH (UPDLOCK, ROWLOCK)")
     )
     if block is None:
         abort(404)
@@ -259,13 +261,15 @@ def toggle_block(block_id: int) -> dict[str, object]:
     from app.models.digest import DigestBlock, get_digest_schedule  # pylint: disable=import-outside-toplevel
 
     schedule = get_digest_schedule()
+    # SQLAlchemy's mssql dialect silently drops .with_for_update(); use an
+    # explicit T-SQL row-level UPDLOCK to serialize concurrent toggles.
     block = db.session.scalar(
         sa.select(DigestBlock)
         .where(
             DigestBlock.id == block_id,
             DigestBlock.digest_schedule_id == schedule.id,
         )
-        .with_for_update()
+        .with_hint(DigestBlock, "WITH (UPDLOCK, ROWLOCK)")
     )
     if block is None:
         abort(404)

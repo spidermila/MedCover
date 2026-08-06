@@ -32,9 +32,16 @@ def equipment_plan_add(event_id: int) -> Response:
         flash("Zadejte platný typ a množství.", "danger")
         return redirect(url_for("events.detail", event_id=event_id))
 
-    # Pessimistic lock: serializes concurrent plan-add requests for the same type,
-    # preventing the check-then-insert TOCTOU race (mirrors spot assignment locking).
-    et = db.session.scalar(db.select(EquipmentType).where(EquipmentType.id == type_id).with_for_update())
+    # Serialize concurrent plan-add requests for the same type: acquire an
+    # UPDLOCK on the EquipmentType row so the availability query below cannot
+    # be undercut by a concurrent insert. HOLDLOCK escalates the lock's
+    # duration to end-of-transaction. SQLAlchemy's mssql dialect silently
+    # drops .with_for_update(), so use an explicit T-SQL table hint.
+    et = db.session.scalar(
+        db.select(EquipmentType)
+        .where(EquipmentType.id == type_id)
+        .with_hint(EquipmentType, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+    )
     if et is None:
         abort(404)
 
