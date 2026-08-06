@@ -1,0 +1,91 @@
+{% extends "email/base.html" %}
+{% macro spot_table(spots) %}
+<table style="border-collapse:collapse;font-size:13px;margin:6px 0 10px 0;">
+  <thead>
+    <tr>
+      <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #dddddd;">Popis</th>
+      <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #dddddd;">Požadovaná kvalifikace</th>
+      <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #dddddd;">Stav</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in spots %}
+    <tr>
+      <td style="padding:4px 8px;vertical-align:top;">{{ s.description }}{% if s.is_optional %} (volitelná){% endif %}</td>
+      <td style="padding:4px 8px;vertical-align:top;">{% if s.qualifications %}{{ s.qualifications|join(", ") }}{% else %}Bez požadavků{% endif %}</td>
+      <td style="padding:4px 8px;vertical-align:top;">{% if s.is_filled %}Obsazeno{% else %}Volné{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+{% block content %}
+<p>Dobrý den, {{ user_name }},</p>
+{% if event_sections|length == 1 %}
+<p>níže je souhrn oznámení k akci:</p>
+{% else %}
+<p>níže je souhrn oznámení ke {{ event_sections|length }} akcím:</p>
+{% endif %}
+
+{% for section in event_sections %}
+<div class="event-section">
+  <h3 style="margin-bottom:4px;">
+    <a href="{{ section.event_url }}">{{ section.event_name }}</a>
+  </h3>
+  <div style="color:#555555;font-size:12px;margin-bottom:8px;">
+    {{ section.datetime_range_local }}
+  </div>
+
+  {% for entry in section.rows %}
+    {% if entry.type == "event_changed" %}
+      <div class="changes">
+        <table>
+          <thead><tr><th>Pole</th><th>Před</th><th>Po</th></tr></thead>
+          <tbody>
+            {% for label, old_val, new_val in entry.changes %}
+            <tr><td>{{ label }}</td><td>{{ old_val }}</td><td>{{ new_val }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% elif entry.type == "assignment_confirmed" %}
+      <p>Byli jste přihlášeni na pozici <strong>{{ entry.spot_description }}</strong>.</p>
+    {% elif entry.type == "assignment_released" %}
+      <p>Byli jste odhlášeni z pozice <strong>{{ entry.spot_description }}</strong>.</p>
+    {% elif entry.type == "event_published" %}
+      <p>Akce byla zveřejněna.</p>
+      {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}
+    {% elif entry.type == "assignments_opened" %}
+      <p>Přihlášky byly otevřeny.</p>
+      {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}
+    {% elif entry.type == "event_cancelled" %}
+      <p>Akce byla zrušena.</p>
+    {% elif entry.type == "event_archived" %}
+      <p>Akce byla archivována.</p>
+    {% elif entry.type == "event_unarchived" %}
+      <p>Akce byla obnovena z archivu.</p>
+    {% elif entry.type == "unfilled_reminder" %}
+      {% set n = entry.unfilled_count %}
+      {% if n > 0 %}
+        <p>Akce má <strong>{{ n }}</strong>
+          {%- if n == 1 %} neobsazenou pozici
+          {%- elif n < 5 %} neobsazené pozice
+          {%- else %} neobsazených pozic
+          {%- endif -%}.</p>
+      {% endif %}
+      {% if entry.show_spots %}
+        {% if entry.spots %}{{ spot_table(entry.spots) }}
+        {% else %}<p>Všechna povinná místa jsou nyní obsazená.</p>{% endif %}
+      {% endif %}
+    {% elif entry.type == "debriefing_invitation" %}
+      <p><a href="{{ entry.debriefing_url }}">Vyplňte prosím debriefing.</a></p>
+    {% else %}
+      {{ entry.legacy_html|safe }}
+    {% endif %}
+  {% endfor %}
+</div>
+{% if not loop.last %}<hr>{% endif %}
+{% endfor %}
+
+<p style="margin-top:16px;">V případě dotazů kontaktujte prosím koordinátora.</p>
+{% endblock %}

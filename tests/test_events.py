@@ -21,7 +21,7 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from tests.conftest import _get_csrf, _login, _make_event_in_status, _make_master_event, _make_rp_qual
+from tests.conftest import _get_csrf, _login, _make_event_in_status, _make_master_event, _make_rp_qual, _make_user
 
 
 def _event_form_data(master_event_id: int, name: str = "Test Event", rp_qual_id: int | None = None) -> dict:
@@ -192,6 +192,51 @@ class TestEventLifecycle:
             data={"target_status": "Zveřejněná"},
         )
         assert response.status_code == 403
+
+    def test_transition_to_published_commits_outbox_rows(self, app, admin_client):
+        """Regression: DRAFT → PUBLISHED must commit the event_published outbox
+        rows enqueued by send_event_published (which only flushes)."""
+        with app.app_context():
+            _make_user("m-pub@test.com", "Member Pub", Role.MEMBER)
+        event_id = self._create_event(app, admin_client)
+        admin_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Zveřejněná"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.event_id == event_id,
+                    OutboxEmail.notification_type == "event_published",
+                )
+            ).all()
+            assert rows, "event_published outbox rows were not persisted after commit"
+
+    def test_transition_to_assignments_open_commits_outbox_rows(self, app, admin_client):
+        """Regression: PUBLISHED → ASSIGNMENTS_OPEN must commit the
+        assignments_opened outbox rows."""
+        with app.app_context():
+            _make_user("m-open@test.com", "Member Open", Role.MEMBER)
+        event_id = self._create_event(app, admin_client)
+        admin_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Zveřejněná"},
+            follow_redirects=False,
+        )
+        admin_client.post(
+            f"/events/{event_id}/transition",
+            data={"target_status": "Přihlášky otevřeny"},
+            follow_redirects=False,
+        )
+        with app.app_context():
+            rows = db.session.scalars(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.event_id == event_id,
+                    OutboxEmail.notification_type == "assignments_opened",
+                )
+            ).all()
+            assert rows, "assignments_opened outbox rows were not persisted after commit"
 
     def test_cannot_skip_status(self, app, admin_client):
         event_id = self._create_event(app, admin_client)
@@ -1967,6 +2012,180 @@ class TestBulkPrintout:
         event_id = _make_event_in_status(app, EventStatus.PUBLISHED, name="Bulk Printout DM")
         resp = _post_bulk_printout(client, [event_id])
         assert resp.status_code == 403
+
+
+class TestForMeFilter:
+    """Server-side 'pro mě' filter: pagination count must match visible events (issue #326)."""
+
+    def _setup(self, app):
+        """Create member + 1 eligible event (no-req spot) + 1 ineligible event (req spot user can't fill)."""
+        with app.app_context():
+            me = MasterEvent(name="ForMe ME")
+            db.session.add(me)
+            db.session.flush()
+
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            user = UserAccount(email="forme@test.com", name="ForMe User", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+
+            # eligible event: spot with no required qualifications
+            ev_eligible = Event(
+                name="Eligible Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev_eligible)
+            db.session.flush()
+            db.session.add(EventSpot(event_id=ev_eligible.id))
+
+            # ineligible event: spot requires a qual the user doesn't have
+            other_qual = Qualification(name="ForMe Other Qual")
+            db.session.add(other_qual)
+            db.session.flush()
+            ev_ineligible = Event(
+                name="Ineligible Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 2, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 2, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev_ineligible)
+            db.session.flush()
+            spot = EventSpot(event_id=ev_ineligible.id)
+            db.session.add(spot)
+            db.session.flush()
+            spot.required_qualifications = [other_qual]
+
+            db.session.commit()
+            return user.email
+
+    def test_for_me_shows_only_eligible_events(self, app, client):
+        email = self._setup(app)
+        _login(client, email)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&for_me=1")
+        assert resp.status_code == 200
+        assert b"Eligible Event" in resp.data
+        assert b"Ineligible Event" not in resp.data
+
+    def test_for_me_off_shows_all_events(self, app, client):
+        email = self._setup(app)
+        _login(client, email)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+        assert b"Eligible Event" in resp.data
+        assert b"Ineligible Event" in resp.data
+
+    def test_for_me_excluded_when_no_permission(self, app, client):
+        """A user without event.assign_own cannot activate the for_me filter.
+
+        VIEWER has event.view but not event.assign_own — the for_me param must be
+        silently ignored (page loads normally, no 403 or redirect).
+        """
+        with app.app_context():
+            me = MasterEvent(name="ForMe Viewer ME")
+            db.session.add(me)
+            db.session.flush()
+            ev = Event(
+                name="Viewer Visible Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 10, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 10, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev)
+
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.VIEWER))
+            user = UserAccount(email="viewer_forme@test.com", name="Viewer ForMe", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+            db.session.commit()
+            email = user.email
+        _login(client, email)
+        # Viewer passes for_me=1 but lacks event.assign_own — param is silently ignored
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&for_me=1")
+        assert resp.status_code == 200
+        # The event is still present — the for_me filter was not applied
+        assert b"Viewer Visible Event" in resp.data
+
+    def test_for_me_occupied_spot_excluded(self, app, client):
+        """An event where the user's only eligible spot is already taken is excluded."""
+        with app.app_context():
+            me = MasterEvent(name="Occupied ME")
+            db.session.add(me)
+            db.session.flush()
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+
+            user = UserAccount(email="forme_occ@test.com", name="ForMe Occ", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+
+            other = UserAccount(email="other_occ@test.com", name="Other Occ", is_active=True)
+            other.set_password("testpass123")
+            other.roles = [role]
+            db.session.add(other)
+
+            ev = Event(
+                name="Occupied Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 7, 3, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 7, 3, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev)
+            db.session.flush()
+            spot = EventSpot(event_id=ev.id)
+            db.session.add(spot)
+            db.session.flush()
+            other_id = other.id
+            db.session.add(Assignment(spot_id=spot.id, user_id=other_id))
+            db.session.commit()
+            email = user.email
+
+        _login(client, email)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&for_me=1")
+        assert resp.status_code == 200
+        assert b"Occupied Event" not in resp.data
+
+    def test_for_me_zero_eligible_events_returns_empty_page(self, app, client):
+        """When no ASSIGNMENTS_OPEN event has a claimable spot for the user,
+        for_me=1 returns 200 with an empty list — exercises the [-1] sentinel path."""
+        with app.app_context():
+            me = MasterEvent(name="ZeroElig ME")
+            db.session.add(me)
+            db.session.flush()
+            qual = Qualification(name="ZeroElig Qual")
+            db.session.add(qual)
+            db.session.flush()
+            ev = Event(
+                name="ZeroElig Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 8, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 8, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev)
+            db.session.flush()
+            spot = EventSpot(event_id=ev.id)
+            db.session.add(spot)
+            db.session.flush()
+            spot.required_qualifications = [qual]
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            user = UserAccount(email="zeroeleg@test.com", name="ZeroElig User", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+            db.session.commit()
+            email = user.email
+        _login(client, email)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&for_me=1")
+        assert resp.status_code == 200
+        assert b"ZeroElig Event" not in resp.data
 
 
 # ── Archive (soft-delete) ─────────────────────────────────────────────────────

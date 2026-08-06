@@ -185,7 +185,7 @@ def do_assign_user(
         db.session.rollback()
         return AssignResult(ok=False, error="Tato pozice byla právě obsazena někým jiným.", event=event)
 
-    mailer.send_assignment_confirmed(user, event)
+    mailer.send_assignment_confirmed(user, event, spot_description=spot.description)
     return AssignResult(ok=True, assignment=spot.assignment, event=event, user=user)
 
 
@@ -214,6 +214,7 @@ def do_unassign_user(
         return AssignResult(ok=False, error="Tuto akci řídí koordinátor — odhlašování není povoleno.", event=event)
 
     user = assignment.user
+    spot_description = assignment.spot.description
     if unassigned_by is not None and unassigned_by.id != user.id:
         summary = f"'{unassigned_by.name}' odhlásil '{user.name}' z akce '{event.name}'"
     else:
@@ -225,7 +226,7 @@ def do_unassign_user(
 
     db.session.commit()
 
-    mailer.send_assignment_released(user, event)
+    mailer.send_assignment_released(user, event, spot_description=spot_description)
     return AssignResult(ok=True, event=event, user=user)
 
 

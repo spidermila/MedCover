@@ -396,6 +396,10 @@ def clean_db(app):
             settings.notify_event_changed = True
             settings.notify_unfilled_reminder = True
             settings.notify_debriefing = True
+            settings.notify_delay_under_24h_min = 5
+            settings.notify_delay_1_7_days_min = 60
+            settings.notify_delay_1_4_weeks_min = 360
+            settings.notify_delay_over_month_min = 1440
             _db.session.commit()
         _db.session.remove()
 

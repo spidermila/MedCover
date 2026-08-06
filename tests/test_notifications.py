@@ -1,9 +1,11 @@
 """Tests for the notification catalog and toggle route (/admin/notifications/)."""
 
+import json
 from datetime import datetime, timezone
 
 from app.extensions import db
 from app.mail import (
+    _EVENT_CHANGED_CHANGE_TYPE,
     NOTIFICATION_CATALOG,
     _format_event_change_value,
     _is_notify_enabled,
@@ -59,6 +61,8 @@ class TestNotificationCatalog:
             "event_published",
             "assignments_opened",
             "event_cancelled",
+            "event_archived",
+            "event_unarchived",
             "unfilled_reminder",
             "debriefing_invitation",
             "account_activated",
@@ -105,6 +109,8 @@ class TestNotificationsToggle:
                 "notify_event_published": "on",
                 "notify_assignments_opened": "on",
                 "notify_event_cancelled": "on",
+                "notify_event_archived": "on",
+                "notify_event_unarchived": "on",
                 "notify_event_changed": "on",
                 "notify_unfilled_reminder": "on",
                 "notify_debriefing": "on",
@@ -117,6 +123,8 @@ class TestNotificationsToggle:
             settings = db.session.get(AppSettings, 1)
             assert settings.notify_assignment is False
             assert settings.notify_event_published is True
+            assert settings.notify_event_archived is True
+            assert settings.notify_event_unarchived is True
 
     def test_enable_all_succeeds(self, app, admin_client):
         csrf = _get_csrf(admin_client, "/admin/notifications/")
@@ -128,6 +136,8 @@ class TestNotificationsToggle:
                 "notify_event_published": "on",
                 "notify_assignments_opened": "on",
                 "notify_event_cancelled": "on",
+                "notify_event_archived": "on",
+                "notify_event_unarchived": "on",
                 "notify_event_changed": "on",
                 "notify_unfilled_reminder": "on",
                 "notify_debriefing": "on",
@@ -139,6 +149,8 @@ class TestNotificationsToggle:
             settings = db.session.get(AppSettings, 1)
             assert settings.notify_assignment is True
             assert settings.notify_debriefing is True
+            assert settings.notify_event_archived is True
+            assert settings.notify_event_unarchived is True
 
     def test_save_flashes_success(self, admin_client):
         csrf = _get_csrf(admin_client, "/admin/notifications/")
@@ -242,9 +254,7 @@ class TestEventChangedNotification:
             before_count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
-            send_event_changed(
-                user, event, {"name": ["Stará akce", "Nová akce"]}, event_url="http://example.com/events/1"
-            )
+            send_event_changed(user, event, {"name": ["Stará akce", "Nová akce"]})
 
             after_count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
@@ -287,7 +297,7 @@ class TestEventChangedNotification:
             before_count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
             )
-            send_event_changed(user, event, {"name": ["Old", "New"]}, event_url="http://example.com/events/1")
+            send_event_changed(user, event, {"name": ["Old", "New"]})
 
             after_count = db.session.scalar(
                 db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.notification_type == "event_changed")
@@ -442,6 +452,36 @@ class TestNotificationTestRoute:
             after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
         assert after == before + 1
 
+    def test_event_archived_enqueues(self, app, admin_client):
+
+        event_id = _make_event_for_test(app)
+        with app.app_context():
+            before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        resp = admin_client.post(
+            "/admin/notifications/test/event_archived",
+            data={"test_email": "t@test.com", "test_event_id": str(event_id)},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        assert after == before + 1
+
+    def test_event_unarchived_enqueues(self, app, admin_client):
+
+        event_id = _make_event_for_test(app)
+        with app.app_context():
+            before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        resp = admin_client.post(
+            "/admin/notifications/test/event_unarchived",
+            data={"test_email": "t@test.com", "test_event_id": str(event_id)},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        assert after == before + 1
+
     def test_unfilled_reminder_enqueues(self, app, admin_client):
 
         event_id = _make_event_for_test(app)
@@ -476,3 +516,519 @@ class TestNotificationTestRoute:
         )
         assert resp.status_code == 200
         assert b"akci" in resp.data
+
+
+# ── Delay tier settings + admin page block ──────────────────────────────────
+
+
+class TestNotificationDelayTierDefaults:
+    """AppSettings delay tier columns have the expected defaults."""
+
+    def test_delay_tier_defaults(self, app):
+        with app.app_context():
+            settings = get_settings()
+            assert settings.notify_delay_under_24h_min == 5
+            assert settings.notify_delay_1_7_days_min == 60
+            assert settings.notify_delay_1_4_weeks_min == 360
+            assert settings.notify_delay_over_month_min == 1440
+
+
+class TestNotificationsDelayCard:
+    """Admin page renders the read-only delay card."""
+
+    def test_card_header_present(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        assert resp.status_code == 200
+        assert "Zpoždění notifikací".encode() in resp.data
+
+    def test_all_tier_labels_present(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        assert b"Do 24 hodin do akce" in resp.data
+        assert "1–7 dní do akce".encode() in resp.data
+        assert "1–4 týdny do akce".encode() in resp.data
+        assert "Více než měsíc do akce".encode() in resp.data
+
+    def test_human_friendly_values_present(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        body = resp.data.decode()
+        assert "5 min" in body
+        assert "1 h" in body
+        assert "6 h" in body
+        assert "24 h" in body
+
+    def test_card_has_editable_inputs(self, admin_client):
+        """The delay card contains four number inputs pre-filled with defaults."""
+        resp = admin_client.get("/admin/notifications/")
+        body = resp.data.decode()
+        defaults = {
+            "notify_delay_under_24h_min": 5,
+            "notify_delay_1_7_days_min": 60,
+            "notify_delay_1_4_weeks_min": 360,
+            "notify_delay_over_month_min": 1440,
+        }
+        for field, default in defaults.items():
+            assert f'name="{field}"' in body
+            assert f'value="{default}"' in body
+        assert "Uložit zpoždění" in body
+
+
+class TestDelayTierSave:
+    """Editable delay tier POST handler. Covers."""
+
+    _DEFAULTS: dict[str, int] = {
+        "notify_delay_under_24h_min": 5,
+        "notify_delay_1_7_days_min": 60,
+        "notify_delay_1_4_weeks_min": 360,
+        "notify_delay_over_month_min": 1440,
+    }
+
+    def _valid_form(self, csrf: str, **overrides: object) -> dict[str, str]:
+        data: dict[str, str] = {
+            "csrf_token": csrf,
+            "notify_delay_under_24h_min": "5",
+            "notify_delay_1_7_days_min": "60",
+            "notify_delay_1_4_weeks_min": "360",
+            "notify_delay_over_month_min": "1440",
+        }
+        data.update({k: str(v) for k, v in overrides.items()})
+        return data
+
+    def _get_csrf_for_form(self, client) -> str:
+        return _get_csrf(client, "/admin/notifications/")
+
+    def test_card_has_editable_inputs(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        body = resp.data.decode()
+        for field, default in self._DEFAULTS.items():
+            assert f'name="{field}"' in body
+            assert f'value="{default}"' in body
+        assert "Uložit zpoždění" in body
+
+    def test_post_delay_tiers_success(self, app, admin_client):
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=10,
+                notify_delay_1_7_days_min=120,
+                notify_delay_1_4_weeks_min=480,
+                notify_delay_over_month_min=2880,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Nastavení zpoždění notifikací bylo uloženo".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            assert s.notify_delay_under_24h_min == 10
+            assert s.notify_delay_1_7_days_min == 120
+            assert s.notify_delay_1_4_weeks_min == 480
+            assert s.notify_delay_over_month_min == 2880
+
+    def test_post_delay_tiers_audit_log(self, app, admin_client):
+        csrf = self._get_csrf_for_form(admin_client)
+        admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_under_24h_min=15),
+            follow_redirects=True,
+        )
+        with app.app_context():
+            entry = db.session.scalars(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.entity_type == "AppSettings")
+                .order_by(AuditLogEntry.id.desc())
+                .limit(1)
+            ).first()
+            assert entry is not None
+            assert entry.action_type == "edit"
+            assert entry.entity_id == "1"
+            assert entry.summary == "Nastavení zpoždění notifikací bylo upraveno."
+            assert "notify_delay_under_24h_min" in (entry.changes_json or {})
+
+    def test_post_delay_tiers_out_of_range(self, app, admin_client):
+        with app.app_context():
+            before_val = get_settings().notify_delay_1_7_days_min
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_1_7_days_min=20161),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "nesmí překročit 20 160 minut".encode() in resp.data
+        with app.app_context():
+            assert get_settings().notify_delay_1_7_days_min == before_val
+
+    def test_post_delay_tiers_non_integer(self, app, admin_client):
+        with app.app_context():
+            before_val = get_settings().notify_delay_1_7_days_min
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_1_7_days_min="abc"),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "musí být celé číslo".encode() in resp.data
+        with app.app_context():
+            assert get_settings().notify_delay_1_7_days_min == before_val
+
+    def test_post_delay_tiers_partial_input(self, app, admin_client):
+        """An empty field flashes and no persistence occurs."""
+        with app.app_context():
+            before = {f: getattr(get_settings(), f) for f in self._DEFAULTS}
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_under_24h_min=""),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "nesmí být prázdná".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            for field, val in before.items():
+                assert getattr(s, field) == val, f"{field} was unexpectedly changed"
+
+    def test_post_delay_tiers_permission_denied(self, app, member_client):
+        with app.app_context():
+            before_val = get_settings().notify_delay_under_24h_min
+        csrf = _get_csrf(member_client, "/dashboard")
+        resp = member_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_under_24h_min=99),
+            follow_redirects=False,
+        )
+        assert resp.status_code in (302, 403)
+        with app.app_context():
+            assert get_settings().notify_delay_under_24h_min == before_val
+
+    # --- no-op save still writes audit + fires flash -------------------
+    def test_post_delay_tiers_noop_audit(self, app, admin_client):
+        """Submitting the same four values as current DB still audits."""
+        with app.app_context():
+            s = get_settings()
+            noop_data = {f: getattr(s, f) for f in self._DEFAULTS}
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data={"csrf_token": csrf, **{k: str(v) for k, v in noop_data.items()}},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Nastavení zpoždění notifikací bylo uloženo".encode() in resp.data
+        with app.app_context():
+            entry = db.session.scalars(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.entity_type == "AppSettings")
+                .where(AuditLogEntry.summary == "Nastavení zpoždění notifikací bylo upraveno.")
+                .order_by(AuditLogEntry.id.desc())
+                .limit(1)
+            ).first()
+            assert entry is not None
+            assert entry.action_type == "edit"
+
+    # --- whitespace-only rejected as empty ----------------------------
+    def test_post_delay_tiers_whitespace_only(self, app, admin_client):
+        """Whitespace-only value treated as empty."""
+        with app.app_context():
+            before_val = get_settings().notify_delay_under_24h_min
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_under_24h_min="   "),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "nesmí být prázdná".encode() in resp.data
+        with app.app_context():
+            assert get_settings().notify_delay_under_24h_min == before_val
+
+    # --- exactly at max (20160) accepted ------------------------------
+    def test_post_delay_tiers_boundary_max(self, app, admin_client):
+        """Value 20160 is accepted (on the boundary)."""
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=20160,
+                notify_delay_1_7_days_min=20160,
+                notify_delay_1_4_weeks_min=20160,
+                notify_delay_over_month_min=20160,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Nastavení zpoždění notifikací bylo uloženo".encode() in resp.data
+        with app.app_context():
+            assert get_settings().notify_delay_under_24h_min == 20160
+
+    # --- exactly at min (1) accepted ----------------------------------
+    def test_post_delay_tiers_boundary_min(self, app, admin_client):
+        """Value 1 is accepted (on the minimum boundary)."""
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=1,
+                notify_delay_1_7_days_min=1,
+                notify_delay_1_4_weeks_min=1,
+                notify_delay_over_month_min=1,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Nastavení zpoždění notifikací bylo uloženo".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            assert s.notify_delay_under_24h_min == 1
+            assert s.notify_delay_1_7_days_min == 1
+            assert s.notify_delay_1_4_weeks_min == 1
+            assert s.notify_delay_over_month_min == 1
+
+    # --- decimal string (5.5) rejected as non-integer ------------------
+    def test_post_delay_tiers_decimal_rejected(self, app, admin_client):
+        """'5.5' is rejected as non-parseable integer."""
+        with app.app_context():
+            before_val = get_settings().notify_delay_1_4_weeks_min
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_1_4_weeks_min="5.5"),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "musí být celé číslo".encode() in resp.data
+        with app.app_context():
+            assert get_settings().notify_delay_1_4_weeks_min == before_val
+
+    # --- zero and negative rejected (below minimum) --------------------------
+    def test_post_delay_tiers_zero_rejected(self, app, admin_client):
+        """0 is below minimum (1)."""
+        with app.app_context():
+            before_val = get_settings().notify_delay_over_month_min
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_over_month_min=0),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "alespoň 1 minuta".encode() in resp.data
+        with app.app_context():
+            assert get_settings().notify_delay_over_month_min == before_val
+
+    def test_post_delay_tiers_negative_rejected(self, app, admin_client):
+        """Negative value is below minimum."""
+        with app.app_context():
+            before_val = get_settings().notify_delay_under_24h_min
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(csrf, notify_delay_under_24h_min=-5),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "alespoň 1 minuta".encode() in resp.data
+        with app.app_context():
+            assert get_settings().notify_delay_under_24h_min == before_val
+
+    # --- monotonicity: nearer tier must not exceed farther tier -------
+    def test_post_delay_tiers_strictly_increasing_accepted(self, app, admin_client):
+        """Strictly increasing values across all tiers are accepted."""
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=5,
+                notify_delay_1_7_days_min=60,
+                notify_delay_1_4_weeks_min=360,
+                notify_delay_over_month_min=1440,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Nastavení zpoždění notifikací bylo uloženo".encode() in resp.data
+
+    def test_post_delay_tiers_all_equal_accepted(self, app, admin_client):
+        """Equal adjacent tier values are accepted (non-decreasing rule)."""
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=100,
+                notify_delay_1_7_days_min=100,
+                notify_delay_1_4_weeks_min=100,
+                notify_delay_over_month_min=100,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Nastavení zpoždění notifikací bylo uloženo".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            assert s.notify_delay_under_24h_min == 100
+            assert s.notify_delay_over_month_min == 100
+
+    def test_post_delay_tiers_inversion_rejected(self, app, admin_client):
+        """A nearer tier delay greater than a farther tier delay is rejected."""
+        with app.app_context():
+            before = {f: getattr(get_settings(), f) for f in self._DEFAULTS}
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=1440,
+                notify_delay_1_7_days_min=60,
+                notify_delay_1_4_weeks_min=360,
+                notify_delay_over_month_min=1440,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "nesmí být větší než hodnota pro".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            for field, val in before.items():
+                assert getattr(s, field) == val, f"{field} was unexpectedly changed"
+
+    def test_post_delay_tiers_inversion_last_pair_rejected(self, app, admin_client):
+        """Inversion at the last tier pair is rejected too."""
+        with app.app_context():
+            before = {f: getattr(get_settings(), f) for f in self._DEFAULTS}
+        csrf = self._get_csrf_for_form(admin_client)
+        resp = admin_client.post(
+            "/admin/notifications/delay-tiers",
+            data=self._valid_form(
+                csrf,
+                notify_delay_under_24h_min=5,
+                notify_delay_1_7_days_min=60,
+                notify_delay_1_4_weeks_min=1440,
+                notify_delay_over_month_min=360,
+            ),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "nesmí být větší než hodnota pro".encode() in resp.data
+        with app.app_context():
+            s = get_settings()
+            for field, val in before.items():
+                assert getattr(s, field) == val, f"{field} was unexpectedly changed"
+
+
+# ── "Odeslat okamžitě" checkbox ─────────────────────────────────────────────
+
+
+class TestTestNotificationImmediate:
+    """Send_immediately checkbox + flash message."""
+
+    def test_checkbox_present_default_unchecked(self, admin_client):
+        resp = admin_client.get("/admin/notifications/")
+        body = resp.data.decode("utf-8")
+        assert 'name="send_immediately"' in body
+        assert "Odeslat okamžitě (přeskočit zpoždění)" in body
+        # Must not be pre-checked by default
+        assert 'id="test_send_immediately" checked' not in body
+        assert 'name="send_immediately" value="1" checked' not in body
+
+    def test_post_without_immediate_creates_deferred_row(self, app, admin_client):
+        event_id = _make_event_for_test(app)
+        resp = admin_client.post(
+            "/admin/notifications/test/assignment_confirmed",
+            data={"test_email": "deferred@test.cz", "test_event_id": str(event_id), "send_immediately": "0"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert "zařazeno do fronty" in body
+        with app.app_context():
+            row = db.session.scalar(
+                db.select(OutboxEmail)
+                .where(OutboxEmail.to_email == "deferred@test.cz")
+                .order_by(OutboxEmail.id.desc())
+                .limit(1)
+            )
+            assert row is not None
+            assert row.send_after is not None
+
+    def test_post_with_immediate_creates_null_send_after(self, app, admin_client):
+        event_id = _make_event_for_test(app)
+        resp = admin_client.post(
+            "/admin/notifications/test/assignment_confirmed",
+            data={"test_email": "immediate@test.cz", "test_event_id": str(event_id), "send_immediately": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert "okamžitě" in body
+        with app.app_context():
+            row = db.session.scalar(
+                db.select(OutboxEmail)
+                .where(OutboxEmail.to_email == "immediate@test.cz")
+                .order_by(OutboxEmail.id.desc())
+                .limit(1)
+            )
+            assert row is not None
+            assert row.send_after is None
+
+
+# ── test-form event_changed produces structured payload ────────
+
+
+class TestTestFormEventChangedPayload:
+    """Test-form POST for event_changed creates a valid row."""
+
+    def test_deferred_row_has_valid_payload(self, app, admin_client):
+        """Deferred mode creates row with field_edit change_type and non-empty JSON."""
+        event_id = _make_event_for_test(app)
+        with app.app_context():
+            before = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+        resp = admin_client.post(
+            "/admin/notifications/test/event_changed",
+            data={"test_email": "ac13@test.cz", "test_event_id": str(event_id), "send_immediately": "0"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            after = db.session.scalar(db.select(db.func.count(OutboxEmail.id)))
+            assert after == before + 1
+            row = db.session.scalar(
+                db.select(OutboxEmail)
+                .where(OutboxEmail.to_email == "ac13@test.cz")
+                .order_by(OutboxEmail.id.desc())
+                .limit(1)
+            )
+            assert row is not None
+            assert row.change_type == _EVENT_CHANGED_CHANGE_TYPE
+            payload = json.loads(row.change_value)
+            assert isinstance(payload, dict) and payload
+            assert "description" in payload
+            assert payload["description"] == ["—", "Zkušební oznámení"]
+
+    def test_immediate_row_has_null_send_after(self, app, admin_client):
+        """Immediate mode creates row with send_after=NULL."""
+        event_id = _make_event_for_test(app)
+        resp = admin_client.post(
+            "/admin/notifications/test/event_changed",
+            data={"test_email": "ac14@test.cz", "test_event_id": str(event_id), "send_immediately": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            row = db.session.scalar(
+                db.select(OutboxEmail)
+                .where(OutboxEmail.to_email == "ac14@test.cz")
+                .order_by(OutboxEmail.id.desc())
+                .limit(1)
+            )
+            assert row is not None
+            assert row.send_after is None
+            assert row.change_type == _EVENT_CHANGED_CHANGE_TYPE
+            payload = json.loads(row.change_value)
+            assert isinstance(payload, dict) and payload

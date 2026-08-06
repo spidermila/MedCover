@@ -12,10 +12,28 @@ from flask_login import current_user, login_required
 from app.extensions import db
 from app.mail import NOTIFICATION_CATALOG
 from app.models.event import Event
+from app.models.outbox import OutboxEmail
 from app.models.settings import get_settings
-from app.utils import audit, diff_changes, require_permission
+from app.utils import audit, diff_changes, get_app_tz, require_permission
 
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/admin/notifications")
+
+_DELAY_TIER_FIELDS: list[str] = [
+    "notify_delay_under_24h_min",
+    "notify_delay_1_7_days_min",
+    "notify_delay_1_4_weeks_min",
+    "notify_delay_over_month_min",
+]
+
+_DELAY_TIER_LABELS_CS: dict[str, str] = {
+    "notify_delay_under_24h_min": "Do 24 hodin do akce",
+    "notify_delay_1_7_days_min": "1–7 dní do akce",
+    "notify_delay_1_4_weeks_min": "1–4 týdny do akce",
+    "notify_delay_over_month_min": "Více než měsíc do akce",
+}
+
+_DELAY_TIER_MIN: int = 1
+_DELAY_TIER_MAX: int = 20160
 
 
 def _build_toggle_groups(catalog: list[dict]) -> list[dict]:
@@ -72,10 +90,89 @@ def index() -> str | Response:
     )
 
 
+@notifications_bp.route("/delay-tiers", methods=["POST"])
+@login_required
+def save_delay_tiers() -> Response:
+    require_permission("admin.manage_settings")
+    settings = get_settings()
+
+    parsed: dict[str, int] = {}
+    for field in _DELAY_TIER_FIELDS:
+        label = _DELAY_TIER_LABELS_CS[field]
+        raw = request.form.get(field, "").strip()
+
+        if not raw:
+            flash(f"Hodnota pro „{label}“ nesmí být prázdná.", "warning")
+            return redirect(url_for("notifications.index"))
+
+        try:
+            value = int(raw)
+        except ValueError:
+            flash(
+                f"Hodnota pro „{label}“ musí být celé číslo (zadáno: „{raw}“).",
+                "warning",
+            )
+            return redirect(url_for("notifications.index"))
+
+        if value < _DELAY_TIER_MIN:
+            flash(
+                f"Hodnota pro „{label}“ musí být alespoň 1 minuta (zadáno: {value}).",
+                "warning",
+            )
+            return redirect(url_for("notifications.index"))
+
+        if value > _DELAY_TIER_MAX:
+            flash(
+                f"Hodnota pro „{label}“ nesmí překročit 20 160 minut (zadáno: {value}).",
+                "warning",
+            )
+            return redirect(url_for("notifications.index"))
+
+        parsed[field] = value
+
+    # Tiers are ordered from nearest to farthest event; delays must be non-decreasing.
+    for prev, curr in zip(_DELAY_TIER_FIELDS, _DELAY_TIER_FIELDS[1:]):
+        if parsed[prev] > parsed[curr]:
+            flash(
+                f"Hodnota pro „{_DELAY_TIER_LABELS_CS[prev]}“ "
+                f"({parsed[prev]}) nesmí být větší než hodnota pro "
+                f"„{_DELAY_TIER_LABELS_CS[curr]}“ ({parsed[curr]}).",
+                "warning",
+            )
+            return redirect(url_for("notifications.index"))
+
+    before = {f: getattr(settings, f) for f in _DELAY_TIER_FIELDS}
+    for field in _DELAY_TIER_FIELDS:
+        setattr(settings, field, parsed[field])
+    after = {f: getattr(settings, f) for f in _DELAY_TIER_FIELDS}
+
+    audit(
+        "edit",
+        "AppSettings",
+        1,
+        "Nastavení zpoždění notifikací bylo upraveno.",
+        diff_changes(before, after),
+    )
+    db.session.commit()
+
+    flash("Nastavení zpoždění notifikací bylo uloženo.", "success")
+    return redirect(url_for("notifications.index"))
+
+
+_RECENT_EVENTS_LIMIT: int = 100
+
+
 def _recent_events() -> list[Event]:
-    """Return the 20 most recently created non-archived events for the test dropdown."""
+    """Return the most recent non-archived events for the test dropdown.
+
+    Bounded to _RECENT_EVENTS_LIMIT to keep the query and the rendered
+    <select> from growing unbounded as event history accumulates over years.
+    """
     return db.session.scalars(
-        db.select(Event).where(Event.archived == sa.false()).order_by(Event.start_datetime.desc()).limit(20)
+        db.select(Event)
+        .where(Event.archived == sa.false())
+        .order_by(Event.start_datetime.desc())
+        .limit(_RECENT_EVENTS_LIMIT)
     ).all()
 
 
@@ -114,26 +211,33 @@ def test_notification(code: str) -> Response:
         return redirect(url_for("notifications.index"))
 
     import app.mail as mailer  # pylint: disable=import-outside-toplevel
-    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
+
+    send_immediately_raw = request.form.get("send_immediately", "0")
+    send_immediately = send_immediately_raw == "1"
 
     # Temporarily override the outbox recipient for this request.
     g._test_notification_email = test_email
+    if send_immediately:
+        g._test_notification_immediate = True
 
     try:
         if code == "assignment_confirmed":
-            mailer.send_assignment_confirmed(current_user, event)
+            mailer.send_assignment_confirmed(current_user, event, spot_description="Testovací pozice")
         elif code == "assignment_released":
-            mailer.send_assignment_released(current_user, event)
+            mailer.send_assignment_released(current_user, event, spot_description="Testovací pozice")
         elif code == "event_published":
             mailer.send_event_published(current_user, event)
         elif code == "assignments_opened":
             mailer.send_assignments_opened(current_user, event)
         elif code == "event_cancelled":
             mailer.send_event_cancelled(current_user, event)
+        elif code == "event_archived":
+            mailer.send_event_archived(current_user, event)
+        elif code == "event_unarchived":
+            mailer.send_event_unarchived(current_user, event)
         elif code == "event_changed":
-            event_url = external_url_for("events.detail", event_id=event.id)
             fake_changes: dict = {"description": ["—", "Zkušební oznámení"]}
-            mailer.send_event_changed(current_user, event, fake_changes, event_url=event_url)
+            mailer.send_event_changed(current_user, event, fake_changes)
         elif code == "unfilled_reminder":
             from app.models.event import EventSpot  # pylint: disable=import-outside-toplevel
 
@@ -154,8 +258,36 @@ def test_notification(code: str) -> Response:
                 flash("Akce nemá žádné přihlášení — nelze odeslat zkušební pozvánku k debriefingu.", "warning")
                 return redirect(url_for("notifications.index"))
             mailer.send_debriefing_invitation(fake_assignment, event)
+        else:
+            # Safety net: _TESTABLE_CODES should always have a matching branch above.
+            # Fail loudly instead of silently no-op'ing and reporting false success.
+            flash(f"Zkušební oznámení pro typ „{code}“ není v kódu implementováno.", "danger")
+            return redirect(url_for("notifications.index"))
         db.session.commit()
-        flash(f"Zkušební oznámení ({code}) zařazeno do fronty pro {test_email}.", "success")
+
+        latest = db.session.scalar(
+            db.select(OutboxEmail)
+            .where(
+                OutboxEmail.to_email == test_email,
+                OutboxEmail.notification_type == code,
+                OutboxEmail.event_id == event.id,
+                OutboxEmail.status == "pending",
+            )
+            .order_by(OutboxEmail.created_at.desc())
+            .limit(1)
+        )
+        if latest is not None and latest.send_after is not None:
+            local = latest.send_after.astimezone(get_app_tz())
+            flash(
+                f"Zkušební oznámení ({code}) zařazeno do fronty pro {test_email} "
+                f"(odloženo do {local.strftime('%d.%m.%Y %H:%M')}).",
+                "success",
+            )
+        else:
+            flash(
+                f"Zkušební oznámení ({code}) bude odesláno okamžitě na {test_email}.",
+                "success",
+            )
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         flash(f"Zkušební oznámení se nepodařilo odeslat: {exc}", "danger")

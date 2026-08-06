@@ -24,6 +24,7 @@ from flask import Blueprint, Response, abort, flash, jsonify, redirect, render_t
 from flask_login import current_user, login_required
 from sqlalchemy import collate
 
+import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.assignment import Assignment
@@ -238,7 +239,10 @@ def archive(me_id: int) -> Response:
             event.id,
             f"Akce '{event.name}' archivována (kaskáda archivace NA '{me.name}')",
         )
+    db.session.commit()
 
+    for event in affected_events:
+        mailer.flush_and_notify_archived(event)
     db.session.commit()
 
     flash(f"Nadřazená akce „{me.name}“ byla archivována.", "success")
@@ -547,6 +551,8 @@ def _handle_advance_status(event: Event) -> Response:
     elif target_status == EventStatus.ASSIGNMENTS_OPEN:
         for u in active_users:
             mailer.send_assignments_opened(u, event)
+    # enqueue_deferred only flushes; commit so the pending outbox rows persist.
+    db.session.commit()
     return jsonify({"ok": True})
 
 

@@ -10,7 +10,16 @@ rate limits of any standard SMTP relay (e.g. Microsoft 365: 30/min).
 Usage (inside a Flask app context):
     from app.mail import send_assignment_confirmed, send_event_published, ...
 
-All functions are fire-and-forget — exceptions are logged, never raised.
+Enqueue error policy: ``IntegrityError`` (racing insert, or FK violation
+from a target entity being hard-deleted mid-request) is tolerated — the
+row is skipped, the session is rolled back, and the caller's business
+transaction continues. Any other exception (OperationalError,
+ProgrammingError, DB timeout, developer bug, template render failure
+etc.) propagates to the caller so infrastructure problems surface in
+logs and error trackers instead of being swallowed as WARN lines.
+Callers are expected to commit their own business transaction *before*
+calling any ``send_*`` helper, so a propagated exception only affects
+the notification path.
 
 NOTIFICATION CATALOG
 --------------------
@@ -27,20 +36,28 @@ When adding a new send_* function:
   5. Update DEVOPS.md and CHANGELOG.md.
 """
 
+import json
 import logging
 import os
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
 
+import sqlalchemy as sa
 from flask import g, render_template
+from flask_mail import Message
+from sqlalchemy.exc import IntegrityError
 
-from app.extensions import db
+from app.extensions import db, mail
+from app.models.audit import AuditLogEntry
+from app.models.event import Event
 from app.models.outbox import OutboxEmail
+from app.models.settings import AppSettings, get_settings
+from app.models.user import UserAccount
+from app.utils import external_url_for, get_app_tz
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment
-    from app.models.event import Event
-    from app.models.user import UserAccount
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +67,44 @@ log = logging.getLogger(__name__)
 _INSTANCE_ID: str = os.environ.get("INSTANCE_ID", "")
 
 _PLAIN_FALLBACK = "Tento e-mail obsahuje formátovaný obsah. Otevřete jej v e-mailovém klientovi s podporou HTML."
+
+# ── Notification-delay tier boundaries (issue #268) ──────────────────────────
+# Boundary semantics:
+#   delta < 24h                → tier 1 (past events fall here — delta <= 0)
+#   24h <= delta < 7d          → tier 2
+#   7d  <= delta < 28d         → tier 3
+#   delta >= 28d               → tier 4
+_TIER_1_UPPER: timedelta = timedelta(hours=24)
+_TIER_2_UPPER: timedelta = timedelta(days=7)
+_TIER_3_UPPER: timedelta = timedelta(days=28)
+
+# Stored in outbox_email.change_type for rows whose change_value is a
+# field-level {field: [old, new]} JSON diff.
+_EVENT_CHANGED_CHANGE_TYPE: str = "field_edit"
+
+# change_type tokens for batched drain dispatch.
+_ASSIGNMENT_CHANGE_TYPE: str = "assignment"
+_UNFILLED_REMINDER_CHANGE_TYPE: str = "unfilled_reminder"
+_DEBRIEFING_CHANGE_TYPE: str = "debriefing"
+
+
+def _compute_send_after(event_start: datetime, now: datetime, settings: AppSettings) -> datetime:
+    """Return the future UTC datetime at which a notification for an event
+    starting at *event_start* should be sent, given the tier delays in *settings*.
+
+    *event_start* and *now* must both be tz-aware UTC (``tzinfo=timezone.utc``).
+    """
+    delta = event_start - now
+    if delta < _TIER_1_UPPER:
+        minutes = settings.notify_delay_under_24h_min
+    elif delta < _TIER_2_UPPER:
+        minutes = settings.notify_delay_1_7_days_min
+    elif delta < _TIER_3_UPPER:
+        minutes = settings.notify_delay_1_4_weeks_min
+    else:
+        minutes = settings.notify_delay_over_month_min
+    return now + timedelta(minutes=minutes)
+
 
 # ---------------------------------------------------------------------------
 # Notification catalog — single source of truth (AD17)
@@ -70,22 +125,20 @@ NOTIFICATION_CATALOG: list[dict] = [
         "code": "assignment_confirmed",
         "settings_field": "notify_assignment",
         "name_cs": "Přihlášení na službu",
-        "description_cs": (
-            "Odesílán dobrovolníkovi při přihlášení na místo ve službě (jím samotným nebo koordinátorem)."
-        ),
+        "description_cs": ("Odesílán uživateli při přihlášení na místo ve službě (jím samotným nebo koordinátorem)."),
         "trigger_cs": "Přihlášení na místo ve službě",
-        "recipient_cs": "Přihlášený dobrovolník (role: Člen)",
-        "templates": ["email/assignment_confirmed.html"],
+        "recipient_cs": "Přihlášený uživatel (role: Člen)",
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
         "code": "assignment_released",
         "settings_field": "notify_assignment",
         "name_cs": "Odhlášení ze služby",
-        "description_cs": "Odesílán dobrovolníkovi při odhlášení z místa ve službě (jím samotným nebo koordinátorem).",
+        "description_cs": "Odesílán uživateli při odhlášení z místa ve službě (jím samotným nebo koordinátorem).",
         "trigger_cs": "Odhlášení z místa ve službě",
-        "recipient_cs": "Odhlášený dobrovolník (role: Člen)",
-        "templates": ["email/assignment_released.html"],
+        "recipient_cs": "Odhlášený uživatel (role: Člen)",
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -95,7 +148,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán všem aktivním členům a koordinátorům při zveřejnění akce.",
         "trigger_cs": "Akce přejde do stavu Zveřejněno",
         "recipient_cs": "Všichni aktivní uživatelé (role: Koordinátor, Člen)",
-        "templates": ["email/event_published.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -105,27 +158,50 @@ NOTIFICATION_CATALOG: list[dict] = [
         "description_cs": "Odesílán všem aktivním členům a koordinátorům při otevření přihlášek na akci.",
         "trigger_cs": "Akce přejde do stavu Přihlášky otevřeny",
         "recipient_cs": "Všichni aktivní uživatelé (role: Koordinátor, Člen)",
-        "templates": ["email/assignments_opened.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
         "code": "event_cancelled",
         "settings_field": "notify_event_cancelled",
         "name_cs": "Akce zrušena",
-        "description_cs": "Odesílán přihlášeným dobrovolníkům při zrušení akce.",
+        "description_cs": "Odesílán přihlášeným uživatelům při zrušení akce.",
         "trigger_cs": "Akce je zrušena",
-        "recipient_cs": "Přihlášení dobrovolníci (role: Člen)",
-        "templates": ["email/event_cancelled.html"],
+        "recipient_cs": "Přihlášení uživatelé (role: Člen)",
+        "templates": ["email/event_batched.html"],
+        "always_on": False,
+    },
+    {
+        "code": "event_archived",
+        "settings_field": "notify_event_archived",
+        "name_cs": "Akce archivována",
+        "description_cs": (
+            "Odesílán okamžitě přihlášeným uživatelům a uživatelům s čekajícími "
+            "oznámeními k akci při jejím archivování — spolu s případnými dříve odloženými změnami."
+        ),
+        "trigger_cs": "Akce je archivována nebo zrušena",
+        "recipient_cs": "Přihlášení uživatelé a uživatelé s čekajícím oznámením (role: Člen)",
+        "templates": ["email/event_batched.html"],
+        "always_on": False,
+    },
+    {
+        "code": "event_unarchived",
+        "settings_field": "notify_event_unarchived",
+        "name_cs": "Akce obnovena z archivu",
+        "description_cs": "Odesílán přihlášeným uživatelům při obnovení akce z archivu.",
+        "trigger_cs": "Akce je obnovena z archivu",
+        "recipient_cs": "Přihlášení uživatelé (role: Člen)",
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
         "code": "event_changed",
         "settings_field": "notify_event_changed",
         "name_cs": "Změna údajů akce",
-        "description_cs": "Odesílán přihlášeným dobrovolníkům při změně údajů akce (název, čas, místo, popis apod.).",
+        "description_cs": "Odesílán přihlášeným uživatelům při změně údajů akce (název, čas, místo, popis apod.).",
         "trigger_cs": "Uložení změny akce (editace existující akce)",
-        "recipient_cs": "Přihlášení dobrovolníci (role: Člen)",
-        "templates": ["email/event_changed.html"],
+        "recipient_cs": "Přihlášení uživatelé (role: Člen)",
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -137,17 +213,17 @@ NOTIFICATION_CATALOG: list[dict] = [
         ),
         "trigger_cs": "Automaticky plánovačem (periodická kontrola)",
         "recipient_cs": "Tvůrce akce a zodpovědná osoba (role: Koordinátor, Člen)",
-        "templates": ["email/unfilled_spots_reminder.html"],
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
         "code": "debriefing_invitation",
         "settings_field": "notify_debriefing",
-        "name_cs": "Pozvánka k výjezdové zprávě",
-        "description_cs": "Odesílán přihlášeným dobrovolníkům po skončení akce s odkazem na formulář výjezdové zprávy.",
+        "name_cs": "Pozvánka k debriefingu",
+        "description_cs": "Odesílán přihlášeným uživatelům po skončení akce s odkazem na formulář debriefingu.",
         "trigger_cs": "Akce přejde do stavu Dokončeno",
-        "recipient_cs": "Přihlášení dobrovolníci (role: Člen)",
-        "templates": ["email/debriefing_invitation.html"],
+        "recipient_cs": "Přihlášení uživatelé (role: Člen)",
+        "templates": ["email/event_batched.html"],
         "always_on": False,
     },
     {
@@ -195,6 +271,8 @@ _NOTIFICATION_ALLOWED_ROLES: dict[str, set[str]] = {
     "assignment": {"Member"},  # confirmed, released
     "unfilled_reminder": {"Coordinator", "Member"},  # reminder to coordinator / RP
     "event_cancelled": {"Member"},  # cancelled → notify assigned users
+    "event_archived": {"Member"},  # archived → notify assigned + queued users
+    "event_unarchived": {"Member"},  # unarchived → notify assigned users
     "event_changed": {"Member"},  # event details changed → notify assigned users
 }
 
@@ -241,7 +319,6 @@ def _is_notify_enabled(settings_field: str) -> bool:
     if _is_test_notification():
         return True
     try:
-        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
         return bool(getattr(get_settings(), settings_field, True))
     except Exception:  # noqa: BLE001
@@ -250,8 +327,6 @@ def _is_notify_enabled(settings_field: str) -> bool:
 
 def _base_context() -> dict:
     """Return template context variables shared by all user-facing email templates."""
-    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
-    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
     try:
         org_name = get_settings().org_name or "MedCover"
@@ -288,60 +363,262 @@ def _enqueue(
             )
         )
         db.session.flush()  # assign id without a separate commit
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Failed to enqueue mail to %s — %s", to, exc)
+    except IntegrityError as exc:
+        db.session.rollback()
+        log.warning("Failed to enqueue mail to %s — IntegrityError, skipping: %s", to, exc)
 
 
-def _guarded_send(
-    setting: str,
-    notif_type: str,
-    user: UserAccount,
-    subject: str,
-    template: str,
-    notification_type: str,
-    **ctx: object,
-) -> None:
-    """Guard + render + enqueue in one call.
+def _merge_event_changed_payloads(
+    existing_json: str,
+    incoming: dict[str, list],
+) -> dict[str, list] | None:
+    """Merge two event_changed field-diff payloads.
 
-    Checks the global setting toggle and the per-user preference, then renders
-    *template* with ``user_name`` + ``_base_context()`` + any extra **ctx**
-    kwargs, and enqueues the email.  Covers the common pattern shared by the
-    majority of ``send_*`` functions.
+    Rules:
+      1. Fields present in both: keep existing's [0] (earliest old_val),
+         overwrite with incoming's [1] (latest new_val).
+      2. Fields present only in incoming: take incoming pair as-is.
+      3. Fields present only in existing: carry forward unchanged.
+      4. After merge, drop fields where str(old) == str(new) — matches the
+         equality rule used by diff_changes at app/utils.py:171.
+      5. If the merged dict is empty, return None (caller deletes the row).
     """
-    if not _is_notify_enabled(setting):
-        return
-    if not user_can_receive_notification(user, notif_type):
-        return
-    html = render_template(template, user_name=user.name, **_base_context(), **ctx)
-    _enqueue(user.email, subject, _PLAIN_FALLBACK, html_body=html, notification_type=notification_type)
+    existing = json.loads(existing_json)
+    merged: dict[str, list] = dict(existing)
+    for field, pair in incoming.items():
+        in_old, in_new = pair[0], pair[1]
+        if field in existing:
+            original_old = existing[field][0]
+            merged[field] = [original_old, in_new]
+        else:
+            merged[field] = [in_old, in_new]
+    merged = {f: v for f, v in merged.items() if str(v[0]) != str(v[1])}
+    return merged or None
+
+
+def _merge_into_existing(
+    existing: OutboxEmail,
+    notification_type: str,
+    to_email: str,
+    subject: str,
+    body: str,
+    change_type: str | None,
+    change_value: dict[str, Any] | None,
+    computed_send_after: datetime | None,
+) -> datetime | None:
+    """Update an already-pending OutboxEmail row.
+
+    Returns the row's post-merge send_after, or None if the merged
+    event_changed payload collapsed to empty and the row was deleted.
+    """
+    # merge send_after: NULL means "send immediately" (see OutboxEmail.send_after
+    # and the drain queries), so if either side is immediate, immediate wins
+    # otherwise take the earlier of the two future timestamps.
+    merged_send_after: datetime | None
+    if existing.send_after is None or computed_send_after is None:
+        merged_send_after = None
+    else:
+        merged_send_after = min(existing.send_after, computed_send_after)
+    existing.send_after = merged_send_after
+    existing.to_email = to_email
+    existing.subject = subject
+    existing.body = body
+
+    if (
+        notification_type == "event_changed"
+        and change_type == _EVENT_CHANGED_CHANGE_TYPE
+        and isinstance(change_value, dict)
+    ):
+        if existing.change_value:
+            effective_payload = _merge_event_changed_payloads(existing.change_value, change_value)
+            if effective_payload is None:
+                db.session.delete(existing)
+                db.session.flush()
+                return None
+        else:
+            effective_payload = change_value
+
+        existing.change_value = json.dumps(effective_payload, ensure_ascii=False, sort_keys=True)
+        existing.change_type = _EVENT_CHANGED_CHANGE_TYPE
+    else:
+        existing.change_type = change_type
+        if change_value is not None:
+            existing.change_value = (
+                json.dumps(change_value, ensure_ascii=False, sort_keys=True)
+                if isinstance(change_value, dict)
+                else change_value
+            )
+
+    db.session.flush()
+    return existing.send_after
+
+
+def enqueue_deferred(
+    user: UserAccount,
+    event: Event,
+    notification_type: str,
+    subject: str,
+    body: str,
+    change_type: str | None = None,
+    change_value: dict[str, Any] | None = None,
+    immediate: bool = False,
+) -> datetime | None:
+    """Insert or update a pending OutboxEmail row for the deferred/batched
+    event-notification pipeline (issue #268).
+
+    Uniqueness of the pending row per (user_id, event_id, notification_type)
+    is enforced by the ``uq_outbox_pending_by_user_event_type`` filtered
+    unique index (see app/models/outbox.py). The
+    ``WITH (UPDLOCK, HOLDLOCK, ROWLOCK)`` hint on the SELECT keeps the
+    common case single-round-trip; if two workers race past the hint an
+    IntegrityError is raised and this function falls back into the merge
+    branch after re-loading the winning row.
+
+    Lookup key: (user_id, event_id, notification_type, status='pending').
+    On lookup hit: overwrites the row's subject/body/change_value and takes
+    ``min(existing, computed)`` on ``send_after`` (immediate — NULL — always
+    wins over any future timestamp).
+
+    On lookup miss: inserts a new row with ``send_after`` computed from
+    proximity tier settings, or ``NULL`` if the request-scoped
+    ``g._test_notification_immediate`` flag is set.
+
+    Notification-gate checks must have been evaluated by the caller.
+
+    Returns the row's final ``send_after`` value (may be ``None``).
+    """
+
+    # Recipient override.
+    override = getattr(g, "_test_notification_email", None)
+    to_email = override or user.email
+
+    # Immediate-bypass: caller-supplied kwarg OR the test-form request-scoped
+    # flag. g lookup tolerates "outside request context".
+    if not immediate:
+        try:
+            immediate = bool(getattr(g, "_test_notification_immediate", False))
+        except RuntimeError:
+            immediate = False
+
+    computed_send_after: datetime | None
+    if immediate:
+        computed_send_after = None
+    else:
+        now_utc = datetime.now(timezone.utc)
+        computed_send_after = _compute_send_after(event.start_datetime, now_utc, get_settings())
+
+    lookup = (
+        db.select(OutboxEmail)
+        .where(
+            OutboxEmail.user_id == user.id,
+            OutboxEmail.event_id == event.id,
+            OutboxEmail.notification_type == notification_type,
+            OutboxEmail.status == "pending",
+        )
+        .limit(1)
+        .with_hint(OutboxEmail, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+    )
+
+    def _insert_new() -> OutboxEmail:
+        row = OutboxEmail(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            notification_type=notification_type,
+            user_id=user.id,
+            event_id=event.id,
+            change_type=change_type,
+            change_value=(
+                json.dumps(change_value, ensure_ascii=False, sort_keys=True)
+                if isinstance(change_value, dict)
+                else change_value
+            ),
+            send_after=computed_send_after,
+            instance_name=_INSTANCE_ID or None,
+        )
+        db.session.add(row)
+        db.session.flush()
+        return row
+
+    try:
+        existing = db.session.scalars(lookup).first()
+        if existing is not None:
+            return _merge_into_existing(
+                existing,
+                notification_type,
+                to_email,
+                subject,
+                body,
+                change_type,
+                change_value,
+                computed_send_after,
+            )
+        _insert_new()
+        return computed_send_after
+
+    except IntegrityError as exc:
+        # A racing worker won the insert (uq_outbox_pending_by_user_event_type).
+        # Roll back, re-load the winning row, and take the merge branch.
+        db.session.rollback()
+        log.info(
+            "enqueue_deferred: race lost on unique index, retrying via merge (user_id=%s event_id=%s type=%s) — %s",
+            getattr(user, "id", None),
+            getattr(event, "id", None),
+            notification_type,
+            exc,
+        )
+        winner = db.session.scalars(lookup).first()
+        if winner is not None:
+            return _merge_into_existing(
+                winner,
+                notification_type,
+                to_email,
+                subject,
+                body,
+                change_type,
+                change_value,
+                computed_send_after,
+            )
+        # Very unlikely: the winner was drained-and-marked-sent between our
+        # rollback and this reload. No conflict is possible now.
+        _insert_new()
+        return computed_send_after
 
 
 # ── Assignment notifications ──────────────────────────────────────────────────
 
 
-def send_assignment_confirmed(user: UserAccount, event: Event) -> None:
+def send_assignment_confirmed(user: UserAccount, event: Event, spot_description: str | None = None) -> None:
     """Notify a user that their spot assignment was confirmed."""
-    _guarded_send(
-        "notify_assignment",
-        "assignment",
-        user,
-        f"MedCover — Přihlášení na akci: {event.name}",
-        "email/assignment_confirmed.html",
-        "assignment_confirmed",
+    if not _is_notify_enabled("notify_assignment"):
+        return
+    if not user_can_receive_notification(user, "assignment"):
+        return
+    enqueue_deferred(
+        user=user,
         event=event,
+        notification_type="assignment_confirmed",
+        subject=f"MedCover — Přihlášení na akci: {event.name}",
+        body=_PLAIN_FALLBACK,
+        change_type=_ASSIGNMENT_CHANGE_TYPE,
+        change_value={"action": "confirmed", "spot_description": spot_description or ""},
     )
 
 
-def send_assignment_released(user: UserAccount, event: Event) -> None:
+def send_assignment_released(user: UserAccount, event: Event, spot_description: str | None = None) -> None:
     """Notify a user that their assignment was released (by themselves or coordinator)."""
-    _guarded_send(
-        "notify_assignment",
-        "assignment",
-        user,
-        f"MedCover — Odhlášení z akce: {event.name}",
-        "email/assignment_released.html",
-        "assignment_released",
+    if not _is_notify_enabled("notify_assignment"):
+        return
+    if not user_can_receive_notification(user, "assignment"):
+        return
+    enqueue_deferred(
+        user=user,
         event=event,
+        notification_type="assignment_released",
+        subject=f"MedCover — Odhlášení z akce: {event.name}",
+        body=_PLAIN_FALLBACK,
+        change_type=_ASSIGNMENT_CHANGE_TYPE,
+        change_value={"action": "released", "spot_description": spot_description or ""},
     )
 
 
@@ -350,41 +627,158 @@ def send_assignment_released(user: UserAccount, event: Event) -> None:
 
 def send_event_published(user: UserAccount, event: Event) -> None:
     """Notify a user that an event they might be interested in was published."""
-    _guarded_send(
-        "notify_event_published",
-        "event_published",
-        user,
-        f"MedCover — Nová akce: {event.name}",
-        "email/event_published.html",
-        "event_published",
+    if not _is_notify_enabled("notify_event_published"):
+        return
+    if not user_can_receive_notification(user, "event_published"):
+        return
+    enqueue_deferred(
+        user=user,
         event=event,
+        notification_type="event_published",
+        subject=f"MedCover — Nová akce: {event.name}",
+        body=_PLAIN_FALLBACK,
     )
 
 
 def send_assignments_opened(user: UserAccount, event: Event) -> None:
     """Notify a user that assignments opened for an event."""
-    _guarded_send(
-        "notify_assignments_opened",
-        "assignments_opened",
-        user,
-        f"MedCover — Otevřeny přihlášky: {event.name}",
-        "email/assignments_opened.html",
-        "assignments_opened",
+    if not _is_notify_enabled("notify_assignments_opened"):
+        return
+    if not user_can_receive_notification(user, "assignments_opened"):
+        return
+    enqueue_deferred(
+        user=user,
         event=event,
+        notification_type="assignments_opened",
+        subject=f"MedCover — Otevřeny přihlášky: {event.name}",
+        body=_PLAIN_FALLBACK,
     )
 
 
 def send_event_cancelled(user: UserAccount, event: Event) -> None:
-    """Notify an assigned user that an event was cancelled."""
-    _guarded_send(
-        "notify_event_cancelled",
-        "event_cancelled",
-        user,
-        f"MedCover — Akce zrušena: {event.name}",
-        "email/event_cancelled.html",
-        "event_cancelled",
+    """Notify an assigned user that an event was cancelled. Enqueued for
+    immediate send so any previously deferred rows for the same recipient/event
+    flush together (matches send_event_archived's semantics)."""
+    if not _is_notify_enabled("notify_event_cancelled"):
+        return
+    if not user_can_receive_notification(user, "event_cancelled"):
+        return
+    enqueue_deferred(
+        user=user,
         event=event,
+        notification_type="event_cancelled",
+        subject=f"MedCover — Akce zrušena: {event.name}",
+        body=_PLAIN_FALLBACK,
+        immediate=True,
     )
+
+
+def send_event_archived(user: UserAccount, event: Event) -> None:
+    """Notify a user that an event was archived. Enqueued for immediate send so
+    any previously deferred rows for the same recipient/event flush together."""
+    if not _is_notify_enabled("notify_event_archived"):
+        return
+    if not user_can_receive_notification(user, "event_archived"):
+        return
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="event_archived",
+        subject=f"MedCover — Akce archivována: {event.name}",
+        body=_PLAIN_FALLBACK,
+        immediate=True,
+    )
+
+
+def send_event_unarchived(user: UserAccount, event: Event) -> None:
+    """Notify a user that an event was restored from the archive."""
+    if not _is_notify_enabled("notify_event_unarchived"):
+        return
+    if not user_can_receive_notification(user, "event_unarchived"):
+        return
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="event_unarchived",
+        subject=f"MedCover — Akce obnovena z archivu: {event.name}",
+        body=_PLAIN_FALLBACK,
+    )
+
+
+def _flush_and_notify(event: Event, send_fn: Callable[[UserAccount, Event], None]) -> None:
+    """Shared notification plumbing for event-state-change routes (archive/cancel).
+
+    1. Force every pending outbox row for this event to send immediately
+       (``send_after=NULL``) so already-queued edits go out with the
+       notification instead of being stranded.
+    2. Call ``send_fn(user, event)`` (immediate) for the union of currently-
+       assigned users and users who have any pending outbox rows for this
+       event.
+
+    Caller is expected to commit the surrounding transaction.
+    """
+    # synchronize_session="fetch" is explicit on purpose: this bulk UPDATE
+    # bypasses the ORM's per-object unit-of-work, so any OutboxEmail already
+    # loaded into the session's identity map (e.g. a caller/test that queried
+    # a row before calling this) would otherwise keep a stale in-memory
+    # send_after unless the ORM is told to reconcile it. Leaving this on the
+    # implicit default ("auto") happens to work today only because the WHERE
+    # clause is simple equality that the "evaluate" strategy can resolve in
+    # Python — a future edit to the WHERE clause (e.g. a subquery or OR) would
+    # silently change that behaviour. "fetch" issues one extra SELECT to
+    # identify the matched rows and always refreshes them, regardless of
+    # WHERE-clause shape, so this stays correct independent of future edits.
+    db.session.execute(
+        sa.update(OutboxEmail)
+        .where(
+            OutboxEmail.event_id == event.id,
+            OutboxEmail.status == "pending",
+        )
+        .values(send_after=None)
+        .execution_options(synchronize_session="fetch")
+    )
+
+    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
+    recipients: dict = {u.id: u for u in assigned_users}
+
+    pending_user_ids = db.session.scalars(
+        db.select(OutboxEmail.user_id)
+        .distinct()
+        .where(
+            OutboxEmail.event_id == event.id,
+            OutboxEmail.status == "pending",
+            OutboxEmail.user_id.is_not(None),
+        )
+    ).all()
+    missing_ids = [uid for uid in pending_user_ids if uid not in recipients]
+    if missing_ids:
+
+        extra_users = db.session.scalars(db.select(UserAccount).where(UserAccount.id.in_(missing_ids))).all()
+        for u in extra_users:
+            recipients[u.id] = u
+
+    for user in recipients.values():
+        send_fn(user, event)
+
+
+def flush_and_notify_archived(event: Event) -> None:
+    """Handle notification side of archiving an event (see `_flush_and_notify`)."""
+    _flush_and_notify(event, send_event_archived)
+
+
+def flush_and_notify_cancelled(event: Event) -> None:
+    """Handle notification side of cancelling an event (see `_flush_and_notify`)."""
+    _flush_and_notify(event, send_event_cancelled)
+
+
+def notify_unarchived(event: Event) -> None:
+    """Notify all currently-assigned users that an event was restored/
+    unarchived. Caller is expected to commit the surrounding business
+    transaction before calling this, then commit again afterward to
+    persist the enqueued rows (send_event_unarchived only flushes)."""
+    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
+    for user in assigned_users:
+        send_event_unarchived(user, event)
 
 
 # Human-readable Czech labels for event fields shown in change notifications.
@@ -410,7 +804,6 @@ def _format_event_change_value(field: str, raw: object) -> str:
     # Format ISO datetime strings to Czech local time.
     if "datetime" in field:
         try:
-            from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
 
             parsed = datetime.fromisoformat(val)
             local = parsed.astimezone(get_app_tz())
@@ -427,7 +820,6 @@ def send_event_changed(
     user: UserAccount,
     event: Event,
     changes: dict[str, list[object]],
-    event_url: str = "",
 ) -> None:
     """Notify an assigned user that event details have changed.
 
@@ -439,28 +831,14 @@ def send_event_changed(
         return
     if not user_can_receive_notification(user, "event_changed"):
         return
-    formatted: list[tuple[str, str, str]] = [
-        (
-            _EVENT_FIELD_LABELS.get(field, field),
-            _format_event_change_value(field, vals[0]),
-            _format_event_change_value(field, vals[1]),
-        )
-        for field, vals in changes.items()
-    ]
-    html_body = render_template(
-        "email/event_changed.html",
-        user_name=user.name,
+    enqueue_deferred(
+        user=user,
         event=event,
-        event_url=event_url,
-        changes=formatted,
-        **_base_context(),
-    )
-    _enqueue(
-        user.email,
-        f"MedCover — Změna akce: {event.name}",
-        _PLAIN_FALLBACK,
-        html_body=html_body,
         notification_type="event_changed",
+        subject=f"MedCover — Změna akce: {event.name}",
+        body=_PLAIN_FALLBACK,
+        change_type=_EVENT_CHANGED_CHANGE_TYPE,
+        change_value=changes,
     )
 
 
@@ -473,16 +851,18 @@ def send_unfilled_spots_reminder(
     unfilled: list,
 ) -> None:
     """Remind coordinator/RP that an event still has unfilled spots."""
-    _guarded_send(
-        "notify_unfilled_reminder",
-        "unfilled_reminder",
-        user,
-        f"MedCover — Připomínka: volná místa na akci {event.name}",
-        "email/unfilled_spots_reminder.html",
-        "unfilled_reminder",
-        coordinator_name=user.name,
+    if not _is_notify_enabled("notify_unfilled_reminder"):
+        return
+    if not user_can_receive_notification(user, "unfilled_reminder"):
+        return
+    enqueue_deferred(
+        user=user,
         event=event,
-        unfilled=unfilled,
+        notification_type="unfilled_reminder",
+        subject=f"MedCover — Připomínka: volná místa na akci {event.name}",
+        body=_PLAIN_FALLBACK,
+        change_type=_UNFILLED_REMINDER_CHANGE_TYPE,
+        change_value={"unfilled_count": len(unfilled)},
     )
 
 
@@ -504,7 +884,6 @@ def send_admin_digest(recipient_email: str, subject: str, html_body: str) -> Non
 def _write_failure_audit(row: OutboxEmail) -> None:
     """Write an AuditLogEntry when an outbox email permanently fails.
     Called inside the active DB session — no commit here."""
-    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
 
     try:
         db.session.add(
@@ -530,15 +909,18 @@ def drain_one_outbox_email() -> bool:
     Returns True if a row was processed (sent or failed), False if the queue
     was empty.  Designed to be called from both the scheduler and tests.
     """
-    from flask_mail import Message  # pylint: disable=import-outside-toplevel
 
-    from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
-
+    _now_utc = datetime.now(timezone.utc)
     query = (
         db.select(OutboxEmail)
         .where(
             OutboxEmail.status == "pending",
             OutboxEmail.retry_count < OutboxEmail.MAX_RETRIES,
+            OutboxEmail.user_id.is_(None),  # legacy non-event rows only
+            sa.or_(
+                OutboxEmail.send_after.is_(None),
+                OutboxEmail.send_after <= _now_utc,
+            ),
         )
         .order_by(OutboxEmail.created_at.asc())
         .limit(1)
@@ -551,9 +933,8 @@ def drain_one_outbox_email() -> bool:
         return False
 
     # --- Dev email block check ---
-    from app.models.settings import get_settings as _get_settings  # pylint: disable=import-outside-toplevel
 
-    _settings = _get_settings()
+    _settings = get_settings()
     if not _settings.is_email_allowed(row.to_email):
         row.status = "skipped"
         row.last_error = "dev_email_block: recipient not in allowlist"
@@ -572,7 +953,7 @@ def drain_one_outbox_email() -> bool:
             msg.html = row.html_body
         if _INSTANCE_ID:
             msg.extra_headers = {"X-MedCover-Instance": _INSTANCE_ID}
-        _mail.send(msg)
+        mail.send(msg)
         row.status = "sent"
         row.sent_at = datetime.now(timezone.utc)
         log.info("Mail sent: id=%d to=%s subject=%r", row.id, row.to_email, row.subject)
@@ -613,22 +994,15 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
         return
     if not user_can_receive_notification(user, "assignment"):
         return
-    from flask import url_for  # pylint: disable=import-outside-toplevel
 
-    debriefing_url = url_for("debriefing.submit", assignment_id=assignment.id, _external=True)
-    html = render_template(
-        "email/debriefing_invitation.html",
-        user_name=user.name,
+    enqueue_deferred(
+        user=user,
         event=event,
-        debriefing_url=debriefing_url,
-        **_base_context(),
-    )
-    _enqueue(
-        user.email,
-        f"MedCover — Výjezdová zpráva: {event.name}",
-        _PLAIN_FALLBACK,
-        html_body=html,
         notification_type="debriefing_invitation",
+        subject=f"MedCover — Pozvánka k debriefingu: {event.name}",
+        body=_PLAIN_FALLBACK,
+        change_type=_DEBRIEFING_CHANGE_TYPE,
+        change_value={"assignment_id": assignment.id},
     )
 
 
@@ -637,7 +1011,6 @@ def send_debriefing_invitation(assignment: Assignment, event: Event) -> None:
 
 def send_account_activated(user: UserAccount) -> None:
     """Enqueue an account-activation notification to the newly activated user."""
-    from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
     login_url = external_url_for("auth.login")
     html_body = render_template("email/account_activated.html", user=user, login_url=login_url, **_base_context())
@@ -648,3 +1021,367 @@ def send_account_activated(user: UserAccount) -> None:
         html_body=html_body,
         notification_type="account_activated",
     )
+
+
+# ── Batched drain ─────────────────────────────────────────────────────────────
+
+
+def _pick_trigger_batch(now_utc: datetime) -> tuple[object, str] | None:
+    """Return the (user_id, to_email) pair whose oldest qualifying matured-pending
+    row is earliest in the queue, or None if no batch qualifies.
+
+    Grouping on (user_id, to_email) rather than user_id alone prevents cross-
+    recipient leakage: the admin test form can set g._test_notification_email
+    to redirect a row to a third-party address while user_id still points at
+    the admin, so two rows sharing a user_id may have distinct to_email
+    values. They must not be batched into the same email.
+    """
+    stmt = (
+        db.select(OutboxEmail.user_id, OutboxEmail.to_email)
+        .where(
+            OutboxEmail.status == "pending",
+            OutboxEmail.user_id.is_not(None),
+            OutboxEmail.retry_count < OutboxEmail.MAX_RETRIES,
+            sa.or_(
+                OutboxEmail.send_after.is_(None),
+                OutboxEmail.send_after <= now_utc,
+            ),
+        )
+        .group_by(OutboxEmail.user_id, OutboxEmail.to_email)
+        .order_by(sa.func.min(OutboxEmail.created_at).asc())
+        .limit(1)
+    )
+    row = db.session.execute(stmt).first()
+    if row is None:
+        return None
+    return row.user_id, row.to_email
+
+
+def _load_batch_for_user(user_id: object, to_email: str) -> list:
+    """Load and UPDLOCK-lock all pending rows for the (user_id, to_email) batch
+    (matured + immature)."""
+    stmt = (
+        db.select(OutboxEmail)
+        .where(
+            OutboxEmail.status == "pending",
+            OutboxEmail.user_id == user_id,
+            OutboxEmail.to_email == to_email,
+        )
+        .order_by(OutboxEmail.created_at.asc())
+        .with_hint(OutboxEmail, "WITH (UPDLOCK, ROWLOCK)")
+    )
+    return list(db.session.scalars(stmt).all())
+
+
+def _row_to_entry(row: OutboxEmail) -> dict:
+    """Translate one OutboxEmail row into a template entry dict.
+    Dispatches on notification_type + change_type with defensive parsing."""
+    ntype = row.notification_type or ""
+    ctype = row.change_type or ""
+
+    if ntype == "event_changed" and ctype == _EVENT_CHANGED_CHANGE_TYPE:
+        try:
+            payload = json.loads(row.change_value or "{}")
+        except ValueError, TypeError:
+            log.warning("Bad event_changed payload on outbox row id=%s", row.id)
+            payload = {}
+        changes = [
+            (
+                _EVENT_FIELD_LABELS.get(field, field),
+                _format_event_change_value(field, pair[0]),
+                _format_event_change_value(field, pair[1]),
+            )
+            for field, pair in payload.items()
+        ]
+        return {"type": "event_changed", "changes": changes}
+
+    if ntype in ("assignment_confirmed", "assignment_released"):
+        try:
+            payload = json.loads(row.change_value or "{}")
+        except ValueError, TypeError:
+            log.warning("Missing/bad change_value on outbox row id=%s (type=%s)", row.id, ntype)
+            payload = {}
+        spot_description = payload.get("spot_description", "") or ""
+        return {"type": ntype, "spot_description": spot_description}
+
+    if ntype in (
+        "event_published",
+        "assignments_opened",
+        "event_cancelled",
+        "event_archived",
+        "event_unarchived",
+    ):
+        return {"type": ntype}
+
+    if ntype == "unfilled_reminder":
+        try:
+            payload = json.loads(row.change_value or "{}")
+        except ValueError, TypeError:
+            log.warning("Missing/bad change_value on outbox row id=%s (unfilled_reminder)", row.id)
+            payload = {}
+        try:
+            count = int(payload.get("unfilled_count", 0))
+        except ValueError, TypeError:
+            count = 0
+        return {"type": "unfilled_reminder", "unfilled_count": count}
+
+    if ntype == "debriefing_invitation":
+        try:
+            payload = json.loads(row.change_value or "{}")
+        except ValueError, TypeError:
+            log.warning("Missing/bad change_value on outbox row id=%s (debriefing_invitation)", row.id)
+            payload = {}
+        assignment_id = payload.get("assignment_id")
+        if assignment_id is None:
+            log.warning("debriefing outbox row id=%s missing assignment_id", row.id)
+            debriefing_url = ""
+        else:
+
+            debriefing_url = external_url_for("debriefing.submit", assignment_id=int(assignment_id))
+        return {"type": "debriefing_invitation", "debriefing_url": debriefing_url}
+
+    # Fallback — legacy rows or unknown types: inline pre-rendered html_body.
+    log.warning(
+        "Unknown notification_type=%r change_type=%r for outbox row id=%s — using legacy html_body fallback",
+        ntype,
+        ctype,
+        row.id,
+    )
+    return {"type": "legacy", "legacy_html": row.html_body or ""}
+
+
+_ALL_SPOTS_ENTRY_TYPES = frozenset({"event_published", "assignments_opened"})
+_UNFILLED_SPOTS_ENTRY_TYPES = frozenset({"unfilled_reminder"})
+_SPOT_INFO_ENTRY_TYPES = _ALL_SPOTS_ENTRY_TYPES | _UNFILLED_SPOTS_ENTRY_TYPES
+
+
+def _summarise_spots(spots: Any) -> list[dict[str, Any]]:
+    """Snapshot an iterable of EventSpot rows for the batched email.
+
+    Deleted qualifications are filtered silently (email is a decision aid,
+    not an audit view).
+    """
+    summaries: list[dict[str, Any]] = []
+    for spot in spots:
+        active_quals = [q.name for q in spot.required_qualifications if not q.is_deleted]
+        summaries.append(
+            {
+                "description": spot.description or "—",
+                "is_optional": spot.is_optional,
+                "qualifications": active_quals,
+                "is_filled": spot.assignment is not None,
+            }
+        )
+    return summaries
+
+
+def _format_event_datetime_range(event: Event) -> str:
+    """Return the event's start–end window in local time.
+
+    Format: ``dd.mm.yyyy HH:MM – dd.mm.yyyy HH:MM`` (en-dash separator, both
+    dates always spelled out so multi-day events read naturally).
+    """
+    tz = get_app_tz()
+    start = event.start_datetime.astimezone(tz).strftime("%d.%m.%Y %H:%M")
+    end = event.end_datetime.astimezone(tz).strftime("%d.%m.%Y %H:%M")
+    return f"{start} – {end}"
+
+
+def _build_event_section(event: Event, rows: list) -> dict:
+    """Build one event section dict for the batched email template.
+
+    Entries whose type benefits from listing spot qualification requirements
+    (event_published / assignments_opened → all spots; unfilled_reminder
+    → only unfilled mandatory spots) receive a live spot snapshot. If
+    several entries in the same section would repeat the same table, only
+    the first renders it (``show_spots``) so recipients don't see duplicates.
+    """
+    entries = [_row_to_entry(r) for r in rows]
+    all_spots_cache: list[dict[str, Any]] | None = None
+    unfilled_spots_cache: list[dict[str, Any]] | None = None
+    all_spots_table_claimed = False
+    unfilled_spots_table_claimed = False
+    for entry in entries:
+        etype = entry.get("type")
+        if etype in _ALL_SPOTS_ENTRY_TYPES:
+            if all_spots_cache is None:
+                all_spots_cache = _summarise_spots(event.spots)
+            entry["spots"] = all_spots_cache
+            entry["show_spots"] = not all_spots_table_claimed
+            all_spots_table_claimed = True
+        elif etype in _UNFILLED_SPOTS_ENTRY_TYPES:
+            if unfilled_spots_cache is None:
+                unfilled_spots_cache = _summarise_spots(event.unfilled_spots)
+            entry["spots"] = unfilled_spots_cache
+            entry["show_spots"] = not unfilled_spots_table_claimed
+            # Override the payload's stale unfilled_count with the live value so
+            # the sentence never contradicts the table (spots may have been
+            # filled between enqueue and drain).
+            entry["unfilled_count"] = len(unfilled_spots_cache)
+            unfilled_spots_table_claimed = True
+
+    return {
+        "event_name": event.name,
+        "event_url": external_url_for("events.detail", event_id=event.id),
+        "datetime_range_local": _format_event_datetime_range(event),
+        "rows": entries,
+    }
+
+
+def _write_batch_failure_audit(
+    to_email: str,
+    subject: str,
+    error_str: str,
+    rows: list,
+) -> None:
+    """Write ONE AuditLogEntry for a batch SMTP failure. No commit."""
+
+    try:
+        db.session.add(
+            AuditLogEntry(
+                actor_id=None,
+                action_type="email_failed",
+                entity_type="OutboxEmail",
+                entity_id=str(rows[0].id) if rows else None,
+                summary=(f"Dávkový e-mail pro {to_email} ({len(rows)} řádků)" f" se nepodařilo odeslat: {error_str}"),
+                changes_json={
+                    "to": to_email,
+                    "subject": subject,
+                    "error": error_str,
+                    "row_ids": [r.id for r in rows],
+                },
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to write batch failure audit — %s", exc)
+
+
+def drain_batched_outbox() -> bool:
+    """Send one batched email to one triggering recipient.
+
+    Returns True if any state change was made (sent, dropped, failed, skipped),
+    False only if no user qualified (queue empty of matured batched rows)..
+    """
+
+    now_utc = datetime.now(timezone.utc)
+    trigger = _pick_trigger_batch(now_utc)
+    if trigger is None:
+        return False
+    user_id, to_email = trigger
+
+    rows = _load_batch_for_user(user_id, to_email)
+
+    # rows whose event has been hard-deleted (FK set to NULL) are
+    # unrecoverable: delete them outright so they don't accumulate.
+    live_rows: list[OutboxEmail] = []
+    deleted_orphans = 0
+    for r in rows:
+        if r.event_id is None:
+            db.session.delete(r)
+            deleted_orphans += 1
+        else:
+            live_rows.append(r)
+
+    if not live_rows:
+        db.session.commit()
+        log.info(
+            "drain_batched_outbox: user_id=%s to=%s had only deleted-event rows (%d removed)",
+            user_id,
+            to_email,
+            deleted_orphans,
+        )
+        return True
+
+    # Load recipient display name.
+
+    user_obj = db.session.get(UserAccount, user_id)
+    user_name = user_obj.name if user_obj is not None else ""
+
+    # dev email block.
+    settings = get_settings()
+    if not settings.is_email_allowed(to_email):
+        for r in live_rows:
+            r.status = "skipped"
+            r.last_error = "dev_email_block: recipient not in allowlist"
+        db.session.commit()
+        log.warning(
+            "Batch mail suppressed (dev_email_block): user_id=%s to=%s rows=%d",
+            user_id,
+            to_email,
+            len(live_rows),
+        )
+        return True
+
+    # Load Event objects — one round trip.
+    event_ids = sorted({r.event_id for r in live_rows if r.event_id is not None})
+    events = db.session.scalars(db.select(Event).where(Event.id.in_(event_ids))).all()
+    events_by_id = {e.id: e for e in events}
+
+    # Group live_rows by event_id; handle rows whose event vanished between load and now.
+    grouped: dict = {}
+    orphan_rows: list[OutboxEmail] = []
+    for r in live_rows:
+        if r.event_id in events_by_id:
+            grouped.setdefault(r.event_id, []).append(r)
+        else:
+            db.session.delete(r)
+            orphan_rows.append(r)
+
+    active_rows = [r for r in live_rows if r not in orphan_rows]
+    if not active_rows:
+        db.session.commit()
+        return True
+
+    # Sort event sections by event.start_datetime ASC.
+    ordered_events = sorted(events_by_id.values(), key=lambda e: e.start_datetime)
+    event_sections = [_build_event_section(e, grouped[e.id]) for e in ordered_events if e.id in grouped]
+
+    # Subject line.
+    if len(event_sections) == 1:
+        subject = f"MedCover — Změny v akci: {ordered_events[0].name}"
+    else:
+        subject = f"MedCover — Souhrn změn ({len(event_sections)} akcí)"
+
+    ctx = {
+        "user_name": user_name,
+        "event_sections": event_sections,
+        **_base_context(),
+    }
+    html_body = render_template("email/event_batched.html", **ctx)
+
+    try:
+        msg = Message(subject=subject, recipients=[to_email], body=_PLAIN_FALLBACK)
+        msg.html = html_body
+        if _INSTANCE_ID:
+            msg.extra_headers = {"X-MedCover-Instance": _INSTANCE_ID}
+        mail.send(msg)
+        _now = datetime.now(timezone.utc)
+        for r in active_rows:
+            r.status = "sent"
+            r.sent_at = _now
+        db.session.commit()
+        log.info(
+            "Batch mail sent: user_id=%s to=%s events=%d rows=%d",
+            user_id,
+            to_email,
+            len(event_sections),
+            len(active_rows),
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        err = str(exc)
+        for r in active_rows:
+            r.retry_count += 1
+            r.last_error = err
+            if r.retry_count >= OutboxEmail.MAX_RETRIES:
+                r.status = "failed"
+        _write_batch_failure_audit(to_email, subject, err, active_rows)
+        db.session.commit()
+        log.warning(
+            "Batch mail failed (user_id=%s to=%s rows=%d) — %s",
+            user_id,
+            to_email,
+            len(active_rows),
+            exc,
+        )
+        return True

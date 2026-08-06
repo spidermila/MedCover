@@ -96,6 +96,8 @@ def _parse_index_filters() -> dict:
         raw_types = request.args.get("types", "")
         active_types = [t for t in raw_types.split(",") if t in _ALL_EVENT_TYPES]
 
+    for_me = request.args.get("for_me") == "1" and current_user.has_permission("event.assign_own")
+
     return {
         "show_archived": show_archived,
         "page": page,
@@ -104,6 +106,7 @@ def _parse_index_filters() -> dict:
         "sort_dir": sort_dir,
         "active_me": active_me,
         "active_types": active_types,
+        "for_me": for_me,
     }
 
 
@@ -178,6 +181,33 @@ def _build_eligible_spot_map(events: list[Event]) -> dict[int, list[tuple[int, s
     return result
 
 
+def _eligible_event_ids_for_user(user: UserAccount) -> list[int]:
+    """Return event IDs where the user has at least one unoccupied, claimable spot.
+
+    Mirrors _build_eligible_spot_map: only ASSIGNMENTS_OPEN events, uses
+    EventSpot.is_eligible_for as the single source of truth for deleted-qual
+    filtering and fillable-qual checks, and excludes spots already held by
+    the user.
+    """
+    fillable_ids = user_fillable_qual_ids(user)
+    user_assigned_spot_ids = set(
+        db.session.scalars(db.select(Assignment.spot_id).where(Assignment.user_id == user.id)).all()
+    )
+
+    events = db.session.scalars(db.select(Event).where(Event.status == EventStatus.ASSIGNMENTS_OPEN)).all()
+
+    eligible_event_ids = {
+        e.id
+        for e in events
+        if any(
+            s.assignment is None and s.id not in user_assigned_spot_ids and s.is_eligible_for(fillable_ids)
+            for s in e.spots
+        )
+    }
+
+    return list(eligible_event_ids) if eligible_event_ids else [-1]
+
+
 # ── List ──────────────────────────────────────────────────────────────────────
 
 
@@ -209,6 +239,10 @@ def index() -> str:
         query = query.where(Event.status.in_(status_values))
     else:
         query = query.where(db.false())
+
+    if f["for_me"]:
+        eligible_ids = _eligible_event_ids_for_user(current_user)
+        query = query.where(Event.id.in_(eligible_ids))
 
     query = _apply_index_order(query, f["sort_col"], f["sort_dir"])
     pagination = db.paginate(query, page=f["page"], per_page=PER_PAGE, error_out=False)
@@ -244,6 +278,7 @@ def index() -> str:
         eligible_spot_map=_build_eligible_spot_map(events),
         active_named_mes=active_named_mes,
         status_colors=STATUS_BADGE_COLORS,
+        for_me=f["for_me"],
     )
 
 
@@ -668,12 +703,9 @@ def edit(event_id: int) -> str | Response:
         # Notify assigned users about the change (only if something actually changed).
         actual_changes = diff_changes(before, after)
         if actual_changes:
-            from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
-
-            event_url = external_url_for("events.detail", event_id=event.id)
             assigned_users = [spot.assignment.user for spot in event.spots if spot.assignment is not None]
             for u in assigned_users:
-                mailer.send_event_changed(u, event, actual_changes, event_url=event_url)
+                mailer.send_event_changed(u, event, actual_changes)
             db.session.commit()  # commit the enqueued outbox rows
 
         flash("Akce byla uložena.", "success")
@@ -708,6 +740,9 @@ def archive_event(event_id: int) -> Response:
     event.archived = True
     event.version += 1
     audit("archive", "Event", event.id, f"Akce '{name}' archivována")
+    db.session.commit()
+
+    mailer.flush_and_notify_archived(event)
     db.session.commit()
 
     if is_ajax:
@@ -788,6 +823,9 @@ def unarchive_event(event_id: int) -> Response:
     event.archived = False
     event.version += 1
     audit("unarchive", "Event", event.id, f"Akce '{name}' obnovena z archivu")
+    db.session.commit()
+
+    mailer.notify_unarchived(event)
     db.session.commit()
 
     flash(f"Akce „{name}“ byla obnovena z archivu.", "success")

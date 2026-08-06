@@ -68,9 +68,19 @@ class AppSettings(db.Model):  # type: ignore[misc]
     notify_event_published = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_assignments_opened = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_event_cancelled = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
+    notify_event_archived = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
+    notify_event_unarchived = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_event_changed = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_unfilled_reminder = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_debriefing = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
+
+    # --- Notification delay tiers (issue #268) ---
+    # Minutes to hold event-related notifications before sending, chosen by
+    # proximity of event.start_datetime to now. See enqueue_deferred().
+    notify_delay_under_24h_min = db.Column(db.Integer, default=5, nullable=False, server_default="5")
+    notify_delay_1_7_days_min = db.Column(db.Integer, default=60, nullable=False, server_default="60")
+    notify_delay_1_4_weeks_min = db.Column(db.Integer, default=360, nullable=False, server_default="360")
+    notify_delay_over_month_min = db.Column(db.Integer, default=1440, nullable=False, server_default="1440")
 
     # --- Lifecycle ---
     setup_complete = db.Column(db.Boolean, default=False, nullable=False)

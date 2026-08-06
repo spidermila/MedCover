@@ -13,6 +13,79 @@
   Ostatní lze deaktivovat níže — každý přepínač ovládá skupinu souvisejících typů oznámení.
 </div>
 
+{# ── Notification delay tiers (issue #268 · read-only) ────────────────────── #}
+{% macro minutes_to_human(m) -%}
+  {%- if m is none -%}—
+  {%- elif m < 60 -%}{{ m }} min
+  {%- elif m <= 1440 -%}
+    {%- set h = m // 60 -%}{%- set rem = m % 60 -%}
+    {%- if rem == 0 -%}{{ h }} h{%- else -%}{{ h }} h {{ rem }} min{%- endif -%}
+  {%- else -%}
+    {%- set d = m // 1440 -%}{%- set rem_h = (m % 1440) // 60 -%}
+    {%- if rem_h == 0 -%}{{ d }} d{%- else -%}{{ d }} d {{ rem_h }} h{%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold">Zpoždění notifikací</div>
+  <form method="POST" action="{{ url_for('notifications.save_delay_tiers') }}" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="card-body">
+      <div class="mb-3">
+        <label for="notify_delay_under_24h_min" class="form-label fw-semibold">Do 24 hodin do akce</label>
+        <div class="input-group input-group-sm" style="max-width: 18rem;">
+          <input type="number" class="form-control" id="notify_delay_under_24h_min"
+                 name="notify_delay_under_24h_min" min="1" max="20160" step="1" required
+                 value="{{ settings.notify_delay_under_24h_min }}">
+          <span class="input-group-text">min</span>
+          <span class="input-group-text text-muted">≈ {{ minutes_to_human(settings.notify_delay_under_24h_min) }}</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="notify_delay_1_7_days_min" class="form-label fw-semibold">1–7 dní do akce</label>
+        <div class="input-group input-group-sm" style="max-width: 18rem;">
+          <input type="number" class="form-control" id="notify_delay_1_7_days_min"
+                 name="notify_delay_1_7_days_min" min="1" max="20160" step="1" required
+                 value="{{ settings.notify_delay_1_7_days_min }}">
+          <span class="input-group-text">min</span>
+          <span class="input-group-text text-muted">≈ {{ minutes_to_human(settings.notify_delay_1_7_days_min) }}</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="notify_delay_1_4_weeks_min" class="form-label fw-semibold">1–4 týdny do akce</label>
+        <div class="input-group input-group-sm" style="max-width: 18rem;">
+          <input type="number" class="form-control" id="notify_delay_1_4_weeks_min"
+                 name="notify_delay_1_4_weeks_min" min="1" max="20160" step="1" required
+                 value="{{ settings.notify_delay_1_4_weeks_min }}">
+          <span class="input-group-text">min</span>
+          <span class="input-group-text text-muted">≈ {{ minutes_to_human(settings.notify_delay_1_4_weeks_min) }}</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="notify_delay_over_month_min" class="form-label fw-semibold">Více než měsíc do akce</label>
+        <div class="input-group input-group-sm" style="max-width: 18rem;">
+          <input type="number" class="form-control" id="notify_delay_over_month_min"
+                 name="notify_delay_over_month_min" min="1" max="20160" step="1" required
+                 value="{{ settings.notify_delay_over_month_min }}">
+          <span class="input-group-text">min</span>
+          <span class="input-group-text text-muted">≈ {{ minutes_to_human(settings.notify_delay_over_month_min) }}</span>
+        </div>
+      </div>
+
+      <div class="form-text">
+        Delší odklad seskupí více změn do jednoho e-mailu, ale zpozdí doručení.
+        Doporučené hodnoty: 5 / 60 / 360 / 1440 minut.
+      </div>
+    </div>
+    <div class="card-footer d-flex gap-2">
+      <button type="submit" class="btn btn-primary btn-sm">Uložit zpoždění</button>
+    </div>
+  </form>
+</div>
+
 {# ── Toggle controls ────────────────────────────────────────────────────────── #}
 <form method="POST" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -40,6 +113,20 @@
         </div>
         <div class="col-12 col-md-2 text-muted small pt-2">
           Vyberte adresu a akci, pak klikněte na tlačítko u konkrétního oznámení níže.
+        </div>
+        <div class="col-12 pt-1">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="test_send_immediately"
+                   name="send_immediately" value="1">
+            <label class="form-check-label small" for="test_send_immediately">
+              Odeslat okamžitě (přeskočit zpoždění)
+            </label>
+            <div class="form-text small">
+              Zaškrtněte pro náhled šablony bez čekání. Při vypnutém režimu
+              se oznámení zařadí do fronty stejně jako skutečné oznámení
+              a použije nakonfigurované zpoždění.
+            </div>
+          </div>
         </div>
       </div>
 
@@ -84,6 +171,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" id="test_email_{{ entry.code }}" name="test_email">
     <input type="hidden" id="test_event_id_{{ entry.code }}" name="test_event_id">
+    <input type="hidden" id="test_send_immediately_{{ entry.code }}" name="send_immediately" value="0">
   </form>
   {% endfor %}
 {% endfor %}

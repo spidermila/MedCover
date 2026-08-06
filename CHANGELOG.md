@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Notification batching: event-related emails (event changes, published, assignments opened, cancelled, unfilled reminders, debriefing invites, assignment confirmed/released) are now deferred and grouped per recipient. A single email covers all pending event notifications for a user, one section per event; subject line indicates single-event vs multi-event batch. (#268)
+- Admin-configurable delay tiers at `/admin/notifications/` for events <24 h / 1–7 days / 1–4 weeks / >1 month away. Defaults: 5 / 60 / 360 / 1440 minutes. (#268)
+- Structured change payload for `event_changed`: consecutive edits within the delay window merge to the newest value per field; fields reverted to their original value are dropped from the aggregated email. (#268)
+- Test-notification form at `/admin/notifications/` gained an "Odeslat okamžitě" checkbox (default OFF) — unchecked routes the test through the normal deferred pipeline for end-to-end verification; checked bypasses the delay for template preview. (#268)
+- Two new notification types `event_archived` and `event_unarchived` with matching `AppSettings.notify_event_archived` / `notify_event_unarchived` toggles (default ON). Batched aggregate template gained matching sections. Migration `b030510869ff`. (#268)
+
+### Changed
+- `OutboxEmail` schema gained `user_id`, `event_id`, `change_type`, `change_value`, and `send_after` columns plus a composite index for the drain query. Migration `853f463b9f87` (up + down verified on MSSQL). (#268)
+- Email outbox drain now has two paths: batched path for event notifications (per-user aggregation of matured + immature rows), legacy single-row-per-tick path for non-event rows (invite, password reset, account activation, admin digest) — unchanged behaviour. Scheduler wraps the drain in a Flask request context so email templates can build absolute URLs. (#268)
+- Event-related `send_*` helpers now enqueue via `enqueue_deferred()` (which upserts under `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` on `(user_id, event_id, notification_type)`) instead of immediately enqueueing a rendered email. Per-notification HTML templates were dropped: the batched drain composes every event-linked email from `email/event_batched.html`, so pre-rendering into `OutboxEmail.html_body` was pure dead work. (#268)
+- Archiving an event (via `/events/<id>/archive`, and via the MasterEvent archive cascade) now bulk-resets `send_after=NULL` on every pending outbox row for that event and enqueues an `event_archived` notice — for the union of currently-assigned users **and** users who had pending notifications for that event — so recipients get the archive notice together with any previously deferred edits in a single email. Cancelling an event (`/events/<id>/cancel`) does the same but enqueues the distinct `event_cancelled` notice (its own section in the batched template and its own `notify_event_cancelled` toggle) instead of reusing the archive notice. (#268)
+- Unarchiving an event (via `/events/<id>/unarchive` or the `/restore` transition) now enqueues a deferred `event_unarchived` notice to currently-assigned users, using the normal proximity delay so it can merge with subsequent edits. MasterEvent unarchive stays silent (no cascade). (#268)
+- Archiving **or** deactivating a user account now deletes all their pending outbox rows in the same transaction; the number of removed rows is included in the audit-log summary. (#268)
+
 ## [0.18.0] - 2026-07-13
 
 ### Added
@@ -238,7 +253,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Archived users are blocked from requesting a password reset (UI shows same message to prevent enumeration)
 - New permissions: `user.archive` (archive/unarchive) and `user.view_archived` (see archived list) — Admin role only
 - Archived user list accessible via `?archived=1` on the users page (Admin only)
-- Import: new users in the import preview can be marked as archived at creation time (for departed volunteers in historical data)
+- Import: new users in the import preview can be marked as archived at creation time (for departed users in historical data)
 - Import: archived users are assignable to imported event spots (historical events may reference people who have since left)
 - Report link on user detail page: users with `report.view` permission now have a direct "Přehled akcí" button linking to the user's event report (closes #117)
 - Events table: scheduled duration now shown in the Začátek column, e.g. "pá 10:00 (2 h)"; Nadřazená akce column moved to the end (closes #121)

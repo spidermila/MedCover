@@ -1014,6 +1014,65 @@ class TestUserArchive:
             ids = [u.id for u in active_users_list()]
             assert uid not in ids
 
+    def test_archive_purges_pending_outbox(self, app, admin_client):
+        """Archiving a user deletes their pending outbox rows; sent/failed rows are untouched."""
+        uid = self._create_target(app)
+        with app.app_context():
+            db.session.add_all(
+                [
+                    OutboxEmail(to_email="target@archive.test", subject="p", body="b", user_id=uid, status="pending"),
+                    OutboxEmail(to_email="target@archive.test", subject="p2", body="b", user_id=uid, status="pending"),
+                    OutboxEmail(to_email="target@archive.test", subject="s", body="b", user_id=uid, status="sent"),
+                    OutboxEmail(to_email="target@archive.test", subject="f", body="b", user_id=uid, status="failed"),
+                ]
+            )
+            db.session.commit()
+        resp = admin_client.post(f"/users/{uid}/archive", follow_redirects=True)
+        assert resp.status_code == 200
+        with app.app_context():
+            remaining = db.session.scalars(db.select(OutboxEmail).where(OutboxEmail.user_id == uid)).all()
+            statuses = sorted(r.status for r in remaining)
+            assert statuses == ["failed", "sent"]
+
+    def test_deactivate_purges_pending_outbox(self, app, admin_client):
+        """Deactivating a user also deletes their pending outbox rows."""
+        uid = self._create_target(app)
+        with app.app_context():
+            db.session.add(
+                OutboxEmail(to_email="target@archive.test", subject="p", body="b", user_id=uid, status="pending")
+            )
+            db.session.commit()
+        resp = admin_client.post(f"/users/{uid}/deactivate", follow_redirects=True)
+        assert resp.status_code == 200
+        with app.app_context():
+            remaining = db.session.scalars(db.select(OutboxEmail).where(OutboxEmail.user_id == uid)).all()
+            assert remaining == []
+
+    def test_archive_leaves_other_users_outbox_untouched(self, app, admin_client):
+        """Purge on archive only affects the archived user."""
+        uid = self._create_target(app)
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            other = UserAccount(email="other@test.com", name="Other", is_active=True)
+            other.set_password("pass")
+            other.roles = [role]
+            db.session.add(other)
+            db.session.commit()
+            other_id = other.id
+            db.session.add_all(
+                [
+                    OutboxEmail(to_email="target@archive.test", subject="a", body="b", user_id=uid, status="pending"),
+                    OutboxEmail(to_email="other@test.com", subject="a", body="b", user_id=other_id, status="pending"),
+                ]
+            )
+            db.session.commit()
+        admin_client.post(f"/users/{uid}/archive")
+        with app.app_context():
+            assert (
+                db.session.scalar(db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.user_id == other_id)) == 1
+            )
+            assert db.session.scalar(db.select(db.func.count(OutboxEmail.id)).where(OutboxEmail.user_id == uid)) == 0
+
     def test_archived_user_password_reset_silently_denied(self, app, client):
         """Password reset for an archived user shows same message but sends no email."""
         uid = self._create_target(app)

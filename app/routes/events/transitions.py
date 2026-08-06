@@ -78,7 +78,11 @@ def transition(event_id: int) -> Response:
             if spot.assignment is not None and not spot.assignment.debriefing_email_sent:
                 mailer.send_debriefing_invitation(spot.assignment, event)
                 spot.assignment.debriefing_email_sent = True
-        db.session.commit()
+
+    # Persist enqueued outbox rows (and debriefing_email_sent flag updates);
+    # enqueue_deferred only flushes, so without this commit the pending rows
+    # would be rolled back at teardown.
+    db.session.commit()
 
     flash(f"Stav akce byl změněn na {target_status.value}.", "success")
     return redirect(url_for("events.detail", event_id=event_id))
@@ -98,13 +102,10 @@ def cancel(event_id: int) -> Response:
     event.archived = True
     event.version += 1
     audit("status_change", "Event", event.id, f"Akce '{event.name}' archivována (zrušena)")
-
-    # Notify all assigned users before commit so we still have spot data
-    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
     db.session.commit()
 
-    for user in assigned_users:
-        mailer.send_event_cancelled(user, event)
+    mailer.flush_and_notify_cancelled(event)
+    db.session.commit()
 
     flash("Akce byla zrušena.", "warning")
     return redirect(url_for("events.index"))
@@ -124,6 +125,9 @@ def restore(event_id: int) -> Response:
     event.archived = False
     event.version += 1
     audit("status_change", "Event", event.id, f"Akce '{event.name}' obnovena do stavu Koncept")
+    db.session.commit()
+
+    mailer.notify_unarchived(event)
     db.session.commit()
 
     flash("Akce byla obnovena.", "success")

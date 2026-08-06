@@ -12,6 +12,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from collections.abc import Callable
 
 from app import create_app
+from app.extensions import db
+from app.mail import drain_batched_outbox, drain_one_outbox_email
+from app.models.audit import AuditLogEntry
+from app.models.event import Event, EventStatus
+from app.models.settings import get_settings
+from app.scheduler_tasks import (
+    cleanup_work_report_files,
+    run_admin_digest,
+    run_record_metrics,
+    run_scheduled_backup,
+    run_send_reminders,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -40,31 +52,31 @@ def _logged_task(name: str, fn: Callable[[], None]) -> Callable[[], None]:
 
 
 def process_email_queue() -> None:
-    """Drain the outbox_email queue one message at a time.
+    """Drain the outbox_email queue.
 
-    Called every MAIL_QUEUE_INTERVAL_SECONDS (default 3 s).  Delegates to
-    app.mail.drain_one_outbox_email which contains the actual logic and can
-    also be called directly in tests without importing the scheduler.
+    Priority:
+      1. drain_batched_outbox() — one batched email per triggering recipient.
+      2. Fall through to drain_one_outbox_email() for user_id=NULL legacy rows.
 
-    Re-applies SMTP settings from the DB on every run so changes made via
-    the admin settings page take effect without a container restart.
+    Called every MAIL_QUEUE_INTERVAL_SECONDS (default 3 s).  At most one
+    SMTP send per tick — the batched drain's early return prevents double sending.
     """
     with app.app_context():
-        from app.mail import drain_one_outbox_email  # pylint: disable=import-outside-toplevel
-        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
-
         s = get_settings()
         s.apply_to_app(app)
-        drain_one_outbox_email()
+        # drain_batched_outbox calls external_url_for which needs a request context
+        # when SERVER_NAME is not set in ProductionConfig.
+        try:
+            with app.test_request_context("/"):
+                if not drain_batched_outbox():
+                    drain_one_outbox_email()
+        except Exception as exc:  # noqa: BLE001
+            log.error("process_email_queue: drain failed: %s", exc, exc_info=True)
 
 
 def open_assignments() -> None:
     """Auto-transition Events from Published → Assignments Open when assignments_open_datetime has passed."""
     with app.app_context():
-        from app.extensions import db  # pylint: disable=import-outside-toplevel
-        from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
-        from app.models.event import Event, EventStatus  # pylint: disable=import-outside-toplevel
-
         now = datetime.now(timezone.utc)
         events = db.session.scalars(
             db.select(Event).where(
@@ -96,10 +108,6 @@ def open_assignments() -> None:
 def close_completed_events() -> None:
     """Auto-transition Events from Assignments Open/Closed → Completed after end_datetime."""
     with app.app_context():
-        from app.extensions import db  # pylint: disable=import-outside-toplevel
-        from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
-        from app.models.event import Event, EventStatus  # pylint: disable=import-outside-toplevel
-
         now = datetime.now(timezone.utc)
         events = db.session.scalars(
             db.select(Event).where(
@@ -135,92 +143,76 @@ def send_reminders() -> None:
     that it can be tested without importing this module.
     """
     with app.app_context():
-        from app.extensions import db  # pylint: disable=import-outside-toplevel
-        from app.scheduler_tasks import run_send_reminders  # pylint: disable=import-outside-toplevel
-
         run_send_reminders(db.session)
 
 
 def send_admin_digest_task() -> None:
     """Send admin digest if it is due per DigestSchedule."""
     with app.app_context():
-        from app.extensions import db  # pylint: disable=import-outside-toplevel
-        from app.scheduler_tasks import run_admin_digest  # pylint: disable=import-outside-toplevel
-
         run_admin_digest(db.session)
 
 
 def scheduled_backup_task() -> None:
     """Create a daily backup if backup_schedule_enabled is True in AppSettings."""
     with app.app_context():
-        from app.extensions import db  # pylint: disable=import-outside-toplevel
-        from app.scheduler_tasks import run_scheduled_backup  # pylint: disable=import-outside-toplevel
-
         run_scheduled_backup(db.session)
 
 
 def record_metrics() -> None:
     """Record outbox queue depth snapshot every 15 minutes."""
     with app.app_context():
-        from app.extensions import db  # pylint: disable=import-outside-toplevel
-        from app.scheduler_tasks import run_record_metrics  # pylint: disable=import-outside-toplevel
-
         run_record_metrics(db.session)
 
 
 def cleanup_work_report() -> None:
     """Remove employee work report xlsx files older than 1 day."""
     with app.app_context():
-        from app.scheduler_tasks import cleanup_work_report_files  # pylint: disable=import-outside-toplevel
-
         cleanup_work_report_files(app.instance_path)
 
 
-schedule.every(MAIL_QUEUE_INTERVAL_SECONDS).seconds.do(process_email_queue)
-schedule.every(1).minutes.do(_logged_task("open_assignments", open_assignments))
-schedule.every(1).minutes.do(_logged_task("close_completed_events", close_completed_events))
-schedule.every(5).minutes.do(_logged_task("send_reminders", send_reminders))
-schedule.every(1).hours.do(_logged_task("send_admin_digest", send_admin_digest_task))
-schedule.every(1).hours.do(_logged_task("scheduled_backup", scheduled_backup_task))
-schedule.every(15).minutes.do(_logged_task("record_metrics", record_metrics))
-schedule.every(1).hours.do(_logged_task("cleanup_work_report", cleanup_work_report))
+if __name__ == "__main__":
+    schedule.every(MAIL_QUEUE_INTERVAL_SECONDS).seconds.do(process_email_queue)
+    schedule.every(1).minutes.do(_logged_task("open_assignments", open_assignments))
+    schedule.every(1).minutes.do(_logged_task("close_completed_events", close_completed_events))
+    schedule.every(5).minutes.do(_logged_task("send_reminders", send_reminders))
+    schedule.every(1).hours.do(_logged_task("send_admin_digest", send_admin_digest_task))
+    schedule.every(1).hours.do(_logged_task("scheduled_backup", scheduled_backup_task))
+    schedule.every(15).minutes.do(_logged_task("record_metrics", record_metrics))
+    schedule.every(1).hours.do(_logged_task("cleanup_work_report", cleanup_work_report))
 
-log.info(
-    "Scheduler started (instance=%s pid=%d mail_queue_interval=%ds)",
-    INSTANCE_ID or "?",
-    os.getpid(),
-    MAIL_QUEUE_INTERVAL_SECONDS,
-)
+    log.info(
+        "Scheduler started (instance=%s pid=%d mail_queue_interval=%ds)",
+        INSTANCE_ID or "?",
+        os.getpid(),
+        MAIL_QUEUE_INTERVAL_SECONDS,
+    )
 
-_last_alive_log: float = 0.0  # monotonic timestamp of last hourly alive message
+    _last_alive_log: float = 0.0  # monotonic timestamp of last hourly alive message
 
-while True:
-    schedule.run_pending()
+    while True:
+        schedule.run_pending()
 
-    # Hourly "still alive" heartbeat in the log for easy monitoring.
-    _now_mono = time.monotonic()
-    if _now_mono - _last_alive_log >= 3600:
-        log.info(
-            "Scheduler alive (instance=%s pid=%d)",
-            INSTANCE_ID or "?",
-            os.getpid(),
-        )
-        _last_alive_log = _now_mono
+        # Hourly "still alive" heartbeat in the log for easy monitoring.
+        _now_mono = time.monotonic()
+        if _now_mono - _last_alive_log >= 3600:
+            log.info(
+                "Scheduler alive (instance=%s pid=%d)",
+                INSTANCE_ID or "?",
+                os.getpid(),
+            )
+            _last_alive_log = _now_mono
 
-    # Write heartbeat so the admin dashboard can confirm the scheduler is alive
-    try:
-        with app.app_context():
-            from app.extensions import db
-            from app.models.settings import get_settings
-
-            s = get_settings()
-            s.scheduler_last_seen = datetime.now(timezone.utc)
-            db.session.commit()
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Heartbeat write failed: %s", exc)
-    # Also touch a local file so Docker healthcheck can verify without a DB query
-    try:
-        Path("/tmp/scheduler_heartbeat").touch()
-    except Exception:
-        pass
-    time.sleep(5)  # short sleep so email queue is drained promptly
+        # Write heartbeat so the admin dashboard can confirm the scheduler is alive
+        try:
+            with app.app_context():
+                s = get_settings()
+                s.scheduler_last_seen = datetime.now(timezone.utc)
+                db.session.commit()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Heartbeat write failed: %s", exc)
+        # Also touch a local file so Docker healthcheck can verify without a DB query
+        try:
+            Path("/tmp/scheduler_heartbeat").touch()
+        except Exception:
+            pass
+        time.sleep(5)  # short sleep so email queue is drained promptly
