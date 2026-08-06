@@ -464,12 +464,20 @@ def _validate_row(row: Any, idx: int) -> tuple[dict | None, list[str]]:
         except ValueError:
             errors.append(f"Neplatný čas konce: '{end_time}'.")
 
+    end_date = row.get("end_date")
+    if end_date is not None:
+        try:
+            datetime.strptime(str(end_date), "%Y-%m-%d")
+        except ValueError:
+            errors.append(f"Neplatné datum konce: '{end_date}' (očekáváno YYYY-MM-DD).")
+
     if errors:
         return None, errors
 
     return {
         "name": name,
         "date": date_str,
+        "end_date": str(end_date).strip() if end_date else None,
         "start_time": start_time,
         "end_time": end_time,
         "location": str(row.get("location") or "").strip() or None,
@@ -672,6 +680,7 @@ def events_confirm() -> Response:
             date_str = form.get(f"{prefix}date", "")
             start_time_str = form.get(f"{prefix}start_time", "").strip() or None
             end_time_str = form.get(f"{prefix}end_time", "").strip() or None
+            end_date_str = form.get(f"{prefix}end_date", "").strip() or None
             location = form.get(f"{prefix}location", "").strip() or None
             paid = form.get(f"{prefix}paid") == "1"
             contact_person = form.get(f"{prefix}contact_person", "").strip() or None
@@ -696,7 +705,7 @@ def events_confirm() -> Response:
 
             start_dt = _parse_datetime(date_str, start_time_str, get_app_tz())
             if end_time_str:
-                end_dt = _parse_datetime(date_str, end_time_str, get_app_tz())
+                end_dt = _parse_datetime(end_date_str or date_str, end_time_str, get_app_tz())
                 if end_dt <= start_dt:
                     end_dt += timedelta(days=1)
             else:

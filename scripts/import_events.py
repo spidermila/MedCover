@@ -86,7 +86,7 @@ Notes
 import argparse
 import json
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -227,14 +227,18 @@ def extract(wb: Any, cutoff: date | None = None) -> list[dict[str, Any]]:
         # --- Times ---
         start_time = row[6].value
         end_time = row[7].value
+        # openpyxl may return datetime instead of time for some cells
+        if isinstance(start_time, datetime):
+            start_time = start_time.time()
+        if isinstance(end_time, datetime):
+            end_time = end_time.time()
         time_missing = start_time is None
 
-        # Treat midnight end as "end not specified"
-        if end_time is not None:
-            from datetime import time as _time  # pylint: disable=import-outside-toplevel
-
-            if end_time == _time(0, 0):
-                end_time = None
+        # Detect midnight-spanning events (e.g. 22:00–02:00).
+        # end_time < start_time means the event crosses midnight → end is on the next day.
+        end_date = raw_date
+        if start_time is not None and end_time is not None and end_time < start_time:
+            end_date = raw_date + timedelta(days=1)
 
         # --- Strikethrough = cancelled in GS ---
         cancelled = _is_row_cancelled(row)
@@ -284,6 +288,7 @@ def extract(wb: Any, cutoff: date | None = None) -> list[dict[str, Any]]:
             {
                 "name": unique_name,
                 "date": raw_date.strftime("%Y-%m-%d"),
+                "end_date": end_date.strftime("%Y-%m-%d") if end_date != raw_date else None,
                 "start_time": _fmt_time(start_time),
                 "end_time": _fmt_time(end_time),
                 "location": location,
