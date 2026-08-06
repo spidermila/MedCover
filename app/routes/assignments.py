@@ -129,8 +129,14 @@ def do_assign_user(
     if not user.is_active or user.is_archived:
         return AssignResult(ok=False, error="Uživatel nenalezen nebo není aktivní.")
 
-    # Pessimistic lock: SELECT FOR UPDATE
-    spot = db.session.scalar(db.select(EventSpot).where(EventSpot.id == spot_id).with_for_update())
+    # Pessimistic lock: serialize concurrent claims on the same spot.
+    # SQLAlchemy's mssql dialect silently drops .with_for_update(); use an
+    # explicit T-SQL table hint. UNIQUE(spot_id) on Assignment is the ultimate
+    # backstop, but the lock lets the second txn wait and surface a clean
+    # „already taken“ message instead of an IntegrityError.
+    spot = db.session.scalar(
+        db.select(EventSpot).where(EventSpot.id == spot_id).with_hint(EventSpot, "WITH (UPDLOCK, ROWLOCK)")
+    )
     if spot is None:
         return AssignResult(ok=False, error="Pozice nenalezena.")
 

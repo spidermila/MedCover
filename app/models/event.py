@@ -293,7 +293,7 @@ class EventSpot(db.Model):  # type: ignore[misc]
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
     description = db.Column(db.String(255), nullable=True)
     is_optional = db.Column(db.Boolean, default=False, nullable=False)
-    # Optimistic locking — used in combination with with_for_update() for assignment
+    # Optimistic locking — paired with a T-SQL UPDLOCK hint in the assignment path.
     version = db.Column(db.Integer, default=1, nullable=False)
 
     event = db.relationship("Event", back_populates="spots")

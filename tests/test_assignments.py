@@ -2,8 +2,12 @@
 
 from datetime import datetime, timezone
 
+import pytest
+from sqlalchemy import event as sa_event
+
 from app.extensions import db
 from app.models.assignment import Assignment
+from app.models.equipment import EquipmentItem, EquipmentType
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
@@ -482,3 +486,65 @@ class TestUnassignOtherEdgeCases:
         admin_client.post(f"/assignments/unassign/{assignment_id}", follow_redirects=True)
         with app.app_context():
             assert db.session.get(Event, event_id).status == EventStatus.ASSIGNMENTS_OPEN
+
+
+@pytest.fixture
+def _captured_sql(app):
+    # Capture every raw SQL statement fired against the engine while the fixture
+    # is active. Used to assert that critical pessimistic-lock queries carry the
+    # T-SQL UPDLOCK table hint (SQLAlchemy's mssql dialect silently drops
+    # .with_for_update(), so a hint is the only guarantee).
+    captured: list[str] = []
+
+    def _before(_conn, _cursor, statement, _parameters, _context, _executemany):
+        captured.append(statement)
+
+    with app.app_context():
+        engine = db.engine
+    sa_event.listen(engine, "before_cursor_execute", _before)
+    try:
+        yield captured
+    finally:
+        sa_event.remove(engine, "before_cursor_execute", _before)
+
+
+class TestPessimisticLockHints:
+    # Regression: bare .with_for_update() compiles to a plain SELECT on the
+    # SQLAlchemy mssql dialect with no lock hint at all, silently disabling
+    # every pessimistic lock in the codebase. Explicit T-SQL WITH (UPDLOCK...)
+    # hints replace it; verify the hint reaches the wire.
+
+    def test_spot_claim_emits_updlock_on_event_spot(self, app, member_client, _captured_sql):
+        _event_id, spot_id = _make_event_with_spot(app)
+        _captured_sql.clear()
+        resp = member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
+        assert resp.status_code == 200
+        lock_selects = [
+            s for s in _captured_sql if "event_spot" in s.lower() and "updlock" in s.lower() and "select" in s.lower()
+        ]
+        assert lock_selects, f"no UPDLOCK on event_spot in: {_captured_sql}"
+
+    def test_equipment_plan_add_emits_updlock_on_equipment_type(self, app, admin_client, _captured_sql):
+        event_id, _ = _make_event_with_spot(app)
+        with app.app_context():
+            et = EquipmentType(name="Test batoh")
+            db.session.add(et)
+            db.session.flush()
+            # A plan cannot be added when nothing exists in stock; give the type one item.
+            db.session.add(EquipmentItem(name="Batoh #1", type_id=et.id))
+            db.session.commit()
+            type_id = et.id
+
+        _captured_sql.clear()
+        resp = admin_client.post(
+            f"/events/{event_id}/equipment/plan",
+            data={"type_id": str(type_id), "quantity": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        lock_selects = [
+            s
+            for s in _captured_sql
+            if "equipment_type" in s.lower() and "updlock" in s.lower() and "select" in s.lower()
+        ]
+        assert lock_selects, f"no UPDLOCK on equipment_type in: {_captured_sql}"
