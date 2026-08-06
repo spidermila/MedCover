@@ -7,20 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-08-06
+
 ### Added
-- Notification batching: event-related emails (event changes, published, assignments opened, cancelled, unfilled reminders, debriefing invites, assignment confirmed/released) are now deferred and grouped per recipient. A single email covers all pending event notifications for a user, one section per event; subject line indicates single-event vs multi-event batch. (#268)
-- Admin-configurable delay tiers at `/admin/notifications/` for events <24 h / 1–7 days / 1–4 weeks / >1 month away. Defaults: 5 / 60 / 360 / 1440 minutes. (#268)
-- Structured change payload for `event_changed`: consecutive edits within the delay window merge to the newest value per field; fields reverted to their original value are dropped from the aggregated email. (#268)
-- Test-notification form at `/admin/notifications/` gained an "Odeslat okamžitě" checkbox (default OFF) — unchecked routes the test through the normal deferred pipeline for end-to-end verification; checked bypasses the delay for template preview. (#268)
-- Two new notification types `event_archived` and `event_unarchived` with matching `AppSettings.notify_event_archived` / `notify_event_unarchived` toggles (default ON). Batched aggregate template gained matching sections. Migration `b030510869ff`. (#268)
+- Notification batching: event-related emails (event changes, published, assignments opened, cancelled, unfilled reminders, debriefing invites, assignment confirmed/released, archived/unarchived) are now deferred and grouped per recipient. A single email covers all pending event notifications for a user, one section per event; subject line indicates single-event vs multi-event batch. (#417, #268)
+- Admin-configurable delay tiers at `/admin/notifications/` for events <24 h / 1–7 days / 1–4 weeks / >1 month away. Defaults: 5 / 60 / 360 / 1440 minutes. (#417, #268)
+- Structured change payload for `event_changed`: consecutive edits within the delay window merge to the newest value per field; fields reverted to their original value are dropped from the aggregated email. (#417, #268)
+- Two new notification types `event_archived` and `event_unarchived` with matching `AppSettings.notify_event_archived` / `notify_event_unarchived` toggles (default ON). (#417, #268)
+- Test-notification form at `/admin/notifications/` gained an "Odeslat okamžitě" (send immediately) checkbox (default OFF) — unchecked routes the test through the normal deferred pipeline for end-to-end verification; checked bypasses the delay for template preview. (#417, #268)
+- Equipment planning rework: events now declare **quantity per type** instead of pinning specific items. Equipment planning is integrated into the event create/edit form using the same dynamic builder as spots, with conflict-check flash messages linking to competing events. (#424, #400)
+- Equipment item availability rework: maintenance windows (`unavailability_since` / `unavailability_until`) replace the status enum. New inline service form on the items list lets admins take an item out of service without leaving the page; "Vrátit do provozu" (return to service) clears the window in one click. Item delete is blocked, and item edit warns, when the change would create a future shortage. (#424, #400)
+- Dashboard equipment shortage panel: upcoming events with planned quantity exceeding available stock, with links to each event. Visible to users with `event.equipment.plan` or `event.view`. (#424, #400)
+- Profile signature upload: users with `work_report.generate` can upload a handwritten-signature image (PNG / JPEG / HEIC) from their profile. The image is auto-oriented, cropped, resized to 200 px height, re-encoded as PNG, and embedded into every generated work-report xlsx — removing the last manual step of the payroll workflow. Preview endpoint at `/users/profile/signature`. (#434, #428)
+- "Pro mě" (For me) filter on the events list: shows open events with claimable, unoccupied spots the current user is eligible for. Persists across status, type, sorting, pagination, and navigation; runs server-side so pagination is now correct. (#384, #326)
+
+### Fixed
+- Scheduler main-loop poll interval reduced from 5 s to 1 s so it no longer silently caps `MAIL_QUEUE_INTERVAL_SECONDS` (default 3 s). Heartbeat writes are throttled independently at 5 s to avoid multiplying DB writes. (#431)
+- Scheduler heartbeat file-touch failures are now logged instead of silently swallowed.
+- Debriefing `manage` page N+1: `Event → Spot → Assignment → Debriefing` chain now eager-loaded in one query. On the dev dataset (150 completed events, 413 assignments, 318 debriefings) page render dropped from ~680 ms to ~145 ms. (#433)
+- Signature upload pipeline hardening: 8 MB request cap, 25 M-pixel decompression-bomb guard (logs suspected bombs), exact stored-blob cap (50 KB) enforced via header, palette-transparency PNGs composited onto white, aspect ratio capped before resize, `signature_mimetype` used for all blob-presence checks so the blob is never loaded just to check existence. (#434)
+- Cancelling an event now sends `event_cancelled`, not `event_archived`. (#417)
+- Batched drain keyed on `(user_id, to_email)` — prevents cross-recipient leaks when a user's email changes mid-window. (#417)
+- Outbox rows whose event was hard-deleted are removed from the queue. (#417)
+- `event_published` / `assignments_opened` emails now always list every spot (grouped by required qualification) with a preamble explaining what the user can sign up for; `unfilled_reminder` lists individual spots and its count matches the live spot list. (#417)
+- Business transaction is committed **before** SMTP send (previously after), so a mail failure can no longer roll back the underlying status change. (#417)
+- Notification delay-tier settings reject non-monotonic values (a longer horizon must not have a shorter delay than a nearer one). (#417)
+- Assignment audit: `spot_description` snapshotted before delete so the audit entry does not lose context.
+- Migration re-parenting: signature-columns and notification-batching migrations re-parented onto the current head to avoid multi-head history.
 
 ### Changed
-- `OutboxEmail` schema gained `user_id`, `event_id`, `change_type`, `change_value`, and `send_after` columns plus a composite index for the drain query. Migration `853f463b9f87` (up + down verified on MSSQL). (#268)
-- Email outbox drain now has two paths: batched path for event notifications (per-user aggregation of matured + immature rows), legacy single-row-per-tick path for non-event rows (invite, password reset, account activation, admin digest) — unchanged behaviour. Scheduler wraps the drain in a Flask request context so email templates can build absolute URLs. (#268)
-- Event-related `send_*` helpers now enqueue via `enqueue_deferred()` (which upserts under `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` on `(user_id, event_id, notification_type)`) instead of immediately enqueueing a rendered email. Per-notification HTML templates were dropped: the batched drain composes every event-linked email from `email/event_batched.html`, so pre-rendering into `OutboxEmail.html_body` was pure dead work. (#268)
-- Archiving an event (via `/events/<id>/archive`, and via the MasterEvent archive cascade) now bulk-resets `send_after=NULL` on every pending outbox row for that event and enqueues an `event_archived` notice — for the union of currently-assigned users **and** users who had pending notifications for that event — so recipients get the archive notice together with any previously deferred edits in a single email. Cancelling an event (`/events/<id>/cancel`) does the same but enqueues the distinct `event_cancelled` notice (its own section in the batched template and its own `notify_event_cancelled` toggle) instead of reusing the archive notice. (#268)
-- Unarchiving an event (via `/events/<id>/unarchive` or the `/restore` transition) now enqueues a deferred `event_unarchived` notice to currently-assigned users, using the normal proximity delay so it can merge with subsequent edits. MasterEvent unarchive stays silent (no cascade). (#268)
-- Archiving **or** deactivating a user account now deletes all their pending outbox rows in the same transaction; the number of removed rows is included in the audit-log summary. (#268)
+- `event_equipment_assignment` table dropped; `equipment_item.status` and `equipment_type.category` columns dropped. Availability is derived from maintenance windows alone. 3 migrations. (#424, #400)
+- Event create/edit templates merged into a single `form.html` driven by a `mode` context variable. (#424, #400)
+- `OutboxEmail` schema gained `user_id`, `event_id`, `change_type`, `change_value`, and `send_after` columns plus a composite index for the drain query. Legacy path (rows with `user_id IS NULL` — invites, password reset, admin digest) continues to drain one-per-tick unchanged. (#417, #268)
+- Event-related `send_*` helpers now enqueue via `enqueue_deferred()` (upserts under `WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` on `(user_id, event_id, notification_type)`) instead of immediately enqueueing a rendered email. Per-notification HTML templates were dropped: the batched drain composes every event-linked email from `email/event_batched.html`. (#417, #268)
+- Archiving an event (via `/events/<id>/archive`, and via the MasterEvent archive cascade) now bulk-resets `send_after=NULL` on every pending outbox row for that event and enqueues an `event_archived` notice for the union of currently-assigned users **and** users who had pending notifications, so recipients get the archive notice together with any previously deferred edits in a single email. Cancelling an event does the same but enqueues the distinct `event_cancelled` notice. (#417, #268)
+- Unarchiving an event enqueues a deferred `event_unarchived` notice to currently-assigned users, using the normal proximity delay so it can merge with subsequent edits. MasterEvent unarchive stays silent (no cascade). (#417, #268)
+- Archiving **or** deactivating a user account now deletes all their pending outbox rows in the same transaction; the number of removed rows is included in the audit-log summary. (#417, #268)
+- Backup/restore now hex-decodes any `LargeBinary` column on restore (round-trips the new signature blob correctly). (#434)
+- Terminology: internal / template wording changed from "dobrovolník" (volunteer) to "uživatel" (user) — some users are not volunteers, but they are always users; "výjezdová zpráva / výjezd" changed to "Debriefing".
+- `cryptography` bumped to `>=50.0.0` (CVE-2026-69247).
+- Assorted dependency bumps: `actions/setup-python` 6→7 (#418), plus dev-only `mypy`, `faker`, `tox` bumps.
 
 ## [0.18.0] - 2026-07-13
 
@@ -347,7 +373,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/spidermila/MedCover/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/spidermila/MedCover/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/spidermila/MedCover/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/spidermila/MedCover/compare/v0.16.0...v0.17.0

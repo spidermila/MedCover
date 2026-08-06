@@ -20,6 +20,37 @@
     </div>
   </div>
 
+  {# ── v0.19.0 ─────────────────────────────────────────────────────────────── #}
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">Verze 0.19.0</span>
+      <span class="text-muted small">6. 8. 2026</span>
+    </div>
+    <div class="card-body">
+      <h6 class="text-success">✦ Přidáno</h6>
+      <ul class="small mb-2">
+        <li>Dávkování e-mailů: oznámení o akcích (změny, publikování, otevření přihlášek, zrušení, upomínky nezaplněných pozic, pozvánky k debriefingu, potvrzení a uvolnění pozice, archivace a obnovení) se nyní odkládají a slučují do jednoho e-mailu na příjemce — jedna sekce na akci. Žádné záplavy při rychlých úpravách téže akce.</li>
+        <li>Nastavení prodlev pro dávkování v „Odesílání e-mailů → Dávkování“: kratší pro akce do 24 h, delší pro vzdálenější — výchozí hodnoty 5 min / 60 min / 6 h / 24 h.</li>
+        <li>Přepracování vybavení: akce se plánují na počty položek daného typu, ne konkrétní kusy. Dostupnost položky se řídí obdobími údržby (od – do); admin může položku vyřadit přímo v seznamu a jedním klikem ji vrátit do provozu.</li>
+        <li>Panel nedostatku vybavení na Dashboardu: ukáže nadcházející akce, kde plánovaný počet přesáhne dostupné kusy, s odkazem na každou akci.</li>
+        <li>Podpis do Výkazu práce: v profilu můžete nahrát obrázek vlastnoručního podpisu (PNG, JPEG, HEIC z iPhonu). Podpis se automaticky vloží do každého vygenerovaného výkazu práce — poslední ruční krok ve mzdovém procesu odpadá.</li>
+        <li>Filtr „Pro mě“ na stránce akcí: ukáže jen otevřené akce s volnými pozicemi, na které se můžete přihlásit. Nyní díky přesunu na server funguje správně i stránkování.</li>
+      </ul>
+      <h6 class="text-danger">✦ Opraveno</h6>
+      <ul class="small mb-2">
+        <li>Rychlost stránky Debriefing → Správa: při větším množství dokončených akcí se stránka načítá výrazně rychleji.</li>
+        <li>Plánovač úloh: interval odesílání e-mailů se již neomezuje sám sebou — pošta se odtéká podle nastaveného intervalu.</li>
+        <li>Zrušení akce nyní odesílá správné oznámení „Zrušení“ (dříve se posílalo oznámení o archivaci).</li>
+        <li>E-maily o publikování akce a otevření přihlášek: obsahují nyní úplný seznam pozic seskupených podle požadované kvalifikace; upomínky nezaplněných pozic vypisují jednotlivé pozice.</li>
+      </ul>
+      <h6 class="text-primary">✦ Změněno</h6>
+      <ul class="small mb-0">
+        <li>Nahrazeno slovo „dobrovolník“ za „uživatel“ — ne každý uživatel je dobrovolník, ale každý dobrovolník je uživatel.</li>
+        <li>Sjednocení pojmu: „výjezdová zpráva“ → „Debriefing“ v celé aplikaci.</li>
+      </ul>
+    </div>
+  </div>
+
   {# ── v0.18.0 ─────────────────────────────────────────────────────────────── #}
   <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
