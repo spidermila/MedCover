@@ -2152,6 +2152,41 @@ class TestForMeFilter:
         assert resp.status_code == 200
         assert b"Occupied Event" not in resp.data
 
+    def test_for_me_zero_eligible_events_returns_empty_page(self, app, client):
+        """When no ASSIGNMENTS_OPEN event has a claimable spot for the user,
+        for_me=1 returns 200 with an empty list — exercises the [-1] sentinel path."""
+        with app.app_context():
+            me = MasterEvent(name="ZeroElig ME")
+            db.session.add(me)
+            db.session.flush()
+            qual = Qualification(name="ZeroElig Qual")
+            db.session.add(qual)
+            db.session.flush()
+            ev = Event(
+                name="ZeroElig Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 8, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 8, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(ev)
+            db.session.flush()
+            spot = EventSpot(event_id=ev.id)
+            db.session.add(spot)
+            db.session.flush()
+            spot.required_qualifications = [qual]
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            user = UserAccount(email="zeroeleg@test.com", name="ZeroElig User", is_active=True)
+            user.set_password("testpass123")
+            user.roles = [role]
+            db.session.add(user)
+            db.session.commit()
+            email = user.email
+        _login(client, email)
+        resp = client.get("/events/?statuses=ASSIGNMENTS_OPEN&for_me=1")
+        assert resp.status_code == 200
+        assert b"ZeroElig Event" not in resp.data
+
 
 # ── Archive (soft-delete) ─────────────────────────────────────────────────────
 
