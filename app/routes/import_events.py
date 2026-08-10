@@ -445,8 +445,9 @@ def _validate_row(row: Any, idx: int) -> tuple[dict | None, list[str]]:
         errors.append("Chybí název akce.")
 
     date_str = str(row.get("date", "")).strip()
+    parsed_date = None
     try:
-        datetime.strptime(date_str, "%Y-%m-%d")
+        parsed_date = datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
         errors.append(f"Neplatné datum: '{date_str}' (očekáváno YYYY-MM-DD).")
 
@@ -467,7 +468,9 @@ def _validate_row(row: Any, idx: int) -> tuple[dict | None, list[str]]:
     end_date = row.get("end_date")
     if end_date is not None:
         try:
-            datetime.strptime(str(end_date), "%Y-%m-%d")
+            parsed_end_date = datetime.strptime(str(end_date), "%Y-%m-%d")
+            if parsed_date is not None and parsed_end_date < parsed_date:
+                errors.append(f"Datum konce '{end_date}' je dříve než datum začátku '{date_str}'.")
         except ValueError:
             errors.append(f"Neplatné datum konce: '{end_date}' (očekáváno YYYY-MM-DD).")
 
