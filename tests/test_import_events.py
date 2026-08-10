@@ -16,6 +16,7 @@ from app.models.event import Event, EventStatus
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.routes.import_events import _validate_row
 from tests.conftest import _get_csrf, _make_master_event
 from tests.conftest import _make_user as _conftest_make_user
 
@@ -148,6 +149,27 @@ class TestIsRowCancelled:
         # Row 3 is a normal event
         row = list(ws.iter_rows(min_row=3, max_row=3))[0]
         assert _script._is_row_cancelled(row) is False
+
+
+class TestValidateRow:
+    """Unit tests for _validate_row() in the import route."""
+
+    BASE = {"name": "Test", "date": "2024-05-10"}
+
+    def test_end_date_before_date_is_error(self):
+        row, errors = _validate_row({**self.BASE, "end_date": "2024-05-09"}, 0)
+        assert row is None
+        assert any("dříve" in e for e in errors)
+
+    def test_end_date_equal_to_date_is_ok(self):
+        row, errors = _validate_row({**self.BASE, "end_date": "2024-05-10"}, 0)
+        assert row is not None
+        assert errors == []
+
+    def test_end_date_after_date_is_ok(self):
+        row, errors = _validate_row({**self.BASE, "end_date": "2024-05-11"}, 0)
+        assert row is not None
+        assert errors == []
 
 
 class TestExtractFunction:
