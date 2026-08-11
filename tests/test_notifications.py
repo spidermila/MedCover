@@ -20,7 +20,7 @@ from app.models.outbox import OutboxEmail
 from app.models.role import Role
 from app.models.settings import AppSettings, get_settings
 from app.models.user import UserAccount
-from app.routes.notifications import _TESTABLE_CODES, test_notification
+from app.routes import notifications as notifications_route
 from tests.conftest import _get_csrf
 
 # ── Catalog structure ─────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ class TestNotificationCatalog:
         # a catalog entry auto-gets a "Test" button (via settings_field) but the
         # hand-maintained if/elif chain in test_notification() has no matching
         # branch, so the admin sees a false-success flash and nothing is sent.
-        tree = ast.parse(inspect.getsource(test_notification))
+        tree = ast.parse(inspect.getsource(notifications_route.test_notification))
         branch_codes: set[str] = set()
         for node in ast.walk(tree):
             if (
@@ -93,7 +93,7 @@ class TestNotificationCatalog:
                 and isinstance(node.comparators[0].value, str)
             ):
                 branch_codes.add(node.comparators[0].value)
-        missing = _TESTABLE_CODES - branch_codes
+        missing = notifications_route._TESTABLE_CODES - branch_codes
         assert not missing, (
             f"NOTIFICATION_CATALOG codes missing an `elif code == ...` branch "
             f"in app.routes.notifications.test_notification: {sorted(missing)}"
