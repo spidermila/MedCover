@@ -144,6 +144,38 @@ class TestAuditLogUI:
         assert response.status_code == 200
         assert b"ME upravena" not in response.data
 
+    def test_audit_log_search_matches_summary_case_insensitively(self, app, admin_client):
+        """?q=... on /admin/audit-log/ matches summaries case-insensitively."""
+        with app.app_context():
+            db.session.add(
+                AuditLogEntry(
+                    action_type="create",
+                    entity_type="Event",
+                    entity_id="99",
+                    summary="Unikátní záznam AuditSearchToken",
+                )
+            )
+            db.session.add(
+                AuditLogEntry(
+                    action_type="create",
+                    entity_type="Event",
+                    entity_id="100",
+                    summary="Jiná událost bez tokenu",
+                )
+            )
+            db.session.commit()
+
+        # Lowercase query must still find mixed-case summary.
+        response = admin_client.get("/admin/audit-log/?q=auditsearchtoken")
+        assert response.status_code == 200
+        assert b"AuditSearchToken" in response.data
+        assert "Jiná událost".encode() not in response.data
+
+        # Uppercase query must still find mixed-case summary.
+        response = admin_client.get("/admin/audit-log/?q=AUDITSEARCHTOKEN")
+        assert response.status_code == 200
+        assert b"AuditSearchToken" in response.data
+
     def test_audit_log_detail_requires_admin(self, member_client):
         response = member_client.get("/admin/audit-log/1")
         assert response.status_code == 403

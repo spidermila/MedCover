@@ -298,10 +298,14 @@ def index() -> str:
     else:
         query = query.where(UserAccount.is_archived == sa.true())
     if q:
+        # Column collation (Czech_100_CI_AS_SC_UTF8) already gives us
+        # case-insensitive matching, so a bare LIKE keeps the column reference
+        # sargable — .ilike() on MSSQL compiles to LOWER(col) LIKE LOWER(?)
+        # which hides the column from any index.
         query = query.where(
             db.or_(
-                UserAccount.name.ilike(f"%{q}%"),
-                UserAccount.email.ilike(f"%{q}%"),
+                UserAccount.name.like(f"%{q}%"),
+                UserAccount.email.like(f"%{q}%"),
             )
         )
     if role_filter:

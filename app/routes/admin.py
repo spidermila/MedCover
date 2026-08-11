@@ -227,7 +227,11 @@ def audit_log_list() -> str:
         except ValueError:
             pass
     if f_q:
-        query = query.where(AuditLogEntry.summary.ilike(f"%{f_q}%"))
+        # Column collation (Czech_100_CI_AS_SC_UTF8) already gives us
+        # case-insensitive matching, so a bare LIKE keeps the column reference
+        # sargable — .ilike() on MSSQL compiles to LOWER(col) LIKE LOWER(?)
+        # which hides the column from any index.
+        query = query.where(AuditLogEntry.summary.like(f"%{f_q}%"))
 
     # Paginate manually: count + offset/limit
     total = db.session.scalar(db.select(db.func.count()).select_from(query.subquery()))
