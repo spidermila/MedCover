@@ -1,5 +1,7 @@
 """Tests for the notification catalog and toggle route (/admin/notifications/)."""
 
+import ast
+import inspect
 import json
 from datetime import datetime, timezone
 
@@ -18,6 +20,7 @@ from app.models.outbox import OutboxEmail
 from app.models.role import Role
 from app.models.settings import AppSettings, get_settings
 from app.models.user import UserAccount
+from app.routes.notifications import _TESTABLE_CODES, test_notification
 from tests.conftest import _get_csrf
 
 # ── Catalog structure ─────────────────────────────────────────────────────────
@@ -70,6 +73,31 @@ class TestNotificationCatalog:
             "admin_digest",
         }
         assert expected.issubset(codes)
+
+    def test_every_testable_code_has_dispatch_branch(self):
+        # Guards against the failure mode from the archived/unarchived regression:
+        # a catalog entry auto-gets a "Test" button (via settings_field) but the
+        # hand-maintained if/elif chain in test_notification() has no matching
+        # branch, so the admin sees a false-success flash and nothing is sent.
+        tree = ast.parse(inspect.getsource(test_notification))
+        branch_codes: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Compare)
+                and isinstance(node.left, ast.Name)
+                and node.left.id == "code"
+                and len(node.ops) == 1
+                and isinstance(node.ops[0], ast.Eq)
+                and len(node.comparators) == 1
+                and isinstance(node.comparators[0], ast.Constant)
+                and isinstance(node.comparators[0].value, str)
+            ):
+                branch_codes.add(node.comparators[0].value)
+        missing = _TESTABLE_CODES - branch_codes
+        assert not missing, (
+            f"NOTIFICATION_CATALOG codes missing an `elif code == ...` branch "
+            f"in app.routes.notifications.test_notification: {sorted(missing)}"
+        )
 
 
 # ── GET ───────────────────────────────────────────────────────────────────────
