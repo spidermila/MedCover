@@ -924,6 +924,46 @@ class TestUserListFiltersAndSort:
         assert pos_stastny != -1
         assert pos_hora < pos_chladek < pos_ivanek < pos_stastny
 
+    def test_search_by_name_case_insensitive(self, app, admin_client):
+        """?q=... matches names case-insensitively (Czech CI collation)."""
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            u = UserAccount(email="searchme@test.cz", name="Novák Josef", is_active=True)
+            u.set_password("pass")
+            u.roles = [role]
+            db.session.add(u)
+            db.session.commit()
+
+        # Lowercase query must still find mixed-case name.
+        resp = admin_client.get("/users/?q=novák")
+        assert resp.status_code == 200
+        assert b"searchme@test.cz" in resp.data
+
+        # Uppercase query must still find lowercase-ish name.
+        resp = admin_client.get("/users/?q=NOVÁK")
+        assert resp.status_code == 200
+        assert b"searchme@test.cz" in resp.data
+
+    def test_search_by_email_case_insensitive(self, app, admin_client):
+        """?q=... matches emails case-insensitively."""
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            u = UserAccount(email="MixedCase@Test.Cz", name="Mixed Case", is_active=True)
+            u.set_password("pass")
+            u.roles = [role]
+            db.session.add(u)
+            db.session.commit()
+
+        resp = admin_client.get("/users/?q=mixedcase")
+        assert resp.status_code == 200
+        assert b"Mixed Case" in resp.data
+
+    def test_search_no_match_returns_empty(self, app, admin_client):
+        """?q=... with no match still returns 200 but omits non-matching rows."""
+        resp = admin_client.get("/users/?q=xyzunlikelysubstring")
+        assert resp.status_code == 200
+        assert b"admin@test.com" not in resp.data
+
 
 # ── Archive / Unarchive ───────────────────────────────────────────────────────
 
