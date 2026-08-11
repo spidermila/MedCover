@@ -79,24 +79,50 @@ class TestNotificationCatalog:
         # a catalog entry auto-gets a "Test" button (via settings_field) but the
         # hand-maintained if/elif chain in test_notification() has no matching
         # branch, so the admin sees a false-success flash and nothing is sent.
+        #
+        # Only count `code == "..."` comparisons whose branch body actually
+        # dispatches via `mailer.send_*(...)`, so unrelated future checks on
+        # `code` (validation, logging, etc.) don't mask a missing dispatch.
+        def _code_literal(test: ast.expr) -> str | None:
+            if (
+                isinstance(test, ast.Compare)
+                and isinstance(test.left, ast.Name)
+                and test.left.id == "code"
+                and len(test.ops) == 1
+                and isinstance(test.ops[0], ast.Eq)
+                and len(test.comparators) == 1
+                and isinstance(test.comparators[0], ast.Constant)
+                and isinstance(test.comparators[0].value, str)
+            ):
+                return test.comparators[0].value
+            return None
+
+        def _body_calls_mailer_send(body: list[ast.stmt]) -> bool:
+            for stmt in body:
+                for sub in ast.walk(stmt):
+                    if (
+                        isinstance(sub, ast.Call)
+                        and isinstance(sub.func, ast.Attribute)
+                        and isinstance(sub.func.value, ast.Name)
+                        and sub.func.value.id == "mailer"
+                        and sub.func.attr.startswith("send_")
+                    ):
+                        return True
+            return False
+
         tree = ast.parse(inspect.getsource(notifications_route.test_notification))
         branch_codes: set[str] = set()
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Compare)
-                and isinstance(node.left, ast.Name)
-                and node.left.id == "code"
-                and len(node.ops) == 1
-                and isinstance(node.ops[0], ast.Eq)
-                and len(node.comparators) == 1
-                and isinstance(node.comparators[0], ast.Constant)
-                and isinstance(node.comparators[0].value, str)
-            ):
-                branch_codes.add(node.comparators[0].value)
+            if not isinstance(node, ast.If):
+                continue
+            literal = _code_literal(node.test)
+            if literal is not None and _body_calls_mailer_send(node.body):
+                branch_codes.add(literal)
         missing = notifications_route._TESTABLE_CODES - branch_codes
         assert not missing, (
             f"NOTIFICATION_CATALOG codes missing an `elif code == ...` branch "
-            f"in app.routes.notifications.test_notification: {sorted(missing)}"
+            f"dispatching via mailer.send_* in "
+            f"app.routes.notifications.test_notification: {sorted(missing)}"
         )
 
 
