@@ -70,6 +70,6 @@
     {%- if ot > 0 %} <span class="badge {{ opt_cls }}">{{ of }}/{{ ot }} volitelných pozic obsazeno</span>{% endif -%}
   {%- else -%}
     {%- if mt > 0 %}<span class="badge {{ mand_cls }}">{{ mf }}/{{ mt }}</span>{% endif -%}
-    {%- if ot > 0 %} <span class="badge {{ opt_cls }} font-65">{{ of }}/{{ ot }}&nbsp;vol.</span>{% endif -%}
+    {%- if ot > 0 %} <span class="badge {{ opt_cls }}">{{ of }}/{{ ot }}&nbsp;vol.</span>{% endif -%}
   {%- endif -%}
 {% endmacro %}
