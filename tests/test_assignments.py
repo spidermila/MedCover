@@ -433,6 +433,42 @@ class TestAutoCloseOptionalSpots:
             event = db.session.get(Event, event_id)
             assert event.status == EventStatus.ASSIGNMENTS_CLOSED
 
+    def test_multi_optional_closes_only_when_all_filled(self, app):
+        """Event with 2 mandatory + 2 optional stays OPEN until the very last spot fills."""
+        with app.app_context():
+            me = MasterEvent(name="Multi ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Multi Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            mand1 = EventSpot(event_id=event.id, is_optional=False)
+            mand2 = EventSpot(event_id=event.id, is_optional=False)
+            opt1 = EventSpot(event_id=event.id, is_optional=True)
+            opt2 = EventSpot(event_id=event.id, is_optional=True)
+            db.session.add_all([mand1, mand2, opt1, opt2])
+            db.session.commit()
+            event_id = event.id
+            spot_ids = [mand1.id, mand2.id, opt1.id, opt2.id]
+
+        # Four separate members claim in order; event must stay OPEN until the last claim.
+        for i, spot_id in enumerate(spot_ids):
+            with app.app_context():
+                _make_user(f"multi_{i}@test.com", f"Multi {i}", Role.MEMBER)
+            c = app.test_client()
+            _login(c, f"multi_{i}@test.com")
+            c.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
+            with app.app_context():
+                event = db.session.get(Event, event_id)
+                expected = EventStatus.ASSIGNMENTS_CLOSED if i == 3 else EventStatus.ASSIGNMENTS_OPEN
+                assert event.status == expected, f"after claim #{i + 1}: {event.status}"
+
 
 # ── Assign-other edge cases ───────────────────────────────────────────────────
 

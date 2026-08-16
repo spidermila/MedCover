@@ -36,16 +36,31 @@ assignments_bp = Blueprint("assignments", __name__, url_prefix="/assignments")
 # ── Side-effect helpers ────────────────────────────────────────────────────────
 
 
-def _auto_close_if_full(event: Event) -> None:
-    """Transition event to ASSIGNMENTS_CLOSED only when every spot (mandatory + optional) is filled."""
-    if (
-        event.status == EventStatus.ASSIGNMENTS_OPEN
-        and event.total_spots > 0
-        and event.filled_spots >= event.total_spots
-    ):
+def _auto_close_if_full(
+    event: Event,
+    *,
+    context: str = "",
+    allowed_from: tuple[EventStatus, ...] = (EventStatus.ASSIGNMENTS_OPEN,),
+) -> None:
+    """Transition event to ASSIGNMENTS_CLOSED only when every spot (mandatory + optional) is filled.
+
+    ``context`` is inserted into the audit message so different callers can
+    distinguish themselves in the log (e.g. ``"při importu"``) without
+    duplicating the trigger condition.
+
+    ``allowed_from`` lets the import path close events that were created in
+    ``DRAFT`` (regular claim/release always start from ``ASSIGNMENTS_OPEN``).
+    """
+    if event.status in allowed_from and event.total_spots > 0 and event.filled_spots >= event.total_spots:
         event.status = EventStatus.ASSIGNMENTS_CLOSED
         event.version += 1
-        audit("status_change", "Event", event.id, "Přihlašování automaticky uzavřeno — všechny pozice obsazeny")
+        suffix = f" {context}" if context else ""
+        audit(
+            "status_change",
+            "Event",
+            event.id,
+            f"Přihlašování automaticky uzavřeno{suffix} — všechny pozice obsazeny",
+        )
 
 
 def _auto_assign_rp(event: Event, user: UserAccount) -> None:
