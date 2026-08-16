@@ -4,8 +4,16 @@ from datetime import datetime, timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import (
+    Event,
+    EventSpot,
+    EventSpotTemplate,
+    EventStatus,
+    EventTemplate,
+    ReminderScheduleMixin,
+)
 from app.models.master_event import MasterEvent
+from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _make_user
@@ -255,3 +263,177 @@ class TestOptionalFilledSpotsProperty:
             event = db.session.get(Event, event_id)
             assert event.optional_total_spots == 0
             assert event.optional_filled_spots == 0
+
+
+class TestEventMiscProperties:
+    """Coverage for small helper properties/methods on Event / EventSpot / templates."""
+
+    def test_is_unfilled_true_when_mandatory_spot_missing(self, app):
+        with app.app_context():
+            me = MasterEvent(name="Unfilled ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Unfilled Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            db.session.add(EventSpot(event_id=event.id, is_optional=False))
+            db.session.commit()
+            assert event.is_unfilled is True
+
+    def test_is_unfilled_false_when_all_mandatory_taken(self, app):
+        with app.app_context():
+            me = MasterEvent(name="Filled ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Filled Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id, is_optional=False)
+            db.session.add(spot)
+            db.session.flush()
+            u = UserAccount(email="filler@test.com", name="F", is_active=True)
+            u.set_password("x")
+            db.session.add(u)
+            db.session.flush()
+            db.session.add(Assignment(spot_id=spot.id, user_id=u.id, assigned_by_id=u.id))
+            db.session.commit()
+            assert event.is_unfilled is False
+
+    def test_event_repr(self, app):
+        with app.app_context():
+            me = MasterEvent(name="Repr ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Repr Event",
+                master_event_id=me.id,
+                status=EventStatus.DRAFT,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            r = repr(event)
+            assert "Repr Event" in r and "Event" in r
+
+    def test_event_spot_repr(self, app):
+        with app.app_context():
+            me = MasterEvent(name="SpotRepr ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="SpotRepr Event",
+                master_event_id=me.id,
+                status=EventStatus.DRAFT,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            r = repr(spot)
+            assert "EventSpot" in r and str(spot.id) in r
+
+    def test_event_template_repr(self, app):
+        with app.app_context():
+            tpl = EventTemplate(name="MyTpl")
+            db.session.add(tpl)
+            db.session.commit()
+            assert "MyTpl" in repr(tpl)
+            spot_tpl = EventSpotTemplate(template_id=tpl.id, description="S")
+            db.session.add(spot_tpl)
+            db.session.commit()
+            r = repr(spot_tpl)
+            assert "EventSpotTemplate" in r and str(spot_tpl.id) in r
+
+    def test_is_eligible_rejects_user_missing_qualification(self, app):
+        """EventSpot.is_eligible returns False when the user lacks any required qualification."""
+        with app.app_context():
+            me = MasterEvent(name="Elig ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Elig Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            qual = Qualification(name="Required-Q")
+            db.session.add(qual)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            spot.required_qualifications = [qual]
+            db.session.add(spot)
+            u = UserAccount(email="noqual@test.com", name="NoQual", is_active=True)
+            u.set_password("x")
+            db.session.add(u)
+            db.session.commit()
+            assert spot.is_eligible(u) is False
+
+
+class TestReminderScheduleMixin:
+    """Coverage for ReminderScheduleMixin.reminder_hours()."""
+
+    def test_none_returns_default_24h(self):
+        """When ``reminder_schedule`` is None, fall back to the default 24-h reminder.
+
+        Constructed via a lightweight subclass instead of an ORM instance because
+        the ``reminder_schedule`` column carries a server-side default of ``"24"``
+        that would overwrite ``None`` on flush and skip the fallback branch.
+        """
+
+        class Bare(ReminderScheduleMixin):
+            reminder_schedule = None
+
+        assert Bare().reminder_hours() == [24]
+
+    def test_parses_csv(self, app):
+        with app.app_context():
+            me = MasterEvent(name="Rem2 ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Rem2 Event",
+                master_event_id=me.id,
+                status=EventStatus.DRAFT,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+                reminder_schedule="72,24,6",
+            )
+            db.session.add(event)
+            db.session.commit()
+            assert event.reminder_hours() == [72, 24, 6]
+
+    def test_ignores_non_numeric_tokens(self, app):
+        with app.app_context():
+            me = MasterEvent(name="Rem3 ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Rem3 Event",
+                master_event_id=me.id,
+                status=EventStatus.DRAFT,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+                reminder_schedule="24, foo, 12",
+            )
+            db.session.add(event)
+            db.session.commit()
+            assert event.reminder_hours() == [24, 12]
