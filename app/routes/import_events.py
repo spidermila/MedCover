@@ -412,11 +412,17 @@ _IMPORT_MANAGED_QUAL_NAMES: frozenset[str] = frozenset({"zdravotník", "řidič 
 
 
 def _existing_event_pairs() -> set[tuple[str, str]]:
-    """Return set of (name, date_str) pairs for duplicate detection."""
+    """Return set of (name, date_str) pairs for duplicate detection.
+
+    Dates are formatted in the app timezone so they match the local YYYY-MM-DD
+    strings the import payload carries; formatting in UTC would mis-detect
+    events whose local date differs from their UTC date (e.g. 01:00 Prague).
+    """
+    tz = get_app_tz()
     result: set[tuple[str, str]] = set()
     for name, dt in db.session.execute(db.select(Event.name, Event.start_datetime)).all():
         if dt:
-            date_part = dt[:10] if isinstance(dt, str) else dt.strftime("%Y-%m-%d")
+            date_part = dt[:10] if isinstance(dt, str) else dt.astimezone(tz).strftime("%Y-%m-%d")
         else:
             date_part = ""
         result.add((name, date_part))
