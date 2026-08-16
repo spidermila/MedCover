@@ -106,7 +106,7 @@ class TestObsazeniBadges:
         # Mandatory badge: none filled → danger, 0/2
         assert 'class="badge bg-danger">0/2</span>' in html
         # Optional badge: none filled → warning, 0/1 vol.
-        assert "0/1\u00a0vol." in html or "0/1&nbsp;vol." in html
+        assert "0/1&nbsp;vol." in html
         assert "bg-warning" in html
 
     def test_detail_shows_verbose_czech_sentence(self, app, admin_client):
