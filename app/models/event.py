@@ -245,7 +245,12 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
 
     @property
     def is_sufficiently_staffed(self) -> bool:
-        """True when all mandatory spots are filled (event can proceed)."""
+        """True when all mandatory spots are filled (event can proceed).
+
+        Not the auto-close trigger — assignments only auto-close once every spot,
+        mandatory and optional, is filled. See ``_auto_close_if_full`` in
+        ``app/routes/assignments.py``.
+        """
         return self.mandatory_total_spots > 0 and self.mandatory_filled_spots == self.mandatory_total_spots
 
     @property
