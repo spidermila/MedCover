@@ -414,13 +414,12 @@ _IMPORT_MANAGED_QUAL_NAMES: frozenset[str] = frozenset({"zdravotník", "řidič 
 def _existing_event_pairs() -> set[tuple[str, str]]:
     """Return set of (name, date_str) pairs for duplicate detection."""
     result: set[tuple[str, str]] = set()
-    for ev in db.session.scalars(db.select(Event.name, Event.start_datetime)).all():
-        dt = ev[1]
+    for name, dt in db.session.execute(db.select(Event.name, Event.start_datetime)).all():
         if dt:
             date_part = dt[:10] if isinstance(dt, str) else dt.strftime("%Y-%m-%d")
         else:
             date_part = ""
-        result.add((ev[0], date_part))
+        result.add((name, date_part))
     return result
 
 

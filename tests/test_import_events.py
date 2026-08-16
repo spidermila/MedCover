@@ -3,7 +3,7 @@
 import importlib.util
 import json
 import sys
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 import openpyxl
@@ -756,6 +756,33 @@ class TestImportPreview:
         )
         assert resp.status_code == 200
         assert "přibližně".encode() in resp.data
+
+    def test_duplicate_event_marks_row_and_carries_warning(self, app, admin_client):
+        """An event with the same (name, date) as an existing DB row is flagged."""
+        me_id = _make_master_event(app)
+        with app.app_context():
+            db.session.add(
+                Event(
+                    name="Duplikát",
+                    master_event_id=me_id,
+                    start_datetime=datetime(2030, 5, 1, 10, 0, tzinfo=timezone.utc),
+                    end_datetime=datetime(2030, 5, 1, 12, 0, tzinfo=timezone.utc),
+                    status=EventStatus.DRAFT,
+                )
+            )
+            db.session.commit()
+
+        csrf = _get_csrf(admin_client, "/import/events/")
+        row = _minimal_event(name="Duplikát")  # default date is 2030-05-01
+        resp = admin_client.post(
+            "/import/events/preview",
+            data={"json_data": json.dumps([row]), "csrf_token": csrf},
+        )
+        assert resp.status_code == 200
+        # Duplicate row is highlighted (table-warning class); warning text lives in tooltip title.
+        html = resp.data.decode()
+        assert "table-warning" in html
+        assert "stejným názvem" in html
 
 
 # ── Confirm: user creation tests ──────────────────────────────────────────────
