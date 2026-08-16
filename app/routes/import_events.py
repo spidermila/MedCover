@@ -25,6 +25,7 @@ from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.routes.assignments import _auto_close_if_full
 from app.utils import CS_COLLATION, audit, get_app_tz, require_permission
 
 import_bp = Blueprint("import_events", __name__, url_prefix="/import")
@@ -758,15 +759,11 @@ def events_confirm() -> Response:
             if not time_missing and not cancelled and not is_past:
                 db.session.flush()
                 db.session.refresh(event)
-                if event.total_spots > 0 and event.filled_spots >= event.total_spots:
-                    event.status = EventStatus.ASSIGNMENTS_CLOSED
-                    event.version += 1
-                    audit(
-                        "status_change",
-                        "Event",
-                        event.id,
-                        "Přihlašování automaticky uzavřeno při importu — všechny pozice obsazeny",
-                    )
+                _auto_close_if_full(
+                    event,
+                    context="při importu",
+                    allowed_from=(EventStatus.DRAFT, EventStatus.ASSIGNMENTS_OPEN),
+                )
 
             audit("import", "Event", event.id, f"Akce importována z Google Sheets: {name}", None)
             created += 1
