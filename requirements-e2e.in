@@ -2,5 +2,5 @@
 # Edit this file, then run: scripts/compile_requirements.sh
 pytest>=9.1.1
 playwright
-pytest-playwright>=0.7.2
+pytest-playwright>=0.9.0
 pytest-html>=4.0
