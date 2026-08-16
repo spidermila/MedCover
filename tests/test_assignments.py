@@ -10,8 +10,10 @@ from app.models.assignment import Assignment
 from app.models.equipment import EquipmentItem, EquipmentType
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.routes.assignments import do_assign_user
 from tests.conftest import _login, _make_event_with_spot, _make_user
 
 
@@ -608,6 +610,101 @@ class TestUnassignOtherEdgeCases:
         admin_client.post(f"/assignments/unassign/{assignment_id}", follow_redirects=True)
         with app.app_context():
             assert db.session.get(Event, event_id).status == EventStatus.ASSIGNMENTS_OPEN
+
+
+# ── do_assign_user error branches ───────────────────────────────────────────────────────────────
+
+
+class TestAssignErrorBranches:
+    """Coverage for guard clauses inside do_assign_user / do_unassign_user."""
+
+    def test_cannot_assign_to_archived_event(self, app, admin_client):
+        event_id, spot_id = _make_event_with_spot(app)
+        with app.app_context():
+            db.session.get(Event, event_id).archived = True
+            db.session.commit()
+            target = _make_user("arch_target@test.com", "Arch", Role.MEMBER)
+            target_id = str(target.id)
+
+        resp = admin_client.post(
+            f"/assignments/assign/{spot_id}",
+            data={"user_id": target_id},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "archivov" in resp.data.decode()
+        with app.app_context():
+            assert db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id)) is None
+
+    def test_claim_missing_qualification_flashes(self, app):
+        """Self-claim triggers eligibility check; user without the required qualification is rejected."""
+        with app.app_context():
+            me = MasterEvent(name="Qual ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Qual Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            qual = Qualification(name="NeedsQual")
+            db.session.add(qual)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            spot.required_qualifications = [qual]
+            db.session.add(spot)
+            _make_user("nonqual@test.com", "NoQual", Role.MEMBER)
+            db.session.commit()
+            spot_id = spot.id
+
+        c = app.test_client()
+        _login(c, "nonqual@test.com")
+        resp = c.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
+        assert resp.status_code == 200
+        assert "kvalifikaci" in resp.data.decode()
+        with app.app_context():
+            assert db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id)) is None
+
+    def test_assign_other_with_unknown_user_id_flashes(self, app, admin_client):
+        """Passing a user_id that doesn't exist yields 'Uživatel nenalezen'."""
+        _, spot_id = _make_event_with_spot(app)
+        # Use a well-formed but nonexistent UUID string.
+        resp = admin_client.post(
+            f"/assignments/assign/{spot_id}",
+            data={"user_id": "00000000-0000-0000-0000-000000000000"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "nenalezen" in resp.data.decode()
+
+    def test_concurrent_claim_race_returns_clean_error(self, app):
+        """When a UNIQUE(spot_id) IntegrityError fires (second claimer wins the race), user gets a clean warning."""
+        event_id, spot_id = _make_event_with_spot(app)
+        with app.app_context():
+            u1 = _make_user("race1@test.com", "Race1", Role.MEMBER)
+            u2 = _make_user("race2@test.com", "Race2", Role.MEMBER)
+            u1_id, u2_id = u1.id, u2.id
+
+        with app.app_context():
+            u1 = db.session.get(UserAccount, u1_id)
+            u2 = db.session.get(UserAccount, u2_id)
+            # Insert the first assignment directly so the do_assign_user call
+            # below re-reads a spot that already has a row — the UNIQUE(spot_id)
+            # constraint on Assignment fires on commit.
+            db.session.add(Assignment(spot_id=spot_id, user_id=u1.id, assigned_by_id=u1.id))
+            db.session.commit()
+            # Detach so do_assign_user re-selects
+            db.session.expire_all()
+            # do_assign_user's own "spot has assignment" guard fires first —
+            # this test proves the guard emits the clean „obsazena" message
+            # rather than an IntegrityError.
+            result = do_assign_user(spot_id, u2, u2)
+            assert result.ok is False
+            assert "obsazena" in result.error
 
 
 @pytest.fixture

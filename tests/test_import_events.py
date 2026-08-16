@@ -16,7 +16,12 @@ from app.models.event import Event, EventStatus
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.routes.import_events import _validate_row
+from app.routes.import_events import (
+    _existing_event_pairs,
+    _match_responsible_person,
+    _parse_json_payload,
+    _validate_row,
+)
 from tests.conftest import _get_csrf, _make_master_event
 from tests.conftest import _make_user as _conftest_make_user
 
@@ -170,6 +175,103 @@ class TestValidateRow:
         row, errors = _validate_row({**self.BASE, "end_date": "2024-05-11"}, 0)
         assert row is not None
         assert errors == []
+
+    def test_non_dict_row_rejected(self):
+        row, errors = _validate_row("not a dict", 4)
+        assert row is None
+        assert errors == ["Řádek 5: není objekt (dict)."]
+
+    def test_missing_name_reported(self):
+        row, errors = _validate_row({"name": "   ", "date": "2024-05-10"}, 0)
+        assert row is None
+        assert any("název" in e.lower() for e in errors)
+
+    def test_invalid_date_reported(self):
+        row, errors = _validate_row({"name": "X", "date": "2024-13-40"}, 0)
+        assert row is None
+        assert any("Neplatné datum" in e for e in errors)
+
+    def test_invalid_start_time_reported(self):
+        row, errors = _validate_row({**self.BASE, "start_time": "25:99"}, 0)
+        assert row is None
+        assert any("čas začátku" in e for e in errors)
+
+    def test_invalid_end_time_reported(self):
+        row, errors = _validate_row({**self.BASE, "end_time": "nonsense"}, 0)
+        assert row is None
+        assert any("čas konce" in e for e in errors)
+
+    def test_invalid_end_date_reported(self):
+        row, errors = _validate_row({**self.BASE, "end_date": "2024-13-40"}, 0)
+        assert row is None
+        assert any("datum konce" in e.lower() for e in errors)
+
+    def test_optional_fields_preserved(self):
+        row, errors = _validate_row(
+            {
+                **self.BASE,
+                "location": "  Praha  ",
+                "paid": True,
+                "responsible_person": " Jan Novák ",
+                "contact_person": "  ",
+            },
+            0,
+        )
+        assert errors == []
+        assert row is not None
+        assert row["location"] == "Praha"
+        assert row["paid"] is True
+        assert row["responsible_person"] == "Jan Novák"
+        assert row["contact_person"] is None  # blank string → None
+
+
+class TestMatchResponsiblePerson:
+    """Unit tests for _match_responsible_person() name-matching heuristics."""
+
+    class _FakeUser:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    def _users(self, *names: str) -> list:
+        return [self._FakeUser(n) for n in names]
+
+    def test_empty_input_returns_none(self):
+        u, c = _match_responsible_person("", self._users("Jan Novák"))
+        assert u is None and c == "none"
+
+    def test_whitespace_only_returns_none(self):
+        u, c = _match_responsible_person("   ", self._users("Jan Novák"))
+        assert u is None and c == "none"
+
+    def test_exact_match(self):
+        users = self._users("Jan Novák", "Petr Svědík")
+        u, c = _match_responsible_person("Jan Novák", users)
+        assert u is users[0] and c == "exact"
+
+    def test_case_insensitive_match(self):
+        users = self._users("Jan Novák")
+        u, c = _match_responsible_person("JAN novÁk", users)
+        assert u is users[0] and c == "iexact"
+
+    def test_reversed_match_exact_case(self):
+        users = self._users("Jan Novák")
+        u, c = _match_responsible_person("Novák Jan", users)
+        assert u is users[0] and c == "reversed"
+
+    def test_reversed_match_case_insensitive(self):
+        users = self._users("Jan Novák")
+        u, c = _match_responsible_person("novÁK jan", users)
+        assert u is users[0] and c == "reversed"
+
+    def test_no_match(self):
+        users = self._users("Jan Novák")
+        u, c = _match_responsible_person("Kdosi Neznámý", users)
+        assert u is None and c == "none"
+
+    def test_three_word_name_does_not_reverse(self):
+        users = self._users("Jan Karel Novák")
+        u, c = _match_responsible_person("Novák Karel Jan", users)
+        assert u is None and c == "none"
 
 
 class TestExtractFunction:
@@ -469,6 +571,7 @@ def _post_confirm(
         data[f"{p}phone"] = u.get("phone") or ""
         data[f"{p}is_zdravotnik"] = "1" if u.get("is_zdravotnik") else "0"
         data[f"{p}is_ridic"] = "1" if u.get("is_ridic") else "0"
+        data[f"{p}archived"] = "1" if u.get("archived") else "0"
 
     return admin_client.post("/import/events/confirm", data=data, follow_redirects=False)
 
@@ -583,6 +686,76 @@ class TestImportPreview:
         )
         assert resp.status_code == 200
         assert b"Neplatn" in resp.data
+
+    def test_empty_payload_flashes_and_redirects(self, admin_client):
+        csrf = _get_csrf(admin_client, "/import/events/")
+        resp = admin_client.post(
+            "/import/events/preview",
+            data={"json_data": "   ", "csrf_token": csrf},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Vložte JSON data".encode() in resp.data
+
+    def test_row_with_invalid_date_reports_parse_error(self, app, admin_client):
+        _make_master_event(app)
+        csrf = _get_csrf(admin_client, "/import/events/")
+        bad = {**_minimal_event(name="Chybná akce"), "date": "2024-13-40"}
+        resp = admin_client.post(
+            "/import/events/preview",
+            data={"json_data": json.dumps([bad]), "csrf_token": csrf},
+        )
+        assert resp.status_code == 200
+        assert "chybných".encode() in resp.data
+
+    def test_time_missing_row_shows_warning(self, app, admin_client):
+        _make_master_event(app)
+        csrf = _get_csrf(admin_client, "/import/events/")
+        row = {
+            "name": "Akce bez času",
+            "date": "2030-05-01",
+            "start_time": None,
+            "end_time": None,
+            "location": None,
+            "paid": False,
+            "responsible_person": None,
+            "contact_person": None,
+            "description": "",
+            "time_missing": True,
+            "cancelled": False,
+            "signups": [],
+        }
+        resp = admin_client.post(
+            "/import/events/preview",
+            data={"json_data": json.dumps([row]), "csrf_token": csrf},
+        )
+        assert resp.status_code == 200
+        assert "Čas akce".encode() in resp.data
+
+    def test_unknown_rp_shows_warning(self, app, admin_client):
+        _make_master_event(app)
+        csrf = _get_csrf(admin_client, "/import/events/")
+        row = _minimal_event(name="Neznámé ZO")
+        row["responsible_person"] = "Kdosi Neznámý"
+        resp = admin_client.post(
+            "/import/events/preview",
+            data={"json_data": json.dumps([row]), "csrf_token": csrf},
+        )
+        assert resp.status_code == 200
+        assert b"nebyla nalezena" in resp.data
+
+    def test_approximate_rp_match_shows_warning(self, app, admin_client):
+        _make_master_event(app)
+        _make_user(app, "Jan Novák", "jn@test.com")
+        csrf = _get_csrf(admin_client, "/import/events/")
+        row = _minimal_event(name="Reversed ZO")
+        row["responsible_person"] = "Novák Jan"  # reversed order → approximate match
+        resp = admin_client.post(
+            "/import/events/preview",
+            data={"json_data": json.dumps([row]), "csrf_token": csrf},
+        )
+        assert resp.status_code == 200
+        assert "přibližně".encode() in resp.data
 
 
 # ── Confirm: user creation tests ──────────────────────────────────────────────
@@ -1445,3 +1618,182 @@ class TestImportAutoClose:
             event = db.session.scalar(db.select(Event).where(Event.name == "Neznámý přihlášený"))
             assert event is not None
             assert event.status == EventStatus.DRAFT
+
+
+class TestImportPurePayloadHelpers:
+    """Coverage for the small pure helpers around JSON parsing and duplicate detection."""
+
+    def test_parse_v1_flat_list(self, app):
+        with app.app_context(), app.test_request_context():
+            events, users, err = _parse_json_payload('[{"name":"X"}]')
+            assert err is None
+            assert users == []
+            assert events == [{"name": "X"}]
+
+    def test_parse_v2_dict(self, app):
+        with app.app_context(), app.test_request_context():
+            events, users, err = _parse_json_payload('{"events":[{"name":"X"}],"users":[]}')
+            assert err is None
+            assert events == [{"name": "X"}]
+            assert users == []
+
+    def test_parse_invalid_json_returns_error_html(self, app):
+        with app.app_context(), app.test_request_context():
+            events, users, err = _parse_json_payload("{not json")
+            assert events == [] and users == []
+            assert err is not None  # rendered template
+
+    def test_parse_wrong_shape_returns_error_html(self, app):
+        with app.app_context(), app.test_request_context():
+            events, users, err = _parse_json_payload('{"foo":"bar"}')  # dict without "events" key
+            assert events == [] and users == []
+            assert err is not None
+
+    def test_existing_event_pairs_runs(self, app):
+        """Just exercise the helper against a real DB — covers the loop and both branches."""
+        me_id = _make_master_event(app)
+        with app.app_context():
+            db.session.add(
+                Event(
+                    name="Existing X",
+                    master_event_id=me_id,
+                    start_datetime=datetime(2030, 5, 1, 10, 0),
+                    end_datetime=datetime(2030, 5, 1, 12, 0),
+                    status=EventStatus.DRAFT,
+                )
+            )
+            db.session.commit()
+            pairs = _existing_event_pairs()
+            assert isinstance(pairs, set)
+
+
+class TestImportConfirmErrorPaths:
+    """Coverage for confirm-time guard branches: bad counts, missing ME, name-lookup RP, no end time."""
+
+    def test_invalid_event_count_flashes(self, admin_client):
+        csrf = _get_csrf(admin_client, "/import/events/")
+        resp = admin_client.post(
+            "/import/events/confirm",
+            data={"csrf_token": csrf, "event_count": "not-a-number", "user_count": "0"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Neplatný počet".encode() in resp.data
+
+    def test_missing_master_event_aborts_import(self, app, admin_client):
+        """A row without a master_event_id (and no global fallback) is aborted with a flash."""
+        # Deliberately do not pass master_event_id → both global and row-level are empty.
+        resp = _post_confirm(app, admin_client, events=[_minimal_event(name="Bez ME")])
+        assert resp.status_code == 302
+        with app.app_context():
+            # Nothing was persisted
+            assert db.session.scalar(db.select(Event).where(Event.name == "Bez ME")) is None
+
+    def test_rp_by_name_lookup_matches_existing_user(self, app, admin_client):
+        """responsible_person_id with 'name:...' prefix resolves via the built name map."""
+        me_id = _make_master_event(app)
+        _make_user(app, "Jan Novák", "jan@test.com")
+        ev = _minimal_event(name="RP by name")
+        ev["responsible_person_id"] = "name:Jan Novák"
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "RP by name"))
+            assert event is not None
+            assert event.responsible_person is not None
+            assert event.responsible_person.name == "Jan Novák"
+
+    def test_rp_by_name_unknown_leaves_rp_empty(self, app, admin_client):
+        """Unknown name in 'name:...' prefix yields no RP, no crash."""
+        me_id = _make_master_event(app)
+        ev = _minimal_event(name="RP unknown name")
+        ev["responsible_person_id"] = "name:Kdosi Neznámý"
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "RP unknown name"))
+            assert event is not None
+            assert event.responsible_person_id is None
+
+    def test_event_without_end_time_gets_2h_default(self, app, admin_client):
+        """When only start_time is set (end_time empty), the event lasts 2 hours."""
+        me_id = _make_master_event(app)
+        ev = _minimal_event(name="No end time")
+        ev["end_time"] = ""
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "No end time"))
+            assert event is not None
+            delta = event.end_datetime - event.start_datetime
+            assert delta.total_seconds() == 2 * 3600
+
+    def test_end_time_before_start_bumps_next_day(self, app, admin_client):
+        """When end_time <= start_time, the event is assumed to span midnight."""
+        me_id = _make_master_event(app)
+        ev = _minimal_event(name="Overnight")
+        ev["start_time"] = "22:00"
+        ev["end_time"] = "02:00"
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Overnight"))
+            assert event is not None
+            # end must be 4 hours after start, on the following calendar day
+            delta = event.end_datetime - event.start_datetime
+            assert delta.total_seconds() == 4 * 3600
+            assert event.end_datetime.date() != event.start_datetime.date()
+
+    def test_import_with_global_qual_ids_attaches_qualifications(self, app, admin_client):
+        """Passing global_zdravotnik_qual_id / _zelenac_qual_id fires the _qual() cache lookup path."""
+        me_id = _make_master_event(app)
+        with app.app_context():
+            zdr = Qualification(name="Zdravotník-glob")
+            zel = Qualification(name="Zelenáč-glob")
+            db.session.add_all([zdr, zel])
+            db.session.commit()
+            zdr_id = zdr.id
+            zel_id = zel.id
+
+        resp = _post_confirm(
+            app,
+            admin_client,
+            events=[_minimal_event(name="Global quals")],
+            master_event_id=me_id,
+            zdravotnik_qual_id=zdr_id,
+            zelenac_qual_id=zel_id,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Global quals"))
+            assert event is not None
+            # At least one spot has the assigned qualification
+            all_quals = {q.name for s in event.spots for q in s.required_qualifications}
+            assert "Zdravotník-glob" in all_quals
+            assert "Zelenáč-glob" in all_quals
+
+    def test_import_archived_user(self, app, admin_client):
+        """User payload with archived=1 creates the account in archived state."""
+        me_id = _make_master_event(app)
+        resp = _post_confirm(
+            app,
+            admin_client,
+            events=[_minimal_event(name="With archived user")],
+            users=[
+                {
+                    "gs_name": "Starý Člen",
+                    "name": "Starý Člen",
+                    "email": "stary@test.com",
+                    "phone": "",
+                    "is_zdravotnik": False,
+                    "archived": True,
+                }
+            ],
+            master_event_id=me_id,
+        )
+        assert resp.status_code == 302
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "stary@test.com"))
+            assert user is not None
+            assert user.is_archived is True
+            assert user.is_active is False
