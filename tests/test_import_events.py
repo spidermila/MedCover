@@ -1676,22 +1676,38 @@ class TestImportPurePayloadHelpers:
             assert events == [] and users == []
             assert err is not None
 
-    def test_existing_event_pairs_runs(self, app):
-        """Just exercise the helper against a real DB — covers the loop and both branches."""
+    def test_existing_event_pairs_returns_local_date(self, app):
+        """Helper returns (name, YYYY-MM-DD) pairs in the app timezone, not UTC.
+
+        An event at 01:00 Prague on 2030-05-01 is 23:00 UTC on 2030-04-30.
+        The duplicate check compares against the local date string the payload
+        carries, so formatting must happen in the app timezone.
+        """
         me_id = _make_master_event(app)
         with app.app_context():
-            db.session.add(
-                Event(
-                    name="Existing X",
-                    master_event_id=me_id,
-                    start_datetime=datetime(2030, 5, 1, 10, 0),
-                    end_datetime=datetime(2030, 5, 1, 12, 0),
-                    status=EventStatus.DRAFT,
-                )
+            db.session.add_all(
+                [
+                    Event(
+                        name="Existing X",
+                        master_event_id=me_id,
+                        start_datetime=datetime(2030, 5, 1, 10, 0, tzinfo=timezone.utc),
+                        end_datetime=datetime(2030, 5, 1, 12, 0, tzinfo=timezone.utc),
+                        status=EventStatus.DRAFT,
+                    ),
+                    Event(
+                        name="Early morning",
+                        master_event_id=me_id,
+                        # 01:00 Prague on 2030-05-01 = 23:00 UTC on 2030-04-30 (CEST, UTC+2).
+                        start_datetime=datetime(2030, 4, 30, 23, 0, tzinfo=timezone.utc),
+                        end_datetime=datetime(2030, 5, 1, 1, 0, tzinfo=timezone.utc),
+                        status=EventStatus.DRAFT,
+                    ),
+                ]
             )
             db.session.commit()
             pairs = _existing_event_pairs()
-            assert isinstance(pairs, set)
+            assert ("Existing X", "2030-05-01") in pairs
+            assert ("Early morning", "2030-05-01") in pairs
 
 
 class TestImportConfirmErrorPaths:
