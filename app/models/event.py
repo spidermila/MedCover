@@ -211,6 +211,10 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         return sum(1 for s in self.spots if s.is_optional)
 
     @property
+    def optional_filled_spots(self) -> int:
+        return sum(1 for s in self.spots if s.is_optional and s.assignment is not None)
+
+    @property
     def unfilled_spots(self) -> list[EventSpot]:
         """Return mandatory spots that have no assignment."""
         return [s for s in self.spots if not s.is_optional and s.assignment is None]

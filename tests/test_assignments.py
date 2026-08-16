@@ -348,6 +348,92 @@ class TestReleaseEdgeCases:
             assert event.status == EventStatus.ASSIGNMENTS_OPEN
 
 
+# ── Auto-close transitions with optional spots ────────────────────────────────
+
+
+def _make_event_with_mand_and_optional(app) -> tuple[int, int, int]:
+    """Create an ASSIGNMENTS_OPEN event with one mandatory + one optional spot.
+
+    Returns (event_id, mandatory_spot_id, optional_spot_id).
+    """
+    with app.app_context():
+        me = MasterEvent(name="ME for mand+opt")
+        db.session.add(me)
+        db.session.flush()
+        event = Event(
+            name="Mand+Opt Event",
+            master_event_id=me.id,
+            status=EventStatus.ASSIGNMENTS_OPEN,
+            start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+        )
+        db.session.add(event)
+        db.session.flush()
+        mandatory = EventSpot(event_id=event.id, is_optional=False)
+        optional = EventSpot(event_id=event.id, is_optional=True)
+        db.session.add_all([mandatory, optional])
+        db.session.commit()
+        return event.id, mandatory.id, optional.id
+
+
+class TestAutoCloseOptionalSpots:
+    """Assignments must stay open while any spot — mandatory or optional — is free."""
+
+    def test_claim_only_mandatory_keeps_open(self, app, member_client):
+        """Filling the last mandatory spot must not close the event while an optional spot is free."""
+        event_id, mand_spot_id, _opt_spot_id = _make_event_with_mand_and_optional(app)
+        member_client.post(f"/assignments/claim/{mand_spot_id}", follow_redirects=True)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.status == EventStatus.ASSIGNMENTS_OPEN
+
+    def test_optional_spot_claimable_after_mandatory_full(self, app, member_client):
+        """After all mandatory are taken, a second member can still claim the optional spot."""
+        event_id, mand_spot_id, opt_spot_id = _make_event_with_mand_and_optional(app)
+        member_client.post(f"/assignments/claim/{mand_spot_id}", follow_redirects=True)
+
+        with app.app_context():
+            _make_user("opt_claimer@test.com", "Optional Claimer", Role.MEMBER)
+        second = app.test_client()
+        _login(second, "opt_claimer@test.com")
+        second.post(f"/assignments/claim/{opt_spot_id}", follow_redirects=True)
+
+        with app.app_context():
+            assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == opt_spot_id))
+            assert assignment is not None
+            event = db.session.get(Event, event_id)
+            assert event.status == EventStatus.ASSIGNMENTS_CLOSED
+
+    def test_release_optional_reopens_event(self, app, member_client):
+        """Releasing an optional spot from a fully-staffed event re-opens assignments."""
+        event_id, mand_spot_id, opt_spot_id = _make_event_with_mand_and_optional(app)
+        member_client.post(f"/assignments/claim/{mand_spot_id}", follow_redirects=True)
+        with app.app_context():
+            _make_user("opt3@test.com", "Opt 3", Role.MEMBER)
+        second = app.test_client()
+        _login(second, "opt3@test.com")
+        second.post(f"/assignments/claim/{opt_spot_id}", follow_redirects=True)
+
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.status == EventStatus.ASSIGNMENTS_CLOSED
+            opt_assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == opt_spot_id))
+            opt_assignment_id = opt_assignment.id
+
+        second.post(f"/assignments/release/{opt_assignment_id}", follow_redirects=True)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.status == EventStatus.ASSIGNMENTS_OPEN
+
+    def test_no_optional_spots_closes_when_mandatory_full(self, app, member_client):
+        """Regression guard: events without optional spots still close on mandatory-full."""
+        event_id, spot_id = _make_event_with_spot(app)
+        member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.status == EventStatus.ASSIGNMENTS_CLOSED
+
+
 # ── Assign-other edge cases ───────────────────────────────────────────────────
 
 

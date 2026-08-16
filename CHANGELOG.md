@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Optional (`volitelné`) spots on events with all mandatory spots filled are now claimable again: assignments no longer auto-close until every spot — mandatory and optional — is filled. The events list and event detail page now render two distinct obsazení badges (mandatory: red → green, optional: yellow → green), so it is immediately clear whether optional spots are still free. Applies to both the interactive claim flow and the Google-Sheets import path. (#441)
+
 ## [0.19.0] - 2026-08-06
 
 ### Added

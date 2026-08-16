@@ -77,6 +77,66 @@ class TestEventListPermissions:
                 assert resp.status_code == 200, (sort, direction, resp.data[:400])
 
 
+class TestObsazeniBadges:
+    """Verify the mandatory/optional obsazení badges render on both list and detail (issue #441)."""
+
+    def _make_event_with_mand_and_opt(self, app) -> int:
+        me_id = _make_master_event(app, name="Badge ME")
+        with app.app_context():
+            event = Event(
+                name="Badge Event",
+                master_event_id=me_id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 6, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            db.session.add(EventSpot(event_id=event.id, is_optional=False))
+            db.session.add(EventSpot(event_id=event.id, is_optional=False))
+            db.session.add(EventSpot(event_id=event.id, is_optional=True))
+            db.session.commit()
+            return event.id
+
+    def test_list_shows_both_badges_when_optional_present(self, app, admin_client):
+        self._make_event_with_mand_and_opt(app)
+        resp = admin_client.get("/events/?statuses=ASSIGNMENTS_OPEN")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # Mandatory badge: none filled → danger, 0/2
+        assert 'class="badge bg-danger">0/2</span>' in html
+        # Optional badge: none filled → warning, 0/1 vol.
+        assert "0/1\u00a0vol." in html or "0/1&nbsp;vol." in html
+        assert "bg-warning" in html
+
+    def test_detail_shows_verbose_czech_sentence(self, app, admin_client):
+        event_id = self._make_event_with_mand_and_opt(app)
+        resp = admin_client.get(f"/events/{event_id}")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "0/2 nutných pozic obsazeno" in html
+        assert "0/1 volitelných pozic obsazeno" in html
+
+    def test_list_mandatory_badge_turns_green_when_full(self, app, admin_client):
+        """Filling all mandatory spots turns the mandatory badge green while optional stays yellow."""
+        event_id = self._make_event_with_mand_and_opt(app)
+        with app.app_context():
+            user = _make_user("badge_filler@test.com", "Filler", Role.MEMBER)
+            user2 = _make_user("badge_filler2@test.com", "Filler 2", Role.MEMBER)
+            spots = db.session.scalars(
+                db.select(EventSpot).where(EventSpot.event_id == event_id, EventSpot.is_optional == False)  # noqa: E712
+            ).all()
+            db.session.add(Assignment(spot_id=spots[0].id, user_id=user.id, assigned_by_id=user.id))
+            db.session.add(Assignment(spot_id=spots[1].id, user_id=user2.id, assigned_by_id=user2.id))
+            db.session.commit()
+
+        resp = admin_client.get("/events/?statuses=ASSIGNMENTS_OPEN")
+        html = resp.data.decode()
+        assert 'class="badge bg-success">2/2</span>' in html
+        # Optional still unfilled → warning
+        assert "bg-warning" in html
+
+
 class TestEventCreate:
     def test_create_page_loads_for_admin(self, admin_client):
         response = admin_client.get("/events/create")

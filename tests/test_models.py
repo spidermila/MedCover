@@ -184,3 +184,74 @@ class TestEventStaffingStatus:
             event = db.session.get(Event, event_id)
             assert event.staffing_status == "Žádné pozice"
             assert event.is_sufficiently_staffed is False
+
+
+class TestOptionalFilledSpotsProperty:
+    """Regression tests for Event.optional_filled_spots (issue #441)."""
+
+    def _make_event(self, app, mandatory: int, optional: int, fill_mandatory: int, fill_optional: int) -> int:
+        with app.app_context():
+            me = MasterEvent(name="Opt ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Opt Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2030, 1, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2030, 1, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(event)
+            db.session.flush()
+            mand_spots = [EventSpot(event_id=event.id, is_optional=False) for _ in range(mandatory)]
+            opt_spots = [EventSpot(event_id=event.id, is_optional=True) for _ in range(optional)]
+            db.session.add_all(mand_spots + opt_spots)
+            db.session.flush()
+
+            def _fill(spot: EventSpot, tag: str) -> None:
+                u = UserAccount(email=f"{tag}_{spot.id}@test.com", name="F", is_active=True)
+                u.set_password("x")
+                db.session.add(u)
+                db.session.flush()
+                db.session.add(Assignment(spot_id=spot.id, user_id=u.id, assigned_by_id=u.id))
+
+            for s in mand_spots[:fill_mandatory]:
+                _fill(s, "m")
+            for s in opt_spots[:fill_optional]:
+                _fill(s, "o")
+            db.session.commit()
+            return event.id
+
+    def test_none_filled(self, app):
+        event_id = self._make_event(app, mandatory=2, optional=2, fill_mandatory=0, fill_optional=0)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.optional_filled_spots == 0
+            assert event.optional_total_spots == 2
+
+    def test_only_mandatory_filled(self, app):
+        event_id = self._make_event(app, mandatory=2, optional=2, fill_mandatory=2, fill_optional=0)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.optional_filled_spots == 0
+
+    def test_partial_optional_filled(self, app):
+        event_id = self._make_event(app, mandatory=1, optional=3, fill_mandatory=0, fill_optional=2)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.optional_filled_spots == 2
+            assert event.optional_total_spots == 3
+
+    def test_all_optional_filled(self, app):
+        event_id = self._make_event(app, mandatory=1, optional=2, fill_mandatory=0, fill_optional=2)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.optional_filled_spots == 2
+            assert event.optional_filled_spots == event.optional_total_spots
+
+    def test_no_optional_spots(self, app):
+        event_id = self._make_event(app, mandatory=2, optional=0, fill_mandatory=1, fill_optional=0)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event.optional_total_spots == 0
+            assert event.optional_filled_spots == 0

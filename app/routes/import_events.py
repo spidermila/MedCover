@@ -758,7 +758,7 @@ def events_confirm() -> Response:
             if not time_missing and not cancelled and not is_past:
                 db.session.flush()
                 db.session.refresh(event)
-                if event.is_sufficiently_staffed:
+                if event.total_spots > 0 and event.filled_spots >= event.total_spots:
                     event.status = EventStatus.ASSIGNMENTS_CLOSED
                     event.version += 1
                     audit(
