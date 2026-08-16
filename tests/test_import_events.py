@@ -1340,16 +1340,41 @@ class TestImportAutoClose:
         me_id = _make_master_event(app)
         rp_id = _make_user(app, "Roman Vykydal", "rp@test.com")
         _make_user(app, "Adam Gajda", "adam@test.com")
+        _make_user(app, "Bara Nová", "bara@test.com")
 
+        # Standard 3-spot pattern: 2 mandatory + 1 optional. RP fills
+        # Zdravotník (mandatory), two signups fill both Zelenáč spots
+        # (mandatory + optional) — the event is now fully occupied.
         ev = _minimal_event(name="Plně obsazená akce")
         ev["responsible_person_id"] = rp_id
-        ev["signups"] = ["Adam Gajda"]
+        ev["signups"] = ["Adam Gajda", "Bara Nová"]
         resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
         assert resp.status_code == 302
         with app.app_context():
             event = db.session.scalar(db.select(Event).where(Event.name == "Plně obsazená akce"))
             assert event is not None
             assert event.status == EventStatus.ASSIGNMENTS_CLOSED
+
+    def test_mandatory_full_optional_free_stays_draft(self, app, admin_client):
+        """When only mandatory spots are filled but an optional spot is still free,
+        assignments must remain open (event starts as DRAFT after import)."""
+        me_id = _make_master_event(app)
+        rp_id = _make_user(app, "Roman Vykydal", "rp_mand@test.com")
+        _make_user(app, "Adam Gajda", "adam_mand@test.com")
+
+        # RP + 1 signup → total_people <= 3 → 2 mandatory + 1 optional Zelenáč.
+        # Both mandatory are filled, the optional Zelenáč stays empty.
+        ev = _minimal_event(name="Mandatórní plná, volitelná volná")
+        ev["responsible_person_id"] = rp_id
+        ev["signups"] = ["Adam Gajda"]
+        resp = _post_confirm(app, admin_client, events=[ev], master_event_id=me_id)
+        assert resp.status_code == 302
+        with app.app_context():
+            event = db.session.scalar(db.select(Event).where(Event.name == "Mandatórní plná, volitelná volná"))
+            assert event is not None
+            assert event.status == EventStatus.DRAFT
+            assert event.mandatory_filled_spots == event.mandatory_total_spots
+            assert event.optional_filled_spots < event.optional_total_spots
 
     def test_partially_filled_future_event_stays_draft(self, app, admin_client):
         me_id = _make_master_event(app)

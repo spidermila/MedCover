@@ -47,3 +47,29 @@
 {% macro badge_grade(grade) %}
 <span class="badge bg-{{ 'success' if grade <= 2 else ('warning text-black' if grade == 3 else 'danger') }}">{{ grade }}/5</span>
 {% endmacro %}
+
+{# ── Event staffing badges (mandatory + optional) ────────────────────────── #}
+{#
+  Two-badge display for an event's obsazení:
+  - mandatory badge: red until all mandatory spots are filled, green once full;
+    hidden when the event has no mandatory spots.
+  - optional badge: yellow until all optional spots are filled, green once full;
+    hidden when the event has no optional spots.
+  Pass verbose=true on the event detail page for the full Czech sentence;
+  the default compact form is used on the events list.
+#}
+{% macro obsazeni_badges(event, verbose=false) %}
+  {%- set mf = event.mandatory_filled_spots -%}
+  {%- set mt = event.mandatory_total_spots -%}
+  {%- set of = event.optional_filled_spots -%}
+  {%- set ot = event.optional_total_spots -%}
+  {%- set mand_cls = 'bg-success' if mt > 0 and mf >= mt else 'bg-danger' -%}
+  {%- set opt_cls  = 'bg-success' if ot > 0 and of >= ot else 'bg-warning text-black' -%}
+  {%- if verbose -%}
+    {%- if mt > 0 %}<span class="badge {{ mand_cls }}">{{ mf }}/{{ mt }} nutných pozic obsazeno</span>{% endif -%}
+    {%- if ot > 0 %} <span class="badge {{ opt_cls }}">{{ of }}/{{ ot }} volitelných pozic obsazeno</span>{% endif -%}
+  {%- else -%}
+    {%- if mt > 0 %}<span class="badge {{ mand_cls }}">{{ mf }}/{{ mt }}</span>{% endif -%}
+    {%- if ot > 0 %} <span class="badge {{ opt_cls }} font-65">{{ of }}/{{ ot }}&nbsp;vol.</span>{% endif -%}
+  {%- endif -%}
+{% endmacro %}

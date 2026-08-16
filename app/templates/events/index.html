@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from 'macros/help.html' import help_icon %}
-{% from 'macros/badges.html' import badge_info %}
+{% from 'macros/badges.html' import obsazeni_badges %}
 {% block title %}Akce — MedCover{% endblock %}
 
 {# ── Helper macro: generate events.index URL preserving all active filters ── #}
@@ -212,10 +212,6 @@
       </thead>
       <tbody>
         {% for event in events %}
-        {% set mand_total = event.mandatory_total_spots %}
-        {% set mand_filled = event.mandatory_filled_spots %}
-        {% set opt_total = event.optional_total_spots %}
-        {% set staffing_ratio = (mand_filled / mand_total) if mand_total > 0 else 0 %}
         <tr class="{{ 'text-muted' if event.status == EventStatus.CANCELLED or event.archived }}"
             data-status="{{ event.status.name }}"
             data-eligible="{{ '1' if eligible_spot_map.get(event.id) else '0' }}"
@@ -243,10 +239,7 @@
           <td>
             {% if event.status == EventStatus.CANCELLED %}—
             {% else %}
-              {{ mand_filled }}/{{ mand_total }}
-              {% if opt_total > 0 %}
-                {{ badge_info('+' ~ opt_total ~ '\u00a0vol.', extra_classes='ms-1 font-65') }}
-              {% endif %}
+              {{ obsazeni_badges(event) }}
             {% endif %}
           </td>
           <td>

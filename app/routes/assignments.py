@@ -37,11 +37,11 @@ assignments_bp = Blueprint("assignments", __name__, url_prefix="/assignments")
 
 
 def _auto_close_if_full(event: Event) -> None:
-    """Transition event to ASSIGNMENTS_CLOSED when all mandatory spots are filled."""
+    """Transition event to ASSIGNMENTS_CLOSED only when every spot (mandatory + optional) is filled."""
     if (
         event.status == EventStatus.ASSIGNMENTS_OPEN
-        and event.mandatory_total_spots > 0
-        and event.mandatory_filled_spots >= event.mandatory_total_spots
+        and event.total_spots > 0
+        and event.filled_spots >= event.total_spots
     ):
         event.status = EventStatus.ASSIGNMENTS_CLOSED
         event.version += 1

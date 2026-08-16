@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from 'macros/badges.html' import badge_status, badge_info, badge_secondary %}
+{% from 'macros/badges.html' import badge_status, badge_info, badge_secondary, obsazeni_badges %}
 {% block title %}{{ event.name }} — MedCover{% endblock %}
 
 {% block content %}
@@ -193,7 +193,7 @@
       <div class="card-body">
         <h6 class="card-subtitle text-muted mb-2">Obsazení</h6>
         <p class="mb-1">
-          <strong>{{ event.filled_spots }}/{{ event.total_spots }}</strong> pozic obsazeno
+          {{ obsazeni_badges(event, verbose=true) }}
         </p>
         <p class="mb-0">
           <strong>Zodpovědná osoba:</strong>
