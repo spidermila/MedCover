@@ -682,8 +682,13 @@ class TestAssignErrorBranches:
         assert "nenalezen" in resp.data.decode()
 
     def test_concurrent_claim_race_returns_clean_error(self, app):
-        """When a UNIQUE(spot_id) IntegrityError fires (second claimer wins the race), user gets a clean warning."""
-        event_id, spot_id = _make_event_with_spot(app)
+        """A second claimer on an already-taken spot gets the clean „obsazena" warning.
+
+        The ``spot.assignment is not None`` guard inside ``do_assign_user`` returns
+        first, so the ``UNIQUE(spot_id)`` constraint never fires; this test proves
+        the guard's message is what reaches the caller.
+        """
+        _event_id, spot_id = _make_event_with_spot(app)
         with app.app_context():
             u1 = _make_user("race1@test.com", "Race1", Role.MEMBER)
             u2 = _make_user("race2@test.com", "Race2", Role.MEMBER)

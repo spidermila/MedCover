@@ -106,8 +106,7 @@ class TestObsazeniBadges:
         # Mandatory badge: none filled → danger, 0/2
         assert 'class="badge bg-danger">0/2</span>' in html
         # Optional badge: none filled → warning, 0/1 vol.
-        assert "0/1&nbsp;vol." in html
-        assert "bg-warning" in html
+        assert 'class="badge bg-warning text-black">0/1&nbsp;vol.</span>' in html
 
     def test_detail_shows_verbose_czech_sentence(self, app, admin_client):
         event_id = self._make_event_with_mand_and_opt(app)
@@ -134,7 +133,7 @@ class TestObsazeniBadges:
         html = resp.data.decode()
         assert 'class="badge bg-success">2/2</span>' in html
         # Optional still unfilled → warning
-        assert "bg-warning" in html
+        assert 'class="badge bg-warning text-black">0/1&nbsp;vol.</span>' in html
 
 
 class TestEventCreate:
