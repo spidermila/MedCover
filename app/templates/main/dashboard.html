@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from 'macros/help.html' import help_icon %}
-{% from 'macros/badges.html' import badge_status, badge_secondary %}
+{% from 'macros/badges.html' import badge_status, badge_secondary, obsazeni_badges %}
 {% block title %}Přehled — MedCover{% endblock %}
 
 {% block content %}
@@ -128,7 +128,7 @@
         <div class="text-end">
           {{ badge_status(e.status.value, status_colors, extra_classes='mb-1') }}
           {% if e.status == EventStatus.ASSIGNMENTS_OPEN %}
-          <div class="text-muted small">{{ e.filled_spots }}/{{ e.total_spots }} obsazeno</div>
+          <div class="mt-1">{{ obsazeni_badges(e) }}</div>
           {% endif %}
         </div>
       </div>

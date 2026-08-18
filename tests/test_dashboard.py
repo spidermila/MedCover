@@ -94,6 +94,46 @@ class TestDashboardPendingActivationLink:
         assert f'href="/users/{inactive_id}"' in body
 
 
+class TestDashboardAttentionBadges:
+    """The 'Vyžaduje pozornost' section must render the same obsazení badges as /events/."""
+
+    def test_attention_row_shows_mandatory_and_optional_badges(self, app, admin_client):
+        future = datetime.now(timezone.utc) + timedelta(days=3)
+        with app.app_context():
+            me = MasterEvent(name="Attention ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Attention Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=future,
+                end_datetime=future + timedelta(hours=4),
+            )
+            db.session.add(event)
+            db.session.flush()
+            # 2 mandatory + 1 optional, none filled → mandatory badge is danger,
+            # optional badge is warning; row is eligible for the attention section
+            # because mandatory_filled_spots < mandatory_total_spots.
+            db.session.add_all(
+                [
+                    EventSpot(event_id=event.id, is_optional=False),
+                    EventSpot(event_id=event.id, is_optional=False),
+                    EventSpot(event_id=event.id, is_optional=True),
+                ]
+            )
+            db.session.commit()
+
+        resp = admin_client.get("/dashboard")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "Attention Event" in html
+        assert 'class="badge bg-danger">0/2</span>' in html
+        assert 'class="badge bg-warning text-black">0/1&nbsp;vol.</span>' in html
+        # Old combined "X/Y obsazeno" text must no longer render here.
+        assert "0/3 obsazeno" not in html
+
+
 class TestDashboardEquipmentShortage:
     """Equipment shortage section must appear for events competing for the same type."""
 
