@@ -25,7 +25,7 @@ from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.routes.assignments import _auto_close_if_full
+from app.routes.assignments import auto_close_if_full
 from app.utils import CS_COLLATION, audit, get_app_tz, require_permission
 
 import_bp = Blueprint("import_events", __name__, url_prefix="/import")
@@ -421,10 +421,7 @@ def _existing_event_pairs() -> set[tuple[str, str]]:
     tz = get_app_tz()
     result: set[tuple[str, str]] = set()
     for name, dt in db.session.execute(db.select(Event.name, Event.start_datetime)).all():
-        if dt:
-            date_part = dt[:10] if isinstance(dt, str) else dt.astimezone(tz).strftime("%Y-%m-%d")
-        else:
-            date_part = ""
+        date_part = dt.astimezone(tz).strftime("%Y-%m-%d") if dt else ""
         result.add((name, date_part))
     return result
 
@@ -764,13 +761,15 @@ def events_confirm() -> Response:
             if not time_missing and not cancelled and not is_past:
                 db.session.flush()
                 db.session.refresh(event)
-                _auto_close_if_full(
+                # Import creates events in DRAFT and may hand them over already fully staffed;
+                # allow the close transition to bypass the usual PUBLISHED/ASSIGNMENTS_OPEN gate.
+                auto_close_if_full(
                     event,
                     context="při importu",
                     allowed_from=(EventStatus.DRAFT, EventStatus.ASSIGNMENTS_OPEN),
                 )
 
-            audit("import", "Event", event.id, f"Akce importována z Google Sheets: {name}", None)
+            audit("import", "Event", event.id, f"Akce importována z Google Sheets: {name}")
             created += 1
 
         db.session.commit()

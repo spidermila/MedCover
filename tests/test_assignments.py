@@ -681,7 +681,7 @@ class TestAssignErrorBranches:
         assert resp.status_code == 200
         assert "nenalezen" in resp.data.decode()
 
-    def test_concurrent_claim_race_returns_clean_error(self, app):
+    def test_second_claim_returns_clean_error_when_spot_already_taken(self, app):
         """A second claimer on an already-taken spot gets the clean „obsazena" warning.
 
         The ``spot.assignment is not None`` guard inside ``do_assign_user`` returns
