@@ -36,7 +36,7 @@ assignments_bp = Blueprint("assignments", __name__, url_prefix="/assignments")
 # ── Side-effect helpers ────────────────────────────────────────────────────────
 
 
-def _auto_close_if_full(
+def auto_close_if_full(
     event: Event,
     *,
     context: str = "",
@@ -198,7 +198,7 @@ def do_assign_user(
         summary = f"'{assigned_by.name}' přiřadil '{user.name}' na akci '{event.name}'"
     audit("create", "Assignment", spot.assignment.id, summary)
     _auto_assign_rp(event, user)
-    _auto_close_if_full(event)
+    auto_close_if_full(event)
 
     try:
         db.session.commit()

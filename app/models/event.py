@@ -248,7 +248,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         """True when all mandatory spots are filled — the minimum crew for the event to proceed.
 
         This is NOT the auto-close trigger. Assignments only auto-close once every spot
-        (mandatory + optional) is filled. See ``_auto_close_if_full`` (used by the
+        (mandatory + optional) is filled. See ``auto_close_if_full`` (used by the
         assignments and import routes).
         """
         return self.mandatory_total_spots > 0 and self.mandatory_filled_spots == self.mandatory_total_spots

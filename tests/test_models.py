@@ -195,7 +195,7 @@ class TestEventStaffingStatus:
 
 
 class TestOptionalFilledSpotsProperty:
-    """Regression tests for Event.optional_filled_spots (issue #441)."""
+    """Regression tests for Event.optional_filled_spots."""
 
     def _make_event(self, app, mandatory: int, optional: int, fill_mandatory: int, fill_optional: int) -> int:
         with app.app_context():

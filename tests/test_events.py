@@ -78,7 +78,7 @@ class TestEventListPermissions:
 
 
 class TestObsazeniBadges:
-    """Verify the mandatory/optional obsazení badges render on both list and detail (issue #441)."""
+    """Verify the mandatory/optional obsazení badges render on both list and detail."""
 
     def _make_event_with_mand_and_opt(self, app) -> int:
         me_id = _make_master_event(app, name="Badge ME")
