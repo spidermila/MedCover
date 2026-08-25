@@ -321,7 +321,7 @@ def check_equipment_conflicts(
             .limit(3)
         ).all()
 
-        msg = Markup("Nedostatek vybavení — typ „{name}”: požadováno {qty} ks, k dispozici {avail} ks.").format(
+        msg = Markup("Nedostatek vybavení — typ „{name}“: požadováno {qty} ks, k dispozici {avail} ks.").format(
             name=type_name, qty=qty, avail=max(0, avail)
         )
         if conflicting:

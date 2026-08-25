@@ -682,7 +682,7 @@ class TestAssignErrorBranches:
         assert "nenalezen" in resp.data.decode()
 
     def test_second_claim_returns_clean_error_when_spot_already_taken(self, app):
-        """A second claimer on an already-taken spot gets the clean „obsazena" warning.
+        """A second claimer on an already-taken spot gets the clean „obsazena“ warning.
 
         The ``spot.assignment is not None`` guard inside ``do_assign_user`` returns
         first, so the ``UNIQUE(spot_id)`` constraint never fires; this test proves
@@ -705,7 +705,7 @@ class TestAssignErrorBranches:
             # Detach so do_assign_user re-selects
             db.session.expire_all()
             # do_assign_user's own "spot has assignment" guard fires first —
-            # this test proves the guard emits the clean „obsazena" message
+            # this test proves the guard emits the clean „obsazena“ message
             # rather than an IntegrityError.
             result = do_assign_user(spot_id, u2, u2)
             assert result.ok is False

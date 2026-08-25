@@ -534,9 +534,9 @@ def item_mark_available(item_id: int) -> Response:
     db.session.commit()
 
     if was_future:
-        flash(f"Plánovaný servis položky „{item.name}” byl zrušen.", "success")
+        flash(f"Plánovaný servis položky „{item.name}“ byl zrušen.", "success")
     else:
-        flash(f"Položka „{item.name}” je opět dostupná.", "success")
+        flash(f"Položka „{item.name}“ je opět dostupná.", "success")
     return redirect(url_for("equipment.items"))
 
 
