@@ -141,6 +141,17 @@ class TestEventCreate:
         response = admin_client.get("/events/create")
         assert response.status_code == 200
 
+    def test_create_prefills_master_event_from_query_param(self, app, admin_client):
+        general_id = _make_master_event(app, name="Obecné", is_general=True)
+        target_id = _make_master_event(app, name="Konkrétní ME")
+        response = admin_client.get(f"/events/create?master_event_id={target_id}")
+        assert response.status_code == 200
+        html = response.data.decode()
+        target_option = html.split(f'value="{target_id}"', 1)[1].split("</option>", 1)[0]
+        general_option = html.split(f'value="{general_id}"', 1)[1].split("</option>", 1)[0]
+        assert "selected" in target_option
+        assert "selected" not in general_option
+
     def test_create_page_forbidden_for_member(self, member_client):
         response = member_client.get("/events/create")
         assert response.status_code == 403
