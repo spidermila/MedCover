@@ -55,7 +55,7 @@ def equipment_plan_add(event_id: int) -> Response:
     )
 
     if quantity > available:
-        msg = Markup("Nedostatek vybavení: typ „{name}” má k dispozici {avail} ks (požadováno {qty}).").format(
+        msg = Markup("Nedostatek vybavení: typ „{name}“ má k dispozici {avail} ks (požadováno {qty}).").format(
             name=et.name, avail=available, qty=quantity
         )
         conflicting = db.session.scalars(

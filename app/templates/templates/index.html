@@ -50,7 +50,7 @@
           {% if current_user.has_permission('event_template.delete') %}
           <form method="POST" action="{{ url_for('templates.delete', template_id=tmpl.id) }}"
                 class="d-inline"
-                data-confirm="Opravdu smazat šablonu „{{ tmpl.name }}"?">
+                data-confirm="Opravdu smazat šablonu „{{ tmpl.name }}“?">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-outline-warning btn-sm">Smazat</button>
           </form>
