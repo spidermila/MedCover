@@ -50,9 +50,11 @@ document.addEventListener("DOMContentLoaded", function () {
       if (selectedEvents > 0) parts.push(selectedEvents + " akcí");
       if (totalUsers > 0) parts.push(totalUsers + " uživatelů");
       var detail = parts.length > 0 ? "\n(" + parts.join(", ") + ")" : "";
-      if (!confirm("Opravdu chcete spustit import?" + detail + "\n\nTato operace vytvoří nebo aktualizuje záznamy v databázi.")) {
+      if (!guardedConfirm(confirmForm, "Opravdu chcete spustit import?" + detail + "\n\nTato operace vytvoří nebo aktualizuje záznamy v databázi.")) {
         e.preventDefault();
+        return;
       }
+      if (btnImport) btnImport.disabled = true;
     });
   }
 
