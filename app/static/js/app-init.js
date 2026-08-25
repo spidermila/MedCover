@@ -68,13 +68,22 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 /* Confirm once per element: returns true if the user just accepted, false if
- * already accepted or if the user cancelled. Sets el.dataset.confirmed="1"
- * on acceptance so repeat events on the same element short-circuit. */
+ * already accepted or if the user cancelled.
+ *
+ * Suppresses duplicate events from the same click burst (macOS trackpads,
+ * some assistive tech) on both the accept and cancel paths: a short-lived
+ * burst flag is set before the dialog is shown and cleared on the next
+ * event-loop tick, so intentional later clicks re-prompt normally.
+ * On acceptance, a permanent flag is also set so repeat events after the
+ * async action starts do not re-prompt. */
 function guardedConfirm(el, message) {
   if (el.dataset.confirmed === "1") return false;
-  if (!confirm(message)) return false;
-  el.dataset.confirmed = "1";
-  return true;
+  if (el.dataset.confirmBurst === "1") return false;
+  el.dataset.confirmBurst = "1";
+  var accepted = confirm(message);
+  if (accepted) el.dataset.confirmed = "1";
+  setTimeout(function () { delete el.dataset.confirmBurst; }, 0);
+  return accepted;
 }
 
 /* Clear a guard set by guardedConfirm, e.g. after an async failure. */
