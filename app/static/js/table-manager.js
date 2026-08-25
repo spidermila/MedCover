@@ -535,7 +535,12 @@
       btn.addEventListener("click", function () {
         var eventId = this.dataset.eventId;
         var eventName = this.dataset.eventName;
-        if (!confirm('Archivovat akci \u201E' + eventName + '\u201C?')) return;
+        if (!guardedConfirm(btn, 'Archivovat akci \u201E' + eventName + '\u201C?')) return;
+        btn.disabled = true;
+        function restore() {
+          btn.disabled = false;
+          clearGuardedConfirm(btn);
+        }
         csrfFetch("/events/" + eventId + "/archive", {
           method: "POST",
           headers: { "Accept": "application/json" },
@@ -548,9 +553,13 @@
             location.reload();
           } else {
             alert((result.data && result.data.error) || "Chyba p\u0159i maz\u00e1n\u00ed akce.");
+            restore();
           }
         })
-        .catch(function () { alert("Chyba s\u00edt\u011b."); });
+        .catch(function () {
+          alert("Chyba s\u00edt\u011b.");
+          restore();
+        });
       });
     });
   }

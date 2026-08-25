@@ -190,12 +190,17 @@
     if (tb) tb.classList.add("d-none");
   }
 
+  var _bulkSubmitting = false;
+
   function submitBulk(action) {
+    if (_bulkSubmitting) return;
     var ids = Array.from(document.querySelectorAll(".row-event-check:checked")).map(function (cb) { return cb.value; });
     if (ids.length === 0) return;
     var actionLabels = { publish: "Zveřejnit", open_assignments: "Otevřít přihlášky", cancel: "Zrušit" };
     var label = actionLabels[action] || action;
     if (!confirm("Akce: " + label + "\nPočet vybraných akcí: " + ids.length + "\n\nPokračovat?")) return;
+    _bulkSubmitting = true;
+    document.querySelectorAll("[data-bulk-action]").forEach(function (b) { b.disabled = true; });
     var form = document.getElementById("bulk-form");
     document.getElementById("bulk-action-input").value = action;
     var container = document.getElementById("bulk-ids-container");

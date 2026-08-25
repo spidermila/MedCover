@@ -27,15 +27,23 @@ document.addEventListener("DOMContentLoaded", function () {
     allowInput: true,
   });
 
-  // data-confirm on forms (submit) and buttons (click)
+  // data-confirm on forms (submit) and buttons (click). Guard prevents a
+  // single physical click that dispatches multiple events (macOS trackpads,
+  // some assistive tech) from popping the confirm dialog more than once.
   document.querySelectorAll("form[data-confirm]").forEach(function (form) {
     form.addEventListener("submit", function (e) {
-      if (!confirm(form.dataset.confirm)) e.preventDefault();
+      if (!guardedConfirm(form, form.dataset.confirm)) {
+        e.preventDefault();
+        return;
+      }
+      form.querySelectorAll("button[type=submit], button:not([type])").forEach(function (b) {
+        b.disabled = true;
+      });
     });
   });
   document.querySelectorAll("button[data-confirm]").forEach(function (btn) {
     btn.addEventListener("click", function (e) {
-      if (!confirm(btn.dataset.confirm)) e.preventDefault();
+      if (!guardedConfirm(btn, btn.dataset.confirm)) e.preventDefault();
     });
   });
 
@@ -58,6 +66,21 @@ document.addEventListener("DOMContentLoaded", function () {
     btn.addEventListener("click", function () { history.back(); });
   });
 });
+
+/* Confirm once per element: returns true if the user just accepted, false if
+ * already accepted or if the user cancelled. Sets el.dataset.confirmed="1"
+ * on acceptance so repeat events on the same element short-circuit. */
+function guardedConfirm(el, message) {
+  if (el.dataset.confirmed === "1") return false;
+  if (!confirm(message)) return false;
+  el.dataset.confirmed = "1";
+  return true;
+}
+
+/* Clear a guard set by guardedConfirm, e.g. after an async failure. */
+function clearGuardedConfirm(el) {
+  delete el.dataset.confirmed;
+}
 
 /* Set a flatpickr field to the current date/time.
  * Called by the "Teď" button placed inside the same .input-group wrapper. */
