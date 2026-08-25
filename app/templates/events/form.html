@@ -75,7 +75,7 @@
           </label>
           <select class="form-select" id="master_event_id" name="master_event_id" required>
             <option value="">— Vyberte —</option>
-            {% set default_me = event.master_event_id|string if event else '' %}
+            {% set default_me = event.master_event_id|string if event else (request.args.get('master_event_id') or '') %}
             {% for me in master_events %}
               {% set sel = request.form.get('master_event_id', default_me) %}
               <option value="{{ me.id }}"
