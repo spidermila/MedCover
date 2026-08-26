@@ -15,20 +15,13 @@ Step 3 needs its own retry loop because `SET READ_COMMITTED_SNAPSHOT ON`
 briefly takes the database offline waiting for existing connections to drain;
 a race with our immediate reconnect otherwise surfaces as
 "Cannot open database ... The login failed. (4060)".
-
-Connection target is parsed from `DATABASE_URL` (mssql+pyodbc://...); the
-admin password falls back to `MSSQL_SA_PASSWORD` when set.
 """
 
-import os
-import re
 import sys
 import time
 
 import pyodbc
-
-DATABASE_URL_RE = re.compile(r"mssql\+pyodbc://([^:]+):([^@]+)@([^:]+):(\d+)/([^?]+)")
-IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+from e2e_db import IDENT_RE, parse_env, sa_conn_str
 
 COLLATION = "Czech_100_CI_AS_SC_UTF8"
 RECONNECT_ATTEMPTS = 30
@@ -36,59 +29,45 @@ RECONNECT_DELAY_S = 1
 
 
 def main() -> int:
-    url = os.environ.get("DATABASE_URL", "")
-    m = DATABASE_URL_RE.match(url)
-    if not m:
-        sys.exit(f"Cannot parse MSSQL DATABASE_URL: {url}")
-    user, pwd, host, port, db = m.groups()
-    if not IDENT_RE.fullmatch(db):
-        sys.exit(f"Invalid database name: {db}")
-    if not IDENT_RE.fullmatch(user):
-        sys.exit(f"Invalid username: {user}")
-    sa_pwd = os.environ.get("MSSQL_SA_PASSWORD", pwd)
+    target = parse_env()
+    if not IDENT_RE.fullmatch(target.db):
+        sys.exit(f"Invalid database name: {target.db}")
+    if not IDENT_RE.fullmatch(target.user):
+        sys.exit(f"Invalid username: {target.user}")
 
-    master_conn_str = (
-        f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};"
-        f"DATABASE=master;UID=sa;PWD={sa_pwd};Encrypt=no;TrustServerCertificate=yes"
-    )
-    db_conn_str = (
-        f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};"
-        f"DATABASE={db};UID=sa;PWD={sa_pwd};Encrypt=no;TrustServerCertificate=yes"
-    )
-
-    conn = pyodbc.connect(master_conn_str, autocommit=True)
+    conn = pyodbc.connect(sa_conn_str(target, "master"), autocommit=True)
     cursor = conn.cursor()
     cursor.execute(
-        f"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name='{db}') " f"CREATE DATABASE [{db}] COLLATE {COLLATION}"
+        f"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name='{target.db}') "
+        f"CREATE DATABASE [{target.db}] COLLATE {COLLATION}"
     )
-    cursor.execute(f"ALTER DATABASE [{db}] SET READ_COMMITTED_SNAPSHOT ON")
-    safe_pwd = pwd.replace("'", "''")
+    cursor.execute(f"ALTER DATABASE [{target.db}] SET READ_COMMITTED_SNAPSHOT ON")
+    safe_pwd = target.pwd.replace("'", "''")
     cursor.execute(
-        f"IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name='{user}') "
-        f"CREATE LOGIN [{user}] WITH PASSWORD='{safe_pwd}'"
+        f"IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name='{target.user}') "
+        f"CREATE LOGIN [{target.user}] WITH PASSWORD='{safe_pwd}'"
     )
     conn.close()
 
     last_err: Exception | None = None
-    db_conn: pyodbc.Connection | None = None
     for _ in range(RECONNECT_ATTEMPTS):
         try:
-            db_conn = pyodbc.connect(db_conn_str, autocommit=True, timeout=5)
+            db_conn = pyodbc.connect(sa_conn_str(target, target.db), autocommit=True, timeout=5)
             break
         except pyodbc.Error as e:
             last_err = e
             time.sleep(RECONNECT_DELAY_S)
-    if db_conn is None:
-        sys.exit(f"Database '{db}' never became reachable after ALTER: {last_err}")
+    else:
+        sys.exit(f"Database '{target.db}' never became reachable after ALTER: {last_err}")
 
     db_cursor = db_conn.cursor()
     db_cursor.execute(
-        f"IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name='{user}') "
-        f"BEGIN CREATE USER [{user}] FOR LOGIN [{user}]; "
-        f"ALTER ROLE db_owner ADD MEMBER [{user}]; END"
+        f"IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name='{target.user}') "
+        f"BEGIN CREATE USER [{target.user}] FOR LOGIN [{target.user}]; "
+        f"ALTER ROLE db_owner ADD MEMBER [{target.user}]; END"
     )
     db_conn.close()
-    print(f"  Database '{db}' ready.")
+    print(f"  Database '{target.db}' ready.")
     return 0
 
 

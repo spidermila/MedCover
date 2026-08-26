@@ -7,10 +7,14 @@ echo "=== E2E: Waiting for database ==="
 MAX_RETRIES=${DB_WAIT_RETRIES:-60}
 RETRY=0
 
-until python "$SCRIPT_DIR/e2e_wait_db.py" 2>/dev/null; do
+# stderr is silenced during retries so operators aren't flooded with pyodbc
+# tracebacks while the server is still booting; on the final failure we drop
+# the redirect so the actual error (parse failure, auth error, ...) is shown.
+while ! python "$SCRIPT_DIR/e2e_wait_db.py" 2>/dev/null; do
   RETRY=$((RETRY+1))
   if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
-    echo "  ...database not ready after ${MAX_RETRIES} retries, exiting"
+    echo "  ...database not ready after ${MAX_RETRIES} retries; final error:"
+    python "$SCRIPT_DIR/e2e_wait_db.py" || true
     exit 1
   fi
   echo "  ...database not ready, retrying in 2s (attempt $RETRY/$MAX_RETRIES)"

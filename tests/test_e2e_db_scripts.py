@@ -24,6 +24,10 @@ SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 
 
 def _load(name: str):
+    # scripts/e2e_wait_db.py and e2e_init_db.py import `e2e_db` as a sibling;
+    # make that resolvable when loading them from tests via importlib.
+    if str(SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS_DIR))
     spec = importlib.util.spec_from_file_location(name, SCRIPTS_DIR / f"{name}.py")
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
@@ -31,6 +35,7 @@ def _load(name: str):
     return mod
 
 
+_db = _load("e2e_db")
 _init = _load("e2e_init_db")
 _wait = _load("e2e_wait_db")
 
@@ -40,7 +45,7 @@ _wait = _load("e2e_wait_db")
 
 def test_ident_re_accepts_typical_identifiers():
     for good in ("medcover_e2e", "medcover_test_gw0", "_x", "App1", "MedCover"):
-        assert _init.IDENT_RE.fullmatch(good), good
+        assert _db.IDENT_RE.fullmatch(good), good
 
 
 def test_ident_re_rejects_injection_and_bad_shapes():
@@ -55,14 +60,14 @@ def test_ident_re_rejects_injection_and_bad_shapes():
         "foo'; --",
     ]
     for value in bad:
-        assert _init.IDENT_RE.fullmatch(value) is None, value
+        assert _db.IDENT_RE.fullmatch(value) is None, value
 
 
 # ── DATABASE_URL parser ───────────────────────────────────────────────────────
 
 
 def test_url_re_parses_full_mssql_url():
-    m = _init.DATABASE_URL_RE.match(
+    m = _db.DATABASE_URL_RE.match(
         "mssql+pyodbc://medcover:E2e_Password1!@db-e2e:1433/medcover_e2e"
         "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no"
     )
@@ -73,20 +78,14 @@ def test_url_re_parses_full_mssql_url():
 
 
 def test_url_re_parses_url_without_query_string():
-    m = _init.DATABASE_URL_RE.match("mssql+pyodbc://sa:p@h:1433/db")
+    m = _db.DATABASE_URL_RE.match("mssql+pyodbc://sa:p@h:1433/db")
     assert m is not None
     assert m.groups() == ("sa", "p", "h", "1433", "db")
 
 
-def test_url_re_and_wait_share_the_same_regex():
-    # The two scripts must agree on what a valid URL looks like — otherwise
-    # wait_db could green-light a URL that init_db then rejects (or vice versa).
-    assert _wait.DATABASE_URL_RE.pattern == _init.DATABASE_URL_RE.pattern
-
-
 def test_url_re_rejects_junk():
     for bad in ("", "bogus", "postgresql://x:y@h:1/db", "mssql+pyodbc://no-at-sign/db"):
-        assert _init.DATABASE_URL_RE.match(bad) is None, bad
+        assert _db.DATABASE_URL_RE.match(bad) is None, bad
 
 
 # ── End-to-end: scripts still fail fast on bad env ────────────────────────────
