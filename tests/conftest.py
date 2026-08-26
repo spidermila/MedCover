@@ -385,6 +385,7 @@ def clean_db(app):
         # Reset mutable AppSettings fields to their defaults
         settings = _db.session.get(AppSettings, 1)
         if settings:
+            settings.timezone = "Europe/Prague"
             settings.dev_email_block = False
             settings.dev_email_allowlist = None
             settings.feedback_enabled = True
