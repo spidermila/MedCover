@@ -10,6 +10,7 @@ on:
       - "e2e_tests/**"
       - "requirements-e2e.txt"
       - "docker-compose.e2e.yml"
+      - "scripts/**"
 
 jobs:
   e2e:

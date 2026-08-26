@@ -32,7 +32,10 @@ def parse_env() -> DbTarget:
     url = os.environ.get("DATABASE_URL", "")
     m = DATABASE_URL_RE.match(url)
     if not m:
-        sys.exit(f"Cannot parse MSSQL DATABASE_URL: {url}")
+        # Don't include the URL in the message: on the final retry the shell
+        # wrapper prints stderr to container logs, and a malformed URL can
+        # still contain credentials.
+        sys.exit("Cannot parse MSSQL DATABASE_URL")
     user, pwd, host, port, db = m.groups()
     sa_pwd = os.environ.get("MSSQL_SA_PASSWORD", pwd)
     return DbTarget(user=user, pwd=pwd, host=host, port=port, db=db, sa_pwd=sa_pwd)
