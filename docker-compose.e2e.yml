@@ -22,10 +22,9 @@ services:
       context: .
       args:
         GIT_COMMIT: e2e
-    entrypoint: ["/e2e-entrypoint.sh"]
+    entrypoint: ["/app/scripts/e2e-entrypoint.sh"]
     command: ["flask", "run", "--debug", "--host=0.0.0.0"]
     volumes:
-      - ./scripts/e2e-entrypoint.sh:/e2e-entrypoint.sh:ro
       - ./scripts:/app/scripts:ro
     environment:
       FLASK_ENV: development
