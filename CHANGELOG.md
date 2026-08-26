@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-08-26
+
 ### Fixed
 - Optional (`volitelné`) spots on events with all mandatory spots filled are now claimable again: assignments no longer auto-close until every spot — mandatory and optional — is filled. The events list, event detail page, and the dashboard „Vyžaduje pozornost“ section now render two distinct obsazení badges (mandatory: red → green, optional: yellow → green), so it is immediately clear whether optional spots are still free. Applies to both the interactive claim flow and the Google-Sheets import path. (#441)
+- Google-Sheets import: duplicate-event detection compares event dates in the configured app timezone instead of UTC, so events near midnight are no longer misclassified as duplicates (or missed as duplicates). The preview page also correctly surfaces duplicate matches again.
+- Rapid double-clicks on „Uvolnit“ / „Zrušit“ / other destructive actions no longer show two stacked confirm dialogs — the guarded-confirm wrapper now suppresses the second dialog on both the accept and cancel paths.
+- Czech UI strings: the opening low quote „ is now always paired with the correct closing “ (never a straight `"` or English `”`), including in dynamically-composed messages. Regression test added.
+- Event create form: opening the form with `?master_event_id=…` (e.g. from a MasterEvent detail page) now pre-selects that master event in the dropdown.
+- Dashboard: fixed Czech typo „Horizon“ → „Horizont“.
+
+### Changed
+- Assorted dev/runtime dependency bumps: `gunicorn` 26.0.0 → 26.1.0 (#446), `pytest-playwright` 0.8.0 → 0.9.0 (#444), `tox` 4.58.0 → 4.60.0 (#448), `mypy` 2.3.0 → 2.3.1 (#447), `pre-commit` 4.6.1 → 4.6.2 (#443).
 
 ## [0.19.0] - 2026-08-06
 
