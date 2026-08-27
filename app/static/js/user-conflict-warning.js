@@ -89,7 +89,12 @@
     renderWarning(warningEl, details);
   }
 
-  document.querySelectorAll("select.user-conflict-picker").forEach(function (sel) {
-    sel.addEventListener("change", onChange);
+  // Delegate from document so pickers restored by table-manager.js after an
+  // innerHTML replacement (assign-failure path) keep firing conflict warnings.
+  document.addEventListener("change", function (ev) {
+    var target = ev.target;
+    if (target && target.matches && target.matches("select.user-conflict-picker")) {
+      onChange({ currentTarget: target });
+    }
   });
 })();
