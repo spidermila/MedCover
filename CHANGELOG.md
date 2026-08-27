@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Spot assignment pickers (event detail and Table Manager) now flag users who are already assigned to another non-cancelled/completed event overlapping this one: the user’s name is prefixed with a ⚠️ in the dropdown, and picking them shows an inline warning naming each conflicting event with a link and its time range. Uses the same overlap rules as equipment conflict detection (back-to-back events don’t conflict; drafts do). Cross-event, cross-master-event. (#341)
+
 ### Changed
 - Členové (role Member) již nemohou měnit své jméno v profilu — pole je jen ke čtení a označeno nápovědou „Nelze změnit — kontaktujte administrátora.“ Úpravy jména jsou vyhrazeny administrátorům a koordinátorům (nové oprávnění `user.edit_name`). Telefon zůstává upravitelný všemi. (#457)
 
