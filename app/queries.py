@@ -192,19 +192,32 @@ def user_ids_with_conflicting_assignments(
     start_dt: datetime,
     end_dt: datetime,
     exclude_event_id: int | None = None,
+    restrict_to_user_ids: Iterable[UUID] | None = None,
 ) -> set[UUID]:
     """Return the set of user IDs assigned to any non-cancelled/completed event whose
     time range overlaps [start_dt, end_dt).
 
     Overlap uses strict inequalities so back-to-back events (one ending exactly as
     the next starts) do *not* conflict — mirrors :func:`available_quantity_for_type`.
+
+    When *restrict_to_user_ids* is given, the query only considers assignments for
+    that user set. An empty iterable short-circuits to an empty result.
     """
+    if restrict_to_user_ids is not None:
+        restrict_ids = list(restrict_to_user_ids)
+        if not restrict_ids:
+            return set()
+    else:
+        restrict_ids = None
+
     q = _assignment_conflict_base_query().where(
         Event.start_datetime < end_dt,
         Event.end_datetime > start_dt,
     )
     if exclude_event_id is not None:
         q = q.where(Event.id != exclude_event_id)
+    if restrict_ids is not None:
+        q = q.where(Assignment.user_id.in_(restrict_ids))
     return {row[0] for row in db.session.execute(q).all()}
 
 
@@ -249,6 +262,7 @@ def conflicting_events_for_users(
 
 def user_conflicts_across_events(
     events: Sequence[Event],
+    restrict_to_user_ids: Iterable[UUID] | None = None,
 ) -> dict[int, dict[UUID, list[dict]]]:
     """Compute per-event user-conflict maps for a batch of events using one query.
 
@@ -259,9 +273,18 @@ def user_conflicts_across_events(
     A conflict event is any non-cancelled/completed/archived event overlapping the
     displayed event's ``[start_datetime, end_datetime)`` window — with the
     displayed event itself excluded.
+
+    When *restrict_to_user_ids* is given, only assignments for that user set are
+    considered. An empty iterable short-circuits to an empty per-event mapping.
     """
     if not events:
         return {}
+    if restrict_to_user_ids is not None:
+        restrict_ids = list(restrict_to_user_ids)
+        if not restrict_ids:
+            return {e.id: {} for e in events}
+    else:
+        restrict_ids = None
 
     min_start = min(e.start_datetime for e in events)
     max_end = max(e.end_datetime for e in events)
@@ -273,6 +296,8 @@ def user_conflicts_across_events(
         Event.start_datetime < max_end,
         Event.end_datetime > min_start,
     )
+    if restrict_ids is not None:
+        q = q.where(Assignment.user_id.in_(restrict_ids))
     candidates = db.session.execute(q).all()
 
     result: dict[int, dict[UUID, list[dict]]] = {e.id: {} for e in events}

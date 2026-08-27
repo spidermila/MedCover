@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Stránka nenalezena — MedCover{% endblock %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 640px">
+  <div class="card">
+    <div class="card-body text-center">
+      <h1 class="display-6 mb-3">🔍 Stránka nenalezena</h1>
+      <p class="lead mb-4">Požadovaná stránka neexistuje nebo byla přesunuta.</p>
+      <a href="{{ url_for('main.dashboard') if current_user.is_authenticated else url_for('auth.login') }}"
+         class="btn btn-primary">Zpět na úvod</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

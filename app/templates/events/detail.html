@@ -562,6 +562,6 @@ document.querySelectorAll('select.rp-select').forEach(function (sel) {
 <script src="{{ url_for('static', filename='js/events-detail.js') }}?v={{ static_ver }}"></script>
 <div id="event-nav-config" class="d-none" data-event-id="{{ event.id }}"></div>
 <script src="{{ url_for('static', filename='js/events-detail-nav.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
-<script src="{{ url_for('static', filename='js/user-conflict-warning.js') }}?v={{ static_ver }}"></script>
+<script src="{{ url_for('static', filename='js/user-conflict-warning.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
 
 {% endblock %}

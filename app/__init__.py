@@ -6,7 +6,7 @@ from itertools import groupby as itertools_groupby
 from operator import attrgetter
 
 import click
-from flask import Flask, g, redirect, request, url_for
+from flask import Flask, g, redirect, render_template, request, url_for
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from .config import config_by_name
@@ -275,6 +275,14 @@ def create_app(
             settings.apply_to_app(app)
             app.config["_SMTP_FINGERPRINT"] = fingerprint
         return None
+
+    @app.errorhandler(403)
+    def _forbidden(_err: Exception) -> tuple[str, int]:
+        return render_template("errors/403.html"), 403
+
+    @app.errorhandler(404)
+    def _not_found(_err: Exception) -> tuple[str, int]:
+        return render_template("errors/404.html"), 404
 
     return app
 
