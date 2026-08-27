@@ -170,7 +170,7 @@ def available_quantity_for_type(
     return total - committed
 
 
-def _assignment_conflict_base_query():  # type: ignore[no-untyped-def]
+def _assignment_conflict_base_query() -> sa.Select:
     """Base select over Assignment→EventSpot→Event with the standard status/archive filter.
 
     Excludes cancelled/completed/archived events. Draft events remain included on
