@@ -643,6 +643,135 @@ class TestTableManager:
             assert rows, "assignments_opened outbox rows were not persisted after commit"
 
 
+class TestTableManagerConflictDetection:
+    """Table Manager picker should mark users who conflict on other events."""
+
+    def _seed_with_conflict(self, app, other_status: EventStatus = EventStatus.ASSIGNMENTS_OPEN):
+        with app.app_context():
+            me = _make_me("Conflict TM ME")
+            # Main event shown in the table
+            main = Event(
+                name="Main TM",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=datetime(2035, 5, 1, 12, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2035, 5, 1, 18, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(main)
+            db.session.flush()
+            db.session.add(EventSpot(event_id=main.id))
+
+            # Another ME with an overlapping event the member is already on
+            other_me = _make_me("Other ME for TM conflict")
+            other = Event(
+                name="Other TM Overlap",
+                master_event_id=other_me.id,
+                status=other_status,
+                start_datetime=datetime(2035, 5, 1, 10, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2035, 5, 1, 14, 0, tzinfo=timezone.utc),
+            )
+            db.session.add(other)
+            db.session.flush()
+            other_spot = EventSpot(event_id=other.id)
+            db.session.add(other_spot)
+            db.session.flush()
+
+            _make_user("tm_conflict_member@test.com", "TM Conflict Member", Role.MEMBER)
+            member = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "tm_conflict_member@test.com"))
+            db.session.add(Assignment(spot_id=other_spot.id, user_id=member.id))
+            db.session.commit()
+            return me.id, str(member.id)
+
+    def test_conflicting_user_marked_in_table_picker(self, app, admin_client):
+        me_id, member_id = self._seed_with_conflict(app)
+        resp = admin_client.get(f"/master-events/{me_id}/table")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert f'<option value="{member_id}" data-conflict="1"' in html
+        assert "⚠️ TM Conflict Member" in html
+        assert "Other TM Overlap" in html
+
+    def test_cancelled_conflict_ignored_in_table(self, app, admin_client):
+        me_id, member_id = self._seed_with_conflict(app, other_status=EventStatus.CANCELLED)
+        resp = admin_client.get(f"/master-events/{me_id}/table")
+        html = resp.data.decode()
+        assert f'<option value="{member_id}" data-conflict="1"' not in html
+
+    def test_completed_conflict_ignored_in_table(self, app, admin_client):
+        me_id, member_id = self._seed_with_conflict(app, other_status=EventStatus.COMPLETED)
+        resp = admin_client.get(f"/master-events/{me_id}/table")
+        html = resp.data.decode()
+        assert f'<option value="{member_id}" data-conflict="1"' not in html
+
+    def test_draft_conflict_still_marked_in_table(self, app, admin_client):
+        me_id, member_id = self._seed_with_conflict(app, other_status=EventStatus.DRAFT)
+        resp = admin_client.get(f"/master-events/{me_id}/table")
+        html = resp.data.decode()
+        assert f'<option value="{member_id}" data-conflict="1"' in html
+
+    def test_batched_single_query_for_multiple_events(self, app, admin_client):
+        """Rendering the Table Manager should batch conflict lookups so we don't run one query per row."""
+        from sqlalchemy import event as sa_event  # pylint: disable=import-outside-toplevel
+
+        from app.extensions import db as _db  # pylint: disable=import-outside-toplevel
+
+        with app.app_context():
+            me = _make_me("Batched TM ME")
+            other_me = _make_me("Other ME for batched TM")
+            _make_user("tm_batched_member@test.com", "TM Batched Member", Role.MEMBER)
+            member = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "tm_batched_member@test.com"))
+
+            # Three main events on separate days
+            for day in (10, 11, 12):
+                main = Event(
+                    name=f"Main {day}",
+                    master_event_id=me.id,
+                    status=EventStatus.ASSIGNMENTS_OPEN,
+                    start_datetime=datetime(2035, 6, day, 10, 0, tzinfo=timezone.utc),
+                    end_datetime=datetime(2035, 6, day, 14, 0, tzinfo=timezone.utc),
+                )
+                db.session.add(main)
+                db.session.flush()
+                db.session.add(EventSpot(event_id=main.id))
+
+                # Overlapping conflict on the same day
+                other = Event(
+                    name=f"Other {day}",
+                    master_event_id=other_me.id,
+                    status=EventStatus.ASSIGNMENTS_OPEN,
+                    start_datetime=datetime(2035, 6, day, 12, 0, tzinfo=timezone.utc),
+                    end_datetime=datetime(2035, 6, day, 16, 0, tzinfo=timezone.utc),
+                )
+                db.session.add(other)
+                db.session.flush()
+                other_spot = EventSpot(event_id=other.id)
+                db.session.add(other_spot)
+                db.session.flush()
+                db.session.add(Assignment(spot_id=other_spot.id, user_id=member.id))
+            db.session.commit()
+            me_id = me.id
+
+        # Count SELECT statements against Assignment during the page render
+        assignment_selects: list[str] = []
+
+        def _before_execute(conn, clauseelement, multiparams, params, execution_options):  # noqa: ARG001
+            sql = str(clauseelement)
+            if "FROM assignment" in sql and "JOIN event" in sql:
+                assignment_selects.append(sql)
+
+        with app.app_context():
+            engine = _db.engine
+        sa_event.listen(engine, "before_execute", _before_execute)
+        try:
+            resp = admin_client.get(f"/master-events/{me_id}/table")
+        finally:
+            sa_event.remove(engine, "before_execute", _before_execute)
+
+        assert resp.status_code == 200
+        # user_conflicts_across_events should run exactly one such query for the whole page.
+        assert len(assignment_selects) <= 1, f"Expected ≤1 batched assignment→event join; got {len(assignment_selects)}"
+
+
 class TestTableEventClone:
     """Table Manager clone should not copy responsible_person_id."""
 

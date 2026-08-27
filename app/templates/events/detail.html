@@ -408,16 +408,19 @@
           <div class="collapse mt-1" id="assign-form-{{ spot.id }}">
             <form method="POST" action="{{ url_for('assignments.assign_other', spot_id=spot.id) }}" class="d-flex gap-1">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <select name="user_id" class="form-select form-select-sm" required>
+              <select name="user_id" class="form-select form-select-sm user-conflict-picker"
+                      data-spot-id="{{ spot.id }}" required>
                 <option value="">— vyberte uživatele —</option>
                 {% for u in eligible_users if u.id not in assigned_user_ids and spot.is_eligible(u) %}
-                  <option value="{{ u.id }}">{{ u.name }}</option>
+                  {% set _has_conflict = u.id in conflicted_user_ids %}
+                  <option value="{{ u.id }}"{% if _has_conflict %} data-conflict="1" data-conflict-details='{{ user_conflict_details.get(u.id|string, []) | tojson }}'{% endif %}>{% if _has_conflict %}⚠️ {% endif %}{{ u.name }}</option>
                 {% else %}
                   <option disabled>Žádní kvalifikovaní uživatelé</option>
                 {% endfor %}
               </select>
               <button type="submit" class="btn btn-primary btn-sm py-0">OK</button>
             </form>
+            <div class="user-conflict-warning small text-warning mt-1 d-none" data-spot-id="{{ spot.id }}"></div>
           </div>
           {% endif %}
 
@@ -559,5 +562,6 @@ document.querySelectorAll('select.rp-select').forEach(function (sel) {
 <script src="{{ url_for('static', filename='js/events-detail.js') }}?v={{ static_ver }}"></script>
 <div id="event-nav-config" class="d-none" data-event-id="{{ event.id }}"></div>
 <script src="{{ url_for('static', filename='js/events-detail-nav.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
+<script src="{{ url_for('static', filename='js/user-conflict-warning.js') }}?v={{ static_ver }}"></script>
 
 {% endblock %}

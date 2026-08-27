@@ -1657,6 +1657,109 @@ class TestUserPickerDuplicateFiltering:
         assert f'<option value="{member_id}">' not in html
 
 
+class TestUserPickerConflictDetection:
+    """Users with conflicting assignments on other events get a warning marker in the picker."""
+
+    def _setup_two_events(
+        self,
+        app,
+        *,
+        other_start: datetime = datetime(2035, 3, 1, 10, 0, tzinfo=timezone.utc),
+        other_end: datetime = datetime(2035, 3, 1, 16, 0, tzinfo=timezone.utc),
+        main_start: datetime = datetime(2035, 3, 1, 12, 0, tzinfo=timezone.utc),
+        main_end: datetime = datetime(2035, 3, 1, 18, 0, tzinfo=timezone.utc),
+        other_status: EventStatus = EventStatus.ASSIGNMENTS_OPEN,
+    ) -> tuple[int, str]:
+        """Create ME + two events („main“ and „other“) + a member assigned to „other“.
+
+        Returns (main_event_id, member_id_str).
+        """
+        me_id = _make_master_event(app)
+        with app.app_context():
+            admin_role = db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))
+            admin_user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
+
+            member = UserAccount(email="conflict_member@test.com", name="Conflict Member", is_active=True)
+            member.set_password("testpass123")
+            member.roles = [admin_role]
+            db.session.add(member)
+            db.session.flush()
+
+            other = Event(
+                name="Other Event",
+                master_event_id=me_id,
+                start_datetime=other_start,
+                end_datetime=other_end,
+                status=other_status,
+                created_by_id=admin_user.id,
+            )
+            db.session.add(other)
+            db.session.flush()
+            other_spot = EventSpot(event_id=other.id, description="Spot X")
+            db.session.add(other_spot)
+            db.session.flush()
+            other_spot.assignment = Assignment(user_id=member.id, assigned_by_id=admin_user.id)
+
+            main = Event(
+                name="Main Event",
+                master_event_id=me_id,
+                start_datetime=main_start,
+                end_datetime=main_end,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                created_by_id=admin_user.id,
+            )
+            db.session.add(main)
+            db.session.flush()
+            main_spot = EventSpot(event_id=main.id, description="Main spot")
+            db.session.add(main_spot)
+            db.session.commit()
+
+            return main.id, str(member.id)
+
+    def test_conflicting_user_gets_warning_marker(self, app, admin_client):
+        main_id, member_id = self._setup_two_events(app)
+        resp = admin_client.get(f"/events/{main_id}")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # Option carries data-conflict="1" for the conflicting member
+        assert f'<option value="{member_id}" data-conflict="1"' in html
+        assert "⚠️ Conflict Member" in html
+        # Warning details reference the conflicting event's name
+        assert "Other Event" in html
+
+    def test_back_to_back_no_conflict(self, app, admin_client):
+        main_id, member_id = self._setup_two_events(
+            app,
+            other_start=datetime(2035, 4, 1, 8, 0, tzinfo=timezone.utc),
+            other_end=datetime(2035, 4, 1, 12, 0, tzinfo=timezone.utc),
+            main_start=datetime(2035, 4, 1, 12, 0, tzinfo=timezone.utc),
+            main_end=datetime(2035, 4, 1, 16, 0, tzinfo=timezone.utc),
+        )
+        resp = admin_client.get(f"/events/{main_id}")
+        html = resp.data.decode()
+        # The member should be selectable without a conflict marker
+        assert f'<option value="{member_id}">Conflict Member</option>' in html
+        assert f'<option value="{member_id}" data-conflict="1"' not in html
+
+    def test_cancelled_other_event_no_conflict(self, app, admin_client):
+        main_id, member_id = self._setup_two_events(app, other_status=EventStatus.CANCELLED)
+        resp = admin_client.get(f"/events/{main_id}")
+        html = resp.data.decode()
+        assert f'<option value="{member_id}" data-conflict="1"' not in html
+
+    def test_completed_other_event_no_conflict(self, app, admin_client):
+        main_id, member_id = self._setup_two_events(app, other_status=EventStatus.COMPLETED)
+        resp = admin_client.get(f"/events/{main_id}")
+        html = resp.data.decode()
+        assert f'<option value="{member_id}" data-conflict="1"' not in html
+
+    def test_draft_other_event_still_conflicts(self, app, admin_client):
+        main_id, member_id = self._setup_two_events(app, other_status=EventStatus.DRAFT)
+        resp = admin_client.get(f"/events/{main_id}")
+        html = resp.data.decode()
+        assert f'<option value="{member_id}" data-conflict="1"' in html
+
+
 # ── Eligible spot map structure ────────────────────────────────────────────────
 
 

@@ -5,8 +5,9 @@ multiple route modules.  Keeping them here makes it easier to reason about
 performance (eager-load shapes, ordering) and to apply changes in one place.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy import collate, func
@@ -15,11 +16,12 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 from app.extensions import db
+from app.models.assignment import Assignment
 from app.models.equipment import (
     EquipmentItem,
     EventEquipmentPlan,
 )
-from app.models.event import Event, EventStatus
+from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.user import UserAccount
 from app.utils import CS_COLLATION
@@ -166,3 +168,128 @@ def available_quantity_for_type(
 
     committed = db.session.scalar(committed_q) or 0
     return total - committed
+
+
+def _assignment_conflict_base_query():  # type: ignore[no-untyped-def]
+    """Base select over Assignment→EventSpot→Event with the standard status/archive filter.
+
+    Excludes cancelled/completed/archived events. Draft events remain included on
+    purpose — an unpublished draft still represents a likely conflict once it goes
+    live, matching the equipment-conflict behaviour.
+    """
+    return (
+        db.select(Assignment.user_id, Event.id, Event.name, Event.start_datetime, Event.end_datetime)
+        .join(EventSpot, EventSpot.id == Assignment.spot_id)
+        .join(Event, Event.id == EventSpot.event_id)
+        .where(
+            Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
+            Event.archived == sa.false(),
+        )
+    )
+
+
+def user_ids_with_conflicting_assignments(
+    start_dt: datetime,
+    end_dt: datetime,
+    exclude_event_id: int | None = None,
+) -> set[UUID]:
+    """Return the set of user IDs assigned to any non-cancelled/completed event whose
+    time range overlaps [start_dt, end_dt).
+
+    Overlap uses strict inequalities so back-to-back events (one ending exactly as
+    the next starts) do *not* conflict — mirrors :func:`available_quantity_for_type`.
+    """
+    q = _assignment_conflict_base_query().where(
+        Event.start_datetime < end_dt,
+        Event.end_datetime > start_dt,
+    )
+    if exclude_event_id is not None:
+        q = q.where(Event.id != exclude_event_id)
+    return {row[0] for row in db.session.execute(q).all()}
+
+
+def conflicting_events_for_users(
+    user_ids: Iterable[UUID],
+    start_dt: datetime,
+    end_dt: datetime,
+    exclude_event_id: int | None = None,
+) -> dict[UUID, list[dict]]:
+    """Return per-user list of events causing a conflict in [start_dt, end_dt).
+
+    Each entry is a plain dict (``id``, ``name``, ``start_datetime``, ``end_datetime``)
+    ordered by ``start_datetime``. Users without conflicts are omitted from the result.
+    """
+    ids = list(user_ids)
+    if not ids:
+        return {}
+    q = (
+        _assignment_conflict_base_query()
+        .where(
+            Event.start_datetime < end_dt,
+            Event.end_datetime > start_dt,
+            Assignment.user_id.in_(ids),
+        )
+        .order_by(Event.start_datetime)
+    )
+    if exclude_event_id is not None:
+        q = q.where(Event.id != exclude_event_id)
+
+    result: dict[UUID, list[dict]] = {}
+    for user_id, event_id, event_name, start, end in db.session.execute(q).all():
+        result.setdefault(user_id, []).append(
+            {
+                "id": event_id,
+                "name": event_name,
+                "start_datetime": start,
+                "end_datetime": end,
+            }
+        )
+    return result
+
+
+def user_conflicts_across_events(
+    events: Sequence[Event],
+) -> dict[int, dict[UUID, list[dict]]]:
+    """Compute per-event user-conflict maps for a batch of events using one query.
+
+    Returns ``{event_id: {user_id: [conflict_event_dict, ...], ...}, ...}``. Only
+    users with at least one conflict against the given event appear. Used by the
+    Table Manager to avoid an O(N) query fan-out.
+
+    A conflict event is any non-cancelled/completed/archived event overlapping the
+    displayed event's ``[start_datetime, end_datetime)`` window — with the
+    displayed event itself excluded.
+    """
+    if not events:
+        return {}
+
+    min_start = min(e.start_datetime for e in events)
+    max_end = max(e.end_datetime for e in events)
+
+    # Single query fetching every assignment that could conflict with *any* displayed
+    # event: window must overlap [min_start, max_end). We then pair each candidate
+    # against the individual displayed events in Python.
+    q = _assignment_conflict_base_query().where(
+        Event.start_datetime < max_end,
+        Event.end_datetime > min_start,
+    )
+    candidates = db.session.execute(q).all()
+
+    result: dict[int, dict[UUID, list[dict]]] = {e.id: {} for e in events}
+    for user_id, cand_event_id, cand_name, cand_start, cand_end in candidates:
+        for target in events:
+            if cand_event_id == target.id:
+                continue
+            if cand_start < target.end_datetime and cand_end > target.start_datetime:
+                result[target.id].setdefault(user_id, []).append(
+                    {
+                        "id": cand_event_id,
+                        "name": cand_name,
+                        "start_datetime": cand_start,
+                        "end_datetime": cand_end,
+                    }
+                )
+    for per_event in result.values():
+        for conflicts in per_event.values():
+            conflicts.sort(key=lambda c: c["start_datetime"])
+    return result

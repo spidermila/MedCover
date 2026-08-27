@@ -229,14 +229,16 @@
                     title="Odhlásit">✕</button>
             {% endif %}
           {% elif row.can_manage %}
-            <select class="form-select form-select-sm tm-assign-select"
+            <select class="form-select form-select-sm tm-assign-select user-conflict-picker"
                     data-spot-id="{{ spot.id }}"
                     id="assign_spot_{{ spot.id }}">
               <option value="">— přiřadit —</option>
               {% for user in row.eligible_users if user.id not in row.assigned_user_ids %}
-              <option value="{{ user.id }}">{{ user.name }}</option>
+              {% set _has_conflict = user.id in row.conflicted_user_ids %}
+              <option value="{{ user.id }}"{% if _has_conflict %} data-conflict="1" data-conflict-details='{{ row.user_conflict_details.get(user.id|string, []) | tojson }}'{% endif %}>{% if _has_conflict %}⚠️ {% endif %}{{ user.name }}</option>
               {% endfor %}
             </select>
+            <div class="user-conflict-warning small text-warning mt-1 d-none" data-spot-id="{{ spot.id }}"></div>
           {% endif %}
         </td>
         {% endfor %}
@@ -314,4 +316,5 @@
      data-can-open-assignments="{{ '1' if can_open_assignments else '0' }}">
 </div>
 <script src="{{ url_for('static', filename='js/table-manager.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
+<script src="{{ url_for('static', filename='js/user-conflict-warning.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
 {% endblock %}
