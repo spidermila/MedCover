@@ -26,9 +26,11 @@ from app.printout_generator import generate_printout
 from app.queries import (
     active_master_events_list,
     active_users_list,
+    conflicting_events_for_users,
     in_maintenance_during,
     rp_eligible_users_list,
     user_fillable_qual_ids,
+    user_ids_with_conflicting_assignments,
 )
 from app.utils import (
     CS_COLLATION,
@@ -494,6 +496,35 @@ def detail(event_id: int) -> str | Response:
     # Users already assigned to a spot on this event (for picker filtering)
     assigned_user_ids: set[int] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
 
+    # Users assigned to another (non-cancelled/completed) event overlapping this one
+    conflicted_user_ids: set = set()
+    user_conflict_details: dict = {}
+    if can_assign and eligible_users:
+        conflicted_user_ids = user_ids_with_conflicting_assignments(
+            event.start_datetime, event.end_datetime, exclude_event_id=event.id
+        )
+        eligible_ids = {u.id for u in eligible_users}
+        conflicted_user_ids &= eligible_ids
+        if conflicted_user_ids:
+            details = conflicting_events_for_users(
+                conflicted_user_ids,
+                event.start_datetime,
+                event.end_datetime,
+                exclude_event_id=event.id,
+            )
+            user_conflict_details = {
+                str(uid): [
+                    {
+                        "name": c["name"],
+                        "url": url_for("events.detail", event_id=c["id"]),
+                        "start": c["start_datetime"].isoformat(),
+                        "end": c["end_datetime"].isoformat(),
+                    }
+                    for c in conflicts
+                ]
+                for uid, conflicts in details.items()
+            }
+
     # When ME has a coordinator, self-claim/release is blocked for regular members
     me_coordinated = (
         event.master_event is not None
@@ -573,6 +604,8 @@ def detail(event_id: int) -> str | Response:
         EventType=EventType,
         eligible_users=eligible_users,
         assigned_user_ids=assigned_user_ids,
+        conflicted_user_ids=conflicted_user_ids,
+        user_conflict_details=user_conflict_details,
         can_assign=can_assign,
         me_coordinated=me_coordinated,
         all_equipment_types=eq_types_for_detail,

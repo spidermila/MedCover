@@ -30,7 +30,7 @@ from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
-from app.queries import active_users_list
+from app.queries import active_users_list, user_conflicts_across_events
 from app.utils import (
     CS_COLLATION,
     audit,
@@ -423,9 +423,31 @@ def table_manager(me_id: int) -> str:
     for event in events:
         event_assigned[event.id] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
 
+    # Cross-event assignment conflicts (batched: one query for all displayed events)
+    event_conflicts: dict[int, set] = {}
+    event_conflict_details: dict[int, dict] = {}
+    if can_assign_any and events:
+        raw = user_conflicts_across_events(list(events))
+        for event_id, per_user in raw.items():
+            event_conflicts[event_id] = set(per_user.keys())
+            event_conflict_details[event_id] = {
+                str(uid): [
+                    {
+                        "name": c["name"],
+                        "url": url_for("events.detail", event_id=c["id"]),
+                        "start": c["start_datetime"].isoformat(),
+                        "end": c["end_datetime"].isoformat(),
+                    }
+                    for c in conflicts
+                ]
+                for uid, conflicts in per_user.items()
+            }
+
     # Annotate each row with can_manage flag and assigned_user_ids
     for row in rows:
         row["assigned_user_ids"] = event_assigned.get(row["event"].id, set())
+        row["conflicted_user_ids"] = event_conflicts.get(row["event"].id, set())
+        row["user_conflict_details"] = event_conflict_details.get(row["event"].id, {})
         if can_assign:
             row["can_manage"] = True
         elif rp_elevated:
