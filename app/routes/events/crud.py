@@ -496,15 +496,18 @@ def detail(event_id: int) -> str | Response:
     # Users already assigned to a spot on this event (for picker filtering)
     assigned_user_ids: set[int] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
 
-    # Users assigned to another (non-cancelled/completed) event overlapping this one
+    # Users assigned to another (non-cancelled/non-completed/non-archived) event
+    # overlapping this one. Restricted to eligible users at the DB level.
     conflicted_user_ids: set = set()
     user_conflict_details: dict = {}
     if can_assign and eligible_users:
-        conflicted_user_ids = user_ids_with_conflicting_assignments(
-            event.start_datetime, event.end_datetime, exclude_event_id=event.id
-        )
         eligible_ids = {u.id for u in eligible_users}
-        conflicted_user_ids &= eligible_ids
+        conflicted_user_ids = user_ids_with_conflicting_assignments(
+            event.start_datetime,
+            event.end_datetime,
+            exclude_event_id=event.id,
+            restrict_to_user_ids=eligible_ids,
+        )
         if conflicted_user_ids:
             details = conflicting_events_for_users(
                 conflicted_user_ids,

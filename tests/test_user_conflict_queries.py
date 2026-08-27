@@ -216,6 +216,46 @@ class TestUserIdsWithConflictingAssignments:
         assert uid in without_exclude
         assert uid not in with_exclude
 
+    def test_restrict_to_user_ids_filters_result(self, app):
+        with app.app_context():
+            keep = _make_user("uc_restrict_keep@test.com")
+            drop = _make_user("uc_restrict_drop@test.com")
+            e1 = _make_event(
+                "RESTRICT",
+                datetime(2033, 10, 5, 10, tzinfo=timezone.utc),
+                datetime(2033, 10, 5, 14, tzinfo=timezone.utc),
+            )
+            _assign(e1, keep)
+            _assign(e1, drop)
+            db.session.commit()
+            keep_id, drop_id = keep.id, drop.id
+
+            result = user_ids_with_conflicting_assignments(
+                datetime(2033, 10, 5, 10, tzinfo=timezone.utc),
+                datetime(2033, 10, 5, 14, tzinfo=timezone.utc),
+                restrict_to_user_ids=[keep_id],
+            )
+        assert result == {keep_id}
+        assert drop_id not in result
+
+    def test_restrict_to_empty_short_circuits(self, app):
+        with app.app_context():
+            u = _make_user("uc_restrict_empty@test.com")
+            e1 = _make_event(
+                "RESTRICT_EMPTY",
+                datetime(2033, 10, 6, 10, tzinfo=timezone.utc),
+                datetime(2033, 10, 6, 14, tzinfo=timezone.utc),
+            )
+            _assign(e1, u)
+            db.session.commit()
+
+            result = user_ids_with_conflicting_assignments(
+                datetime(2033, 10, 6, 10, tzinfo=timezone.utc),
+                datetime(2033, 10, 6, 14, tzinfo=timezone.utc),
+                restrict_to_user_ids=[],
+            )
+        assert result == set()
+
 
 class TestConflictingEventsForUsers:
     def test_returns_details_ordered_by_start(self, app):
@@ -323,3 +363,47 @@ class TestUserConflictsAcrossEvents:
     def test_empty_events_returns_empty(self, app):
         with app.app_context():
             assert user_conflicts_across_events([]) == {}
+
+    def test_restrict_to_user_ids_filters_batch(self, app):
+        with app.app_context():
+            keep = _make_user("uc_batch_keep@test.com")
+            drop = _make_user("uc_batch_drop@test.com")
+
+            d1 = _make_event(
+                "Batch D1",
+                datetime(2034, 3, 1, 10, tzinfo=timezone.utc),
+                datetime(2034, 3, 1, 14, tzinfo=timezone.utc),
+            )
+            ext = _make_event(
+                "Batch Ext",
+                datetime(2034, 3, 1, 11, tzinfo=timezone.utc),
+                datetime(2034, 3, 1, 13, tzinfo=timezone.utc),
+            )
+            _assign(ext, keep)
+            _assign(ext, drop)
+            db.session.commit()
+            keep_id, drop_id, d1_id = keep.id, drop.id, d1.id
+
+            result = user_conflicts_across_events([d1], restrict_to_user_ids=[keep_id])
+        assert keep_id in result[d1_id]
+        assert drop_id not in result[d1_id]
+
+    def test_restrict_to_empty_short_circuits_batch(self, app):
+        with app.app_context():
+            u = _make_user("uc_batch_empty@test.com")
+            d1 = _make_event(
+                "Batch Empty",
+                datetime(2034, 4, 1, 10, tzinfo=timezone.utc),
+                datetime(2034, 4, 1, 14, tzinfo=timezone.utc),
+            )
+            ext = _make_event(
+                "Batch Empty Ext",
+                datetime(2034, 4, 1, 11, tzinfo=timezone.utc),
+                datetime(2034, 4, 1, 13, tzinfo=timezone.utc),
+            )
+            _assign(ext, u)
+            db.session.commit()
+            d1_id = d1.id
+
+            result = user_conflicts_across_events([d1], restrict_to_user_ids=[])
+        assert result == {d1_id: {}}

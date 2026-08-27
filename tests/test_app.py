@@ -19,10 +19,19 @@ def test_login_page_returns_200(client):
 def test_unknown_route_returns_404(client):
     response = client.get("/nonexistent")
     assert response.status_code == 404
+    assert "Stránka nenalezena".encode() in response.data
 
 
 def test_app_is_in_testing_mode(app):
     assert app.config["TESTING"] is True
+
+
+def test_403_page_renders_czech_message(member_client, app):
+    """Any 403 response should render the Czech error page instead of the default Werkzeug HTML."""
+    # /events/create requires event.create permission, which a Member lacks.
+    response = member_client.get("/events/create")
+    assert response.status_code == 403
+    assert "Nemáte oprávnění".encode() in response.data
 
 
 # ── external_url_for ─────────────────────────────────────────────────────────

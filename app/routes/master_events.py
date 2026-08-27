@@ -423,11 +423,14 @@ def table_manager(me_id: int) -> str:
     for event in events:
         event_assigned[event.id] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
 
-    # Cross-event assignment conflicts (batched: one query for all displayed events)
+    # Cross-event assignment conflicts (batched: one query for all displayed events).
+    # Restrict to the union of eligible users across visible rows so the DB does the
+    # filtering instead of Python.
     event_conflicts: dict[int, set] = {}
     event_conflict_details: dict[int, dict] = {}
     if can_assign_any and events:
-        raw = user_conflicts_across_events(list(events))
+        eligible_union = {u.id for row in rows for u in row.get("eligible_users", [])}
+        raw = user_conflicts_across_events(list(events), restrict_to_user_ids=eligible_union)
         for event_id, per_user in raw.items():
             event_conflicts[event_id] = set(per_user.keys())
             event_conflict_details[event_id] = {
