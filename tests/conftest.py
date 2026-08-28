@@ -359,9 +359,9 @@ def clean_db(app):
     table, then re-enable constraints. Identity columns are left as-is
     (tests don't depend on specific ID values).
 
-    AppSettings is NOT cleared (it is reference data seeded once) but any
-    fields that tests may mutate are explicitly reset to their defaults so that
-    test order does not matter.
+    AppSettings is deleted and re-seeded via ``_seed_reference_data`` so that
+    any column added to the model is automatically reset to its default —
+    tests can mutate arbitrary fields without leaking state across tests.
     """
     # Ensure a completely fresh session at the start of every test — eliminates
     # any lingering identity-map state or open transactions from fixture setup.
@@ -382,26 +382,13 @@ def clean_db(app):
                 qt = preparer.quote(t)
                 conn.execute(_db.text(f"ALTER TABLE {qt} CHECK CONSTRAINT ALL"))
             conn.commit()
-        # Reset mutable AppSettings fields to their defaults
+        # Delete + reseed AppSettings so every column returns to its model
+        # default without the fixture having to enumerate them.
         settings = _db.session.get(AppSettings, 1)
-        if settings:
-            settings.timezone = "Europe/Prague"
-            settings.dev_email_block = False
-            settings.dev_email_allowlist = None
-            settings.feedback_enabled = True
-            settings.app_base_url = None
-            settings.notify_assignment = True
-            settings.notify_event_published = True
-            settings.notify_assignments_opened = True
-            settings.notify_event_cancelled = True
-            settings.notify_event_changed = True
-            settings.notify_unfilled_reminder = True
-            settings.notify_debriefing = True
-            settings.notify_delay_under_24h_min = 5
-            settings.notify_delay_1_7_days_min = 60
-            settings.notify_delay_1_4_weeks_min = 360
-            settings.notify_delay_over_month_min = 1440
+        if settings is not None:
+            _db.session.delete(settings)
             _db.session.commit()
+        _seed_reference_data()
         _db.session.remove()
 
 
