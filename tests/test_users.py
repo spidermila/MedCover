@@ -1,5 +1,6 @@
 """Tests for user profile and admin user-management routes."""
 
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -64,6 +65,15 @@ class TestUserProfile:
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             assert user is not None
             assert user.name == "Test Member"
+            # Ignored name must NOT appear in any audit entry for this user.
+            entries = db.session.scalars(
+                db.select(AuditLogEntry).where(
+                    AuditLogEntry.entity_type == "UserAccount",
+                    AuditLogEntry.entity_id == user.id,
+                )
+            ).all()
+            for entry in entries:
+                assert "name" not in (entry.changes or {})
 
     def test_member_empty_name_not_rejected(self, app: object, member_client: object) -> None:
         """Empty name from Member is ignored, not treated as an error (#457)."""
@@ -99,11 +109,9 @@ class TestUserProfile:
         resp = member_client.get("/users/profile")
         assert resp.status_code == 200
         html = resp.data.decode()
-        # Locate the name input tag.
-        start = html.find('id="name"')
-        assert start != -1
-        tag_end = html.find(">", start)
-        tag = html[html.rfind("<", 0, start) : tag_end + 1]
+        match = re.search(r'<input\b[^>]*\bid="name"[^>]*>', html, re.DOTALL)
+        assert match is not None, "name input not found in profile page"
+        tag = match.group(0)
         assert "disabled" in tag
         assert 'name="name"' not in tag
 
@@ -111,10 +119,9 @@ class TestUserProfile:
         resp = coordinator_client.get("/users/profile")
         assert resp.status_code == 200
         html = resp.data.decode()
-        start = html.find('id="name"')
-        assert start != -1
-        tag_end = html.find(">", start)
-        tag = html[html.rfind("<", 0, start) : tag_end + 1]
+        match = re.search(r'<input\b[^>]*\bid="name"[^>]*>', html, re.DOTALL)
+        assert match is not None, "name input not found in profile page"
+        tag = match.group(0)
         assert "disabled" not in tag
         assert 'name="name"' in tag
 

@@ -144,7 +144,6 @@ def _update_profile(user: UserAccount) -> Response:
     except ValueError:
         user.dashboard_horizon_days = 30
     user.dark_mode = request.form.get("dark_mode") == "1"
-    user.version += 1
     after: dict[str, Any] = {
         "name": user.name,
         "phone": user.phone,
@@ -152,7 +151,10 @@ def _update_profile(user: UserAccount) -> Response:
         "dashboard_horizon_days": user.dashboard_horizon_days,
         "dark_mode": user.dark_mode,
     }
-    audit("edit", "UserAccount", user.id, f"Uživatel {user.name} upravil svůj profil", diff_changes(before, after))
+    diff = diff_changes(before, after)
+    if diff:
+        user.version += 1
+        audit("edit", "UserAccount", user.id, f"Uživatel {user.name} upravil svůj profil", diff)
     db.session.commit()
     flash("Profil byl uložen.", "success")
     return redirect(url_for("users.profile"))
