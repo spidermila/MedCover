@@ -29,7 +29,7 @@ document.addEventListener("DOMContentLoaded", function () {
  * Replaces the inline <script> that previously lived in create.html / edit.html. */
 function toggleEventTypeFields(type) {
   var row = document.getElementById('planned_participants_row');
-  if (row) row.style.display = (type === 'TRAINING') ? '' : 'none';
+  if (row) row.classList.toggle('d-none', type !== 'TRAINING');
 }
 document.addEventListener("DOMContentLoaded", function () {
   var sel = document.getElementById('event_type');

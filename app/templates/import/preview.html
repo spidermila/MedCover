@@ -3,17 +3,6 @@
 {% from 'macros/badges.html' import badge_warning, badge_secondary %}
 {% block title %}Náhled importu — MedCover{% endblock %}
 
-{% block extra_head %}
-<style>
-  .import-table th, .import-table td { vertical-align: middle; }
-  .import-table input[type="text"], .import-table select { font-size: .85rem; }
-  .warn-badge { font-size: .75rem; }
-  .row-excluded { opacity: .45; }
-  /* Keep the table scrollable on small screens */
-  .import-scroll { overflow-x: auto; }
-</style>
-{% endblock %}
-
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-3">
   <h2 class="mb-0">Náhled importu</h2>

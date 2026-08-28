@@ -4,6 +4,28 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
+  {% set _csp_nonce = g.get('csp_nonce', '') %}
+  {# Consumed by FullCalendar (and any third-party lib that reads it) to nonce runtime-injected <style> tags. #}
+  <meta name="csp-nonce" content="{{ _csp_nonce }}">
+  {# Nonce-propagation shim: some third-party libraries (e.g. Flatpickr) create
+     <style> elements at runtime without consulting the csp-nonce meta tag.
+     Under a nonce-only style-src those inserts are blocked silently. This
+     shim wraps document.createElement so every <style> element automatically
+     carries the current request's nonce. Loaded before any third-party JS. #}
+  <script nonce="{{ _csp_nonce }}">
+    (function () {
+      var nonce = {{ _csp_nonce | tojson }};
+      var origCreate = document.createElement.bind(document);
+      document.createElement = function (tag) {
+        var el = origCreate.apply(document, arguments);
+        if (typeof tag === "string" && tag.toLowerCase() === "style") {
+          el.setAttribute("nonce", nonce);
+          try { el.nonce = nonce; } catch (e) { /* IDL setter may be readonly on very old engines */ }
+        }
+        return el;
+      };
+    })();
+  </script>
   <title>{% block title %}MedCover{% endblock %}</title>
 
   <!-- Favicon -->

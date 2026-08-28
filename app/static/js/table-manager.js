@@ -23,6 +23,21 @@
 
   var ME_ID = parseInt(cfg.dataset.meId, 10);
 
+  // ── Apply pastel background colours from data-tm-bg attributes ──────────────
+  // These used to live in template inline style="background-color: …" but
+  // moved to JS so we can drop 'unsafe-inline' from CSP style-src. Element
+  // .style property setters are not covered by style-src.
+  function applyTmBg(el) {
+    var color = el.dataset.tmBg;
+    if (!color) return;
+    el.style.backgroundColor = color;
+    // Marker for dark-mode contrast overrides in main.css.
+    if (el.classList.contains("tm-row-cell") || el.classList.contains("tm-spot-cell")) {
+      el.classList.add("tm-cell-colored");
+    }
+  }
+  document.querySelectorAll("[data-tm-bg]").forEach(applyTmBg);
+
   var canAssign          = cfg.dataset.canAssign === "1";
   var canEditEvent       = cfg.dataset.canEditEvent === "1";
   var canCreateEvent     = cfg.dataset.canCreateEvent === "1";
@@ -68,17 +83,16 @@
     });
     // Show/hide all rows for each event
     allRows.forEach(function (row) {
-      row.style.display = visibleEvents[row.dataset.eventId] ? "" : "none";
+      row.classList.toggle("d-none", !visibleEvents[row.dataset.eventId]);
     });
     // Hide excess spot columns (header + data cells)
     for (var i = 0; i < totalSpotCols; i++) {
-      var show = i < maxVisibleSpots;
-      spotHeaderCols[i].style.display = show ? "" : "none";
+      spotHeaderCols[i].classList.toggle("d-none", i >= maxVisibleSpots);
     }
     allRows.forEach(function (row) {
       var cells = row.querySelectorAll(".tm-spot-data-col");
       for (var i = 0; i < cells.length; i++) {
-        cells[i].style.display = i < maxVisibleSpots ? "" : "none";
+        cells[i].classList.toggle("d-none", i >= maxVisibleSpots);
       }
     });
     // Toggle empty-filter message
@@ -119,7 +133,7 @@
   var errClose = document.getElementById("tm-spots-error-close");
   if (errClose) {
     errClose.addEventListener("click", function () {
-      this.closest(".alert").style.display = "none";
+      this.closest(".alert").classList.add("d-none");
     });
   }
 
@@ -267,11 +281,11 @@
       var val = cell.dataset.value;
       timeDateInput.value = val.slice(0, 10);
       timeTimeInput.value = val.slice(11, 16);
-      timeError.style.display = "none";
+      timeError.classList.add("d-none");
       timeError.textContent = "";
       var rect = cell.getBoundingClientRect();
       document.body.appendChild(popup);
-      popup.style.display = "block";
+      popup.classList.remove("d-none");
       popup.style.top = (window.scrollY + rect.bottom + 4) + "px";
       popup.style.left = (window.scrollX + rect.left) + "px";
       timeTimeInput.focus();
@@ -286,7 +300,7 @@
     });
 
     function closeTimeEdit() {
-      popup.style.display = "none";
+      popup.classList.add("d-none");
       _activeTimeCell = null;
     }
 
@@ -301,13 +315,13 @@
 
       if (!/^\d{2}:\d{2}$/.test(timeVal)) {
         timeError.textContent = "Zadejte \u010das ve form\u00e1tu HH:MM (nap\u0159. 08:30).";
-        timeError.style.display = "block";
+        timeError.classList.remove("d-none");
         return;
       }
       var parts = timeVal.split(":").map(Number);
       if (parts[0] > 23 || parts[1] > 59) {
         timeError.textContent = "Neplatn\u00fd \u010das.";
-        timeError.style.display = "block";
+        timeError.classList.remove("d-none");
         return;
       }
 
@@ -324,12 +338,12 @@
           reloadWithHighlight(eventId);
         } else {
           timeError.textContent = data.error || "Chyba p\u0159i ulo\u017een\u00ed.";
-          timeError.style.display = "block";
+          timeError.classList.remove("d-none");
         }
       })
       .catch(function () {
         timeError.textContent = "Chyba s\u00edt\u011b.";
-        timeError.style.display = "block";
+        timeError.classList.remove("d-none");
       });
     });
 
@@ -351,11 +365,11 @@
         e.preventDefault();
         _activeNameBtn = this;
         nameInput.value = this.dataset.value;
-        nameError.style.display = "none";
+        nameError.classList.add("d-none");
         nameError.textContent = "";
         var rect = this.getBoundingClientRect();
         document.body.appendChild(namePopup);
-        namePopup.style.display = "block";
+        namePopup.classList.remove("d-none");
         namePopup.style.top = (window.scrollY + rect.bottom + 4) + "px";
         namePopup.style.left = (window.scrollX + rect.left) + "px";
         nameInput.focus();
@@ -364,7 +378,7 @@
     });
 
     function closeNameEdit() {
-      namePopup.style.display = "none";
+      namePopup.classList.add("d-none");
       _activeNameBtn = null;
     }
 
@@ -376,7 +390,7 @@
       var value = nameInput.value.trim();
       if (!value) {
         nameError.textContent = "N\u00e1zev nesm\u00ed b\u00fdt pr\u00e1zdn\u00fd.";
-        nameError.style.display = "block";
+        nameError.classList.remove("d-none");
         return;
       }
       csrfFetch("/master-events/" + ME_ID + "/table/event/" + eventId + "/update", {
@@ -390,12 +404,12 @@
           reloadWithHighlight(eventId);
         } else {
           nameError.textContent = data.error || "Chyba p\u0159i ulo\u017een\u00ed.";
-          nameError.style.display = "block";
+          nameError.classList.remove("d-none");
         }
       })
       .catch(function () {
         nameError.textContent = "Chyba s\u00edt\u011b.";
-        nameError.style.display = "block";
+        nameError.classList.remove("d-none");
       });
     });
 
@@ -406,20 +420,20 @@
     // Esc closes whichever popup is open
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
-      if (popup.style.display !== "none") closeTimeEdit();
-      if (namePopup.style.display !== "none") closeNameEdit();
+      if (!popup.classList.contains("d-none")) closeTimeEdit();
+      if (!namePopup.classList.contains("d-none")) closeNameEdit();
       var cp = document.getElementById("tm-color-popup");
-      if (cp && cp.style.display !== "none") cp.style.display = "none";
+      if (cp && !cp.classList.contains("d-none")) cp.classList.add("d-none");
       var ap = document.getElementById("tm-advance-popup");
-      if (ap && ap.style.display !== "none") ap.style.display = "none";
+      if (ap && !ap.classList.contains("d-none")) ap.classList.add("d-none");
     });
 
     // Close popups on outside click
     document.addEventListener("click", function (e) {
-      if (popup.style.display !== "none" && !popup.contains(e.target) && !e.target.closest(".tm-time-cell")) {
+      if (!popup.classList.contains("d-none") && !popup.contains(e.target) && !e.target.closest(".tm-time-cell")) {
         closeTimeEdit();
       }
-      if (namePopup.style.display !== "none" && !namePopup.contains(e.target) && !e.target.classList.contains("tm-name-edit-btn")) {
+      if (!namePopup.classList.contains("d-none") && !namePopup.contains(e.target) && !e.target.classList.contains("tm-name-edit-btn")) {
         closeNameEdit();
       }
     });
@@ -491,12 +505,12 @@
           var errEl = document.getElementById("tm-spots-error-msg");
           var toast = document.getElementById("tm-spots-error-toast");
           errEl.textContent = data.error || "Chyba p\u0159i ukl\u00e1d\u00e1n\u00ed.";
-          toast.style.display = "block";
+          toast.classList.remove("d-none");
         }
       })
       .catch(function () {
         document.getElementById("tm-spots-error-msg").textContent = "Chyba s\u00edt\u011b.";
-        document.getElementById("tm-spots-error-toast").style.display = "block";
+        document.getElementById("tm-spots-error-toast").classList.remove("d-none");
       });
     }
 
@@ -581,21 +595,21 @@
         advConfirmBtn.textContent = this.dataset.nextStatus;
         var rect = this.getBoundingClientRect();
         document.body.appendChild(advPopup);
-        advPopup.style.display = "block";
+        advPopup.classList.remove("d-none");
         advPopup.style.top = (window.scrollY + rect.bottom + 4) + "px";
         advPopup.style.left = (window.scrollX + rect.left) + "px";
       });
     });
 
     document.getElementById("tm-advance-cancel").addEventListener("click", function () {
-      advPopup.style.display = "none";
+      advPopup.classList.add("d-none");
       _advEventId = null;
     });
 
     document.getElementById("tm-advance-confirm").addEventListener("click", function () {
       if (!_advEventId) return;
       var eventId = _advEventId;
-      advPopup.style.display = "none";
+      advPopup.classList.add("d-none");
       _advEventId = null;
       csrfFetch("/master-events/" + ME_ID + "/table/event/" + eventId + "/update", {
         method: "POST",
@@ -614,8 +628,8 @@
     });
 
     document.addEventListener("click", function (e) {
-      if (advPopup.style.display !== "none" && !advPopup.contains(e.target) && !e.target.closest(".tm-advance-btn")) {
-        advPopup.style.display = "none";
+      if (!advPopup.classList.contains("d-none") && !advPopup.contains(e.target) && !e.target.closest(".tm-advance-btn")) {
+        advPopup.classList.add("d-none");
         _advEventId = null;
       }
     });
@@ -628,6 +642,7 @@
   function applyEventColor(eventId, color) {
     document.querySelectorAll('tr[data-event-id="' + eventId + '"] td.tm-row-cell').forEach(function (td) {
       td.style.backgroundColor = color || "";
+      td.classList.toggle("tm-cell-colored", !!color);
     });
     if (_colorEventId === eventId) {
       document.querySelectorAll(".tm-color-swatch").forEach(function (s) {
@@ -665,7 +680,7 @@
       }
       var rect = this.getBoundingClientRect();
       document.body.appendChild(colorPopup);
-      colorPopup.style.display = "block";
+      colorPopup.classList.remove("d-none");
       colorPopup.style.top = (window.scrollY + rect.bottom + 4) + "px";
       colorPopup.style.left = (window.scrollX + rect.left) + "px";
     });
@@ -678,7 +693,7 @@
       applyEventColor(_colorEventId, color);
       saveEventColor(_colorEventId, color);
       flashRows(_colorEventId);
-      colorPopup.style.display = "none";
+      colorPopup.classList.add("d-none");
       _colorEventId = null;
     });
   });
@@ -688,13 +703,13 @@
     applyEventColor(_colorEventId, "");
     saveEventColor(_colorEventId, "");
     flashRows(_colorEventId);
-    colorPopup.style.display = "none";
+    colorPopup.classList.add("d-none");
     _colorEventId = null;
   });
 
   document.addEventListener("click", function (e) {
-    if (colorPopup.style.display !== "none" && !colorPopup.contains(e.target) && !e.target.classList.contains("tm-color-btn")) {
-      colorPopup.style.display = "none";
+    if (!colorPopup.classList.contains("d-none") && !colorPopup.contains(e.target) && !e.target.classList.contains("tm-color-btn")) {
+      colorPopup.classList.add("d-none");
       _colorEventId = null;
     }
   });

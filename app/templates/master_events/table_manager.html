@@ -2,11 +2,11 @@
 {% block title %}Tabulkový manažer — {{ me.name }} — MedCover{% endblock %}
 
 {% block extra_head %}
-<style>
-  /* Fixed cols (~900px) + 160px per spot column, clamped between Bootstrap default and 95vw */
+{# Only the container-width value is dynamic (depends on max_spot_cols).
+   Static rules live in main.css. Nonced so it satisfies style-src. #}
+<style nonce="{{ g.csp_nonce }}">
+  /* Fixed cols (~900px) + 180px per spot column, clamped between Bootstrap default and 95vw */
   main.container { max-width: clamp(1140px, {{ 900 + max_spot_cols * 180 }}px, 95vw); }
-  .tm-color-swatch:hover { border-color: var(--color-tm-swatch-border) !important; transform: scale(1.15); }
-  .tm-color-swatch.active { border-color: var(--color-primary) !important; }
 </style>
 {% endblock %}
 
@@ -123,7 +123,7 @@
             data-event-id="{{ event.id }}"
             data-field="start_datetime"
             data-value="{{ event.start_datetime | localdt('%Y-%m-%dT%H:%M') }}"
-            {% if ec %}style="background-color:{{ ec }}"{% endif %}>
+            {% if ec %}data-tm-bg="{{ ec }}"{% endif %}>
           {% if can_edit_event %}
           <div class="d-flex align-items-center justify-content-center gap-1">
             <button class="btn btn-outline-secondary btn-sm py-1 px-1 lh-1 tm-day-shift-btn tm-sm-btn" data-event-id="{{ event.id }}" data-delta="-1" title="−1 den">−</button>
@@ -134,7 +134,7 @@
           {{ event.start_datetime | localdt('%d.%m.') }} {{ event.start_datetime | czechday }}
           {% endif %}
         </td>
-        <td class="small tm-row-cell"{% if ec %} style="background-color:{{ ec }}"{% endif %}>
+        <td class="small tm-row-cell"{% if ec %} data-tm-bg="{{ ec }}"{% endif %}>
           <a href="{{ url_for('events.detail', event_id=event.id) }}" class="tm-event-name-display" data-event-id="{{ event.id }}">
             {{ event.name }}
           </a>
@@ -145,11 +145,11 @@
                   title="Upravit název" class="tm-edit-name">✎</button>
           {% endif %}
         </td>
-        <td class="small tm-row-cell"{% if ec %} style="background-color:{{ ec }}"{% endif %}>
+        <td class="small tm-row-cell"{% if ec %} data-tm-bg="{{ ec }}"{% endif %}>
           {% for q in row.qual_objs %}
-            <span class="badge text-dark" style="background-color: {{ row.color }}">{{ q.name }}</span>
+            <span class="badge text-dark tm-qual-badge" data-tm-bg="{{ row.color }}">{{ q.name }}</span>
           {% else %}
-            <span class="badge text-dark" style="background-color: {{ row.color }}">—</span>
+            <span class="badge text-dark tm-qual-badge" data-tm-bg="{{ row.color }}">—</span>
           {% endfor %}
         </td>
 
@@ -158,7 +158,7 @@
             data-event-id="{{ event.id }}"
             data-field="start_datetime"
             data-value="{{ event.start_datetime | localdt('%Y-%m-%dT%H:%M') }}"
-            {% if ec %}style="background-color:{{ ec }}" {% endif %}>
+            {% if ec %}data-tm-bg="{{ ec }}"{% endif %}>
           {% if can_edit_event %}
           <div class="d-flex align-items-center justify-content-center gap-1">
             <button class="btn btn-outline-secondary btn-sm py-1 px-1 lh-1 tm-hour-shift-btn" data-event-id="{{ event.id }}" data-which="start" data-delta="-1" title="−1 hod" class="tm-sm-btn">−</button>
@@ -175,7 +175,7 @@
             data-event-id="{{ event.id }}"
             data-field="end_datetime"
             data-value="{{ event.end_datetime | localdt('%Y-%m-%dT%H:%M') }}"
-            {% if ec %}style="background-color:{{ ec }}" {% endif %}>
+            {% if ec %}data-tm-bg="{{ ec }}"{% endif %}>
           {% if can_edit_event %}
           <div class="d-flex align-items-center justify-content-center gap-1">
             <button class="btn btn-outline-secondary btn-sm py-1 px-1 lh-1 tm-hour-shift-btn" data-event-id="{{ event.id }}" data-which="end" data-delta="-1" title="−1 hod" class="tm-sm-btn">−</button>
@@ -188,7 +188,7 @@
         </td>
 
         {# ── Hod. ── #}
-        <td class="text-nowrap small tm-hours-cell tm-row-cell" data-event-id="{{ event.id }}"{% if ec %} style="background-color:{{ ec }}"{% endif %}>
+        <td class="text-nowrap small tm-hours-cell tm-row-cell" data-event-id="{{ event.id }}"{% if ec %} data-tm-bg="{{ ec }}"{% endif %}>
           {{ event.scheduled_hours | cznum }}
         </td>
 
@@ -197,7 +197,7 @@
             data-event-id="{{ event.id }}"
             data-qual-ids-json="{{ row.qual_ids | list | tojson }}"
             data-count="{{ row.spots | length }}"
-            {% if ec %}style="background-color:{{ ec }}"{% endif %}>
+            {% if ec %}data-tm-bg="{{ ec }}"{% endif %}>
           {% if can_edit_event %}
           <div class="d-flex align-items-center justify-content-center gap-1">
             <button class="btn btn-outline-secondary btn-sm tm-spots-minus py-1 px-1 lh-1"
@@ -219,7 +219,7 @@
 
         {# ── Spot cells ── #}
         {% for spot in row.spots %}
-        <td class="tm-spot-cell tm-spot-data-col text-nowrap small" data-spot-id="{{ spot.id }}" style="background-color: {{ row.color }}">
+        <td class="tm-spot-cell tm-spot-data-col text-nowrap small" data-spot-id="{{ spot.id }}" data-tm-bg="{{ row.color }}">
           {% if spot.assignment %}
             <span class="tm-assigned-name">{{ spot.assignment.user.name }}</span>
             {% if row.can_manage %}
@@ -243,7 +243,7 @@
 
         {# ── Empty padding cells ── #}
         {% for _ in range(max_spot_cols - (row.spots | length)) %}
-        <td class="tm-spot-data-col" style="background-color: {{ row.color }}"></td>
+        <td class="tm-spot-data-col" data-tm-bg="{{ row.color }}"></td>
         {% endfor %}
       </tr>
       {% endfor %}
@@ -253,24 +253,24 @@
 <p class="text-muted small d-none" id="tm-filter-empty-msg">Žádné akce neodpovídají aktivním filtrům.</p>
 
 {# ── Inline time-edit popover (shared, moved into DOM as needed) ── #}
-<div id="tm-time-edit-popup" class="card shadow-sm p-2 tm-popup tm-popup-time" style="display:none">
+<div id="tm-time-edit-popup" class="card shadow-sm p-2 tm-popup tm-popup-time d-none">
   <div class="d-flex align-items-center gap-2 flex-wrap">
     <input type="date" id="tm-time-date-input" class="form-control form-control-sm tm-date-input">
-    <input type="text" id="tm-time-time-input" class="form-control form-control-sm font-monospace"
-           placeholder="HH:MM" maxlength="5" pattern="\d{2}:\d{2}" class="tm-time-input">
+    <input type="text" id="tm-time-time-input" class="form-control form-control-sm font-monospace tm-time-input"
+           placeholder="HH:MM" maxlength="5" pattern="\d{2}:\d{2}">
     <button id="tm-time-save" class="btn btn-success btn-sm">Uložit</button>
     <button id="tm-time-cancel" class="btn btn-outline-secondary btn-sm">Zrušit</button>
   </div>
-  <div id="tm-time-error" class="text-danger small mt-1 tm-error-msg" style="display:none"></div>
+  <div id="tm-time-error" class="text-danger small mt-1 tm-error-msg d-none"></div>
 </div>
 
 {# ── Color picker popover ── #}
-<div id="tm-color-popup" class="tm-popup tm-popup-color" style="display:none">
+<div id="tm-color-popup" class="tm-popup tm-popup-color d-none">
   <div class="tm-color-grid">
     {% set _palette = ['#FFCCCC','#FFE0B2','#FFF9C4','#C8F5C8','#B2EBF2','#BBDEFB','#E1BEE7','#F8BBD0','#F5F5F5'] %}
     {% for c in _palette %}
     <div class="tm-color-swatch" data-color="{{ c }}"
-         style="background:{{ c }}"
+         data-tm-bg="{{ c }}"
          title="{{ c }}"></div>
     {% endfor %}
   </div>
@@ -278,7 +278,7 @@
 </div>
 
 {# ── Advance-status confirmation popup ── #}
-<div id="tm-advance-popup" class="card shadow-sm p-2 tm-popup tm-popup-advance" style="display:none">
+<div id="tm-advance-popup" class="card shadow-sm p-2 tm-popup tm-popup-advance d-none">
   <div class="small mb-2">Posunout <strong id="tm-advance-event-name"></strong> do stavu <strong id="tm-advance-next-status" class="text-success"></strong>?</div>
   <div class="d-flex gap-2">
     <button id="tm-advance-confirm" class="btn btn-success btn-sm"></button>
@@ -287,51 +287,24 @@
 </div>
 
 {# ── Inline name-edit popover ── #}
-<div id="tm-name-edit-popup" class="card shadow-sm p-2 tm-popup tm-popup-name" style="display:none">
+<div id="tm-name-edit-popup" class="card shadow-sm p-2 tm-popup tm-popup-name d-none">
   <div class="d-flex align-items-center gap-2">
     <input type="text" id="tm-name-input" class="form-control form-control-sm tm-name-input" maxlength="200">
     <button id="tm-name-save" class="btn btn-success btn-sm">Uložit</button>
     <button id="tm-name-cancel" class="btn btn-outline-secondary btn-sm">Zrušit</button>
   </div>
-  <div id="tm-name-error" class="text-danger small mt-1 tm-error-msg" style="display:none"></div>
+  <div id="tm-name-error" class="text-danger small mt-1 tm-error-msg d-none"></div>
 </div>
 
 {# ── Inline spots-count error toast ── #}
-<div id="tm-spots-error-toast" class="alert alert-danger alert-dismissible position-fixed bottom-0 end-0 m-3 tm-error-toast" style="display:none">
+<div id="tm-spots-error-toast" class="alert alert-danger alert-dismissible position-fixed bottom-0 end-0 m-3 tm-error-toast d-none">
   <span id="tm-spots-error-msg"></span>
   <button type="button" class="btn-close" id="tm-spots-error-close"></button>
 </div>
 
 {% endif %}
 
-<style>
-.tm-table th, .tm-table td { vertical-align: middle; }
-.tm-time-cell .tm-time-display:hover { color: var(--color-primary) !important; }
-.tm-time-cell { cursor: default; }
-.tm-sep-event td { border-top: 2px solid var(--color-tm-event-separator) !important; }
-.tm-sep-day td { border-top: 3px solid var(--color-tm-day-separator) !important; }
-
-/* Theme-aware "dark/completed" filter button — matches events/index */
-.filter-btn-neutral {
-  --bs-btn-color: var(--bs-body-color);
-  --bs-btn-border-color: var(--bs-secondary-color);
-  --bs-btn-hover-color: var(--bs-body-bg);
-  --bs-btn-hover-bg: var(--bs-body-color);
-  --bs-btn-hover-border-color: var(--bs-body-color);
-  --bs-btn-active-color: var(--bs-body-bg);
-  --bs-btn-active-bg: var(--bs-body-color);
-  --bs-btn-active-border-color: var(--bs-body-color);
-}
-
-@keyframes tm-flash-kf {
-  0%   { outline: 3px solid var(--color-column-flash); outline-offset: -2px; }
-  60%  { outline: 3px solid var(--color-column-flash); outline-offset: -2px; }
-  100% { outline: 3px solid transparent; outline-offset: -2px; }
-}
-.tm-row-flash { animation: tm-flash-kf 1.4s ease-out forwards; }
-</style>
-
-<div id="tm-config" style="display:none"
+<div id="tm-config" class="d-none"
      data-me-id="{{ me.id }}"
      data-can-assign="{{ '1' if can_assign else '0' }}"
      data-can-edit-event="{{ '1' if can_edit_event else '0' }}"

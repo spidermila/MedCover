@@ -269,8 +269,15 @@
 .maxw-5p5r { max-width: 5.5rem; }
 .maxw-9r   { max-width:   9rem; }
 .maxw-14r  { max-width:  14rem; }
+.maxw-18r  { max-width:  18rem; }
 .maxw-22r  { max-width:  22rem; }
 .maxw-30r  { max-width:  30rem; }
+
+/* Line-height utilities */
+.lh-2 { line-height: 2; }
+
+/* Signature preview thumbnail (users/profile.html) */
+.signature-preview { max-height: 100px; max-width: 100%; }
 
 /* Batch toolbar — flex layout when shown; d-none class overrides this */
 #batchToolbar { display: flex; }
@@ -281,17 +288,19 @@
 /* ── Table Manager — dark-mode colour compatibility ─────────────────────────
    Spot cells always carry a pastel qual-colour background; row cells may carry
    a user-picked event colour.  Both are light pastels → force dark text so the
-   content stays readable regardless of the active Bootstrap theme.            */
-[data-bs-theme="dark"] .tm-spot-cell,
-[data-bs-theme="dark"] .tm-row-cell[style*="background"] {
+   content stays readable regardless of the active Bootstrap theme. Detection
+   uses the .tm-cell-colored marker added by table-manager.js when applying a
+   background from data-tm-bg. */
+[data-bs-theme="dark"] .tm-spot-cell.tm-cell-colored,
+[data-bs-theme="dark"] .tm-row-cell.tm-cell-colored {
   color: var(--color-tm-darkmode-colored-parent-element) !important;
 }
 /* Also ensure child links / buttons are readable on coloured cells */
-[data-bs-theme="dark"] .tm-row-cell[style*="background"] a,
-[data-bs-theme="dark"] .tm-row-cell[style*="background"] .btn-link {
+[data-bs-theme="dark"] .tm-row-cell.tm-cell-colored a,
+[data-bs-theme="dark"] .tm-row-cell.tm-cell-colored .btn-link {
   color: var(--color-tm-darkmode-colored-parent-element) !important;
 }
-[data-bs-theme="dark"] .tm-row-cell[style*="background"] .tm-edit-icon {
+[data-bs-theme="dark"] .tm-row-cell.tm-cell-colored .tm-edit-icon {
   color: var(--color-tm-darkmode-colored-parent-edit-icon) !important;
 }
 
@@ -339,6 +348,57 @@
 .notif-test-btn     { font-size: 0.7rem; }
 .notif-code         { font-size: 0.75rem; }
 .notif-template     { font-size: 0.72rem; }
+
+/* ── Events index (list view) ─────────────────────────────────────────────── */
+.sort-icon { font-size: .75em; }
+
+/* Theme-aware "dark/completed" filter button — shared by events/index and
+   master_events/table_manager. */
+.filter-btn-neutral {
+  --bs-btn-color: var(--bs-body-color);
+  --bs-btn-border-color: var(--bs-secondary-color);
+  --bs-btn-hover-color: var(--bs-body-bg);
+  --bs-btn-hover-bg: var(--bs-body-color);
+  --bs-btn-hover-border-color: var(--bs-body-color);
+  --bs-btn-active-color: var(--bs-body-bg);
+  --bs-btn-active-bg: var(--bs-body-color);
+  --bs-btn-active-border-color: var(--bs-body-color);
+}
+
+/* Cancelled events on the calendar view — greyed out, title struck through */
+.fc-event-cancelled { opacity: 0.55; }
+.fc-event-cancelled .fc-list-event-title a,
+.fc-event-cancelled .fc-event-title { text-decoration: line-through; color: #6c757d; }
+
+/* ── Import preview page ──────────────────────────────────────────────────── */
+.import-table th, .import-table td { vertical-align: middle; }
+.import-table input[type="text"], .import-table select { font-size: .85rem; }
+.warn-badge { font-size: .75rem; }
+.row-excluded { opacity: .45; }
+.import-scroll { overflow-x: auto; } /* keeps table scrollable on small screens */
+
+/* ── Table Manager ───────────────────────────────────────────────────────────────────── */
+/* Cells that carry an event/qual pastel colour — the concrete
+   background-color is applied by table-manager.js from data-tm-bg attributes,
+   because dynamic colour values cannot live in inline style attributes under
+   a nonce-only CSP. The .tm-cell-colored marker (also added by JS) is used
+   below for dark-mode text-contrast overrides. */
+
+.tm-color-swatch:hover { border-color: var(--color-tm-swatch-border) !important; transform: scale(1.15); }
+.tm-color-swatch.active { border-color: var(--color-primary) !important; }
+
+.tm-table th, .tm-table td { vertical-align: middle; }
+.tm-time-cell .tm-time-display:hover { color: var(--color-primary) !important; }
+.tm-time-cell { cursor: default; }
+.tm-sep-event td { border-top: 2px solid var(--color-tm-event-separator) !important; }
+.tm-sep-day td { border-top: 3px solid var(--color-tm-day-separator) !important; }
+
+@keyframes tm-flash-kf {
+  0%   { outline: 3px solid var(--color-column-flash); outline-offset: -2px; }
+  60%  { outline: 3px solid var(--color-column-flash); outline-offset: -2px; }
+  100% { outline: 3px solid transparent; outline-offset: -2px; }
+}
+.tm-row-flash { animation: tm-flash-kf 1.4s ease-out forwards; }
 
 /* ── Custom toggle switches ───────────────────────────────────────────────── */
 :root {
