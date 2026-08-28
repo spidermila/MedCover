@@ -17,10 +17,15 @@
           <input type="hidden" name="action" value="profile">
           <div class="row g-3">
             <div class="col-12 col-md-6">
+            {% set can_edit_name = current_user.has_permission('user.edit_name') %}
             <label for="name" class="form-label">Celé jméno <small class="text-muted fw-normal">(Příjmení Jméno)</small>
-              {{ help_icon("Zadejte nejdříve příjmení, pak jméno — např. Novák Jan. Zobrazuje se ve všech přehledech a výkazech.") }}
+              {% if can_edit_name %}
+                {{ help_icon("Zadejte nejdříve příjmení, pak jméno — např. Novák Jan. Zobrazuje se ve všech přehledech a výkazech.") }}
+              {% else %}
+                {{ help_icon("Nelze změnit — kontaktujte administrátora.") }}
+              {% endif %}
             </label>
-              <input type="text" class="form-control" id="name" name="name" value="{{ user.name }}" placeholder="Novák Jan" required>
+              <input type="text" class="form-control" id="name" {% if can_edit_name %}name="name"{% endif %} value="{{ user.name }}" placeholder="Novák Jan" {% if not can_edit_name %}disabled{% endif %} required>
             </div>
             <div class="col-12 col-md-6">
               <label for="email" class="form-label">E-mail

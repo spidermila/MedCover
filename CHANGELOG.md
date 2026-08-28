@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Členové (role Member) již nemohou měnit své jméno v profilu — pole je jen ke čtení a označeno nápovědou „Nelze změnit — kontaktujte administrátora.“ Úpravy jména jsou vyhrazeny administrátorům a koordinátorům (nové oprávnění `user.edit_name`). Telefon zůstává upravitelný všemi. (#457)
+
 ## [0.19.1] - 2026-08-26
 
 ### Fixed
