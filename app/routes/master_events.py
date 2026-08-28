@@ -30,7 +30,11 @@ from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
-from app.queries import active_users_list, user_conflicts_across_events
+from app.queries import (
+    active_users_list,
+    serialize_conflicts_for_template,
+    user_conflicts_across_events,
+)
 from app.utils import (
     CS_COLLATION,
     audit,
@@ -433,18 +437,9 @@ def table_manager(me_id: int) -> str:
         raw = user_conflicts_across_events(list(events), restrict_to_user_ids=eligible_union)
         for event_id, per_user in raw.items():
             event_conflicts[event_id] = set(per_user.keys())
-            event_conflict_details[event_id] = {
-                str(uid): [
-                    {
-                        "name": c["name"],
-                        "url": url_for("events.detail", event_id=c["id"]),
-                        "start": c["start_datetime"].isoformat(),
-                        "end": c["end_datetime"].isoformat(),
-                    }
-                    for c in conflicts
-                ]
-                for uid, conflicts in per_user.items()
-            }
+            event_conflict_details[event_id] = serialize_conflicts_for_template(
+                per_user, lambda eid: url_for("events.detail", event_id=eid)
+            )
 
     # Annotate each row with can_manage flag and assigned_user_ids
     for row in rows:

@@ -5,7 +5,7 @@ multiple route modules.  Keeping them here makes it easier to reason about
 performance (eager-load shapes, ordering) and to apply changes in one place.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -258,6 +258,29 @@ def conflicting_events_for_users(
             }
         )
     return result
+
+
+def serialize_conflicts_for_template(
+    conflicts_by_user: dict[UUID, list[dict]],
+    event_url_for: Callable[[int], str],
+) -> dict[str, list[dict]]:
+    """Shape :func:`conflicting_events_for_users` / :func:`user_conflicts_across_events`
+    output for the picker templates: stringified user IDs (matching Jinja's ``|string``
+    key lookup) mapping to JSON-serialisable conflict dicts with ISO timestamps and a
+    resolved detail URL.
+    """
+    return {
+        str(uid): [
+            {
+                "name": c["name"],
+                "url": event_url_for(c["id"]),
+                "start": c["start_datetime"].isoformat(),
+                "end": c["end_datetime"].isoformat(),
+            }
+            for c in conflicts
+        ]
+        for uid, conflicts in conflicts_by_user.items()
+    }
 
 
 def user_conflicts_across_events(
