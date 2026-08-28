@@ -769,7 +769,11 @@ class TestTableManagerConflictDetection:
 
         assert resp.status_code == 200
         # user_conflicts_across_events should run exactly one such query for the whole page.
-        assert len(assignment_selects) <= 1, f"Expected ≤1 batched assignment→event join; got {len(assignment_selects)}"
+        # Strict equality guards against both fan-out regressions and the batching call being
+        # silently removed (which would otherwise let a ≤1 assertion pass with zero queries).
+        assert (
+            len(assignment_selects) == 1
+        ), f"Expected exactly 1 batched assignment→event join; got {len(assignment_selects)}"
 
 
 class TestTableEventClone:

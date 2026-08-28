@@ -2,6 +2,7 @@
 
 import io
 from datetime import datetime, timezone
+from uuid import UUID
 
 import sqlalchemy as sa
 from flask import Response, abort, flash, jsonify, make_response, redirect, render_template, request, url_for
@@ -29,8 +30,8 @@ from app.queries import (
     conflicting_events_for_users,
     in_maintenance_during,
     rp_eligible_users_list,
+    serialize_conflicts_for_template,
     user_fillable_qual_ids,
-    user_ids_with_conflicting_assignments,
 )
 from app.utils import (
     CS_COLLATION,
@@ -497,36 +498,20 @@ def detail(event_id: int) -> str | Response:
     assigned_user_ids: set[int] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
 
     # Users assigned to another (non-cancelled/non-completed/non-archived) event
-    # overlapping this one. Restricted to eligible users at the DB level.
-    conflicted_user_ids: set = set()
-    user_conflict_details: dict = {}
+    # overlapping this one. Restricted to eligible users at the DB level; one query.
+    conflicted_user_ids: set[UUID] = set()
+    user_conflict_details: dict[str, list[dict]] = {}
     if can_assign and eligible_users:
-        eligible_ids = {u.id for u in eligible_users}
-        conflicted_user_ids = user_ids_with_conflicting_assignments(
+        details = conflicting_events_for_users(
+            [u.id for u in eligible_users],
             event.start_datetime,
             event.end_datetime,
             exclude_event_id=event.id,
-            restrict_to_user_ids=eligible_ids,
         )
-        if conflicted_user_ids:
-            details = conflicting_events_for_users(
-                conflicted_user_ids,
-                event.start_datetime,
-                event.end_datetime,
-                exclude_event_id=event.id,
-            )
-            user_conflict_details = {
-                str(uid): [
-                    {
-                        "name": c["name"],
-                        "url": url_for("events.detail", event_id=c["id"]),
-                        "start": c["start_datetime"].isoformat(),
-                        "end": c["end_datetime"].isoformat(),
-                    }
-                    for c in conflicts
-                ]
-                for uid, conflicts in details.items()
-            }
+        conflicted_user_ids = set(details.keys())
+        user_conflict_details = serialize_conflicts_for_template(
+            details, lambda eid: url_for("events.detail", event_id=eid)
+        )
 
     # When ME has a coordinator, self-claim/release is blocked for regular members
     me_coordinated = (
