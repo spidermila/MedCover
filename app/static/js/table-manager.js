@@ -26,17 +26,25 @@
   // ── Apply pastel background colours from data-tm-bg attributes ──────────────
   // These used to live in template inline style="background-color: …" but
   // moved to JS so we can drop 'unsafe-inline' from CSP style-src. Element
-  // .style property setters are not covered by style-src.
+  // .style property setters are not covered by style-src. The .tm-cell-colored
+  // marker is added unconditionally so the dark-mode overrides in main.css
+  // (which target .tm-row-cell.tm-cell-colored and .tm-spot-cell.tm-cell-colored)
+  // apply correctly; the CSS selector already scopes the effect to the two
+  // cell classes so there is no need to gate the class assignment here.
   function applyTmBg(el) {
     var color = el.dataset.tmBg;
     if (!color) return;
     el.style.backgroundColor = color;
-    // Marker for dark-mode contrast overrides in main.css.
-    if (el.classList.contains("tm-row-cell") || el.classList.contains("tm-spot-cell")) {
-      el.classList.add("tm-cell-colored");
-    }
+    el.classList.add("tm-cell-colored");
   }
-  document.querySelectorAll("[data-tm-bg]").forEach(applyTmBg);
+  function applyAllTmBg() {
+    document.querySelectorAll("[data-tm-bg]").forEach(applyTmBg);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", applyAllTmBg);
+  } else {
+    applyAllTmBg();
+  }
 
   var canAssign          = cfg.dataset.canAssign === "1";
   var canEditEvent       = cfg.dataset.canEditEvent === "1";
@@ -640,6 +648,9 @@
   var _colorEventId = null;
 
   function applyEventColor(eventId, color) {
+    // Symmetric with applyTmBg (add-only on load) — here we must both
+    // set/clear the inline background AND toggle the marker class, because
+    // the user can reset a colour to empty via the picker.
     document.querySelectorAll('tr[data-event-id="' + eventId + '"] td.tm-row-cell').forEach(function (td) {
       td.style.backgroundColor = color || "";
       td.classList.toggle("tm-cell-colored", !!color);
