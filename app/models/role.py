@@ -42,6 +42,7 @@ ALL_PERMISSIONS: list[dict] = [
     {"code": "user.create", "description": "Create a new user account manually"},
     {"code": "user.edit_own", "description": "Edit own profile"},
     {"code": "user.edit_any", "description": "Edit any user's profile"},
+    {"code": "user.edit_name", "description": "Change one's own displayed name"},
     {"code": "user.activate", "description": "Activate a user account"},
     {"code": "user.deactivate", "description": "Deactivate a user account"},
     {"code": "user.archive", "description": "Archive a user account (hides from all lists; also deactivates)"},
@@ -134,6 +135,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     Role.COORDINATOR: [
         "user.view",
         "user.edit_own",
+        "user.edit_name",
         "qualification.view",
         "master_event.view",
         "master_event.create",

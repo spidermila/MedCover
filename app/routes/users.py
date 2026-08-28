@@ -123,15 +123,16 @@ def _update_profile(user: UserAccount) -> Response:
         "dashboard_horizon_days": user.dashboard_horizon_days,
         "dark_mode": user.dark_mode,
     }
-    name = request.form.get("name", "").strip()
-    if not name:
-        flash("Jméno nesmí být prázdné.", "danger")
-        return redirect(url_for("users.profile"))
+    if current_user.has_permission("user.edit_name"):
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Jméno nesmí být prázdné.", "danger")
+            return redirect(url_for("users.profile"))
+        user.name = name
     phone_raw = request.form.get("phone", "").strip()
     if not _validate_phone(phone_raw):
         flash("Neplatný formát telefonního čísla.", "danger")
         return redirect(url_for("users.profile"))
-    user.name = name
     user.phone = phone_raw or None
     cv = request.form.get("preferred_calendar_view", CalendarView.LIST.value)
     try:

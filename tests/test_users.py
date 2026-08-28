@@ -30,8 +30,8 @@ class TestUserProfile:
         assert resp.status_code == 302
         assert "/auth/login" in resp.headers["Location"]
 
-    def test_update_profile_name(self, app: object, member_client: object) -> None:
-        resp = member_client.post(
+    def test_coordinator_can_update_own_name(self, app: object, coordinator_client: object) -> None:
+        resp = coordinator_client.post(
             "/users/profile",
             data={"action": "profile", "name": "Nové Jméno", "dashboard_horizon_days": "30"},
             follow_redirects=True,
@@ -39,17 +39,84 @@ class TestUserProfile:
         assert resp.status_code == 200
         assert "Profil byl uložen".encode() in resp.data
         with app.app_context():
-            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "coordinator@test.com"))
             assert user is not None
             assert user.name == "Nové Jméno"
 
-    def test_update_profile_empty_name_rejected(self, member_client: object) -> None:
-        resp = member_client.post(
+    def test_coordinator_empty_name_rejected(self, coordinator_client: object) -> None:
+        resp = coordinator_client.post(
             "/users/profile",
             data={"action": "profile", "name": "", "dashboard_horizon_days": "30"},
             follow_redirects=True,
         )
         assert "Jméno nesmí být prázdné".encode() in resp.data
+
+    def test_member_cannot_change_own_name(self, app: object, member_client: object) -> None:
+        """Members lack user.edit_name; a POSTed name field must be silently ignored (#457)."""
+        resp = member_client.post(
+            "/users/profile",
+            data={"action": "profile", "name": "Hacker Name", "dashboard_horizon_days": "30"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Profil byl uložen".encode() in resp.data
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            assert user.name == "Test Member"
+
+    def test_member_empty_name_not_rejected(self, app: object, member_client: object) -> None:
+        """Empty name from Member is ignored, not treated as an error (#457)."""
+        resp = member_client.post(
+            "/users/profile",
+            data={"action": "profile", "name": "", "phone": "123456789", "dashboard_horizon_days": "30"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Profil byl uložen".encode() in resp.data
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            assert user.name == "Test Member"
+            assert user.phone == "123456789"
+
+    def test_member_can_still_change_phone(self, app: object, member_client: object) -> None:
+        """Phone remains editable by Members (#457)."""
+        resp = member_client.post(
+            "/users/profile",
+            data={"action": "profile", "phone": "+420123456789", "dashboard_horizon_days": "30"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            assert user.phone == "+420123456789"
+            assert user.name == "Test Member"
+
+    def test_profile_page_name_input_disabled_for_member(self, member_client: object) -> None:
+        """Template renders the name input as disabled and without a name attribute for Members (#457)."""
+        resp = member_client.get("/users/profile")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # Locate the name input tag.
+        start = html.find('id="name"')
+        assert start != -1
+        tag_end = html.find(">", start)
+        tag = html[html.rfind("<", 0, start) : tag_end + 1]
+        assert "disabled" in tag
+        assert 'name="name"' not in tag
+
+    def test_profile_page_name_input_enabled_for_coordinator(self, coordinator_client: object) -> None:
+        resp = coordinator_client.get("/users/profile")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        start = html.find('id="name"')
+        assert start != -1
+        tag_end = html.find(">", start)
+        tag = html[html.rfind("<", 0, start) : tag_end + 1]
+        assert "disabled" not in tag
+        assert 'name="name"' in tag
 
     def test_dark_mode_toggle(self, app: object, member_client: object) -> None:
         resp = member_client.post(
