@@ -86,8 +86,7 @@
           <div class="mb-3">
             <img src="{{ url_for('users.signature_preview') }}?v={{ user.version }}"
                  alt="Uložený podpis"
-                 class="border rounded bg-white p-2"
-                 style="max-height: 100px; max-width: 100%;">
+                 class="border rounded bg-white p-2 signature-preview">
           </div>
           <form method="POST" class="d-inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

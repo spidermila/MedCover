@@ -128,9 +128,7 @@
         info.el.setAttribute("title",
           title + "\n" + p.start_local + " – " + p.end_local + spotsLine + rpLine + "\nStav: " + p.status);
         if (cancelled) {
-          info.el.style.opacity = "0.55";
-          var titleEl = info.el.querySelector(".fc-list-event-title a") || info.el.querySelector(".fc-event-title");
-          if (titleEl) { titleEl.style.textDecoration = "line-through"; titleEl.style.color = "#6c757d"; }
+          info.el.classList.add("fc-event-cancelled");
         }
       },
       height: "auto"

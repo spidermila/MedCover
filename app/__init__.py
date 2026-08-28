@@ -217,7 +217,7 @@ def create_app(
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 f"script-src 'self' https://cdn.jsdelivr.net 'nonce-{nonce}'; "
-                "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+                f"style-src 'self' https://cdn.jsdelivr.net 'nonce-{nonce}'; "
                 "font-src 'self' https://cdn.jsdelivr.net data:; "
                 "img-src 'self' data:; "
                 "connect-src 'self' https://cdn.jsdelivr.net;"

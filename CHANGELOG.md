@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Členové (role Member) již nemohou měnit své jméno v profilu — pole je jen ke čtení a označeno nápovědou „Nelze změnit — kontaktujte administrátora.“ Úpravy jména jsou vyhrazeny administrátorům a koordinátorům (nové oprávnění `user.edit_name`). Telefon zůstává upravitelný všemi. (#457)
 
+### Security
+- Content Security Policy `style-src` no longer allows `'unsafe-inline'`. Inline styles now require the same per-request nonce already used for `script-src`, closing the last vector for CSS-based UI-redressing attacks and inline-style injection. FullCalendar and Flatpickr continue to work unchanged — the former reads the nonce from the new `<meta name="csp-nonce">` tag in `base.html`, the latter is covered by a small `document.createElement` shim that nonces any `<style>` element created at runtime. (#234)
+
 ## [0.19.1] - 2026-08-26
 
 ### Fixed

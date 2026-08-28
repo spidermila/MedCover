@@ -903,20 +903,32 @@ if the data is disposable**, drop the DB volume so the baseline applies fresh.
 
 ### Content Security Policy (CSP)
 
-The app sets a CSP header in all non-dev environments via `@app.after_request` in `app/__init__.py`:
+The app sets a CSP header in all non-dev environments via `@app.after_request` in `app/__init__.py`. Both `script-src` and `style-src` use a per-request nonce; neither allows `'unsafe-inline'`.
 
 ```
 default-src 'self';
-script-src  'self' https://cdn.jsdelivr.net;
-style-src   'self' https://cdn.jsdelivr.net 'unsafe-inline';
-font-src    'self' https://cdn.jsdelivr.net;
+script-src  'self' https://cdn.jsdelivr.net 'nonce-<PER_REQUEST>';
+style-src   'self' https://cdn.jsdelivr.net 'nonce-<PER_REQUEST>';
+font-src    'self' https://cdn.jsdelivr.net data:;
 img-src     'self' data:;
 connect-src 'self' https://cdn.jsdelivr.net;
 ```
 
-**Why `style-src` includes `'unsafe-inline'`:** FullCalendar v6 injects inline styles at runtime to render its calendar grid. There is no practical workaround without abandoning FullCalendar or adding per-request nonces. CSS `'unsafe-inline'` does not enable script execution, so the security impact is limited.
+The nonce is 16 random hex bytes generated in `before_request` and exposed to templates as `g.csp_nonce`. It changes on every request.
 
-**Why `script-src` does NOT include `'unsafe-inline'`:** All JS is in external files. There are no `onclick`/`onchange`/`onsubmit` attributes in any template — inline handlers were removed in PR #93 and kept clean thereafter. This is the more important constraint to maintain.
+**Every inline `<script>` and `<style>` block in a browser-facing template must carry `nonce="{{ g.csp_nonce }}"`.** Without the nonce the block is blocked silently by the browser. The regression is guarded by `tests/test_csp_headers.py`, which walks every non-email template and fails on any inline `style="…"` attribute or unnonced `<style>` block.
+
+**Inline `style="…"` attributes are forbidden entirely** in browser templates. Nonces do not apply to attribute-scoped styles (a browser-level limitation; `style-src-attr` has poor Safari support), so any styling that would previously have used an inline attribute must:
+
+- move to a class in `app/static/css/main.css` (add a utility if none fits), or
+- be applied at runtime from a `data-*` attribute via a JS property setter (e.g. `el.style.backgroundColor = el.dataset.tmBg`). JS property setters are not covered by `style-src` and remain CSP-safe. See `app/static/js/table-manager.js` (`applyTmBg`) for the canonical pattern.
+
+**Third-party libraries that inject `<style>` at runtime:**
+
+- **FullCalendar v6** consults `<meta name="csp-nonce">` in `base.html` and applies the nonce automatically — no extra work required.
+- **Flatpickr** (and any similar lib that appends unnonced `<style>` elements) is covered by a small shim in `base.html` that wraps `document.createElement` and auto-nonces every `<style>` element it creates. The shim runs before any third-party JS loads, so late `<style>` insertions still validate.
+
+**Why not `'unsafe-inline'`:** OWASP, MDN, and Google's web.dev CSP guidance all mark `'unsafe-inline'` in `style-src` as an anti-pattern — it enables UI-redressing attacks (fake overlays, hidden form fields) and, in some browsers, limited data exfiltration via CSS attribute selectors. See PR that closed issue #234.
 
 **Why `https://` is explicit:** The scheme-free `cdn.jsdelivr.net` form is interpreted as the current page's scheme. Over HTTP it works, but the app is served over HTTPS in production, and an HTTP CDN resource would be blocked as mixed content. Always use `https://cdn.jsdelivr.net` in the CSP.
 

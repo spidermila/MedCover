@@ -33,7 +33,7 @@
     <div class="card-body">
       <div class="mb-3">
         <label for="notify_delay_under_24h_min" class="form-label fw-semibold">Do 24 hodin do akce</label>
-        <div class="input-group input-group-sm" style="max-width: 18rem;">
+        <div class="input-group input-group-sm maxw-18r">
           <input type="number" class="form-control" id="notify_delay_under_24h_min"
                  name="notify_delay_under_24h_min" min="1" max="20160" step="1" required
                  value="{{ settings.notify_delay_under_24h_min }}">
@@ -44,7 +44,7 @@
 
       <div class="mb-3">
         <label for="notify_delay_1_7_days_min" class="form-label fw-semibold">1–7 dní do akce</label>
-        <div class="input-group input-group-sm" style="max-width: 18rem;">
+        <div class="input-group input-group-sm maxw-18r">
           <input type="number" class="form-control" id="notify_delay_1_7_days_min"
                  name="notify_delay_1_7_days_min" min="1" max="20160" step="1" required
                  value="{{ settings.notify_delay_1_7_days_min }}">
@@ -55,7 +55,7 @@
 
       <div class="mb-3">
         <label for="notify_delay_1_4_weeks_min" class="form-label fw-semibold">1–4 týdny do akce</label>
-        <div class="input-group input-group-sm" style="max-width: 18rem;">
+        <div class="input-group input-group-sm maxw-18r">
           <input type="number" class="form-control" id="notify_delay_1_4_weeks_min"
                  name="notify_delay_1_4_weeks_min" min="1" max="20160" step="1" required
                  value="{{ settings.notify_delay_1_4_weeks_min }}">
@@ -66,7 +66,7 @@
 
       <div class="mb-3">
         <label for="notify_delay_over_month_min" class="form-label fw-semibold">Více než měsíc do akce</label>
-        <div class="input-group input-group-sm" style="max-width: 18rem;">
+        <div class="input-group input-group-sm maxw-18r">
           <input type="number" class="form-control" id="notify_delay_over_month_min"
                  name="notify_delay_over_month_min" min="1" max="20160" step="1" required
                  value="{{ settings.notify_delay_over_month_min }}">
@@ -167,7 +167,7 @@
 {% for group in toggle_groups %}
   {% for entry in group.entries %}
   <form id="test_form_{{ entry.code }}" method="POST"
-        action="{{ url_for('notifications.test_notification', code=entry.code) }}" style="display:none">
+        action="{{ url_for('notifications.test_notification', code=entry.code) }}" class="d-none">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" id="test_email_{{ entry.code }}" name="test_email">
     <input type="hidden" id="test_event_id_{{ entry.code }}" name="test_event_id">

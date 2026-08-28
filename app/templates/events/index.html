@@ -331,23 +331,9 @@
 {% endblock %}
 
 {% block extra_scripts %}
-{# FullCalendar v6 — bundled locally (no separate CSS; styles are injected by the JS) #}
-<script src="{{ url_for('static', filename='js/fullcalendar.min.js') }}"></script>
-
-<style>
-  .sort-icon { font-size: .75em; }
-  /* Theme-aware "dark/completed" filter button */
-  .filter-btn-neutral {
-    --bs-btn-color: var(--bs-body-color);
-    --bs-btn-border-color: var(--bs-secondary-color);
-    --bs-btn-hover-color: var(--bs-body-bg);
-    --bs-btn-hover-bg: var(--bs-body-color);
-    --bs-btn-hover-border-color: var(--bs-body-color);
-    --bs-btn-active-color: var(--bs-body-bg);
-    --bs-btn-active-bg: var(--bs-body-color);
-    --bs-btn-active-border-color: var(--bs-body-color);
-  }
-</style>
+{# FullCalendar v6 — bundled locally (no separate CSS; styles are injected by the JS,
+   which reads the nonce from <meta name="csp-nonce"> in base.html). #}
+<script src="{{ url_for('static', filename='js/fullcalendar.min.js') }}" nonce="{{ g.csp_nonce }}"></script>
 
 <script type="application/json" id="events-page-cfg">{"feedUrl": "{{ url_for('events.feed') }}{{ '?archived=1' if show_archived }}", "hasDraftPerm": {{ 'true' if has_draft_perm else 'false' }}, "activeStatuses": {{ active_statuses | tojson }}, "claimBase": "{{ url_for('assignments.claim', spot_id=0) | replace('/0', '/') }}", "activeMeName": {{ (active_me.name if active_me else '') | tojson }}, "forMe": {{ for_me | tojson }}}</script>
 <script src="{{ url_for('static', filename='js/events-index.js') }}?v={{ static_ver }}"></script>
