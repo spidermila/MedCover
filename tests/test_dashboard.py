@@ -7,7 +7,9 @@ from app.models.assignment import Assignment
 from app.models.equipment import EquipmentItem, EquipmentType, EventEquipmentPlan
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.role import Role
 from app.models.user import UserAccount
+from tests.conftest import _login, _make_user
 
 
 class TestDashboardEventSortOrder:
@@ -232,3 +234,114 @@ class TestDashboardEquipmentShortage:
         assert "Shortage Multi Event" in body
         # The "… a 1 další" hint must appear because there are two shortage types
         assert "další" in body
+
+
+class TestDashboard:
+    """#247 — baseline coverage: auth guard, empty state, roles, and horizon filtering."""
+
+    def test_dashboard_requires_login(self, client):
+        response = client.get("/dashboard")
+        assert response.status_code == 302
+        assert "/auth/login" in response.headers["Location"]
+
+    def test_member_sees_own_upcoming_events(self, app, member_client):
+        now = datetime.now(timezone.utc)
+        with app.app_context():
+            member = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            me = MasterEvent(name="Member Upcoming ME")
+            db.session.add(me)
+            db.session.flush()
+            event = Event(
+                name="Member Upcoming Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=now + timedelta(days=3),
+                end_datetime=now + timedelta(days=3, hours=4),
+            )
+            db.session.add(event)
+            db.session.flush()
+            spot = EventSpot(event_id=event.id)
+            db.session.add(spot)
+            db.session.flush()
+            db.session.add(Assignment(spot_id=spot.id, user_id=member.id, assigned_by_id=member.id))
+            db.session.commit()
+
+        response = member_client.get("/dashboard")
+        assert response.status_code == 200
+        assert "Member Upcoming Event" in response.data.decode()
+
+    def test_member_empty_state_no_crash(self, member_client):
+        """A member with no events, assignments, or admin data must not crash the dashboard."""
+        response = member_client.get("/dashboard")
+        assert response.status_code == 200
+
+    def test_admin_sees_pending_activations_panel(self, app, admin_client):
+        with app.app_context():
+            inactive = UserAccount(
+                email="pending_admin_panel@test.com",
+                name="Pending Panel User",
+                is_active=False,
+            )
+            inactive.set_password("testpass123")
+            db.session.add(inactive)
+            db.session.commit()
+
+        response = admin_client.get("/dashboard")
+        assert response.status_code == 200
+        assert "Pending Panel User" in response.data.decode()
+
+    def test_viewer_does_not_see_pending_activations_panel(self, app, client):
+        """A viewer lacks user.activate and must not see admin-only pending-activation data."""
+        with app.app_context():
+            _make_user("viewer_dashboard@test.com", "Test Viewer", Role.VIEWER)
+            inactive = UserAccount(
+                email="pending_hidden_from_viewer@test.com",
+                name="Pending Hidden User",
+                is_active=False,
+            )
+            inactive.set_password("testpass123")
+            db.session.add(inactive)
+            db.session.commit()
+
+        _login(client, "viewer_dashboard@test.com")
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+        assert "Pending Hidden User" not in response.data.decode()
+
+    def test_horizon_days_filters_events(self, app, member_client):
+        """A member with dashboard_horizon_days=7 must not see events more than 7 days away."""
+        now = datetime.now(timezone.utc)
+        with app.app_context():
+            member = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            member.dashboard_horizon_days = 7
+            me = MasterEvent(name="Horizon ME")
+            db.session.add(me)
+            db.session.flush()
+            near_event = Event(
+                name="Within Horizon Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=now + timedelta(days=3),
+                end_datetime=now + timedelta(days=3, hours=4),
+            )
+            far_event = Event(
+                name="Beyond Horizon Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=now + timedelta(days=14),
+                end_datetime=now + timedelta(days=14, hours=4),
+            )
+            db.session.add_all([near_event, far_event])
+            db.session.flush()
+            for ev in (near_event, far_event):
+                spot = EventSpot(event_id=ev.id)
+                db.session.add(spot)
+                db.session.flush()
+                db.session.add(Assignment(spot_id=spot.id, user_id=member.id, assigned_by_id=member.id))
+            db.session.commit()
+
+        response = member_client.get("/dashboard")
+        assert response.status_code == 200
+        body = response.data.decode()
+        assert "Within Horizon Event" in body
+        assert "Beyond Horizon Event" not in body
