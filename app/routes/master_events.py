@@ -34,7 +34,9 @@ from app.queries import active_users_list
 from app.utils import (
     CS_COLLATION,
     audit,
+    bind_form_version,
     check_version_conflict,
+    commit_or_stale,
     czech_sort_key,
     diff_changes,
     get_app_tz,
@@ -153,6 +155,7 @@ def edit(me_id: int) -> str | Response:
         if check_version_conflict(me, request.form.get("version")):
             flash(RECORD_MODIFIED_MSG, "danger")
             return render_template("master_events/edit.html", me=me, coordinators=coordinators)
+        bind_form_version(me, request.form.get("version"))
 
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
@@ -184,7 +187,8 @@ def edit(me_id: int) -> str | Response:
             ),
         )
 
-        db.session.commit()
+        if (resp := commit_or_stale(url_for("master_events.detail", me_id=me.id))) is not None:
+            return resp
 
         flash(f"Nadřazená akce „{me.name}“ byla uložena.", "success")
         return redirect(url_for("master_events.detail", me_id=me.id))
