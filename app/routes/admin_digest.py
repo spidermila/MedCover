@@ -15,6 +15,7 @@ from app.mail import send_admin_digest, user_can_receive_notification
 from app.models.digest import DigestBlock, get_digest_schedule
 from app.models.settings import get_settings
 from app.models.user import UserAccount
+from app.utils import bind_form_version, commit_or_stale
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ def save() -> Response:
     if client_version != schedule.version:
         flash("Nastavení bylo mezitím změněno — načtěte stránku znovu.", "danger")
         return redirect(url_for("admin_digest.index"))
+    bind_form_version(schedule, request.form.get("version"))
 
     schedule.enabled = bool(request.form.get("enabled"))
     schedule.frequency_hours = int(request.form.get("frequency_hours", 24))
@@ -72,7 +74,8 @@ def save() -> Response:
     schedule.footer_html = request.form.get("footer_html", "").strip() or None
     schedule.version += 1
 
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("admin_digest.index"))) is not None:
+        return resp
     flash("Nastavení přehledového e-mailu bylo uloženo.", "success")
     return redirect(url_for("admin_digest.index"))
 
@@ -152,6 +155,7 @@ def save_block(block_id: int) -> Response:
     if client_version != block.version:
         flash("Nastavení bloku bylo mezitím změněno — načtěte stránku znovu.", "danger")
         return redirect(url_for("admin_digest.index"))
+    bind_form_version(block, request.form.get("version"))
 
     block.enabled = bool(request.form.get("enabled"))
     cls = BLOCK_REGISTRY[block.block_type]
@@ -161,7 +165,8 @@ def save_block(block_id: int) -> Response:
 
     block.config_json = new_config
     block.version += 1
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("admin_digest.index"))) is not None:
+        return resp
     flash(f"Blok „{cls.label}“ byl uložen.", "success")
     return redirect(url_for("admin_digest.index"))
 
