@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Souběžné úpravy stejného záznamu (uživatel, akce, nadřazená akce, šablona, typ/položka vybavení, přehledový e-mail) druhou změnu tiše nepřepíší — druhý uživatel dostane upozornění „Záznam byl mezitím změněn, načtěte stránku znovu.“. (#461)
+
 ## [0.19.1] - 2026-08-26
 
 ### Fixed
