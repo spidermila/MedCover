@@ -2,14 +2,14 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
 import schedule
+from sqlalchemy.orm.exc import StaleDataError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from collections.abc import Callable
 
 from app import create_app
 from app.extensions import db
@@ -79,66 +79,106 @@ def process_email_queue() -> None:
             log.error("process_email_queue: drain failed: %s", exc, exc_info=True)
 
 
+def _apply_event_transition_with_retry(
+    event_id: int,
+    mutator: Callable[[Event], None],
+    action_desc: str,
+) -> None:
+    """Apply a status transition to one Event, retrying once on concurrent modification."""
+    for attempt in range(2):
+        try:
+            event = db.session.get(Event, event_id)
+            if event is None:
+                log.warning(
+                    "_apply_event_transition_with_retry: event id=%s not found, skipping",
+                    event_id,
+                )
+                return
+            mutator(event)
+            db.session.commit()
+            return
+        except StaleDataError:
+            db.session.rollback()
+            if attempt == 0:
+                log.warning(
+                    "Concurrent modification for event id=%s (%s), retrying",
+                    event_id,
+                    action_desc,
+                )
+            else:
+                log.error(
+                    "Concurrent modification for event id=%s (%s) on retry, skipping",
+                    event_id,
+                    action_desc,
+                )
+
+
+def _open_assignments_mutator(event: Event) -> None:
+    event.status = EventStatus.ASSIGNMENTS_OPEN
+    event.version += 1
+    db.session.add(
+        AuditLogEntry(
+            actor_id=SCHEDULER_ACTOR_ID,
+            action_type="status_change",
+            entity_type="Event",
+            entity_id=str(event.id),
+            summary=f"[Scheduler] Přihlašování automaticky otevřeno pro akci '{event.name}'",
+        )
+    )
+    log.info("Opened assignments for event id=%s name=%r", event.id, event.name)
+
+
+def _close_completed_mutator(event: Event) -> None:
+    event.status = EventStatus.COMPLETED
+    event.version += 1
+    db.session.add(
+        AuditLogEntry(
+            actor_id=SCHEDULER_ACTOR_ID,
+            action_type="status_change",
+            entity_type="Event",
+            entity_id=str(event.id),
+            summary=f"[Scheduler] Akce '{event.name}' automaticky dokončena po skončení termínu",
+        )
+    )
+    log.info("Completed event id=%s name=%r", event.id, event.name)
+
+
 def open_assignments() -> None:
     """Auto-transition Events from Published → Assignments Open when assignments_open_datetime has passed."""
     with app.app_context():
         now = datetime.now(timezone.utc)
-        events = db.session.scalars(
-            db.select(Event).where(
+        event_ids = db.session.scalars(
+            db.select(Event.id).where(
                 Event.status == EventStatus.PUBLISHED,
                 Event.assignments_open_datetime != None,  # noqa: E711
                 Event.assignments_open_datetime <= now,
             )
         ).all()
 
-        for event in events:
-            event.status = EventStatus.ASSIGNMENTS_OPEN
-            event.version += 1
-            db.session.add(
-                AuditLogEntry(
-                    actor_id=SCHEDULER_ACTOR_ID,
-                    action_type="status_change",
-                    entity_type="Event",
-                    entity_id=str(event.id),
-                    summary=f"[Scheduler] Přihlašování automaticky otevřeno pro akci '{event.name}'",
-                )
-            )
-            log.info("Opened assignments for event id=%s name=%r", event.id, event.name)
+        for event_id in event_ids:
+            _apply_event_transition_with_retry(event_id, _open_assignments_mutator, "open_assignments")
 
-        if events:
-            db.session.commit()
-            log.info("open_assignments: processed %d event(s)", len(events))
+        if event_ids:
+            log.info("open_assignments: processed %d event(s)", len(event_ids))
 
 
 def close_completed_events() -> None:
     """Auto-transition Events from Assignments Open/Closed → Completed after end_datetime."""
     with app.app_context():
         now = datetime.now(timezone.utc)
-        events = db.session.scalars(
-            db.select(Event).where(
+        event_ids = db.session.scalars(
+            db.select(Event.id).where(
                 Event.status.in_([EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED]),
                 Event.end_datetime <= now,
                 Event.archived == False,  # noqa: E712
             )
         ).all()
 
-        for event in events:
-            event.status = EventStatus.COMPLETED
-            event.version += 1
-            db.session.add(
-                AuditLogEntry(
-                    actor_id=SCHEDULER_ACTOR_ID,
-                    action_type="status_change",
-                    entity_type="Event",
-                    entity_id=str(event.id),
-                    summary=f"[Scheduler] Akce '{event.name}' automaticky dokončena po skončení termínu",
-                )
-            )
-            log.info("Completed event id=%s name=%r", event.id, event.name)
+        for event_id in event_ids:
+            _apply_event_transition_with_retry(event_id, _close_completed_mutator, "close_completed_events")
 
-        if events:
-            db.session.commit()
-            log.info("close_completed_events: processed %d event(s)", len(events))
+        if event_ids:
+            log.info("close_completed_events: processed %d event(s)", len(event_ids))
 
 
 def send_reminders() -> None:
