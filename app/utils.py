@@ -266,6 +266,8 @@ def commit_or_stale(redirect_url: str) -> Response | None:
 
     Returns None on success, or a redirect Response when the commit detected a
     concurrent modification. Callers must return the Response immediately when non-None.
+
+    Only ``StaleDataError`` is caught — every other exception propagates.
     """
     try:
         db.session.commit()
