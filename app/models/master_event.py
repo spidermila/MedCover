@@ -12,8 +12,11 @@ class MasterEvent(db.Model):  # type: ignore[misc]
     coordinator_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=True)
     is_general = db.Column(db.Boolean, default=False, nullable=False)  # built-in General ME
     archived = db.Column(db.Boolean, default=False, nullable=False)
-    # Optimistic locking — increment on every write; catch StaleDataError → HTTP 409
+    # Optimistic-lock counter enforced via SQLAlchemy version_id_col.
+    # Callers must bump before commit; stale committed values raise StaleDataError.
     version = db.Column(db.Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
