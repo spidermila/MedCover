@@ -310,8 +310,8 @@ class TestVersionedModelsCrossSession:
                 sess_b.close()
 
 
-class TestDoubleBumpGuard:
-    def test_stale_committed_value_raises(self, app) -> None:
+class TestStaleCommittedValueGuard:
+    def test_stale_form_version_raises_on_commit(self, app) -> None:
         """Binding a stale form version via set_committed_value causes ORM to reject on commit."""
         from sqlalchemy.orm.attributes import set_committed_value  # pylint: disable=import-outside-toplevel
 
