@@ -151,6 +151,7 @@ class TestSignatureRoutes:
         data = {
             "action": "signature_upload",
             "signature": (io.BytesIO(_png_bytes()), "sig.png"),
+            "version": "1",
         }
         resp = member_client.post(
             "/users/profile",
@@ -169,7 +170,7 @@ class TestSignatureRoutes:
     def test_upload_missing_file_flashes(self, member_client: object) -> None:
         resp = member_client.post(
             "/users/profile",
-            data={"action": "signature_upload"},
+            data={"action": "signature_upload", "version": "1"},
             content_type="multipart/form-data",
             follow_redirects=True,
         )
@@ -179,6 +180,7 @@ class TestSignatureRoutes:
         data = {
             "action": "signature_upload",
             "signature": (io.BytesIO(b"not an image"), "junk.png"),
+            "version": "1",
         }
         resp = member_client.post(
             "/users/profile",
@@ -195,6 +197,7 @@ class TestSignatureRoutes:
             data={
                 "action": "signature_upload",
                 "signature": (io.BytesIO(_png_bytes()), "sig.png"),
+                "version": "1",
             },
             content_type="multipart/form-data",
             follow_redirects=True,
@@ -215,13 +218,17 @@ class TestSignatureRoutes:
             data={
                 "action": "signature_upload",
                 "signature": (io.BytesIO(_png_bytes()), "sig.png"),
+                "version": "1",
             },
             content_type="multipart/form-data",
             follow_redirects=True,
         )
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            current_version = str(user.version)
         resp = member_client.post(
             "/users/profile",
-            data={"action": "signature_remove"},
+            data={"action": "signature_remove", "version": current_version},
             follow_redirects=True,
         )
         assert "Podpis byl smazán".encode() in resp.data
