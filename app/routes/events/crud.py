@@ -38,7 +38,9 @@ from app.staffing import can_join_event, condition_plan_from_form
 from app.utils import (
     CS_COLLATION,
     audit,
+    bind_form_version,
     check_version_conflict,
+    commit_or_stale,
     diff_changes,
     get_app_tz,
     get_or_404,
@@ -736,6 +738,7 @@ def edit(event_id: int) -> str | Response:
         if check_version_conflict(event, request.form.get("version")):
             flash(RECORD_MODIFIED_MSG, "danger")
             return _render_edit()
+        bind_form_version(event, request.form.get("version"))
 
         capacity_warnings: list[str] = []
         if event.staffing_mode == StaffingMode.SPOTS and request.form.get("spots_changed") == "1":
@@ -830,7 +833,8 @@ def edit(event_id: int) -> str | Response:
 
         event.version += 1
         audit("edit", "Event", event.id, f"Upravena akce '{event.name}'", diff_changes(before, after))
-        db.session.commit()
+        if (resp := commit_or_stale(url_for("events.detail", event_id=event.id))) is not None:
+            return resp
         for warning in capacity_warnings:
             flash(warning, "warning")
 
