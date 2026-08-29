@@ -238,15 +238,11 @@ class TestAdminUnassign:
 
 
 class TestClaimEdgeCases:
-    def test_viewer_cannot_claim(self, app):
+    def test_viewer_cannot_claim(self, app, viewer_client):
         """A Viewer user (no event.assign_own) gets 403."""
 
-        event_id, spot_id = _make_event_with_spot(app)
-        with app.app_context():
-            _make_user("viewer@test.com", "Viewer", Role.VIEWER)
-        c = app.test_client()
-        _login(c, "viewer@test.com")
-        response = c.post(f"/assignments/claim/{spot_id}")
+        _, spot_id = _make_event_with_spot(app)
+        response = viewer_client.post(f"/assignments/claim/{spot_id}")
         assert response.status_code == 403
 
     def test_claim_nonexistent_spot_returns_404(self, app, member_client):

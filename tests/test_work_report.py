@@ -81,11 +81,8 @@ class TestVykazIndex:
         assert "Leden" in resp.data.decode()
         assert "Prosinec" in resp.data.decode()
 
-    def test_viewer_gets_403(self, app, client):
-        with app.app_context():
-            _make_user("vykaz_viewer@test.com", "Viewer", Role.VIEWER)
-        _login(client, "vykaz_viewer@test.com")
-        resp = client.get("/work-report/", follow_redirects=False)
+    def test_viewer_gets_403(self, viewer_client):
+        resp = viewer_client.get("/work-report/", follow_redirects=False)
         assert resp.status_code == 403
 
 
