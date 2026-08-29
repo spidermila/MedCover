@@ -7,9 +7,7 @@ from app.models.assignment import Assignment
 from app.models.equipment import EquipmentItem, EquipmentType, EventEquipmentPlan
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
-from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _login, _make_user
 
 
 class TestDashboardEventSortOrder:
@@ -290,10 +288,9 @@ class TestDashboard:
         assert response.status_code == 200
         assert "Pending Panel User" in response.data.decode()
 
-    def test_viewer_does_not_see_pending_activations_panel(self, app, client):
+    def test_viewer_does_not_see_pending_activations_panel(self, app, viewer_client):
         """A viewer lacks user.activate and must not see admin-only pending-activation data."""
         with app.app_context():
-            _make_user("viewer_dashboard@test.com", "Test Viewer", Role.VIEWER)
             inactive = UserAccount(
                 email="pending_hidden_from_viewer@test.com",
                 name="Pending Hidden User",
@@ -303,8 +300,7 @@ class TestDashboard:
             db.session.add(inactive)
             db.session.commit()
 
-        _login(client, "viewer_dashboard@test.com")
-        response = client.get("/dashboard")
+        response = viewer_client.get("/dashboard")
         assert response.status_code == 200
         assert "Pending Hidden User" not in response.data.decode()
 

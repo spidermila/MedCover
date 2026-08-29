@@ -437,6 +437,15 @@ def member_client(app, client):
     return client
 
 
+@pytest.fixture
+def viewer_client(app, client):
+    """Test client pre-logged in as an activated viewer user."""
+    with app.app_context():
+        _make_user("viewer@test.com", "Test Viewer", Role.VIEWER)
+    _login(client, "viewer@test.com")
+    return client
+
+
 def _make_user(
     email: str,
     name: str,
