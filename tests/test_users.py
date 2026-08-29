@@ -1,5 +1,6 @@
 """Tests for user profile and admin user-management routes."""
 
+import io
 import uuid
 from datetime import datetime, timezone
 
@@ -33,7 +34,7 @@ class TestUserProfile:
     def test_update_profile_name(self, app: object, member_client: object) -> None:
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "Nové Jméno", "dashboard_horizon_days": "30"},
+            data={"action": "profile", "name": "Nové Jméno", "dashboard_horizon_days": "30", "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -46,7 +47,7 @@ class TestUserProfile:
     def test_update_profile_empty_name_rejected(self, member_client: object) -> None:
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "", "dashboard_horizon_days": "30"},
+            data={"action": "profile", "name": "", "dashboard_horizon_days": "30", "version": "1"},
             follow_redirects=True,
         )
         assert "Jméno nesmí být prázdné".encode() in resp.data
@@ -54,7 +55,13 @@ class TestUserProfile:
     def test_dark_mode_toggle(self, app: object, member_client: object) -> None:
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "Test Member", "dashboard_horizon_days": "30", "dark_mode": "1"},
+            data={
+                "action": "profile",
+                "name": "Test Member",
+                "dashboard_horizon_days": "30",
+                "dark_mode": "1",
+                "version": "1",
+            },
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -77,6 +84,7 @@ class TestUserProfile:
                 "current_password": "wrong",
                 "new_password": "newpass123",
                 "confirm_password": "newpass123",
+                "version": "1",
             },
             follow_redirects=True,
         )
@@ -90,6 +98,7 @@ class TestUserProfile:
                 "current_password": "testpass123",
                 "new_password": "newpass123",
                 "confirm_password": "different",
+                "version": "1",
             },
             follow_redirects=True,
         )
@@ -103,6 +112,7 @@ class TestUserProfile:
                 "current_password": "testpass123",
                 "new_password": "short",
                 "confirm_password": "short",
+                "version": "1",
             },
             follow_redirects=True,
         )
@@ -116,6 +126,7 @@ class TestUserProfile:
                 "current_password": "testpass123",
                 "new_password": "newpass123",
                 "confirm_password": "newpass123",
+                "version": "1",
             },
             follow_redirects=True,
         )
@@ -236,6 +247,7 @@ class TestAdminEditUser:
                 "name": "New Name",
                 "email": "newemail@test.com",
                 "phone": "+420123456789",
+                "version": "1",
             },
             follow_redirects=True,
         )
@@ -274,6 +286,7 @@ class TestAdminEditUser:
                 "name": "Orig",
                 "email": "taken@test.com",
                 "phone": "",
+                "version": "1",
             },
             follow_redirects=True,
         )
@@ -292,6 +305,7 @@ class TestAdminEditUser:
                 "name": "",
                 "email": "noname@test.com",
                 "phone": "",
+                "version": "1",
             },
             follow_redirects=True,
         )
@@ -307,6 +321,7 @@ class TestAdminEditUser:
                 "name": "Audited Name",
                 "email": "audit_edit@test.com",
                 "phone": "",
+                "version": "1",
             },
         )
         with app.app_context():
@@ -327,6 +342,7 @@ class TestAdminEditUser:
             assert user is not None
             current_name = user.name
             current_email = user.email
+            current_version = user.version
             role_ids = [str(r.id) for r in user.roles]
         admin_client.post(
             f"/users/{uid}/save",
@@ -335,6 +351,7 @@ class TestAdminEditUser:
                 "email": current_email,
                 "phone": "",
                 "role_ids": role_ids,
+                "version": str(current_version),
             },
         )
         with app.app_context():
@@ -358,6 +375,7 @@ class TestAdminEditUser:
             assert user is not None
             current_name = user.name
             current_email = user.email
+            current_version = user.version
             role_ids = [str(r.id) for r in user.roles]
 
         admin_client.post(
@@ -368,6 +386,7 @@ class TestAdminEditUser:
                 "phone": "",
                 "role_ids": role_ids,
                 "qualification_ids": [str(qual_id)],
+                "version": str(current_version),
             },
         )
         with app.app_context():
@@ -385,6 +404,7 @@ class TestAdminEditUser:
         with app.app_context():
             user = db.session.get(UserAccount, uid)
             assert user is not None
+            current_version = user.version
             role_ids = [str(r.id) for r in user.roles]
         admin_client.post(
             f"/users/{uid}/save",
@@ -393,6 +413,7 @@ class TestAdminEditUser:
                 "email": "infoonly@test.com",
                 "phone": "",
                 "role_ids": role_ids,
+                "version": str(current_version),
             },
         )
         with app.app_context():
@@ -684,7 +705,13 @@ class TestPhoneValidationProfile:
     def test_valid_phone_accepted_on_profile(self, app: object, member_client: object, phone: str) -> None:
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "Test Member", "dashboard_horizon_days": "30", "phone": phone},
+            data={
+                "action": "profile",
+                "name": "Test Member",
+                "dashboard_horizon_days": "30",
+                "phone": phone,
+                "version": "1",
+            },
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -694,7 +721,13 @@ class TestPhoneValidationProfile:
     def test_invalid_phone_rejected_on_profile(self, app: object, member_client: object, phone: str) -> None:
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "Test Member", "dashboard_horizon_days": "30", "phone": phone},
+            data={
+                "action": "profile",
+                "name": "Test Member",
+                "dashboard_horizon_days": "30",
+                "phone": phone,
+                "version": "1",
+            },
             follow_redirects=True,
         )
         assert "Neplatný formát telefonního čísla".encode() in resp.data
@@ -716,7 +749,7 @@ class TestPhoneValidationAdminEdit:
         uid = self._create_user(app)
         resp = admin_client.post(
             f"/users/{uid}/save",
-            data={"name": "Phone Target", "email": "phonetarget@test.com", "phone": phone},
+            data={"name": "Phone Target", "email": "phonetarget@test.com", "phone": phone, "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -727,7 +760,7 @@ class TestPhoneValidationAdminEdit:
         uid = self._create_user(app)
         resp = admin_client.post(
             f"/users/{uid}/save",
-            data={"name": "Phone Target", "email": "phonetarget@test.com", "phone": phone},
+            data={"name": "Phone Target", "email": "phonetarget@test.com", "phone": phone, "version": "1"},
             follow_redirects=True,
         )
         assert "Neplatný formát telefonního čísla".encode() in resp.data
@@ -1265,3 +1298,118 @@ class TestManualUserCreate:
                 .where(AuditLogEntry.summary.contains("audit.manual@test.com"))
             )
             assert entry is not None
+
+
+# ── Optimistic locking ────────────────────────────────────────────────────────
+
+
+class TestUserOptimisticLocking:
+    """Verify that stale-version submissions are rejected with the expected flash."""
+
+    def _member_user_id(self, app: object) -> str:
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            return str(user.id)
+
+    def _admin_user_id(self, app: object) -> str:
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
+            assert user is not None
+            return str(user.id)
+
+    def test_update_profile_stale_version_flashes(self, app: object, member_client: object) -> None:
+        resp = member_client.post(
+            "/users/profile",
+            data={"action": "profile", "name": "New Name", "dashboard_horizon_days": "30", "version": "9999"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "mezitím" in resp.data.decode()
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            assert user.name != "New Name"
+
+    def test_remove_signature_stale_version_flashes(self, app: object, member_client: object) -> None:
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            user.signature_image = b"\x89PNG\r\n"
+            user.signature_mimetype = "image/png"
+            user.version += 1
+            db.session.commit()
+        resp = member_client.post(
+            "/users/profile",
+            data={"action": "signature_remove", "version": "9999"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "mezitím" in resp.data.decode()
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            assert user.signature_image is not None
+
+    def test_change_password_stale_version_flashes(self, app: object, member_client: object) -> None:
+        resp = member_client.post(
+            "/users/profile",
+            data={
+                "action": "password",
+                "current_password": "testpass123",
+                "new_password": "newpass456",
+                "confirm_password": "newpass456",
+                "version": "9999",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "mezitím" in resp.data.decode()
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            assert user.check_password("testpass123")
+
+    def test_save_user_stale_version_flashes(self, app: object, admin_client: object) -> None:
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            target = UserAccount(email="staletest@test.com", name="Original Name", is_active=True)
+            target.set_password("pass1234")
+            target.roles = [role]
+            db.session.add(target)
+            db.session.commit()
+            uid = str(target.id)
+        resp = admin_client.post(
+            f"/users/{uid}/save",
+            data={"name": "Changed Name", "email": "staletest@test.com", "phone": "", "version": "9999"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "mezitím" in resp.data.decode()
+        with app.app_context():
+            user = db.session.get(UserAccount, uid)
+            assert user is not None
+            assert user.name == "Original Name"
+
+    def test_upload_signature_stale_version_flashes(self, app: object, member_client: object) -> None:
+        png_1x1 = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+            b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        resp = member_client.post(
+            "/users/profile",
+            data={
+                "action": "signature_upload",
+                "version": "9999",
+                "signature": (io.BytesIO(png_1x1), "sig.png"),
+            },
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "mezitím" in resp.data.decode()
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            assert user.signature_image is None
