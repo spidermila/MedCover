@@ -7,6 +7,13 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
+from flask import flash, redirect
+from sqlalchemy.orm.attributes import set_committed_value
+from sqlalchemy.orm.exc import StaleDataError
+from werkzeug.wrappers import Response
+
+from app.constants import RECORD_MODIFIED_MSG
+from app.extensions import db
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -237,6 +244,36 @@ def require_permission(*codes: str) -> None:
 
     if not current_user.has_any_permission(*codes):
         abort(403)
+
+
+def bind_form_version(entity: object, form_value: str | None) -> None:
+    """Set the ORM committed-value snapshot for ``entity.version`` to the form-submitted integer.
+
+    Uses ``set_committed_value`` so the attribute is NOT marked dirty — SQLAlchemy
+    uses the value only in the WHERE clause of the next UPDATE, not in the SET clause.
+    This must be called after ``check_version_conflict`` passes and before mutating
+    the entity, so the ORM safety net uses the user-seen version in its staleness check.
+    """
+    try:
+        parsed = int(form_value or 0)
+    except TypeError, ValueError:
+        parsed = 0
+    set_committed_value(entity, "version", parsed)
+
+
+def commit_or_stale(redirect_url: str) -> Response | None:
+    """Commit the current session; on StaleDataError roll back and redirect with a flash.
+
+    Returns None on success, or a redirect Response when the commit detected a
+    concurrent modification. Callers must return the Response immediately when non-None.
+    """
+    try:
+        db.session.commit()
+        return None
+    except StaleDataError:
+        db.session.rollback()
+        flash(RECORD_MODIFIED_MSG, "danger")
+        return redirect(redirect_url)
 
 
 def check_version_conflict(obj: object, form_value: str | None) -> bool:
