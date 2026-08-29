@@ -34,6 +34,8 @@ class DigestSchedule(db.Model):  # type: ignore[misc]
 
     version = db.Column(db.Integer, nullable=False, default=0, server_default="0")
 
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
+
     blocks = db.relationship(
         "DigestBlock",
         back_populates="schedule",
@@ -67,6 +69,8 @@ class DigestBlock(db.Model):  # type: ignore[misc]
     sort_order = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     config_json = db.Column(db.JSON, nullable=False, default=dict, server_default="{}")
     version = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
 
     schedule = db.relationship("DigestSchedule", back_populates="blocks")
 
