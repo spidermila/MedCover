@@ -60,8 +60,11 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     # UserAccount selects; loaded only when explicitly accessed.
     signature_image = deferred(db.Column(db.LargeBinary, nullable=True))
     signature_mimetype = db.Column(db.String(50), nullable=True)
-    # Optimistic locking — increment on every write; catch StaleDataError → HTTP 409
+    # Optimistic-lock counter enforced via SQLAlchemy version_id_col.
+    # Callers must bump before commit; stale committed values raise StaleDataError.
     version = db.Column(db.Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
     # Single-use password reset: nonce is set when a reset link is issued and
     # cleared after successful password change. Old links become invalid immediately.
     password_reset_nonce = db.Column(db.String(64), nullable=True)

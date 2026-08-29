@@ -81,8 +81,11 @@ class EventTemplate(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-    # Optimistic locking — increment on every write; catch StaleDataError → HTTP 409
+    # Optimistic-lock counter enforced via SQLAlchemy version_id_col.
+    # Callers must bump before commit; stale committed values raise StaleDataError.
     version = db.Column(db.Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
 
     spot_templates = db.relationship(
         "EventSpotTemplate",
@@ -161,7 +164,8 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     #   TRAINING      → skutečný počet účastníků
     #   PRESENTATION  → not used (always None)
     post_event_count = db.Column(db.Integer, nullable=True)
-    # Optimistic locking — increment on every write; catch StaleDataError → HTTP 409
+    # Optimistic-lock counter enforced via SQLAlchemy version_id_col.
+    # Callers must bump before commit; stale committed values raise StaleDataError.
     version = db.Column(db.Integer, default=1, nullable=False)
     created_at = db.Column(
         db.DateTime(timezone=True),
@@ -174,6 +178,8 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
 
     master_event = db.relationship("MasterEvent", back_populates="events")
     responsible_person = db.relationship(
@@ -302,8 +308,11 @@ class EventSpot(db.Model):  # type: ignore[misc]
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
     description = db.Column(db.String(255), nullable=True)
     is_optional = db.Column(db.Boolean, default=False, nullable=False)
-    # Optimistic locking — paired with a T-SQL UPDLOCK hint in the assignment path.
+    # Optimistic-lock counter enforced via SQLAlchemy version_id_col.
+    # Callers must bump before commit; stale committed values raise StaleDataError.
     version = db.Column(db.Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
 
     event = db.relationship("Event", back_populates="spots")
     required_qualifications: Mapped[list[Qualification]] = db.relationship(
