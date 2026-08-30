@@ -83,8 +83,17 @@ def _apply_event_transition_with_retry(
     event_id: int,
     mutator: Callable[[Event], None],
     action_desc: str,
+    predicate: Callable[[Event], bool] | None = None,
 ) -> None:
-    """Apply a status transition to one Event, retrying once on concurrent modification."""
+    """Apply a status transition to one Event, retrying once on concurrent modification.
+
+    ``predicate`` is re-checked against the freshly-loaded row before every
+    mutation attempt (including after a rollback + reload on retry). If it
+    returns False, the transition is skipped — protects against acting on a
+    row whose state changed between the initial id scan and the load
+    (e.g. an admin cancelled or archived the event, or shifted its transition
+    time into the future).
+    """
     for attempt in range(2):
         try:
             event = db.session.get(Event, event_id)
@@ -92,6 +101,13 @@ def _apply_event_transition_with_retry(
                 log.warning(
                     "_apply_event_transition_with_retry: event id=%s not found, skipping",
                     event_id,
+                )
+                return
+            if predicate is not None and not predicate(event):
+                log.info(
+                    "Event id=%s (%s) no longer eligible after reload, skipping",
+                    event_id,
+                    action_desc,
                 )
                 return
             mutator(event)
@@ -113,6 +129,15 @@ def _apply_event_transition_with_retry(
                 )
 
 
+def _open_assignments_predicate(event: Event) -> bool:
+    now = datetime.now(timezone.utc)
+    return (
+        event.status == EventStatus.PUBLISHED
+        and event.assignments_open_datetime is not None
+        and event.assignments_open_datetime <= now
+    )
+
+
 def _open_assignments_mutator(event: Event) -> None:
     event.status = EventStatus.ASSIGNMENTS_OPEN
     event.version += 1
@@ -126,6 +151,15 @@ def _open_assignments_mutator(event: Event) -> None:
         )
     )
     log.info("Opened assignments for event id=%s name=%r", event.id, event.name)
+
+
+def _close_completed_predicate(event: Event) -> bool:
+    now = datetime.now(timezone.utc)
+    return (
+        event.status in (EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED)
+        and event.end_datetime <= now
+        and not event.archived
+    )
 
 
 def _close_completed_mutator(event: Event) -> None:
@@ -156,7 +190,12 @@ def open_assignments() -> None:
         ).all()
 
         for event_id in event_ids:
-            _apply_event_transition_with_retry(event_id, _open_assignments_mutator, "open_assignments")
+            _apply_event_transition_with_retry(
+                event_id,
+                _open_assignments_mutator,
+                "open_assignments",
+                predicate=_open_assignments_predicate,
+            )
 
         if event_ids:
             log.info("open_assignments: processed %d event(s)", len(event_ids))
@@ -175,7 +214,12 @@ def close_completed_events() -> None:
         ).all()
 
         for event_id in event_ids:
-            _apply_event_transition_with_retry(event_id, _close_completed_mutator, "close_completed_events")
+            _apply_event_transition_with_retry(
+                event_id,
+                _close_completed_mutator,
+                "close_completed_events",
+                predicate=_close_completed_predicate,
+            )
 
         if event_ids:
             log.info("close_completed_events: processed %d event(s)", len(event_ids))
