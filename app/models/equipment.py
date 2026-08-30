@@ -15,6 +15,9 @@ class EquipmentType(db.Model):  # type: ignore[misc]
     name = db.Column(db.String(255), unique=True, nullable=False)
     description = db.Column(db.Text, nullable=True)
     version = db.Column(db.Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
+
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -49,6 +52,9 @@ class EquipmentItem(db.Model):  # type: ignore[misc]
     unavailability_since = db.Column(db.DateTime(timezone=True), nullable=True)
     unavailability_until = db.Column(db.DateTime(timezone=True), nullable=True)
     version = db.Column(db.Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
+
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

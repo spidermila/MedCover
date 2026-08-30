@@ -18,7 +18,16 @@ from app.extensions import db
 from app.models.equipment import EquipmentType, EventTemplateEquipmentPlan
 from app.models.event import EventSpotTemplate, EventTemplate, EventType
 from app.models.qualification import Qualification
-from app.utils import CS_COLLATION, audit, check_version_conflict, diff_changes, get_or_404, require_permission
+from app.utils import (
+    CS_COLLATION,
+    audit,
+    bind_form_version,
+    check_version_conflict,
+    commit_or_stale,
+    diff_changes,
+    get_or_404,
+    require_permission,
+)
 
 templates_bp = Blueprint("templates", __name__, url_prefix="/templates")
 
@@ -239,6 +248,7 @@ def edit(template_id: int) -> str | Response:
                 equipment_types=equipment_types,
                 EventType=EventType,
             )
+        bind_form_version(tmpl, request.form.get("version"))
 
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
@@ -317,7 +327,8 @@ def edit(template_id: int) -> str | Response:
             f"Upravena šablona akce '{tmpl.name}'",
             diff_changes(before, after),
         )
-        db.session.commit()
+        if (resp := commit_or_stale(url_for("templates.edit", template_id=tmpl.id))) is not None:
+            return resp
 
         flash(f"Šablona „{tmpl.name}“ byla uložena.", "success")
         return redirect(url_for("templates.index"))

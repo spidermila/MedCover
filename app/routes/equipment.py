@@ -29,7 +29,9 @@ from app.queries import active_users_list, available_quantity_for_type
 from app.utils import (
     CS_COLLATION,
     audit,
+    bind_form_version,
     check_version_conflict,
+    commit_or_stale,
     diff_changes,
     get_app_tz,
     get_or_404,
@@ -113,6 +115,7 @@ def type_edit(type_id: int) -> str | Response:
         if check_version_conflict(et, request.form.get("version")):
             flash(RECORD_MODIFIED_MSG, "danger")
             return render_template("equipment/type_form.html", et=et, edit=True)
+        bind_form_version(et, request.form.get("version"))
 
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
@@ -140,7 +143,8 @@ def type_edit(type_id: int) -> str | Response:
             f"Upraven typ vybavení '{et.name}'",
             diff_changes(before, {"name": et.name, "description": et.description}),
         )
-        db.session.commit()
+        if (resp := commit_or_stale(url_for("equipment.index"))) is not None:
+            return resp
 
         flash(f"Typ vybavení „{et.name}“ byl uložen.", "success")
         return redirect(url_for("equipment.index"))
@@ -275,6 +279,7 @@ def item_edit(item_id: int) -> str | Response:
                 edit=True,
                 can_modify_availability=can_modify_availability,
             )
+        bind_form_version(item, request.form.get("version"))
 
         name = request.form.get("name", "").strip()
         type_id = request.form.get("type_id", type=int)
@@ -369,7 +374,8 @@ def item_edit(item_id: int) -> str | Response:
             f"Upravena položka vybavení '{item.name}'",
             diff_changes(before, after),
         )
-        db.session.commit()
+        if (resp := commit_or_stale(url_for("equipment.items"))) is not None:
+            return resp
 
         flash(f"Položka vybavení „{item.name}“ byla uložena.", "success")
 
@@ -453,6 +459,7 @@ def item_mark_unavailable(item_id: int) -> Response:
     if check_version_conflict(item, request.form.get("version")):
         flash("Položka byla mezitím změněna jiným uživatelem.", "danger")
         return redirect(url_for("equipment.items"))
+    bind_form_version(item, request.form.get("version"))
 
     if not item.is_available:
         flash("Položka je již označena jako nedostupná.", "warning")
@@ -493,7 +500,8 @@ def item_mark_unavailable(item_id: int) -> Response:
         str(item.id),
         f"Položka '{item.name}' označena jako nedostupná od {since.strftime('%d.%m.%Y')} do {until_str}: {reason or '—'}",  # noqa: E501
     )
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("equipment.items"))) is not None:
+        return resp
 
     flash(f"Položka „{item.name}“ byla označena jako nedostupná.", "success")
     new_short_events = _compute_short_events_for_window(
@@ -514,6 +522,7 @@ def item_mark_available(item_id: int) -> Response:
     if check_version_conflict(item, request.form.get("version")):
         flash("Položka byla mezitím změněna jiným uživatelem.", "danger")
         return redirect(url_for("equipment.items"))
+    bind_form_version(item, request.form.get("version"))
 
     # Allow clearing both active and future maintenance windows.
     if item.is_available and not item.unavailability_since:
@@ -531,7 +540,8 @@ def item_mark_available(item_id: int) -> Response:
         str(item.id),
         f"Položka '{item.name}' {'plánovaný servis zrušen' if was_future else 'vrácena na sklad (dostupná)'}",
     )
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("equipment.items"))) is not None:
+        return resp
 
     if was_future:
         flash(f"Plánovaný servis položky „{item.name}“ byl zrušen.", "success")

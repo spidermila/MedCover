@@ -10,9 +10,10 @@ from flask import Blueprint, Response, abort, flash, redirect, render_template, 
 from flask_login import current_user, login_required
 from sqlalchemy import collate
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import INVITE_TOKEN_HOURS
-from app.constants import MIN_PASSWORD_LENGTH
+from app.constants import MIN_PASSWORD_LENGTH, RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
@@ -26,6 +27,9 @@ from app.signature import (
 from app.utils import (
     CS_COLLATION,
     audit,
+    bind_form_version,
+    check_version_conflict,
+    commit_or_stale,
     czech_sort_key,
     diff_changes,
     external_url_for,
@@ -92,12 +96,19 @@ def profile() -> str | Response:
     ).all()
     from app.utils import external_url_for  # pylint: disable=import-outside-toplevel
 
-    # Lazy-init iCal token on first profile visit.
+    # Lazy-init iCal token on first profile visit. Wrapped in StaleDataError
+    # handling because UserAccount now uses ORM version_id_col — a concurrent
+    # bump (e.g. admin editing roles in another tab) would otherwise 500 this
+    # GET. On stale, refresh and reuse whatever token is now in the DB.
     token_created = False
     if not user.ical_token:
         user.regenerate_ical_token()
-        db.session.commit()
-        token_created = True
+        try:
+            db.session.commit()
+            token_created = True
+        except StaleDataError:
+            db.session.rollback()
+            db.session.refresh(user)
     ical_url = external_url_for("calendar.feed", token=user.ical_token)
     ical_all_url = external_url_for("calendar.feed_all", token=user.ical_all_token)
     has_signature = user.signature_mimetype is not None
@@ -116,6 +127,10 @@ def profile() -> str | Response:
 
 
 def _update_profile(user: UserAccount) -> Response:
+    if check_version_conflict(user, request.form.get("version")):
+        flash(RECORD_MODIFIED_MSG, "danger")
+        return redirect(url_for("users.profile"))
+    bind_form_version(user, request.form.get("version"))
     before: dict[str, Any] = {
         "name": user.name,
         "phone": user.phone,
@@ -152,12 +167,17 @@ def _update_profile(user: UserAccount) -> Response:
         "dark_mode": user.dark_mode,
     }
     audit("edit", "UserAccount", user.id, f"Uživatel {user.name} upravil svůj profil", diff_changes(before, after))
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("users.profile"))) is not None:
+        return resp
     flash("Profil byl uložen.", "success")
     return redirect(url_for("users.profile"))
 
 
 def _upload_signature(user: UserAccount) -> Response:
+    if check_version_conflict(user, request.form.get("version")):
+        flash(RECORD_MODIFIED_MSG, "danger")
+        return redirect(url_for("users.profile"))
+    bind_form_version(user, request.form.get("version"))
     if request.content_length is not None and request.content_length > MAX_UPLOAD_BYTES:
         flash(
             f"Soubor je příliš velký (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB).",
@@ -191,12 +211,17 @@ def _upload_signature(user: UserAccount) -> Response:
         f"Uživatel {user.name} nahrál podpis",
         {"signature": ["set" if had_signature_before else None, "set"]},
     )
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("users.profile"))) is not None:
+        return resp
     flash("Podpis byl uložen.", "success")
     return redirect(url_for("users.profile"))
 
 
 def _remove_signature(user: UserAccount) -> Response:
+    if check_version_conflict(user, request.form.get("version")):
+        flash(RECORD_MODIFIED_MSG, "danger")
+        return redirect(url_for("users.profile"))
+    bind_form_version(user, request.form.get("version"))
     if user.signature_mimetype is None:
         return redirect(url_for("users.profile"))
     user.signature_image = None
@@ -209,7 +234,8 @@ def _remove_signature(user: UserAccount) -> Response:
         f"Uživatel {user.name} smazal podpis",
         {"signature": ["set", None]},
     )
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("users.profile"))) is not None:
+        return resp
     flash("Podpis byl smazán.", "success")
     return redirect(url_for("users.profile"))
 
@@ -229,6 +255,10 @@ def signature_preview() -> Response:
 
 
 def _change_password(user: UserAccount) -> Response:
+    if check_version_conflict(user, request.form.get("version")):
+        flash(RECORD_MODIFIED_MSG, "danger")
+        return redirect(url_for("users.profile"))
+    bind_form_version(user, request.form.get("version"))
     current_pw = request.form.get("current_password", "")
     new_pw = request.form.get("new_password", "")
     confirm = request.form.get("confirm_password", "")
@@ -244,7 +274,8 @@ def _change_password(user: UserAccount) -> Response:
     user.set_password(new_pw)
     user.version += 1
     audit("edit", "UserAccount", user.id, f"Uživatel {user.name} změnil své heslo", {})
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("users.profile"))) is not None:
+        return resp
     flash("Heslo bylo změněno.", "success")
     return redirect(url_for("users.profile"))
 
@@ -481,6 +512,11 @@ def save_user(user_id: uuid.UUID) -> Response:
     require_permission("user.edit_any")
     user = get_or_404(UserAccount, user_id)
 
+    if check_version_conflict(user, request.form.get("version")):
+        flash(RECORD_MODIFIED_MSG, "danger")
+        return redirect(url_for("users.detail", user_id=user_id))
+    bind_form_version(user, request.form.get("version"))
+
     # ── Basic info ──────────────────────────────────────────────────────────
     name = request.form.get("name", "").strip()
     email = request.form.get("email", "").strip().lower()
@@ -544,7 +580,8 @@ def save_user(user_id: uuid.UUID) -> Response:
     if info_changed or roles_changed or quals_changed or password_changed:
         user.version += 1
 
-    db.session.commit()
+    if (resp := commit_or_stale(url_for("users.detail", user_id=user_id))) is not None:
+        return resp
     flash("Uživatel byl uložen.", "success")
     return redirect(url_for("users.detail", user_id=user_id))
 

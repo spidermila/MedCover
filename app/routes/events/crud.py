@@ -33,7 +33,9 @@ from app.queries import (
 from app.utils import (
     CS_COLLATION,
     audit,
+    bind_form_version,
     check_version_conflict,
+    commit_or_stale,
     diff_changes,
     get_app_tz,
     get_or_404,
@@ -623,6 +625,7 @@ def edit(event_id: int) -> str | Response:
         if check_version_conflict(event, request.form.get("version")):
             flash(RECORD_MODIFIED_MSG, "danger")
             return _render_edit()
+        bind_form_version(event, request.form.get("version"))
 
         # Snapshot before mutation
         before = {
@@ -701,7 +704,8 @@ def edit(event_id: int) -> str | Response:
 
         event.version += 1
         audit("edit", "Event", event.id, f"Upravena akce '{event.name}'", diff_changes(before, after))
-        db.session.commit()
+        if (resp := commit_or_stale(url_for("events.edit", event_id=event.id))) is not None:
+            return resp
 
         # Notify assigned users about the change (only if something actually changed).
         actual_changes = diff_changes(before, after)
