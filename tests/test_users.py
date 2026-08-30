@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
@@ -1413,3 +1414,43 @@ class TestUserOptimisticLocking:
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             assert user is not None
             assert user.signature_image is None
+
+    def test_profile_ical_token_lazy_init_survives_stale_commit(
+        self, app: object, member_client: object, monkeypatch
+    ) -> None:
+        """A concurrent version bump on the user must not 500 the profile GET
+        that lazy-initialises the iCal token — the lazy-init commit is wrapped
+        in StaleDataError handling that refreshes the row."""
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            user.ical_token = None
+            # Pre-write a token that a hypothetical concurrent writer set,
+            # simulating the state the refresh must fall back to.
+            db.session.commit()
+            db.session.execute(
+                sa.text("UPDATE user_account SET ical_token = :t, version = version + 1 WHERE id = :i"),
+                {"t": "racer-set-token-1234567890abcdef", "i": str(user.id)},
+            )
+            db.session.commit()
+
+        original_commit = db.session.commit
+        raised = {"n": 0}
+
+        def _stale_once() -> None:
+            if raised["n"] == 0:
+                raised["n"] += 1
+                raise StaleDataError("simulated", None, None, None)
+            original_commit()
+
+        monkeypatch.setattr(db.session, "commit", _stale_once)
+        try:
+            resp = member_client.get("/users/profile")
+        finally:
+            monkeypatch.setattr(db.session, "commit", original_commit)
+
+        assert resp.status_code == 200
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user is not None
+            assert user.ical_token == "racer-set-token-1234567890abcdef"

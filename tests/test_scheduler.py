@@ -175,3 +175,117 @@ class TestCloseCompletedEvents:
             sm._apply_event_transition_with_retry(999999, sm._close_completed_mutator, "close_completed_events")
 
         assert "not found" in caplog.text
+
+
+class TestPredicateRevalidation:
+    """After the ID scan and before the mutation, another writer may have changed
+    the row so it no longer qualifies for the transition. The retry helper must
+    skip such rows instead of blindly applying the mutator."""
+
+    def test_open_skips_cancelled_event(self, app, caplog) -> None:
+        event_id = _make_event(app, EventStatus.PUBLISHED)
+        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
+
+        # Simulate a concurrent user cancelling the event between id scan and load.
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            event.status = EventStatus.CANCELLED
+            event.version += 1
+            db.session.commit()
+
+        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
+            sm._apply_event_transition_with_retry(
+                event_id,
+                sm._open_assignments_mutator,
+                "open_assignments",
+                predicate=sm._open_assignments_predicate,
+            )
+
+        assert "no longer eligible" in caplog.text
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.status == EventStatus.CANCELLED
+            # No audit row for the would-be transition
+            entry = db.session.scalar(
+                sa.select(AuditLogEntry).where(
+                    AuditLogEntry.entity_type == "Event",
+                    AuditLogEntry.entity_id == str(event_id),
+                    AuditLogEntry.action_type == "status_change",
+                )
+            )
+            assert entry is None
+
+    def test_open_skips_when_open_datetime_moved_to_future(self, app, caplog) -> None:
+        event_id = _make_event(app, EventStatus.PUBLISHED)
+        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
+
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            event.assignments_open_datetime = datetime.now(timezone.utc) + timedelta(hours=2)
+            event.version += 1
+            db.session.commit()
+
+        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
+            sm._apply_event_transition_with_retry(
+                event_id,
+                sm._open_assignments_mutator,
+                "open_assignments",
+                predicate=sm._open_assignments_predicate,
+            )
+
+        assert "no longer eligible" in caplog.text
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.status == EventStatus.PUBLISHED
+
+    def test_close_skips_archived_event(self, app, caplog) -> None:
+        event_id = _make_event(app, EventStatus.ASSIGNMENTS_OPEN, end_offset_hours=-1)
+        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
+
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            event.archived = True
+            event.version += 1
+            db.session.commit()
+
+        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
+            sm._apply_event_transition_with_retry(
+                event_id,
+                sm._close_completed_mutator,
+                "close_completed_events",
+                predicate=sm._close_completed_predicate,
+            )
+
+        assert "no longer eligible" in caplog.text
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.status == EventStatus.ASSIGNMENTS_OPEN
+            assert event.archived is True
+
+    def test_close_skips_when_status_reverted(self, app, caplog) -> None:
+        event_id = _make_event(app, EventStatus.ASSIGNMENTS_OPEN, end_offset_hours=-1)
+        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
+
+        # Somebody cancelled the event before scheduler's close pass.
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            event.status = EventStatus.CANCELLED
+            event.version += 1
+            db.session.commit()
+
+        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
+            sm._apply_event_transition_with_retry(
+                event_id,
+                sm._close_completed_mutator,
+                "close_completed_events",
+                predicate=sm._close_completed_predicate,
+            )
+
+        assert "no longer eligible" in caplog.text
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert event is not None
+            assert event.status == EventStatus.CANCELLED

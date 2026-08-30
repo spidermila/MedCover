@@ -327,7 +327,7 @@ def edit(template_id: int) -> str | Response:
             f"Upravena šablona akce '{tmpl.name}'",
             diff_changes(before, after),
         )
-        if (resp := commit_or_stale(url_for("templates.index"))) is not None:
+        if (resp := commit_or_stale(url_for("templates.edit", template_id=tmpl.id))) is not None:
             return resp
 
         flash(f"Šablona „{tmpl.name}“ byla uložena.", "success")

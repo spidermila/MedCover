@@ -704,7 +704,7 @@ def edit(event_id: int) -> str | Response:
 
         event.version += 1
         audit("edit", "Event", event.id, f"Upravena akce '{event.name}'", diff_changes(before, after))
-        if (resp := commit_or_stale(url_for("events.detail", event_id=event.id))) is not None:
+        if (resp := commit_or_stale(url_for("events.edit", event_id=event.id))) is not None:
             return resp
 
         # Notify assigned users about the change (only if something actually changed).

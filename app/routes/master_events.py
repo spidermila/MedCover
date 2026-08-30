@@ -187,7 +187,7 @@ def edit(me_id: int) -> str | Response:
             ),
         )
 
-        if (resp := commit_or_stale(url_for("master_events.detail", me_id=me.id))) is not None:
+        if (resp := commit_or_stale(url_for("master_events.edit", me_id=me.id))) is not None:
             return resp
 
         flash(f"Nadřazená akce „{me.name}“ byla uložena.", "success")
