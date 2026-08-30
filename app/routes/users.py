@@ -10,6 +10,7 @@ from flask import Blueprint, Response, abort, flash, redirect, render_template, 
 from flask_login import current_user, login_required
 from sqlalchemy import collate
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import INVITE_TOKEN_HOURS
 from app.constants import MIN_PASSWORD_LENGTH, RECORD_MODIFIED_MSG
@@ -96,12 +97,19 @@ def profile() -> str | Response:
         .options(selectinload(Assignment.event))  # type: ignore[arg-type]
         .limit(10)
     ).all()
-    # Lazy-init iCal token on first profile visit.
+    # Lazy-init iCal token on first profile visit. Wrapped in StaleDataError
+    # handling because UserAccount uses ORM version_id_col — a concurrent
+    # bump (e.g. admin editing roles in another tab) would otherwise 500 this
+    # GET. On stale, refresh and reuse whatever token is now in the DB.
     token_created = False
     if not user.ical_token:
         user.regenerate_ical_token()
-        db.session.commit()
-        token_created = True
+        try:
+            db.session.commit()
+            token_created = True
+        except StaleDataError:
+            db.session.rollback()
+            db.session.refresh(user)
     ical_url = external_url_for("calendar.feed", token=user.ical_token)
     ical_all_url = external_url_for("calendar.feed_all", token=user.ical_all_token)
     has_signature = user.signature_mimetype is not None
