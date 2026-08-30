@@ -552,9 +552,9 @@ greenlet==3.5.4 \
     --hash=sha256:f88193799d43dbf8c8a806d6405c9c52fe2af40bf75072a606357b33cc336c7f \
     --hash=sha256:f908898d6fa484ce4b6f447ce70ea99b52c503fee419e53cf74d60a16bc9e667
     # via sqlalchemy
-gunicorn==26.1.0 \
-    --hash=sha256:1413d777bf99d31ebeb08acd354b01f1ecc44db0aa7b811ae7b86c669232e4f7 \
-    --hash=sha256:9f45bcddec5e9dc7a25a3bdccb0c6832f11fd5d4739b1ee36c8d2fec25f1dc86
+gunicorn==26.2.0 \
+    --hash=sha256:62b864895d9ebff0b2f9867ba04fe811c93121596540830c9c916d0769668447 \
+    --hash=sha256:bd249d0b3f7972f7432f0a6b6ff3b3ee2d129f70cd1ff6c09a9dd9e29a2b88e3
     # via -r requirements.in
 holidays==0.102 \
     --hash=sha256:ea1116491db82fc56612cad4b6c6f49272a13d73f006b073a3b77e98848c9fbf \
