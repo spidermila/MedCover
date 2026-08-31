@@ -94,23 +94,22 @@
 
   function validateEmail() {
     var val = emailEl.value.trim();
+    emailEl.dataset.validated = "1";
     if (!val) {
-      emailEl.classList.remove("is-valid", "is-invalid");
+      emailEl.classList.remove("is-invalid");
       return;
     }
     if (emailEl.checkValidity()) {
-      emailEl.classList.add("is-valid");
       emailEl.classList.remove("is-invalid");
     } else {
       emailEl.classList.add("is-invalid");
-      emailEl.classList.remove("is-valid");
     }
   }
 
   emailEl.addEventListener("input", function () {
     // Only give live feedback once the field has already been validated
     // (i.e. after the user has tabbed away at least once).
-    if (!emailEl.classList.contains("is-valid") && !emailEl.classList.contains("is-invalid")) return;
+    if (!emailEl.dataset.validated) return;
     validateEmail();
   });
   emailEl.addEventListener("blur", validateEmail);

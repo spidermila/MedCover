@@ -6,43 +6,39 @@
   function validatePhone(input) {
     var val = input.value.trim();
     if (val === '') {
-      input.classList.remove('is-invalid', 'is-valid');
+      input.classList.remove('is-invalid');
       return true;
     }
     var ok = PHONE_RE.test(val.replace(/\s+/g, ''));
     input.classList.toggle('is-invalid', !ok);
-    input.classList.toggle('is-valid', ok);
     return ok;
   }
 
   function validateEmail(input) {
     var val = input.value.trim();
     if (val === '') {
-      input.classList.remove('is-invalid', 'is-valid');
+      input.classList.remove('is-invalid');
       return true;
     }
     var ok = EMAIL_RE.test(val);
     input.classList.toggle('is-invalid', !ok);
-    input.classList.toggle('is-valid', ok);
     return ok;
   }
 
   function validateName(input) {
     var ok = input.value.trim() !== '';
     input.classList.toggle('is-invalid', !ok);
-    input.classList.toggle('is-valid', ok);
     return ok;
   }
 
   function validatePassword(input) {
     var val = input.value;
     if (val === '') {
-      input.classList.remove('is-invalid', 'is-valid');
+      input.classList.remove('is-invalid');
       return true;
     }
     var ok = val.length >= 8;
     input.classList.toggle('is-invalid', !ok);
-    input.classList.toggle('is-valid', ok);
     return ok;
   }
 
