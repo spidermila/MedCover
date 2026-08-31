@@ -21,7 +21,7 @@ class ReminderScheduleMixin:
     def reminder_hours(self) -> list[int]:
         """Parse ``reminder_schedule`` (comma-separated ints) into a list of hour offsets."""
         if not self.reminder_schedule:
-            return [24]
+            return [72]
         return [int(h) for h in self.reminder_schedule.split(",") if h.strip().isdigit()]
 
 
@@ -144,9 +144,9 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     responsible_person_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=True)
     created_by_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=True)
     # Reminder schedule inherited from template or set manually (hours before start, comma-separated)
-    reminder_schedule = db.Column(db.String(255), nullable=True, default="24")
+    reminder_schedule = db.Column(db.String(255), nullable=True, default="72")
     # Tracks sent reminders: JSON dict mapping hours-offset str → ISO sent_at timestamp.
-    # e.g. {"24": "2026-05-28T17:00:00+00:00"} means the 24h reminder was already sent.
+    # e.g. {"72": "2026-05-28T17:00:00+00:00"} means the 72h reminder was already sent.
     reminder_sent_json = db.Column(db.JSON, nullable=True, default=dict)
     # ── Post-event actuals (filled during debriefing by responsible person) ───
     actual_start_datetime = db.Column(db.DateTime(timezone=True), nullable=True)

@@ -249,7 +249,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
         - On Events that belong to a custom ME (for example large music festivals), when a new Event is created the ME coordinator is automatically pre-filled as the RP; the coordinator can later reassign the RP slot to another eligible member
         - The RP shall be notified about changes in the Event, for example users switching spots, or coordinator/admin changing some parameters of the Event
     - If someone removes his/her's Assignment from an Event, all users who fulfill the spot requirements will be notified about the new Assignment possibility/need. No approval from the RP is required to free a spot.
-    - If the Event is nearing its start and still has unfilled spots, all eligible users shall receive escalating reminder emails; the reminder schedule is stored per Event (default: 1 reminder, 1 day before start).
+    - If the Event is nearing its start and still has unfilled spots, all eligible users shall receive escalating reminder emails; the reminder schedule is stored per Event (default: 1 reminder, 72 h before start).
     - The users registered to an Event shall be able to release their Assignment at any time; no approval from the RP or anyone else is required (see AD06)
 - Post-event Debriefing
     - after an Event reaches the Completed status, the system shall trigger a debriefing process for all assigned members
@@ -299,7 +299,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 | Event archived / cancelled | Assigned users **and** users with pending notifications for the event | Immediate: any deferred rows for the event are flushed to `send_after=NULL` and go out with the archive notice in the same batched email |
 | Event unarchived / restored | Currently assigned users | Deferred: proximity tier; batched per recipient (further edits merge as usual) |
 | User archived or deactivated | (no email) | All the user's pending outbox rows are deleted; queue drained silently |
-| Unfilled spots as Event approaches | All eligible users | Configurable reminder schedule per Event (default: 1 day before start); enqueue is then deferred + batched per recipient |
+| Unfilled spots as Event approaches | All eligible users | Configurable reminder schedule per Event (default: 72 h before start); enqueue is then deferred + batched per recipient |
 | Event Completed — debriefing | Each assigned member (personalised link) | On transition to Completed → deferred + batched per recipient |
 | User-set personal reminder | The individual user | At the user-configured time |
 | Manual reminder by admin/coordinator/RP | Selected roles on a specific Event | On demand |
@@ -1164,7 +1164,7 @@ Pre-defined roles (see AD01):
     - start datetime
     - end datetime
     - assignments_open_at - datetime when Assignments Open is triggered automatically; null = open immediately on Publish
-    - reminder_schedule — list of offsets before Event start (e.g. [1 day]) at which unfilled-spot reminder emails are sent to eligible users
+    - reminder_schedule — list of offsets before Event start (e.g. [72 h]) at which unfilled-spot reminder emails are sent to eligible users
     - responsible person - assigned User Account (RP)
     - required equipment - list of `EventEquipmentRequirement` entries (equipment type + quantity needed)
     - paid flag - whether the Event is a paid engagement

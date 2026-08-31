@@ -71,8 +71,8 @@ def test_send_reminders_skips_when_window_not_open(app):
     """Reminder window hasn't opened yet → returns 0."""
 
     now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
-    # Event starts 25h from now, default reminder at 24h → window opens in 1h
-    start = now + timedelta(hours=25)
+    # Event starts 73h from now, default reminder at 72h → window opens in 1h
+    start = now + timedelta(hours=73)
     _make_open_event_with_rp(app, start)
 
     with app.app_context():
@@ -84,8 +84,8 @@ def test_send_reminders_sends_when_window_open(app):
     """Reminder window has opened → enqueues reminder email."""
 
     now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
-    # Event starts 23h from now, default reminder at 24h → window opened 1h ago
-    start = now + timedelta(hours=23)
+    # Event starts 71h from now, default reminder at 72h → window opened 1h ago
+    start = now + timedelta(hours=71)
     _make_open_event_with_rp(app, start)
 
     with app.app_context():
@@ -100,13 +100,13 @@ def test_send_reminders_skips_already_sent(app):
     """Reminder already recorded in reminder_sent_json → not sent again."""
 
     now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
-    start = now + timedelta(hours=23)
+    start = now + timedelta(hours=71)
     event_id = _make_open_event_with_rp(app, start)
 
     with app.app_context():
-        # Pre-mark the 24h reminder as already sent
+        # Pre-mark the 72h reminder as already sent
         event = db.session.get(Event, event_id)
-        event.reminder_sent_json = {"24": now.isoformat()}
+        event.reminder_sent_json = {"72": now.isoformat()}
         db.session.commit()
 
         result = run_send_reminders(db.session, now=now)
@@ -117,7 +117,7 @@ def test_send_reminders_skips_fully_filled_event(app):
     """All mandatory spots filled → no reminder sent."""
 
     now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
-    start = now + timedelta(hours=23)
+    start = now + timedelta(hours=71)
     event_id = _make_open_event_with_rp(app, start)
 
     with app.app_context():
