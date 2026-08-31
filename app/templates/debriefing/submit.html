@@ -1,10 +1,6 @@
 {% extends "base.html" %}
 {% from 'macros/help.html' import help_icon %}
 {% block title %}Debriefing — {{ event.name }} — MedCover{% endblock %}
-{% block extra_head %}
-<style>#feedback-fields { display: none; }</style>
-{% endblock %}
-
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-12 col-lg-7">
@@ -46,7 +42,7 @@
             </div>
           </div>
 
-          <div id="feedback-fields">
+          <div id="feedback-fields" hidden>
           <div class="mb-3">
             <label for="feedback_event" class="form-label">
               Hodnocení průběhu akce
@@ -162,11 +158,11 @@
 </div>
 {% endblock %}
 {% block extra_scripts %}
-<script>
+<script nonce="{{ g.csp_nonce }}">
   const feedbackFields = document.getElementById("feedback-fields");
   document.querySelectorAll('[name="event_note_status"]').forEach((input) => input.addEventListener("change", () => {
-    feedbackFields.style.display = document.getElementById("event_note_status_2").checked ? "block" : "none";
+    feedbackFields.hidden = !document.getElementById("event_note_status_2").checked;
   }));
-  feedbackFields.style.display = document.getElementById("event_note_status_2").checked ? "block" : "none";
+  feedbackFields.hidden = !document.getElementById("event_note_status_2").checked;
 </script>
 {% endblock %}
