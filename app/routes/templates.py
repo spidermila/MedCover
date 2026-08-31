@@ -146,7 +146,6 @@ def create() -> str | Response:
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
         paid = request.form.get("paid") == "1"
-        reminder_schedule = request.form.get("reminder_schedule", "24").strip() or "24"
         event_type_str = request.form.get("event_type", "").strip()
         event_type = EventType[event_type_str] if event_type_str in EventType.__members__ else EventType.MEDICAL_COVER
 
@@ -186,7 +185,6 @@ def create() -> str | Response:
             name=name,
             description=description,
             paid=paid,
-            reminder_schedule=reminder_schedule,
             event_type=event_type,
         )
         db.session.add(tmpl)
@@ -243,7 +241,6 @@ def edit(template_id: int) -> str | Response:
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
         paid = request.form.get("paid") == "1"
-        reminder_schedule = request.form.get("reminder_schedule", "24").strip() or "24"
         event_type_str = request.form.get("event_type", "").strip()
         event_type = EventType[event_type_str] if event_type_str in EventType.__members__ else EventType.MEDICAL_COVER
 
@@ -274,7 +271,6 @@ def edit(template_id: int) -> str | Response:
             "name": tmpl.name,
             "description": tmpl.description,
             "paid": tmpl.paid,
-            "reminder_schedule": tmpl.reminder_schedule,
             "event_type": tmpl.event_type.name,
             "spot_count": len(tmpl.spot_templates),
         }
@@ -294,7 +290,6 @@ def edit(template_id: int) -> str | Response:
         tmpl.name = name
         tmpl.description = description
         tmpl.paid = paid
-        tmpl.reminder_schedule = reminder_schedule
         tmpl.event_type = event_type
         tmpl.version += 1
 
@@ -305,7 +300,6 @@ def edit(template_id: int) -> str | Response:
             "name": tmpl.name,
             "description": tmpl.description,
             "paid": tmpl.paid,
-            "reminder_schedule": tmpl.reminder_schedule,
             "event_type": tmpl.event_type.name,
             "spot_count": len(slots),
         }

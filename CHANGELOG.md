@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Content Security Policy `style-src` no longer allows `'unsafe-inline'`. Inline styles now require the same per-request nonce already used for `script-src`, closing the last vector for CSS-based UI-redressing attacks and inline-style injection. FullCalendar and Flatpickr continue to work unchanged — the former reads the nonce from the new `<meta name="csp-nonce">` tag in `base.html`, the latter is covered by a small `document.createElement` shim that nonces any `<style>` element created at runtime. (#234)
 
+### Removed
+- Šablona akce: pole „Plán připomenutí“ bylo odstraněno z formuláře i seznamu šablon. Hodnota se nikdy nepřenášela na akci vytvořenou ze šablony, takže se jednalo o mrtvé pole. Plán připomenutí zůstává na úrovni akce (výchozí 24 h před začátkem). (#474)
+
 ## [0.19.1] - 2026-08-26
 
 ### Fixed

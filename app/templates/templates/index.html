@@ -19,7 +19,6 @@
         <th class="sortable" data-col="name" class="cursor-pointer">Název <span class="sort-icon text-muted">↕</span></th>
         <th>Popis</th>
         <th class="text-center sortable" data-col="paid" class="cursor-pointer">Placená <span class="sort-icon text-muted">↕</span></th>
-        <th class="text-center">Připomenutí (h)</th>
         <th class="text-center sortable" data-col="spots" class="cursor-pointer">Pozice <span class="sort-icon text-muted">↕</span></th>
         <th></th>
       </tr>
@@ -40,7 +39,6 @@
             {{ badge_secondary('Ne') }}
           {% endif %}
         </td>
-        <td class="text-center">{{ tmpl.reminder_schedule or '24' }}</td>
         <td class="text-center">{{ tmpl.spot_templates | length }}</td>
         <td class="text-end">
           {% if current_user.has_permission('event.create') %}

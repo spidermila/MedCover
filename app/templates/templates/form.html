@@ -42,15 +42,6 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-12 col-md-6">
-          <label for="reminder_schedule" class="form-label">Plán připomenutí
-            {{ help_icon("Časy (v hodinách před začátkem akce), kdy se odešle upomínka. Zapište hodiny oddělené čárkou, např. '24,48'.") }}
-          </label>
-          <input type="text" class="form-control" id="reminder_schedule" name="reminder_schedule"
-                 value="{{ request.form.get('reminder_schedule', template.reminder_schedule or '24' if template else '24') }}"
-                 placeholder="24">
-          <div class="form-text">Hodiny oddělené čárkou, např. 24 nebo 24,48</div>
-        </div>
         <div class="col-12 col-md-6 d-flex align-items-end">
           <div class="form-check form-switch mb-2">
             <input class="form-check-input paid-toggle" type="checkbox" role="switch" id="paid" name="paid" value="1"

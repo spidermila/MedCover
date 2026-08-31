@@ -227,7 +227,6 @@ When in doubt about the correct Czech UI label or English code name for a concep
     - Event management - Create, modify, cancel Events
     - Event templates
         - some Events are very similar, so the system shall provide Event templates to simplify creation of new Events (e.g. a simple Event requiring 1 First Aider and 1 Trainee; a larger Event requiring 2 First Aiders, 2 Trainees and an ambulance)
-        - a template may include a reminder schedule (list of "X days/hours before start" reminder triggers) which is applied automatically when an Event is created from it
         - Event templates shall be manageable (create, edit, delete) by **admins and coordinators only**
     - parametrize Events
         - start date,
@@ -250,7 +249,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
         - On Events that belong to a custom ME (for example large music festivals), when a new Event is created the ME coordinator is automatically pre-filled as the RP; the coordinator can later reassign the RP slot to another eligible member
         - The RP shall be notified about changes in the Event, for example users switching spots, or coordinator/admin changing some parameters of the Event
     - If someone removes his/her's Assignment from an Event, all users who fulfill the spot requirements will be notified about the new Assignment possibility/need. No approval from the RP is required to free a spot.
-    - If the Event is nearing its start and still has unfilled spots, all eligible users shall receive escalating reminder emails; the reminder schedule is configurable per Event by a coordinator/admin (default: 1 reminder, 1 day before start). When an Event is created from a template, the template's reminder schedule is applied.
+    - If the Event is nearing its start and still has unfilled spots, all eligible users shall receive escalating reminder emails; the reminder schedule is stored per Event (default: 1 reminder, 1 day before start).
     - The users registered to an Event shall be able to release their Assignment at any time; no approval from the RP or anyone else is required (see AD06)
 - Post-event Debriefing
     - after an Event reaches the Completed status, the system shall trigger a debriefing process for all assigned members
@@ -1165,7 +1164,7 @@ Pre-defined roles (see AD01):
     - start datetime
     - end datetime
     - assignments_open_at - datetime when Assignments Open is triggered automatically; null = open immediately on Publish
-    - reminder_schedule — list of offsets before Event start (e.g. [1 day]) at which unfilled-spot reminder emails are sent to eligible users; inherited from template, editable by coordinator/admin
+    - reminder_schedule — list of offsets before Event start (e.g. [1 day]) at which unfilled-spot reminder emails are sent to eligible users
     - responsible person - assigned User Account (RP)
     - required equipment - list of `EventEquipmentRequirement` entries (equipment type + quantity needed)
     - paid flag - whether the Event is a paid engagement
@@ -1194,7 +1193,6 @@ Pre-defined roles (see AD01):
     - default spots (list of Event Spot templates with Qualification requirements)
     - default required equipment
     - paid / unpaid flag
-    - reminder schedule — list of offsets before Event start (e.g. [7 days, 1 day]) at which unfilled-spot reminder emails are sent
     - any other Event parameters that may be pre-set
 - methods
     - create Event from template
