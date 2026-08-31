@@ -24,7 +24,6 @@ def _make_template(
             name=name,
             description="Test description",
             paid=paid,
-            reminder_schedule="24,48",
         )
         db.session.add(tmpl)
         db.session.flush()
@@ -94,7 +93,6 @@ class TestTemplateCreate:
             "/templates/create",
             data={
                 "name": "Závod",
-                "reminder_schedule": "24",
                 "paid": "1",
                 "spot_desc_0": "Zdravotník",
                 "spot_cred_0": str(rp_qual_id),
@@ -112,7 +110,7 @@ class TestTemplateCreate:
     def test_create_template_missing_name_returns_error(self, app, admin_client):
         response = admin_client.post(
             "/templates/create",
-            data={"name": "", "reminder_schedule": "24"},
+            data={"name": ""},
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -126,7 +124,6 @@ class TestTemplateCreate:
             "/templates/create",
             data={
                 "name": "Maraton",
-                "reminder_schedule": "24",
                 "spot_desc_0": "Zdravotník",
                 "spot_cred_0": str(rp_qual_id),
                 "spot_total": "1",
@@ -142,7 +139,6 @@ class TestTemplateCreate:
             "/templates/create",
             data={
                 "name": "Se pozicemi",
-                "reminder_schedule": "24",
                 "spot_desc_0": "Záchranář",
                 "spot_cred_0": str(rp_qual_id),
                 "spot_desc_1": "Řidič",
@@ -162,7 +158,6 @@ class TestTemplateCreate:
             "/templates/create",
             data={
                 "name": "Audit Test",
-                "reminder_schedule": "24",
                 "spot_desc_0": "Zdravotník",
                 "spot_cred_0": str(rp_qual_id),
                 "spot_total": "1",
@@ -204,7 +199,6 @@ class TestTemplateEdit:
             f"/templates/{tmpl_id}/edit",
             data={
                 "name": "Updated",
-                "reminder_schedule": "48",
                 "version": str(ver),
                 "spot_desc_0": "Zdravotník",
                 "spot_cred_0": str(rp_qual_id),
@@ -223,7 +217,7 @@ class TestTemplateEdit:
         # Submit with version 0 (wrong)
         response = admin_client.post(
             f"/templates/{tmpl_id}/edit",
-            data={"name": "Updated Stale", "reminder_schedule": "24", "version": "0"},
+            data={"name": "Updated Stale", "version": "0"},
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -242,7 +236,6 @@ class TestTemplateEdit:
             f"/templates/{tmpl_id}/edit",
             data={
                 "name": "Rebuild Spots",
-                "reminder_schedule": "24",
                 "version": str(ver),
                 "spot_desc_0": "Nová pozice",
                 "spot_cred_0": str(rp_qual_id),
@@ -270,7 +263,6 @@ class TestTemplateEdit:
             "/templates/create",
             data={
                 "name": "Qual Save Test",
-                "reminder_schedule": "24",
                 "spot_desc_0": "Pozice A",
                 "spot_cred_0": str(q1_id),
                 "spot_desc_1": "Pozice B",
@@ -306,7 +298,6 @@ class TestTemplateEdit:
             f"/templates/{tmpl_id}/edit",
             data={
                 "name": "Edit Qual Save",
-                "reminder_schedule": "24",
                 "version": str(ver),
                 "spot_desc_0": "Pozice 1",
                 "spot_cred_0": str(q_id),
@@ -326,7 +317,7 @@ class TestTemplateEdit:
         """Regression for #472: a template with no description must not render the literal
         string 'None' inside the <textarea>, otherwise submitting the form persists 'None'."""
         with app.app_context():
-            tmpl = EventTemplate(name="No Description", description=None, reminder_schedule="24")
+            tmpl = EventTemplate(name="No Description", description=None)
             db.session.add(tmpl)
             db.session.commit()
             tmpl_id = tmpl.id
@@ -347,7 +338,7 @@ class TestTemplateEdit:
         description must leave description NULL, not the string 'None'."""
         rp_qual_id = _make_rp_qual(app)
         with app.app_context():
-            tmpl = EventTemplate(name="Roundtrip None", description=None, reminder_schedule="24")
+            tmpl = EventTemplate(name="Roundtrip None", description=None)
             db.session.add(tmpl)
             db.session.flush()
             st = EventSpotTemplate(template_id=tmpl.id, description="Zdravotník")
@@ -375,7 +366,6 @@ class TestTemplateEdit:
             data={
                 "name": "Roundtrip None",
                 "description": rendered_description,
-                "reminder_schedule": "24",
                 "version": str(ver),
                 "spot_desc_0": "Zdravotník",
                 "spot_cred_0": str(rp_qual_id),
@@ -387,29 +377,6 @@ class TestTemplateEdit:
         with app.app_context():
             tmpl = db.session.get(EventTemplate, tmpl_id)
             assert tmpl.description is None
-
-    def test_edit_page_renders_default_reminder_when_null(self, app, admin_client):
-        """Regression for #472: a template whose reminder_schedule is NULL must render the
-        default '24' in the input, not the literal string 'None'."""
-        with app.app_context():
-            # Bypass the Python-side default="24" by inserting first, then nulling the column.
-            tmpl = EventTemplate(name="Null Reminder", description=None)
-            db.session.add(tmpl)
-            db.session.flush()
-            tmpl.reminder_schedule = None
-            db.session.commit()
-            assert tmpl.reminder_schedule is None
-            tmpl_id = tmpl.id
-
-        response = admin_client.get(f"/templates/{tmpl_id}/edit")
-        assert response.status_code == 200
-        body = response.data.decode("utf-8")
-        match = re.search(
-            r'<input[^>]*\bname="reminder_schedule"[^>]*\bvalue="([^"]*)"',
-            body,
-        )
-        assert match is not None, "reminder_schedule input not found"
-        assert match.group(1) == "24", f"expected '24', got {match.group(1)!r}"
 
 
 # ── Delete ────────────────────────────────────────────────────────────────────
@@ -504,7 +471,7 @@ class TestCreateEventFromTemplate:
             rp_qual = Qualification(name="RP Qual Desc", can_be_rp=True)
             db.session.add(rp_qual)
             db.session.flush()
-            tmpl = EventTemplate(name="Desc Template", reminder_schedule="24")
+            tmpl = EventTemplate(name="Desc Template")
             db.session.add(tmpl)
             db.session.flush()
             st1 = EventSpotTemplate(template_id=tmpl.id, description="Záchranář")
@@ -641,7 +608,7 @@ class TestTemplateSpotRpConstraint:
         """POST to create with no spots must be rejected."""
         response = admin_client.post(
             "/templates/create",
-            data={"name": "No Spots Template", "reminder_schedule": "24"},
+            data={"name": "No Spots Template"},
             follow_redirects=True,
         )
         assert response.status_code == 200
@@ -656,7 +623,6 @@ class TestTemplateSpotRpConstraint:
             "/templates/create",
             data={
                 "name": "All Optional Template",
-                "reminder_schedule": "24",
                 "spot_desc_0": "Volitelná pozice",
                 "spot_cred_0": str(rp_qual_id),
                 "spot_optional_0": "1",
@@ -681,7 +647,6 @@ class TestTemplateSpotRpConstraint:
             "/templates/create",
             data={
                 "name": "No RP Qual Template",
-                "reminder_schedule": "24",
                 "spot_desc_0": "Povinná pozice",
                 "spot_cred_0": str(qual_id),
                 "spot_total": "1",
@@ -700,7 +665,6 @@ class TestTemplateSpotRpConstraint:
             "/templates/create",
             data={
                 "name": "Valid RP Template",
-                "reminder_schedule": "24",
                 "spot_desc_0": "RP Pozice",
                 "spot_cred_0": str(rp_qual_id),
                 "spot_total": "1",
@@ -730,7 +694,6 @@ class TestTemplateSpotRpConstraint:
             f"/templates/{tmpl_id}/edit",
             data={
                 "name": "Has RP Spot Template",
-                "reminder_schedule": "24",
                 "version": str(ver),
                 "spot_desc_0": "Povinná bez RP",
                 "spot_cred_0": str(non_rp_qual_id),
@@ -756,7 +719,6 @@ class TestTemplateSpotRpConstraint:
             f"/templates/{tmpl_id}/edit",
             data={
                 "name": "Edit All Optional Template",
-                "reminder_schedule": "24",
                 "version": str(ver),
                 "spot_desc_0": "Volitelná pozice",
                 "spot_cred_0": str(rp_qual_id),
@@ -783,7 +745,6 @@ class TestTemplateSpotRpConstraint:
             f"/templates/{tmpl_id}/edit",
             data={
                 "name": "Edit No Spots Template",
-                "reminder_schedule": "24",
                 "version": str(ver),
                 "spot_total": "0",
             },

@@ -55,7 +55,7 @@ spot_template_qualifications = db.Table(
 )
 
 
-class EventTemplate(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
+class EventTemplate(db.Model):  # type: ignore[misc]
     __tablename__ = "event_template"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -67,9 +67,6 @@ class EventTemplate(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         default=EventType.MEDICAL_COVER,
         nullable=False,
     )
-    # Reminder schedule: list of hours-before-start values, stored as comma-separated ints
-    # e.g. "24,48" means send reminders 24h and 48h before start
-    reminder_schedule = db.Column(db.String(255), nullable=True, default="24")
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
