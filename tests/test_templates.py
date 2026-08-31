@@ -335,7 +335,7 @@ class TestTemplateEdit:
         assert response.status_code == 200
         body = response.data.decode("utf-8")
         match = re.search(
-            r'<textarea[^>]*name="description"[^>]*>(.*?)</textarea>',
+            r'<textarea[^>]*\bname="description"[^>]*>(.*?)</textarea>',
             body,
             re.DOTALL,
         )
@@ -362,12 +362,13 @@ class TestTemplateEdit:
         page = admin_client.get(f"/templates/{tmpl_id}/edit")
         body = page.data.decode("utf-8")
         match = re.search(
-            r'<textarea[^>]*name="description"[^>]*>(.*?)</textarea>',
+            r'<textarea[^>]*\bname="description"[^>]*>(.*?)</textarea>',
             body,
             re.DOTALL,
         )
         assert match is not None
         rendered_description = match.group(1)
+        assert rendered_description == "", f"edit page pre-filled description with {rendered_description!r}"
 
         response = admin_client.post(
             f"/templates/{tmpl_id}/edit",
@@ -386,6 +387,25 @@ class TestTemplateEdit:
         with app.app_context():
             tmpl = db.session.get(EventTemplate, tmpl_id)
             assert tmpl.description is None
+
+    def test_edit_page_renders_default_reminder_when_null(self, app, admin_client):
+        """Regression for #472: a template whose reminder_schedule is NULL must render the
+        default '24' in the input, not the literal string 'None'."""
+        with app.app_context():
+            tmpl = EventTemplate(name="Null Reminder", description=None, reminder_schedule=None)
+            db.session.add(tmpl)
+            db.session.commit()
+            tmpl_id = tmpl.id
+
+        response = admin_client.get(f"/templates/{tmpl_id}/edit")
+        assert response.status_code == 200
+        body = response.data.decode("utf-8")
+        match = re.search(
+            r'<input[^>]*\bname="reminder_schedule"[^>]*\bvalue="([^"]*)"',
+            body,
+        )
+        assert match is not None, "reminder_schedule input not found"
+        assert match.group(1) == "24", f"expected '24', got {match.group(1)!r}"
 
 
 # ── Delete ────────────────────────────────────────────────────────────────────
