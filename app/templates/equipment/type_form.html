@@ -18,6 +18,23 @@
                required autofocus>
       </div>
 
+      <div class="mb-3">
+        <label for="icon" class="form-label">Ikona <span class="text-danger">*</span></label>
+        <div class="input-group">
+          <span class="input-group-text fs-5" aria-hidden="true">{{ et.icon if edit else request.form.get('icon', '📦') }}</span>
+          <input type="text" class="form-control" id="icon" name="icon" maxlength="16"
+                 value="{{ et.icon if edit else request.form.get('icon', '📦') }}"
+                 list="equipment-icon-options" required>
+        </div>
+        <datalist id="equipment-icon-options">
+          <option value="📦"><option value="🩺"><option value="💊"><option value="🎒">
+          <option value="🔊"><option value="⚡"><option value="🚗"><option value="🧩">
+          <option value="📱"><option value="🎨"><option value="🦴"><option value="📽️">
+          <option value="🧍"><option value="🦺"><option value="📻">
+        </datalist>
+        <div class="form-text">Vyberte nebo vložte jedno emoji.</div>
+      </div>
+
       <div class="mb-4">
         <label for="description" class="form-label">Popis</label>
         <textarea class="form-control" id="description" name="description" rows="3">{{ (et.description or '') if edit else request.form.get('description', '') }}</textarea>

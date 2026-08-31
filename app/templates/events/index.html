@@ -205,8 +205,7 @@
             <a href="{{ sort_url('total') }}" class="text-decoration-none text-reset">Obsazení {{ sort_icon('total') }}</a></th>
           <th class="text-wrap minw-7r maxw-9r">
             <a href="{{ sort_url('rp') }}" class="text-decoration-none text-reset">Zodpovědná<br>osoba {{ sort_icon('rp') }}</a></th>
-          <th class="text-wrap minw-7r maxw-9r">
-            <a href="{{ sort_url('me_name') }}" class="text-decoration-none text-reset">Nadřazená<br>akce {{ sort_icon('me_name') }}</a></th>
+          <th class="text-nowrap">Vybavení</th>
           <th></th>
         </tr>
       </thead>
@@ -253,7 +252,15 @@
               —
             {% endif %}
           </td>
-          <td>{% if not event.master_event.is_general %}{{ event.master_event.name }}{% else %}—{% endif %}</td>
+          <td class="text-nowrap">
+            {% for plan in event.equipment_plans %}
+              <span class="equipment-plan-icon" role="img"
+                    aria-label="{{ plan.equipment_type.name }}{% if plan.quantity_required > 1 %}, {{ plan.quantity_required }} ks{% endif %}"
+                    title="{{ plan.equipment_type.name }}{% if plan.quantity_required > 1 %} — {{ plan.quantity_required }} ks{% endif %}">{{ plan.equipment_type.icon }}</span>{% if plan.quantity_required > 1 %}<small class="text-muted">×{{ plan.quantity_required }}</small>{% endif %}
+            {% else %}
+              —
+            {% endfor %}
+          </td>
           <td class="text-end">
             {% set eligible_spots = eligible_spot_map.get(event.id) %}
             {% if eligible_spots %}

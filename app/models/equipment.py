@@ -8,11 +8,15 @@ if TYPE_CHECKING:
     from app.models.user import UserAccount  # noqa: F401
 
 
+DEFAULT_EQUIPMENT_ICON = "📦"
+
+
 class EquipmentType(db.Model):  # type: ignore[misc]
     __tablename__ = "equipment_type"
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), unique=True, nullable=False)
+    icon = db.Column(db.Unicode(16), nullable=False, default=DEFAULT_EQUIPMENT_ICON)
     description = db.Column(db.Text, nullable=True)
     version = db.Column(db.Integer, default=1, nullable=False)
     created_at = db.Column(
