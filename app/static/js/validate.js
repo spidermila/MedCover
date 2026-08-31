@@ -224,6 +224,17 @@
             validateField(el);
           });
         }
+
+        // Flatpickr changes the input value after it has blurred into the
+        // calendar. Revalidate after that change so a valid date clears any
+        // transient "required" error raised by the blur handler.
+        var flatpickrInstance = el._flatpickr ||
+          (el.previousElementSibling && el.previousElementSibling._flatpickr);
+        if (flatpickrInstance) {
+          flatpickrInstance.config.onChange.push(function () {
+            validateField(el);
+          });
+        }
       });
 
       // Live cross-field: date range (start/end datetime)
