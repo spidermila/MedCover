@@ -167,6 +167,30 @@ class TestEventCreate:
         assert "selected" in target_option
         assert "selected" not in general_option
 
+    def test_create_prefills_a_clone_without_editing_the_source(self, app, admin_client):
+        event_id = _make_event_in_status(app, name="Source Event")
+        rp_qual_id = _make_rp_qual(app)
+        with app.app_context():
+            source_event = db.session.get(Event, event_id)
+            admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
+            admin.qualifications = [db.session.get(Qualification, rp_qual_id)]
+            source_event.responsible_person_id = admin.id
+            db.session.commit()
+            admin_id = admin.id
+
+        response = admin_client.get(f"/events/create?clone_event_id={event_id}")
+        html = response.data.decode()
+
+        assert response.status_code == 200
+        assert "Nová akce jako kopie" in html
+        assert 'value="Source Event"' in html
+        assert 'action="/events/create"' in html
+        assert 'name="version"' not in html
+        admin_option = html.split(f'value="{admin_id}"', 1)[1].split("</option>", 1)[0]
+        assert "selected" not in admin_option
+        with app.app_context():
+            assert len(db.session.scalars(db.select(Event)).all()) == 1
+
     def test_create_page_forbidden_for_member(self, member_client):
         response = member_client.get("/events/create")
         assert response.status_code == 403

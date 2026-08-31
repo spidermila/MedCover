@@ -348,6 +348,13 @@ def feed() -> Response:
 def create() -> str | Response:
     require_permission("event.create")
 
+    cloned_from: Event | None = None
+    clone_event_id = request.args.get("clone_event_id", type=int)
+    if clone_event_id is not None:
+        cloned_from = get_or_404(Event, clone_event_id)
+        if not can_view(cloned_from):
+            abort(403)
+
     master_events = active_master_events_list()
     users = rp_eligible_users_list()
     all_qualifications = db.session.scalars(
@@ -361,6 +368,8 @@ def create() -> str | Response:
         return render_template(
             "events/form.html",
             mode="create",
+            event=cloned_from,
+            cloned_from=cloned_from,
             master_events=master_events,
             users=users,
             all_qualifications=all_qualifications,
