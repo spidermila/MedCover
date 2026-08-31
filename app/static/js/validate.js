@@ -15,8 +15,18 @@
     el.classList.add("is-invalid");
     el.classList.remove("is-valid");
     var fb = el.nextElementSibling;
+    // Required-but-empty fields use the red border only, so adding validation
+    // feedback does not move the controls below them after submitting.
+    if (!message) {
+      if (fb && fb.classList.contains("invalid-feedback")) {
+        fb.textContent = "";
+        fb.classList.add("d-none");
+      }
+      return;
+    }
     if (fb && fb.classList.contains("invalid-feedback")) {
       fb.textContent = message;
+      fb.classList.remove("d-none");
     } else {
       fb = document.createElement("div");
       fb.className = "invalid-feedback";
@@ -53,7 +63,7 @@
 
   function validateRequired(el) {
     if (el.hasAttribute("required") && !el.value.trim()) {
-      setInvalid(el, "Toto pole je povinné.");
+      setInvalid(el);
       return false;
     }
     return true;
