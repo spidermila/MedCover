@@ -7,24 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-31
+
+První stabilní vydání MedCoveru. Aplikace nahrazuje původní tabulku v Google Sheets ve všech oblastech evidence zdravotních dozorů, školení i prezentačních akcí Českého červeného kříže.
+
 ### Added
+- Nadřazené akce a akce v seznamu i v tabulce hlavního výpisu nově zobrazují ikony typů vybavení plánovaných na dané akci; typ vybavení má vlastní editovatelnou ikonu (výchozí 📦) spravovanou na stránce vybavení. (#477)
 - Spot assignment pickers (event detail and Table Manager) now flag users who are already assigned to another non-cancelled, non-completed, non-archived event overlapping this one: the user’s name is prefixed with a ⚠️ in the dropdown, and picking them shows an inline warning naming each conflicting event with a link and its time range. Uses the same overlap rules as equipment conflict detection (back-to-back events don’t conflict; drafts do). Cross-event, cross-master-event. (#341)
 - New Czech 403 page („Nemáte oprávnění k zobrazení …“) rendered for authorization failures such as opening an event detail via a conflict-warning link when the current user is not allowed to view that event.
 
 ### Changed
+- Debriefing formulář se zaměřuje na poznámky, které chce účastník sdílet, ne na subjektivní číselné hodnocení akce. Původní pětistupňová stupnice „Celkové hodnocení akce“ byla nahrazena třemi možnostmi: „Ne, všechno bylo jako obvykle.“, „Ano, něco bylo neobvykle dobré nebo špatné. Popíšu to níže.“ a „Ano, něco bylo neobvykle dobré nebo špatné, ale nemám čas to sepisovat — probereme to jindy.“ Textová pole s poznámkami se ve formuláři zobrazí jen tehdy, kdy jsou relevantní. Sloupec „Hodnocení“ v přehledech debriefingů se přejmenoval na „Poznámka“ a zobrazuje odpovídající štítek. Migrace přejmenuje sloupec `grade` → `event_note_status` a data z historického importu označí hodnotou 0.
 - Členové (role Member) již nemohou měnit své jméno v profilu — pole je jen ke čtení a označeno nápovědou „Nelze změnit — kontaktujte administrátora.“ Úpravy jména jsou vyhrazeny administrátorům a koordinátorům (nové oprávnění `user.edit_name`). Telefon zůstává upravitelný všemi. (#457)
+- Výchozí čas upomínky na neobsazené pozice se posunul z 24 h na 72 h před začátkem akce, aby měli koordinátoři víc času na reakci. Existující akce, které stále nesly původní výchozí hodnotu „24“, migrace nastaví na „72“. (#474)
+- Validace formulářů: povinná prázdná pole už neukazují text „Toto pole je povinné.“ pod polem — zobrazí se jen červený rámeček, aby se obsah pod polem po odeslání neposunul. Textové validační chyby s konkrétní zprávou (např. neplatný formát e-mailu) se zobrazují dál beze změny. (#478)
 
 ### Fixed
 - Šablona akce: editace šablony bez popisu už nepředvyplňuje pole „Popis“ textem „None“, který by se jinak uložil do databáze. Pole je teď při chybějícím popisu prázdné, tak jak má být. (#472)
 
-### Security
-- Content Security Policy `style-src` no longer allows `'unsafe-inline'`. Inline styles now require the same per-request nonce already used for `script-src`, closing the last vector for CSS-based UI-redressing attacks and inline-style injection. FullCalendar and Flatpickr continue to work unchanged — the former reads the nonce from the new `<meta name="csp-nonce">` tag in `base.html`, the latter is covered by a small `document.createElement` shim that nonces any `<style>` element created at runtime. (#234)
-
-### Changed
-- Výchozí čas upomínky na neobsazené pozice se posunul z 24 h na 72 h před začátkem akce, aby měli koordinátoři víc času na reakci. Existující akce, které stále nesly původní výchozí hodnotu „24“, migrace nastaví na „72“. (#474)
-
 ### Removed
 - Šablona akce: pole „Plán připomenutí“ bylo odstraněno z formuláře i seznamu šablon. Hodnota se nikdy nepřenášela na akci vytvořenou ze šablony, takže se jednalo o mrtvé pole. Plán připomenutí zůstává na úrovni akce (výchozí 72 h před začátkem). (#474)
+
+### Security
+- Content Security Policy `style-src` no longer allows `'unsafe-inline'`. Inline styles now require the same per-request nonce already used for `script-src`, closing the last vector for CSS-based UI-redressing attacks and inline-style injection. FullCalendar and Flatpickr continue to work unchanged — the former reads the nonce from the new `<meta name="csp-nonce">` tag in `base.html`, the latter is covered by a small `document.createElement` shim that nonces any `<style>` element created at runtime. (#234)
 
 ## [0.19.1] - 2026-08-26
 
@@ -407,7 +412,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/spidermila/MedCover/compare/v0.19.1...v1.0.0
+[0.19.1]: https://github.com/spidermila/MedCover/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/spidermila/MedCover/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/spidermila/MedCover/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/spidermila/MedCover/compare/v0.17.0...v0.17.1

@@ -19,6 +19,33 @@
     </div>
   </div>
 
+  <div class="card mb-3 border-success">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">Verze 1.0.0 — první stabilní vydání</span>
+      <span class="text-muted small">31. 8. 2026</span>
+    </div>
+    <div class="card-body">
+      <p class="small text-muted mb-3">MedCover plně nahrazuje původní tabulku v Google Sheets ve všech oblastech evidence zdravotních dozorů, školení i prezentačních akcí. Děkujeme všem za trpělivost při testování!</p>
+      <h6 class="text-success">✦ Přidáno</h6>
+      <ul class="small mb-2">
+        <li>V seznamu akcí a nadřazených akcí se u každé akce nyní zobrazují ikony typů vybavení, které jsou na ni naplánovány — na první pohled vidíte, co si máte vzít s sebou. Ikonu jednotlivých typů vybavení lze upravit v seznamu vybavení (výchozí 📦).</li>
+        <li>Při přiřazování uživatele na pozici (detail akce i Tabulkový manažer) se v roletce označují ⚠️ uživatelé, kteří jsou už přihlášeni na jinou akci, která se časově překrývá s touto. Po výběru se zobrazí varování s odkazem na konfliktní akci a rozmezím času.</li>
+      </ul>
+      <h6 class="text-primary">✦ Změněno</h6>
+      <ul class="small mb-2">
+        <li>Debriefing: původní pětistupňové „Celkové hodnocení akce“ (1 až 5) bylo nahrazeno jedinou otázkou „Je něco, co bychom o této akci měli vědět?“ se třemi možnostmi (žádné poznámky / mám poznámky, popíšu je / probereme jindy). Textová pole se zobrazí jen když jsou potřeba. V přehledech debriefingů se sloupec „Hodnocení“ přejmenoval na „Poznámka“.</li>
+        <li>Výchozí čas upomínky na neobsazené pozice se posunul z 24 h na 72 h před začátkem akce, aby měli koordinátoři víc času na reakci.</li>
+        <li>Profil: Členové (role Member) již nemohou měnit své jméno — změnu může provést administrátor nebo koordinátor. Telefon zůstává upravitelný všemi.</li>
+        <li>Šablona akce: pole „Plán připomenutí“ bylo odstraněno — hodnota se stejně nikdy nepřenášela na akci vytvořenou ze šablony. Plán připomenutí zůstává na úrovni akce.</li>
+        <li>Formuláře: povinná prázdná pole už neukazují text „Toto pole je povinné.“ pod polem — zobrazí se jen červený rámeček, aby se obsah pod polem po odeslání neposunul. Chybové texty s konkrétní zprávou (např. neplatný formát e-mailu) se zobrazují dál.</li>
+      </ul>
+      <h6 class="text-danger">✦ Opraveno</h6>
+      <ul class="small mb-0">
+        <li>Šablona akce: editace šablony bez popisu už nepředvyplňuje pole „Popis“ textem „None“.</li>
+      </ul>
+    </div>
+  </div>
+
   <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
       <span class="fw-semibold">Verze 0.19.1</span>
