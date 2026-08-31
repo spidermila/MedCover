@@ -32,15 +32,15 @@ debriefing_bp = Blueprint("debriefing", __name__, url_prefix="/debriefing")
 # ── Submit a debriefing ───────────────────────────────────────────────────────
 
 
-def _parse_grade(raw: str) -> tuple[int, str | None]:
-    """Validate the 1–5 grade. Return (grade, error_message)."""
+def _parse_event_note_status(raw: str) -> tuple[int, str | None]:
+    """Validate the required three-way event-note response."""
     try:
-        grade = int(raw)
+        status = int(raw)
     except ValueError:
-        return 0, "Hodnocení musí být číslo od 1 do 5."
-    if grade not in range(1, 6):
-        return 0, "Hodnocení musí být číslo od 1 do 5."
-    return grade, None
+        return 0, "Vyberte jednu z možností."
+    if status not in range(1, 4):
+        return 0, "Vyberte jednu z možností."
+    return status, None
 
 
 def _parse_rp_actuals(
@@ -174,13 +174,15 @@ def submit(assignment_id: int) -> str | Response:
 
     # ── Validate ──────────────────────────────────────────────────────────────
     errors: list[str] = []
-    grade, grade_err = _parse_grade(request.form.get("grade", "").strip())
-    if grade_err:
-        errors.append(grade_err)
+    event_note_status, status_err = _parse_event_note_status(request.form.get("event_note_status", "").strip())
+    if status_err:
+        errors.append(status_err)
 
-    feedback_event = request.form.get("feedback_event", "").strip() or None
-    feedback_customer = request.form.get("feedback_customer", "").strip() or None
-    feedback_colleagues = request.form.get("feedback_colleagues", "").strip() or None
+    feedback_event = feedback_customer = feedback_colleagues = None
+    if event_note_status == 2:
+        feedback_event = request.form.get("feedback_event", "").strip() or None
+        feedback_customer = request.form.get("feedback_customer", "").strip() or None
+        feedback_colleagues = request.form.get("feedback_colleagues", "").strip() or None
 
     actual_start: datetime | None = None
     actual_end: datetime | None = None
@@ -205,7 +207,7 @@ def submit(assignment_id: int) -> str | Response:
     record = DebriefingRecord(
         assignment_id=assignment_id,
         submitted_by_id=current_user.id,
-        grade=grade,
+        event_note_status=event_note_status,
         feedback_event=feedback_event,
         feedback_customer=feedback_customer,
         feedback_colleagues=feedback_colleagues,

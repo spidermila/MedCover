@@ -53,8 +53,8 @@ class DebriefingRecord(db.Model):  # type: ignore[misc]
     submitted_by_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=False)
 
     # ── Confidential section (all participants) ───────────────────────────────
-    # Overall grade: 1 = best, 5 = worst
-    grade = db.Column(db.Integer, nullable=False)
+    # 0 = historical import (no notes), 1 = no notes, 2 = notes provided, 3 = discuss later
+    event_note_status = db.Column(db.Integer, nullable=False)
     feedback_event = db.Column(db.Text, nullable=True)  # overall event evaluation
     feedback_customer = db.Column(db.Text, nullable=True)  # objednatel/organizátor evaluation
     feedback_colleagues = db.Column(db.Text, nullable=True)  # colleagues evaluation
@@ -71,4 +71,4 @@ class DebriefingRecord(db.Model):  # type: ignore[misc]
     )
 
     def __repr__(self) -> str:
-        return f"<DebriefingRecord assignment={self.assignment_id} grade={self.grade}>"
+        return f"<DebriefingRecord assignment={self.assignment_id} event_note_status={self.event_note_status}>"

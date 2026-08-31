@@ -90,8 +90,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 
 | Czech (UI) | English (code) | Notes |
 |---|---|---|
-| Celkové hodnocení akce | Grade — `DebriefingRecord.grade` | 1 (Výborná) to 5 (Špatná) |
-| Výborná / Velmi dobrá / Dobrá / Dostačující / Špatná | 1 / 2 / 3 / 4 / 5 | Grade labels |
+| Poznámka k akci | Event note status — `DebriefingRecord.event_note_status` | 0 (historický import bez poznámek), 1 (bez poznámek), 2 (popsáno), 3 (probrat později) |
 | Hodnocení průběhu akce | Event feedback — `feedback_event` | Confidential evaluation of event execution |
 | Hodnocení objednatele / organizátora | Customer feedback — `feedback_customer` | Confidential evaluation of the customer/organizer |
 | Hodnocení kolegů | Colleagues feedback — `feedback_colleagues` | Confidential evaluation of teamwork |
@@ -1214,7 +1213,7 @@ Pre-defined roles (see AD01):
 - properties
     - event ID
     - user account ID
-    - **grade** — 1 (Výborná) to 5 (Špatná); overall event rating submitted by the participant
+    - **event_note_status** — whether the participant has no note, provided a note, or wants to discuss it later
     - actual hours worked — may differ from the planned Event duration (partial attendance supported)
     - patients treated
     - materials used — free-text description of medical materials consumed

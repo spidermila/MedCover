@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from 'macros/help.html' import help_icon %}
-{% from 'macros/badges.html' import badge_grade, badge_warning, badge_secondary %}
+{% from 'macros/badges.html' import badge_event_note_status, badge_warning, badge_secondary %}
 {% block title %}Správa debriefingů — MedCover{% endblock %}
 
 {% block content %}
@@ -89,7 +89,7 @@
       <thead class="table-light">
         <tr>
           <th>Účastník</th>
-          <th class="text-center">Hodnocení</th>
+          <th class="text-center">Poznámka</th>
           <th>Průběh akce</th>
           <th>Objednatel</th>
           <th>Kolegové</th>
@@ -102,7 +102,7 @@
         <tr>
           <td>{{ a.user.name }}</td>
           <td class="text-center">
-            {{ badge_grade(r.grade) }}
+            {{ badge_event_note_status(r.event_note_status) }}
           </td>
           <td class="small text-muted" class="maxw-200 text-prewrap">{{ r.feedback_event or '—' }}</td>
           <td class="small text-muted" class="maxw-200 text-prewrap">{{ r.feedback_customer or '—' }}</td>

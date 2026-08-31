@@ -23,8 +23,8 @@
       </div>
       <div class="card-body">
         <dl class="row mb-0">
-          <dt class="col-sm-4">Hodnocení akce</dt>
-          <dd class="col-sm-8">{{ record.grade }} / 5</dd>
+          <dt class="col-sm-4">Poznámka k akci</dt>
+          <dd class="col-sm-8">{{ {0: 'Bez poznámek', 1: 'Bez poznámek', 2: 'Popsáno', 3: 'Probrat později'}[record.event_note_status] }}</dd>
 
           <dt class="col-sm-4">Průběh akce</dt>
           <dd class="col-sm-8">{{ record.feedback_event or '—' }}</dd>
