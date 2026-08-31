@@ -1,15 +1,12 @@
-"""Regression tests: server-rendered form pages must never inject is-valid CSS classes.
+"""Regression tests for form-validation styling.
 
-The client-side validate.js adds is-valid / is-invalid programmatically on submit.
-If the server ever renders those classes into the HTML, fields would appear green
-before the user has even interacted with them.
-
-These tests also verify that the Bootstrap "was-validated" class is never pre-applied
-server-side (that would auto-green all filled fields via CSS :valid).
+Neither templates nor client-side validation may add Bootstrap's green
+``is-valid`` state. Forms show only errors using ``is-invalid``.
 """
 
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from app.extensions import db
 from app.models.invite import RegistrationInvite
@@ -41,6 +38,15 @@ def _assert_no_preinjected_validity(html: str, page: str) -> None:
 
 
 class TestNoPreinjectedValidity:
+
+    def test_client_validation_never_adds_green_state(self):
+        root = Path(__file__).parents[1]
+        for relative_path in (
+            "app/static/js/validate.js",
+            "app/static/js/user-form.js",
+            "app/templates/auth/login.html",
+        ):
+            assert "is-valid" not in (root / relative_path).read_text()
 
     def test_event_create_form(self, admin_client):
         resp = admin_client.get("/events/create")

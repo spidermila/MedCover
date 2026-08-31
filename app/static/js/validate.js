@@ -2,9 +2,7 @@
  * MedCover — client-side form validation
  *
  * UX enhancement only — all rules are also enforced server-side.
- * Uses Bootstrap 5 is-invalid / is-valid classes directly.
- * NOTE: we do NOT add the Bootstrap "was-validated" class because that triggers
- * the CSS :valid selector which turns ALL filled fields green unconditionally.
+ * Uses Bootstrap 5 is-invalid classes directly.
  */
 (function () {
   "use strict";
@@ -13,7 +11,6 @@
 
   function setInvalid(el, message) {
     el.classList.add("is-invalid");
-    el.classList.remove("is-valid");
     var fb = el.nextElementSibling;
     // Required-but-empty fields use the red border only, so adding validation
     // feedback does not move the controls below them after submitting.
@@ -35,13 +32,8 @@
     }
   }
 
-  function setValid(el) {
-    el.classList.remove("is-invalid");
-    el.classList.add("is-valid");
-  }
-
   function clearValidity(el) {
-    el.classList.remove("is-invalid", "is-valid");
+    el.classList.remove("is-invalid");
   }
 
   /**
@@ -118,8 +110,6 @@
       return false;
     }
     return true;
-    // Note: setValid is NOT called here — handled centrally in validateForm
-    // after all cross-field checks pass.
   }
 
   // ── Assignments open: must be before event start ─────────────────────────
@@ -150,22 +140,12 @@
       return false;
     }
     return true;
-    // Note: setValid is NOT called here — handled centrally in validateForm.
   }
 
   // ── Validate a single form ────────────────────────────────────────────────
 
   function validateForm(form) {
     var ok = true;
-    // Fields that have rules and passed — candidates for green if overall ok.
-    var passedFields = [];
-    // Track cross-field fields so they can also get green when overall ok.
-    var startEl = form.querySelector("[name='start_datetime']");
-    var endEl   = form.querySelector("[name='end_datetime']");
-    var pwEl    = form.querySelector("[name='new_password']");
-    var confEl  = form.querySelector("[name='confirm_password']");
-    var openAssignEl = form.querySelector("[name='assignments_open_datetime']");
-
     form.querySelectorAll("input, textarea, select").forEach(function (el) {
       if (el.disabled || el.type === "hidden") return;
       clearValidity(el);
@@ -183,27 +163,12 @@
       }
       if (!fieldOk) {
         ok = false;
-      } else if (el.value.trim()) {
-        passedFields.push(el);
       }
     });
 
     ok = validateDateRange(form) && ok;
     ok = validateAssignmentsOpenRange(form) && ok;
     ok = validatePasswordConfirm(form) && ok;
-
-    // Only mark fields green when the ENTIRE form passes all checks.
-    // This prevents the confusing state where some fields are green while
-    // others are red (e.g. start_datetime green while end_datetime is red).
-    if (ok) {
-      passedFields.forEach(function (el) { setValid(el); });
-      // Cross-field fields: green only if they have values and overall ok.
-      if (startEl && startEl.value.trim()) setValid(startEl);
-      if (endEl   && endEl.value.trim())   setValid(endEl);
-      if (pwEl    && pwEl.value)           setValid(pwEl);
-      if (confEl  && confEl.value)         setValid(confEl);
-      if (openAssignEl && openAssignEl.value.trim()) setValid(openAssignEl);
-    }
 
     return ok;
   }
@@ -223,11 +188,6 @@
       setInvalid(el, el.validationMessage || "Neplatná hodnota.");
       ok = false;
     }
-    // Only mark valid (green) if the field actually has content and passed.
-    // Empty optional fields stay neutral.
-    if (ok && el.value.trim()) {
-      setValid(el);
-    }
     return ok;
   }
 
@@ -240,10 +200,6 @@
           e.preventDefault();
           e.stopPropagation();
         }
-        // NOTE: do NOT add "was-validated" class here.
-        // Bootstrap's was-validated triggers .was-validated :valid CSS which
-        // turns ALL fields with any value green unconditionally via the native
-        // :valid pseudo-class, regardless of our custom validation outcome.
       });
 
       // Live validation: validate on blur, and re-validate on input if
@@ -279,7 +235,6 @@
           if (startEl.value && endEl.value) {
             clearValidity(endEl);
             if (!validateDateRange(form) ) return;
-            // If range OK and field itself is valid, mark green
             validateField(endEl);
           }
         }
