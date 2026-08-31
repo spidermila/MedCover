@@ -184,12 +184,16 @@ class TestEventCreate:
         assert response.status_code == 200
         assert "Nová akce jako kopie" in html
         assert 'value="Source Event"' in html
-        assert 'action="/events/create"' in html
+        assert f'action="/events/create?clone_event_id={event_id}"' in html
         assert 'name="version"' not in html
         admin_option = html.split(f'value="{admin_id}"', 1)[1].split("</option>", 1)[0]
         assert "selected" not in admin_option
         with app.app_context():
             assert len(db.session.scalars(db.select(Event)).all()) == 1
+
+        invalid_response = admin_client.post(f"/events/create?clone_event_id={event_id}", data={"name": ""})
+        assert invalid_response.status_code == 200
+        assert "Nová akce jako kopie" in invalid_response.data.decode()
 
     def test_create_page_forbidden_for_member(self, member_client):
         response = member_client.get("/events/create")

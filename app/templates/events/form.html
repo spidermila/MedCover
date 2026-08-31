@@ -29,7 +29,7 @@
 
     <form method="POST"
           {% if mode == "edit" %}action="{{ url_for('events.edit', event_id=event.id) }}"
-          {% else %}action="{{ url_for('events.create') }}"{% endif %}
+          {% else %}action="{{ url_for('events.create', clone_event_id=cloned_from.id if cloned_from else None) }}"{% endif %}
           novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% if mode == "edit" %}
