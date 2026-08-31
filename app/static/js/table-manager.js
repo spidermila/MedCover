@@ -202,16 +202,29 @@
           } else {
             alert(data.error || "Chyba p\u0159i p\u0159i\u0159azen\u00ed.");
             cell.innerHTML = originalHtml;
-            attachAssign(cell.querySelector(".tm-assign-select"));
+            restoreAssignSelection(cell, userId);
           }
         })
         .catch(function () {
           alert("Chyba s\u00edt\u011b.");
           cell.innerHTML = originalHtml;
-          attachAssign(cell.querySelector(".tm-assign-select"));
+          restoreAssignSelection(cell, userId);
         });
       });
     });
+
+    // After a failed assign, re-select the user the operator tried to pick and
+    // fire a bubbling `change` so user-conflict-warning.js re-renders the
+    // warning. Must dispatch BEFORE attachAssign, otherwise the freshly-attached
+    // per-select handler would re-fire the same failed POST.
+    function restoreAssignSelection(cell, userId) {
+      var sel = cell.querySelector(".tm-assign-select");
+      if (sel && userId && sel.querySelector('option[value="' + userId + '"]')) {
+        sel.value = userId;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      attachAssign(sel);
+    }
 
     function attachAssign(sel) {
       if (!sel) return;
@@ -239,7 +252,7 @@
           } else {
             alert(data.error || "Chyba p\u0159i p\u0159i\u0159azen\u00ed.");
             cell.innerHTML = originalHtml;
-            attachAssign(cell.querySelector(".tm-assign-select"));
+            restoreAssignSelection(cell, userId);
           }
         });
       });
