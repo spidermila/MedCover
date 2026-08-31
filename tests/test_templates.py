@@ -322,6 +322,71 @@ class TestTemplateEdit:
             assert len(st.required_qualifications) == 1
             assert st.required_qualifications[0].id == q_id
 
+    def test_edit_page_renders_empty_description_when_null(self, app, admin_client):
+        """Regression for #472: a template with no description must not render the literal
+        string 'None' inside the <textarea>, otherwise submitting the form persists 'None'."""
+        with app.app_context():
+            tmpl = EventTemplate(name="No Description", description=None, reminder_schedule="24")
+            db.session.add(tmpl)
+            db.session.commit()
+            tmpl_id = tmpl.id
+
+        response = admin_client.get(f"/templates/{tmpl_id}/edit")
+        assert response.status_code == 200
+        body = response.data.decode("utf-8")
+        match = re.search(
+            r'<textarea[^>]*name="description"[^>]*>(.*?)</textarea>',
+            body,
+            re.DOTALL,
+        )
+        assert match is not None, "description textarea not found"
+        assert match.group(1) == "", f"expected empty textarea, got {match.group(1)!r}"
+
+    def test_edit_does_not_persist_literal_none_from_empty_description(self, app, admin_client):
+        """Regression for #472: submitting the edit form for a template that had no
+        description must leave description NULL, not the string 'None'."""
+        rp_qual_id = _make_rp_qual(app)
+        with app.app_context():
+            tmpl = EventTemplate(name="Roundtrip None", description=None, reminder_schedule="24")
+            db.session.add(tmpl)
+            db.session.flush()
+            st = EventSpotTemplate(template_id=tmpl.id, description="Zdravotník")
+            qual = db.session.get(Qualification, rp_qual_id)
+            st.required_qualifications = [qual]
+            db.session.add(st)
+            db.session.commit()
+            tmpl_id = tmpl.id
+            ver = tmpl.version
+
+        # Fetch the edit page, then POST back the value the page rendered.
+        page = admin_client.get(f"/templates/{tmpl_id}/edit")
+        body = page.data.decode("utf-8")
+        match = re.search(
+            r'<textarea[^>]*name="description"[^>]*>(.*?)</textarea>',
+            body,
+            re.DOTALL,
+        )
+        assert match is not None
+        rendered_description = match.group(1)
+
+        response = admin_client.post(
+            f"/templates/{tmpl_id}/edit",
+            data={
+                "name": "Roundtrip None",
+                "description": rendered_description,
+                "reminder_schedule": "24",
+                "version": str(ver),
+                "spot_desc_0": "Zdravotník",
+                "spot_cred_0": str(rp_qual_id),
+                "spot_total": "1",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        with app.app_context():
+            tmpl = db.session.get(EventTemplate, tmpl_id)
+            assert tmpl.description is None
+
 
 # ── Delete ────────────────────────────────────────────────────────────────────
 

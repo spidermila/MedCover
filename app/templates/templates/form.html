@@ -25,7 +25,7 @@
         <label for="description" class="form-label">Popis
           {{ help_icon("Volitelný popis šablony — pro koordinátory, popis typické akce, na kterou se šablona hodí.") }}
         </label>
-        <textarea class="form-control" id="description" name="description" rows="2">{{ template.description if template else request.form.get('description', '') }}</textarea>
+        <textarea class="form-control" id="description" name="description" rows="2">{{ request.form.get('description', template.description or '' if template else '') }}</textarea>
       </div>
 
       <div class="row g-3 mb-3">
@@ -47,7 +47,7 @@
             {{ help_icon("Časy (v hodinách před začátkem akce), kdy se odešle upomínka. Zapište hodiny oddělené čárkou, např. '24,48'.") }}
           </label>
           <input type="text" class="form-control" id="reminder_schedule" name="reminder_schedule"
-                 value="{{ template.reminder_schedule if template else request.form.get('reminder_schedule', '24') }}"
+                 value="{{ request.form.get('reminder_schedule', template.reminder_schedule or '24' if template else '24') }}"
                  placeholder="24">
           <div class="form-text">Hodiny oddělené čárkou, např. 24 nebo 24,48</div>
         </div>
