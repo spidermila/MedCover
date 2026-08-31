@@ -392,9 +392,13 @@ class TestTemplateEdit:
         """Regression for #472: a template whose reminder_schedule is NULL must render the
         default '24' in the input, not the literal string 'None'."""
         with app.app_context():
-            tmpl = EventTemplate(name="Null Reminder", description=None, reminder_schedule=None)
+            # Bypass the Python-side default="24" by inserting first, then nulling the column.
+            tmpl = EventTemplate(name="Null Reminder", description=None)
             db.session.add(tmpl)
+            db.session.flush()
+            tmpl.reminder_schedule = None
             db.session.commit()
+            assert tmpl.reminder_schedule is None
             tmpl_id = tmpl.id
 
         response = admin_client.get(f"/templates/{tmpl_id}/edit")
