@@ -44,6 +44,16 @@ class TestEquipmentTypeList:
         response = client.get("/equipment/", follow_redirects=False)
         assert response.status_code == 302
 
+    def test_list_shows_type_icon(self, app, admin_client):
+        type_id = _make_type(app, "Icon type")
+        with app.app_context():
+            equipment_type = db.session.get(EquipmentType, type_id)
+            equipment_type.icon = "🩺"
+            db.session.commit()
+
+        response = admin_client.get("/equipment/")
+        assert '<td class="text-center fs-5" title="🩺">🩺</td>' in response.data.decode()
+
 
 class TestEquipmentTypeCreate:
     def test_create_page_loads_for_admin(self, admin_client):
@@ -57,13 +67,14 @@ class TestEquipmentTypeCreate:
     def test_admin_can_create_type(self, app, admin_client):
         response = admin_client.post(
             "/equipment/types/create",
-            data={"name": "Defibrilátor", "description": ""},
+            data={"name": "Defibrilátor", "icon": "🩺", "description": ""},
             follow_redirects=False,
         )
         assert response.status_code == 302
         with app.app_context():
             et = db.session.scalar(db.select(EquipmentType).where(EquipmentType.name == "Defibrilátor"))
             assert et is not None
+            assert et.icon == "🩺"
 
     def test_create_type_missing_name(self, admin_client):
         response = admin_client.post(
@@ -86,13 +97,14 @@ class TestEquipmentTypeEdit:
         type_id = _make_type(app, "Old Name")
         response = admin_client.post(
             f"/equipment/types/{type_id}/edit",
-            data={"name": "New Name", "version": "1"},
+            data={"name": "New Name", "icon": "🎒", "version": "1"},
             follow_redirects=False,
         )
         assert response.status_code == 302
         with app.app_context():
             et = db.session.get(EquipmentType, type_id)
             assert et.name == "New Name"
+            assert et.icon == "🎒"
 
     def test_optimistic_lock_conflict(self, app, admin_client):
         type_id = _make_type(app)
@@ -222,6 +234,15 @@ class TestEventEquipmentPlan:
 
 
 class TestEquipmentTypeCreateExtended:
+    def test_icon_is_required(self, admin_client):
+        response = admin_client.post(
+            "/equipment/types/create",
+            data={"name": "Type without icon"},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Ikona typu vybavení je povinná" in response.data.decode()
+
     def test_duplicate_name_flashes(self, app, admin_client):
         _make_type(app, "Duplicate Type")
         response = admin_client.post(

@@ -64,17 +64,32 @@ class TestEventListPermissions:
         response = admin_client.get("/events/?statuses=DRAFT")
         assert b"data-me=" in response.data
 
-    def test_event_list_sort_me_name_and_rp_do_not_error(self, app, admin_client):
-        # Regression: me_name and rp sorts previously used .nulls_last() which
-        # emits invalid T-SQL and 500'd on MSSQL. Cover both directions and
-        # exercise archived toggle too since it changes the underlying WHERE.
+    def test_event_list_sort_rp_does_not_error(self, app, admin_client):
+        # Regression: rp sorting previously used .nulls_last(), which emits
+        # invalid T-SQL on MSSQL.
         me_id = _make_master_event(app)
         rp_qual_id = _make_rp_qual(app)
         admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
-        for sort in ("me_name", "rp"):
-            for direction in ("asc", "desc"):
-                resp = admin_client.get(f"/events/?sort={sort}&dir={direction}&statuses=DRAFT")
-                assert resp.status_code == 200, (sort, direction, resp.data[:400])
+        for direction in ("asc", "desc"):
+            resp = admin_client.get(f"/events/?sort=rp&dir={direction}&statuses=DRAFT")
+            assert resp.status_code == 200, (direction, resp.data[:400])
+
+    def test_event_list_shows_equipment_icon_and_quantity(self, app, admin_client):
+        event_id = _make_event_in_status(app, status=EventStatus.ASSIGNMENTS_OPEN)
+        with app.app_context():
+            equipment_type = EquipmentType(name="Event list AED", icon="🩺")
+            db.session.add(equipment_type)
+            db.session.flush()
+            db.session.add(
+                EventEquipmentPlan(event_id=event_id, equipment_type_id=equipment_type.id, quantity_required=2)
+            )
+            db.session.commit()
+
+        response = admin_client.get("/events/?statuses=ASSIGNMENTS_OPEN")
+        html = response.data.decode()
+        assert "Vybavení" in html
+        assert "Nadřazená<br>akce" not in html
+        assert 'title="Event list AED — 2 ks">🩺</span><small class="text-muted">×2</small>' in html
 
 
 class TestObsazeniBadges:

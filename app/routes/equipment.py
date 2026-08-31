@@ -55,6 +55,12 @@ def _parse_avail_dt(raw: str) -> tuple[datetime | None, bool]:
         return None, False
 
 
+def _parse_type_icon() -> str | None:
+    """Return a single short display icon from the type form, if valid."""
+    icon = request.form.get("icon", "").strip()
+    return icon if icon and len(icon) <= 16 else None
+
+
 # ── Types: List / Index ───────────────────────────────────────────────────────
 
 
@@ -78,6 +84,7 @@ def type_create() -> str | Response:
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
+        icon = _parse_type_icon()
 
         if not name:
             flash("Název typu vybavení je povinný.", "danger")
@@ -87,7 +94,11 @@ def type_create() -> str | Response:
             flash("Typ vybavení s tímto názvem již existuje.", "danger")
             return render_template("equipment/type_form.html", edit=False)
 
-        et = EquipmentType(name=name, description=description)
+        if icon is None:
+            flash("Ikona typu vybavení je povinná a může mít nejvýše 16 znaků.", "danger")
+            return render_template("equipment/type_form.html", edit=False)
+
+        et = EquipmentType(name=name, icon=icon, description=description)
         db.session.add(et)
         db.session.flush()
         audit("create", "EquipmentType", str(et.id), f"Vytvořen typ vybavení '{et.name}'")
@@ -116,6 +127,7 @@ def type_edit(type_id: int) -> str | Response:
 
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
+        icon = _parse_type_icon()
 
         if not name:
             flash("Název typu vybavení je povinný.", "danger")
@@ -128,8 +140,13 @@ def type_edit(type_id: int) -> str | Response:
             flash("Typ vybavení s tímto názvem již existuje.", "danger")
             return render_template("equipment/type_form.html", et=et, edit=True)
 
-        before = {"name": et.name, "description": et.description}
+        if icon is None:
+            flash("Ikona typu vybavení je povinná a může mít nejvýše 16 znaků.", "danger")
+            return render_template("equipment/type_form.html", et=et, edit=True)
+
+        before = {"name": et.name, "icon": et.icon, "description": et.description}
         et.name = name
+        et.icon = icon
         et.description = description
         et.version += 1
 
@@ -138,7 +155,7 @@ def type_edit(type_id: int) -> str | Response:
             "EquipmentType",
             str(et.id),
             f"Upraven typ vybavení '{et.name}'",
-            diff_changes(before, {"name": et.name, "description": et.description}),
+            diff_changes(before, {"name": et.name, "icon": et.icon, "description": et.description}),
         )
         db.session.commit()
 

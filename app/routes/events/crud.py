@@ -7,7 +7,7 @@ from uuid import UUID
 import sqlalchemy as sa
 from flask import Response, abort, flash, jsonify, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import case, collate, func
+from sqlalchemy import collate, func
 from sqlalchemy.orm import selectinload
 
 import app.mail as mailer
@@ -66,7 +66,7 @@ _DEFAULT_STATUSES = [
     s.name for s in EventStatus if s not in (EventStatus.DRAFT, EventStatus.CANCELLED, EventStatus.COMPLETED)
 ]
 _ALL_EVENT_TYPES = [t.name for t in EventType]
-_VALID_SORT_COLS = {"start", "name", "status", "me_name", "total", "rp"}
+_VALID_SORT_COLS = {"start", "name", "status", "total", "rp"}
 
 
 def _parse_index_filters() -> dict:
@@ -127,14 +127,6 @@ def _apply_index_order(
         )
     if sort_col == "status":
         return query.order_by(Event.status.asc() if _asc else Event.status.desc())
-    if sort_col == "me_name":
-        me_name_expr = (
-            db.select(case((MasterEvent.is_general == sa.true(), None), else_=MasterEvent.name))
-            .where(MasterEvent.id == Event.master_event_id)
-            .correlate(Event)
-            .scalar_subquery()
-        )
-        return query.order_by(*order_by_nulls_last(me_name_expr, descending=not _asc))
     if sort_col == "total":
         spot_count_sq = (
             db.select(func.count(EventSpot.id))
@@ -219,7 +211,9 @@ def index() -> str:
     require_permission("event.view", "event.view_draft")
 
     f = _parse_index_filters()
-    query = db.select(Event)
+    query = db.select(Event).options(
+        selectinload(Event.equipment_plans).selectinload(EventEquipmentPlan.equipment_type)  # type: ignore[arg-type]
+    )
 
     if not current_user.has_permission("event.view_draft"):
         query = query.where(Event.status != EventStatus.DRAFT)
