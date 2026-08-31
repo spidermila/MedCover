@@ -391,18 +391,18 @@ class TestEventMiscProperties:
 class TestReminderScheduleMixin:
     """Coverage for ReminderScheduleMixin.reminder_hours()."""
 
-    def test_none_returns_default_24h(self):
-        """When ``reminder_schedule`` is None, fall back to the default 24-h reminder.
+    def test_none_returns_default_72h(self):
+        """When ``reminder_schedule`` is None, fall back to the default 72-h reminder.
 
         Constructed via a lightweight subclass instead of an ORM instance because
-        the ``reminder_schedule`` column carries a server-side default of ``"24"``
-        that would overwrite ``None`` on flush and skip the fallback branch.
+        the ``reminder_schedule`` column carries a default of ``"72"`` that would
+        overwrite ``None`` on flush and skip the fallback branch.
         """
 
         class Bare(ReminderScheduleMixin):
             reminder_schedule = None
 
-        assert Bare().reminder_hours() == [24]
+        assert Bare().reminder_hours() == [72]
 
     def test_parses_csv(self, app):
         with app.app_context():
