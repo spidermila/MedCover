@@ -103,6 +103,11 @@
         ✂ Rozdělit akci
       </button>
     {% endif %}
+    {% if current_user.has_permission('event.create') %}
+      <a href="{{ url_for('events.create', clone_event_id=event.id) }}" class="btn btn-outline-secondary btn-sm">
+        ⧉ Klonovat akci
+      </a>
+    {% endif %}
     {% if not event.archived and current_user.has_permission('event.archive_draft' if event.status == EventStatus.DRAFT else 'event.archive') %}
       <form method="POST" action="{{ url_for('events.archive_event', event_id=event.id) }}"
             data-confirm="Archivovat akci „{{ event.name }}“">

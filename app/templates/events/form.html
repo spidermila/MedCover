@@ -8,6 +8,7 @@
     <h2 class="mb-4">
       {%- if mode == "edit" -%}Upravit akci
       {%- elif template -%}Nová akce ze šablony
+      {%- elif cloned_from -%}Nová akce jako kopie
       {%- else -%}Nová akce
       {%- endif -%}
     </h2>
@@ -16,6 +17,13 @@
     <div class="alert alert-info d-flex align-items-center gap-2 mb-4">
       <span>📋</span>
       <span>Vytváříte akci ze šablony: <strong>{{ template.name }}</strong></span>
+    </div>
+    {% endif %}
+
+    {% if cloned_from %}
+    <div class="alert alert-info d-flex align-items-center gap-2 mb-4">
+      <span>⧉</span>
+      <span>Vytváříte kopii akce: <strong>{{ cloned_from.name }}</strong></span>
     </div>
     {% endif %}
 
@@ -94,7 +102,7 @@
           </label>
           <select class="form-select" id="responsible_person_id" name="responsible_person_id">
             <option value="">— Nepřiřazena —</option>
-            {% set default_rp = event.responsible_person_id|string if event and event.responsible_person_id else '' %}
+            {% set default_rp = '' if cloned_from else (event.responsible_person_id|string if event and event.responsible_person_id else '') %}
             {% for user in users %}
               <option value="{{ user.id }}"
                 {{ 'selected' if request.form.get('responsible_person_id', default_rp) == user.id|string }}>
