@@ -72,7 +72,7 @@ def _assigned_client(app):
 
 
 _VALID_FORM = {
-    "grade": "2",
+    "event_note_status": "2",
     "feedback_event": "Vše proběhlo hladce.",
     "feedback_customer": "Objednatel byl vstřícný.",
     "feedback_colleagues": "Tým fungoval skvěle.",
@@ -157,18 +157,18 @@ class TestDebriefingSubmit:
                 db.select(DebriefingRecord).where(DebriefingRecord.assignment_id == assignment_id)
             )
             assert record is not None
-            assert record.grade == 2
+            assert record.event_note_status == 2
             assert record.feedback_event == "Vše proběhlo hladce."
             assert record.feedback_customer == "Objednatel byl vstřícný."
             assert record.feedback_colleagues == "Tým fungoval skvěle."
 
-    def test_missing_grade_rejected(self, app):
+    def test_missing_event_note_status_rejected(self, app):
         _, _, assignment_id = _setup_completed_assignment(app)
         c = _assigned_client(app)
-        data = {**_VALID_FORM, "grade": ""}
+        data = {**_VALID_FORM, "event_note_status": ""}
         resp = c.post(f"/debriefing/{assignment_id}", data=data, follow_redirects=True)
         assert resp.status_code == 200
-        assert "Hodnocení".encode() in resp.data
+        assert "Vyberte jednu z možností".encode() in resp.data
         with app.app_context():
             count = db.session.scalar(
                 db.select(db.func.count())
@@ -177,11 +177,11 @@ class TestDebriefingSubmit:
             )
             assert count == 0
 
-    def test_grade_out_of_range_rejected(self, app):
+    def test_event_note_status_out_of_range_rejected(self, app):
         _, _, assignment_id = _setup_completed_assignment(app)
         c = _assigned_client(app)
-        for bad in ["0", "6", "abc"]:
-            data = {**_VALID_FORM, "grade": bad}
+        for bad in ["0", "4", "abc"]:
+            data = {**_VALID_FORM, "event_note_status": bad}
             resp = c.post(f"/debriefing/{assignment_id}", data=data, follow_redirects=True)
             assert resp.status_code == 200
             with app.app_context():
@@ -197,7 +197,7 @@ class TestDebriefingSubmit:
         c = _assigned_client(app)
         resp = c.post(
             f"/debriefing/{assignment_id}",
-            data={"grade": "3"},
+            data={"event_note_status": "3"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -206,10 +206,47 @@ class TestDebriefingSubmit:
                 db.select(DebriefingRecord).where(DebriefingRecord.assignment_id == assignment_id)
             )
             assert record is not None
-            assert record.grade == 3
+            assert record.event_note_status == 3
             assert record.feedback_event is None
             assert record.feedback_customer is None
             assert record.feedback_colleagues is None
+
+    def test_feedback_is_ignored_without_a_written_note(self, app):
+        _, _, assignment_id = _setup_completed_assignment(app)
+        c = _assigned_client(app)
+        resp = c.post(
+            f"/debriefing/{assignment_id}",
+            data={**_VALID_FORM, "event_note_status": "1"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            record = db.session.scalar(
+                db.select(DebriefingRecord).where(DebriefingRecord.assignment_id == assignment_id)
+            )
+            assert record is not None
+            assert record.feedback_event is None
+            assert record.feedback_customer is None
+            assert record.feedback_colleagues is None
+
+    def test_imported_status_shows_no_notes(self, app):
+        _, _, assignment_id = _setup_completed_assignment(app)
+        with app.app_context():
+            assignment = db.session.get(Assignment, assignment_id)
+            assert assignment is not None
+            db.session.add(
+                DebriefingRecord(
+                    assignment_id=assignment_id,
+                    submitted_by_id=assignment.user_id,
+                    event_note_status=0,
+                    feedback_event="Importovaný historický dozor.",
+                )
+            )
+            db.session.commit()
+
+        resp = _assigned_client(app).get(f"/debriefing/{assignment_id}")
+        assert resp.status_code == 200
+        assert "Bez poznámek".encode() in resp.data
 
     def test_submission_is_final(self, app):
         """Submitting a second time should not create a second record or update."""
@@ -223,7 +260,7 @@ class TestDebriefingSubmit:
         # POST again should be refused (or show submitted page)
         resp2 = c.post(
             f"/debriefing/{assignment_id}",
-            data={**_VALID_FORM, "grade": "5"},
+            data={**_VALID_FORM, "event_note_status": "3"},
             follow_redirects=True,
         )
         assert resp2.status_code == 200
@@ -231,7 +268,7 @@ class TestDebriefingSubmit:
             record = db.session.scalar(
                 db.select(DebriefingRecord).where(DebriefingRecord.assignment_id == assignment_id)
             )
-            assert record.grade == 2  # still the original grade
+            assert record.event_note_status == 2  # still the original response
 
     def test_submit_creates_audit_entry(self, app):
         _, _, assignment_id = _setup_completed_assignment(app)

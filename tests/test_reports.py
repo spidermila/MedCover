@@ -74,7 +74,7 @@ def _make_debriefing(asgn: Assignment, actual_hours: float = 2.0, patients: int 
     dr = DebriefingRecord(
         assignment_id=asgn.id,
         submitted_by_id=asgn.user_id,
-        grade=3,
+        event_note_status=1,
     )
     db.session.add(dr)
     db.session.commit()

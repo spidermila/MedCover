@@ -1129,6 +1129,7 @@ class TestImportConfirmAssignments:
             asgn_id = rp_spot.assignment.id
             debrief = db.session.scalar(db.select(DebriefingRecord).where(DebriefingRecord.assignment_id == asgn_id))
             assert debrief is not None
+            assert debrief.event_note_status == 0
             assert "importovaný" in debrief.feedback_event.lower()
 
     def test_duplicate_event_skipped_when_unchecked(self, app, admin_client):

@@ -265,7 +265,7 @@ def _create_spots_and_assignments(
                     DebriefingRecord(
                         assignment_id=rp_assignment.id,
                         submitted_by_id=current_user.id,
-                        grade=3,
+                        event_note_status=0,
                         feedback_event=_IMPORT_DEBRIEFING_NOTE,
                     )
                 )
@@ -289,7 +289,7 @@ def _create_spots_and_assignments(
                     DebriefingRecord(
                         assignment_id=signup_assignment.id,
                         submitted_by_id=current_user.id,
-                        grade=3,
+                        event_note_status=0,
                         feedback_event=_IMPORT_DEBRIEFING_NOTE,
                     )
                 )

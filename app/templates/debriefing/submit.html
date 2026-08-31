@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% from 'macros/help.html' import help_icon %}
 {% block title %}Debriefing — {{ event.name }} — MedCover{% endblock %}
+{% block extra_head %}
+<style>#feedback-fields { display: none; }</style>
+{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -28,22 +31,22 @@
 
           <div class="mb-4">
             <label class="form-label fw-semibold">
-              Celkové hodnocení akce <span class="text-danger">*</span>
-              {{ help_icon("Ohodnoťte akci jako celek: 1 = výborná, 5 = velmi špatná.") }}
+              Je něco, co bychom o této akci měli vědět? <span class="text-danger">*</span>
             </label>
-            <div class="d-flex gap-3">
-              {% for val, label in [(1, "1 — Výborná"), (2, "2 — Dobrá"), (3, "3 — Průměrná"), (4, "4 — Podprůměrná"), (5, "5 — Špatná")] %}
+            <div class="vstack gap-2">
+              {% for val, label in [(1, "Ne, všechno bylo jako obvykle."), (2, "Ano, něco bylo neobvykle dobré nebo špatné. Popíšu to níže."), (3, "Ano, něco bylo neobvykle dobré nebo špatné, ale nemám čas to sepisovat — probereme to jindy.")] %}
               <div class="form-check">
-                <input class="form-check-input" type="radio" name="grade" id="grade_{{ val }}"
+                <input class="form-check-input" type="radio" name="event_note_status" id="event_note_status_{{ val }}"
                        value="{{ val }}"
-                       {{ 'checked' if request.form.get('grade') == val|string else '' }}
+                       {{ 'checked' if request.form.get('event_note_status') == val|string else '' }}
                        required>
-                <label class="form-check-label" for="grade_{{ val }}">{{ label }}</label>
+                <label class="form-check-label" for="event_note_status_{{ val }}">{{ label }}</label>
               </div>
               {% endfor %}
             </div>
           </div>
 
+          <div id="feedback-fields">
           <div class="mb-3">
             <label for="feedback_event" class="form-label">
               Hodnocení průběhu akce
@@ -69,6 +72,7 @@
             </label>
             <textarea class="form-control" id="feedback_colleagues" name="feedback_colleagues" rows="3"
                       placeholder="Volitelné…">{{ request.form.get('feedback_colleagues', '') }}</textarea>
+          </div>
           </div>
 
         </div>
@@ -156,4 +160,13 @@
 
   </div>
 </div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const feedbackFields = document.getElementById("feedback-fields");
+  document.querySelectorAll('[name="event_note_status"]').forEach((input) => input.addEventListener("change", () => {
+    feedbackFields.style.display = document.getElementById("event_note_status_2").checked ? "block" : "none";
+  }));
+  feedbackFields.style.display = document.getElementById("event_note_status_2").checked ? "block" : "none";
+</script>
 {% endblock %}

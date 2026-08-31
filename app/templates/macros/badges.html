@@ -40,12 +40,9 @@
 <span class="badge bg-{{ status_colors.get(status_value, 'secondary') }}{{ (' ' + extra_classes) if extra_classes else '' }}">{{ status_value }}</span>
 {% endmacro %}
 
-{# ── Debriefing grade badge ───────────────────────────────────────────────── #}
-{#
-  grade: int 1–5.  ≤2 = good (green), 3 = ok (warning), ≥4 = poor (danger).
-#}
-{% macro badge_grade(grade) %}
-<span class="badge bg-{{ 'success' if grade <= 2 else ('warning text-black' if grade == 3 else 'danger') }}">{{ grade }}/5</span>
+{# ── Debriefing event-note status badge ───────────────────────────────────── #}
+{% macro badge_event_note_status(status) %}
+<span class="badge bg-{{ 'secondary' if status == 0 else ('success' if status == 1 else ('warning text-black' if status == 2 else 'danger')) }}">{{ 'Bez poznámek' if status in [0, 1] else ('Popsáno' if status == 2 else 'Probrat') }}</span>
 {% endmacro %}
 
 {# ── Event staffing badges (mandatory + optional) ────────────────────────── #}
