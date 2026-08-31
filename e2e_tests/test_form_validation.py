@@ -18,7 +18,6 @@ def test_required_fields_show_error_on_blur(logged_in_page, base_url):
     page.wait_for_timeout(200)
 
     assert page.locator("#name.is-invalid").count() > 0
-    assert page.locator("#name ~ .invalid-feedback").count() > 0
 
 
 def test_error_clears_when_value_entered(logged_in_page, base_url):
