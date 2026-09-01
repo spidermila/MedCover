@@ -115,7 +115,7 @@
     <li class="list-group-item d-flex justify-content-between align-items-center py-2">
       <div>
         <a href="{{ url_for('events.detail', event_id=e.id) }}" class="fw-semibold text-decoration-none">{{ e.name }}</a>
-        <small class="text-muted ms-2">{{ e.start_datetime.strftime('%d.%m.%Y %H:%M') }}</small>
+        <small class="text-muted ms-2">{{ e.start_datetime | localdt }}</small>
       </div>
       <span class="badge bg-danger">Chybí zodp. osoba</span>
     </li>

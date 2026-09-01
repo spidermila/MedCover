@@ -10,7 +10,7 @@
     {% for row in rows %}
     <tr>
       <td>{{ row.event.name }}</td>
-      <td style="white-space:nowrap;">{{ row.event.start_datetime.strftime('%d.%m.%Y %H:%M') }}</td>
+      <td style="white-space:nowrap;">{{ row.event.start_datetime | localdt }}</td>
       <td>
         {% if row.unfilled_count > 0 %}
           <span class="badge badge-warn">{{ row.unfilled_count }} / {{ row.total_spots }}</span>

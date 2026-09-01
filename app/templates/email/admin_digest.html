@@ -53,7 +53,7 @@
     <tr>
       <td class="email-header">
         <h1>{{ schedule.email_subject }}</h1>
-        <p class="subtitle">{{ now.strftime('%d. %m. %Y %H:%M %Z') }}</p>
+        <p class="subtitle">{{ now | localdt('%d. %m. %Y %H:%M %Z') }}</p>
       </td>
     </tr>
 

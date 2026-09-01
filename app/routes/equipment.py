@@ -503,12 +503,12 @@ def item_mark_unavailable(item_id: int) -> Response:
     item.unavailability_since = since
     item.unavailability_until = until
     item.version += 1
-    until_str = until.strftime("%d.%m.%Y") if until else "neurčito"
+    until_str = until.astimezone(get_app_tz()).strftime("%d.%m.%Y") if until else "neurčito"
     audit(
         "edit",
         "EquipmentItem",
         str(item.id),
-        f"Položka '{item.name}' označena jako nedostupná od {since.strftime('%d.%m.%Y')} do {until_str}: {reason or '—'}",  # noqa: E501
+        f"Položka '{item.name}' označena jako nedostupná od {since.astimezone(get_app_tz()).strftime('%d.%m.%Y')} do {until_str}: {reason or '—'}",  # noqa: E501
     )
     db.session.commit()
 

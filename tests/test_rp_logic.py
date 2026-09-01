@@ -12,6 +12,7 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
 from app.queries import rp_eligible_users_list
+from app.utils import get_app_tz
 from tests.conftest import _login, _make_event_with_spot, _make_user, _make_user_with_qual
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -351,6 +352,28 @@ class TestDashboardRpWarning:
         response = admin_client.get("/dashboard")
         assert response.status_code == 200
         assert "bez zodpovědné osoby" in response.data.decode()
+
+    def test_missing_rp_warning_uses_application_timezone(self, app, admin_client):
+        start = (datetime.now(timezone.utc) + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
+        with app.app_context():
+            me = MasterEvent(name="Dashboard RP timezone ME")
+            db.session.add(me)
+            db.session.flush()
+            db.session.add(
+                Event(
+                    name="Timezone RP warning",
+                    master_event_id=me.id,
+                    status=EventStatus.PUBLISHED,
+                    start_datetime=start,
+                    end_datetime=start + timedelta(hours=8),
+                )
+            )
+            db.session.commit()
+            expected = start.astimezone(get_app_tz()).strftime("%d.%m.%Y %H:%M")
+
+        response = admin_client.get("/dashboard")
+
+        assert expected in response.data.decode()
 
     def test_member_does_not_see_rp_warning(self, app, member_client):
         self._make_event_soon_no_rp(app)

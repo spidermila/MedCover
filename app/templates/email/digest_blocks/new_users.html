@@ -19,7 +19,7 @@
           <span class="badge badge-warn">Čeká na aktivaci</span>
         {% endif %}
       </td>
-      <td style="white-space:nowrap;">{{ u.created_at.strftime('%d.%m.%Y %H:%M') if u.created_at else '—' }}</td>
+      <td style="white-space:nowrap;">{{ u.created_at | localdt if u.created_at else '—' }}</td>
     </tr>
     {% endfor %}
   </table>
