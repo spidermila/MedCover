@@ -12,6 +12,7 @@ from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.routes.work_report import _last_completed_month
 from app.scheduler_tasks import cleanup_work_report_files
 from app.work_report_generator import generate_work_report
 from tests.conftest import _login, _make_user
@@ -66,6 +67,10 @@ def _make_paid_event(
 
 
 class TestVykazIndex:
+    def test_defaults_to_last_completed_month(self):
+        assert _last_completed_month(datetime(2026, 9, 1, tzinfo=timezone.utc)) == (2026, 8)
+        assert _last_completed_month(datetime(2026, 1, 1, tzinfo=timezone.utc)) == (2025, 12)
+
     def test_requires_login(self, client):
         resp = client.get("/work-report/", follow_redirects=False)
         assert resp.status_code in (301, 302)

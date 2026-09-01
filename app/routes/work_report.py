@@ -14,12 +14,18 @@ from pathlib import Path
 from flask import Blueprint, current_app, flash, redirect, render_template, request, send_from_directory, url_for
 from flask_login import current_user, login_required
 
-from app.utils import require_permission
+from app.utils import get_app_tz, require_permission
 from app.work_report_generator import CZ_MONTH_NAMES, generate_work_report
 
 work_report_bp = Blueprint("work_report", __name__, url_prefix="/work-report")
 
 _EXPIRY_HOURS = 24
+
+
+def _last_completed_month(now: datetime) -> tuple[int, int]:
+    if now.month == 1:
+        return now.year - 1, 12
+    return now.year, now.month - 1
 
 
 def _list_reports(user_id: str) -> list[dict]:
@@ -57,12 +63,15 @@ def _list_reports(user_id: str) -> list[dict]:
 @login_required
 def index() -> str:
     require_permission("work_report.generate")
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=get_app_tz())
+    default_year, default_month = _last_completed_month(now)
     reports = _list_reports(str(current_user.id))
     return render_template(
         "work_report/index.html",
         current_year=now.year,
         current_month=now.month,
+        default_year=default_year,
+        default_month=default_month,
         reports=reports,
     )
 

@@ -26,8 +26,8 @@
             ] %}
             {% for num, name in month_names %}
               <option value="{{ num }}"
-                {% if num == current_month %}selected{% endif %}
-                {% if num > current_month %}disabled{% endif %}>
+                {% if num == default_month %}selected{% endif %}
+                {% if default_year == current_year and num > current_month %}disabled{% endif %}>
                 {{ name }}
               </option>
             {% endfor %}
@@ -38,7 +38,7 @@
           <label for="year" class="form-label fw-semibold">Rok</label>
           <select class="form-select" id="year" name="year" required>
             {% for y in range(current_year - 3, current_year + 1) %}
-              <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+              <option value="{{ y }}" {% if y == default_year %}selected{% endif %}>{{ y }}</option>
             {% endfor %}
           </select>
         </div>
