@@ -989,6 +989,26 @@ class TestUserListFiltersAndSort:
         resp = admin_client.get("/users/?sort=created&dir=desc")
         assert resp.status_code == 200
 
+    def test_timestamps_are_rendered_in_local_time(self, app, admin_client):
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            user = UserAccount(
+                email="timezone@test.cz",
+                name="Timezone User",
+                is_active=True,
+                created_at=datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc),
+                last_login_at=datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc),
+            )
+            user.set_password("pass")
+            user.roles = [role]
+            db.session.add(user)
+            db.session.commit()
+
+        resp = admin_client.get("/users/?q=timezone")
+
+        assert resp.status_code == 200
+        assert resp.data.decode().count("01.06.2026 12:00") == 2
+
     def test_sort_by_name_uses_czech_collation(self, app, admin_client):
         """GET /users/?sort=name sorts using Czech locale (ch after h, š after s)."""
         with app.app_context():
