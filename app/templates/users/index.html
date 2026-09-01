@@ -120,10 +120,10 @@
           {% endif %}
         </td>
         <td class="text-nowrap text-muted small">
-          {{ u.created_at.strftime('%d.%m.%Y %H:%M') if u.created_at else '—' }}
+          {{ u.created_at | localdt }}
         </td>
         <td class="text-nowrap text-muted small">
-          {{ u.last_login_at.strftime('%d.%m.%Y %H:%M') if u.last_login_at else '—' }}
+          {{ u.last_login_at | localdt }}
         </td>
         <td>
           {% for r in u.roles %}
