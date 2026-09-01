@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Kalendářní pohled na seznamu akcí teď respektuje filtr typu akce (Zdravotní dozor / Školení / Prezentační akce). Doposud tlačítka typu filtrovala jen tabulku a v kalendáři se zobrazovaly všechny akce bez ohledu na volbu. (#487)
+- Events list calendar view now honours the event-type filter (Zdravotní dozor / Školení / Prezentační akce). Previously the type buttons only filtered the table; the calendar showed every event regardless of which type filters were active. (#487)
 
 ## [1.0.0] - 2026-08-31
 
