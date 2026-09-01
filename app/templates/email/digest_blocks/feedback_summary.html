@@ -9,7 +9,7 @@
     </tr>
     {% for item in items %}
     <tr>
-      <td style="white-space:nowrap;">{{ item.submitted_at.strftime('%d.%m %H:%M') }}</td>
+      <td style="white-space:nowrap;">{{ item.submitted_at | localdt('%d.%m %H:%M') }}</td>
       <td>{{ item.user.name if item.user else '—' }}</td>
       <td>{{ item.message }}</td>
     </tr>

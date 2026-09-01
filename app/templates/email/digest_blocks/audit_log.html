@@ -11,7 +11,7 @@
     </tr>
     {% for e in entries %}
     <tr>
-      <td style="white-space:nowrap;">{{ e.timestamp.strftime('%d.%m %H:%M') }}</td>
+      <td style="white-space:nowrap;">{{ e.timestamp | localdt('%d.%m %H:%M') }}</td>
       {% if show_actor %}
       <td>{{ e.actor.name if e.actor else '—' }}</td>
       {% endif %}

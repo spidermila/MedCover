@@ -25,7 +25,7 @@
     {% for entry in entries %}
       <tr>
         <td class="text-nowrap text-muted small">
-          {{ entry.submitted_at.astimezone().strftime("%d.%m.%Y %H:%M") }}
+          {{ entry.submitted_at | localdt }}
         </td>
         <td>
           {% if entry.user %}

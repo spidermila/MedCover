@@ -105,7 +105,7 @@
           <label for="test_event_id" class="form-label small fw-semibold">Akce (pro zkušební oznámení)</label>
           <select class="form-select form-select-sm" id="test_event_id" name="test_event_id">
             {% for ev in recent_events %}
-            <option value="{{ ev.id }}">{{ ev.name }} ({{ ev.start_datetime.strftime('%d.%m.%Y') }})</option>
+            <option value="{{ ev.id }}">{{ ev.name }} ({{ ev.start_datetime | localdt('%d.%m.%Y') }})</option>
             {% else %}
             <option disabled>— žádné akce —</option>
             {% endfor %}
