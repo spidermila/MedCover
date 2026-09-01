@@ -492,6 +492,23 @@ class TestCalendarFeed:
         titles = [e.get("title", "") for e in feed_data]
         assert any("Completed Test Event" in t for t in titles)
 
+    def test_feed_items_expose_event_type_for_calendar_filter(self, app, admin_client):
+        """Calendar-view type filter is applied client-side and needs event_type on each item."""
+        me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
+        feed_data = admin_client.get("/events/feed").get_json()
+        assert feed_data, "feed should contain the created event"
+        for item in feed_data:
+            assert item["extendedProps"].get("event_type"), "each feed item must expose event_type"
+
+    def test_index_page_config_exposes_active_types(self, admin_client):
+        """Calendar JS reads activeTypes from the page config to filter locally."""
+        resp = admin_client.get("/events/?types=MEDICAL_COVER")
+        assert resp.status_code == 200
+        assert b'"activeTypes":' in resp.data
+        assert b'"allEventTypes":' in resp.data
+
 
 class TestAuditChangeTracking:
     """Verify audit log captures before/after changes in {field: [old, new]} format."""

@@ -327,6 +327,7 @@ def feed() -> Response:
                 "extendedProps": {
                     "status": e.status.value,
                     "status_key": e.status.name,
+                    "event_type": e.event_type.name,
                     "filled": e.mandatory_filled_spots,
                     "total": e.mandatory_total_spots,
                     "rp": e.responsible_person.name if e.responsible_person else None,

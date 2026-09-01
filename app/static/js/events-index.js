@@ -10,6 +10,8 @@
   var FEED_URL_BASE   = cfg.feedUrl  || "";
   var HAS_DRAFT_PERM  = cfg.hasDraftPerm || false;
   var ACTIVE_STATUSES = cfg.activeStatuses || [];
+  var ACTIVE_TYPES    = cfg.activeTypes || [];
+  var ALL_EVENT_TYPES = cfg.allEventTypes || [];
   var CLAIM_BASE      = cfg.claimBase || "";
   var ACTIVE_ME_NAME  = cfg.activeMeName || "";
   var FOR_ME          = cfg.forMe || false;
@@ -109,9 +111,12 @@
           }
           successCallback(allCalendarEvents.filter(function (e) {
             var statusOk = ACTIVE_STATUSES.includes(e.extendedProps.status_key);
+            var typeOk = ACTIVE_TYPES.length === ALL_EVENT_TYPES.length
+              ? true
+              : ACTIVE_TYPES.includes(e.extendedProps.event_type);
             var eligOk = !FOR_ME || e.extendedProps.eligible;
             var meOk = !ACTIVE_ME_NAME || (e.extendedProps.me_name || "") === ACTIVE_ME_NAME;
-            return statusOk && eligOk && meOk;
+            return statusOk && typeOk && eligOk && meOk;
           }));
         } catch (err) { failureCallback(err); }
       },
