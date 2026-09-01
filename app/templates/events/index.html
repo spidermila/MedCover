@@ -342,6 +342,6 @@
    which reads the nonce from <meta name="csp-nonce"> in base.html). #}
 <script src="{{ url_for('static', filename='js/fullcalendar.min.js') }}" nonce="{{ g.csp_nonce }}"></script>
 
-<script type="application/json" id="events-page-cfg">{"feedUrl": "{{ url_for('events.feed') }}{{ '?archived=1' if show_archived }}", "hasDraftPerm": {{ 'true' if has_draft_perm else 'false' }}, "activeStatuses": {{ active_statuses | tojson }}, "claimBase": "{{ url_for('assignments.claim', spot_id=0) | replace('/0', '/') }}", "activeMeName": {{ (active_me.name if active_me else '') | tojson }}, "forMe": {{ for_me | tojson }}}</script>
+<script type="application/json" id="events-page-cfg">{"feedUrl": "{{ url_for('events.feed') }}{{ '?archived=1' if show_archived }}", "hasDraftPerm": {{ 'true' if has_draft_perm else 'false' }}, "activeStatuses": {{ active_statuses | tojson }}, "activeTypes": {{ active_types | tojson }}, "allEventTypes": {{ all_event_types | tojson }}, "claimBase": "{{ url_for('assignments.claim', spot_id=0) | replace('/0', '/') }}", "activeMeName": {{ (active_me.name if active_me else '') | tojson }}, "forMe": {{ for_me | tojson }}}</script>
 <script src="{{ url_for('static', filename='js/events-index.js') }}?v={{ static_ver }}"></script>
 {% endblock %}

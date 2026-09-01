@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Kalendářní pohled na seznamu akcí teď respektuje filtr typu akce (Zdravotní dozor / Školení / Prezentační akce). Doposud tlačítka typu filtrovala jen tabulku a v kalendáři se zobrazovaly všechny akce bez ohledu na volbu. (#487)
+
 ## [1.0.0] - 2026-08-31
 
 První stabilní vydání MedCoveru. Aplikace nahrazuje původní tabulku v Google Sheets ve všech oblastech evidence zdravotních dozorů, školení i prezentačních akcí Českého červeného kříže.
