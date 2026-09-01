@@ -94,6 +94,7 @@
         </th>
         {% endfor %}
         <th>Role</th>
+        <th>Kvalifikace</th>
       </tr>
     </thead>
     <tbody>
@@ -131,10 +132,17 @@
             <span class="text-muted">—</span>
           {% endfor %}
         </td>
+        <td>
+          {% for qualification in u.qualifications if not qualification.is_deleted %}
+            {{ badge_secondary(qualification.name) }}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endfor %}
+        </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="{{ 7 if current_user.has_permission('user.assign_role') else 6 }}"
+        <td colspan="{{ 8 if current_user.has_permission('user.assign_role') else 7 }}"
             class="text-muted text-center">Žádní uživatelé.</td>
       </tr>
       {% endfor %}

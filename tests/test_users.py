@@ -204,6 +204,28 @@ class TestUserProfile:
 
 
 class TestAdminUserList:
+    def test_list_and_detail_show_user_roles_and_qualifications(
+        self, app: object, admin_client: object, member_client: object
+    ) -> None:
+        with app.app_context():
+            role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            qualification = Qualification(name="Qualification in user views")
+            user = UserAccount(email="qualified@test.com", name="Qualified User", is_active=True)
+            user.set_password("pass1234")
+            user.roles = [role]
+            user.qualifications = [qualification]
+            db.session.add_all([qualification, user])
+            db.session.commit()
+            user_id = user.id
+
+        list_response = admin_client.get("/users/")
+        assert b"Kvalifikace" in list_response.data
+        assert b"Qualification in user views" in list_response.data
+
+        detail_response = member_client.get(f"/users/{user_id}")
+        assert b"Qualification in user views" in detail_response.data
+        assert Role.MEMBER.encode() in detail_response.data
+
     def test_user_list_requires_permission(self, member_client: object) -> None:
         # Members have user.view, so use a viewer with no user.view to check 403
         resp = member_client.get("/users/")
