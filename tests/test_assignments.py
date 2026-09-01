@@ -1,6 +1,8 @@
 """Tests for spot assignment: claim, release, permissions."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Barrier
 
 import pytest
 from sqlalchemy import event as sa_event
@@ -665,6 +667,26 @@ class TestAssignErrorBranches:
         with app.app_context():
             assert db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id)) is None
 
+    def test_claim_rejects_overlap_with_draft_event(self, app, member_client):
+        """The shared assignment service blocks overlaps, including draft events."""
+        conflicting_event_id, conflicting_spot_id = _make_event_with_spot(
+            app, EventStatus.DRAFT, name="Conflicting Draft"
+        )
+        _, spot_id = _make_event_with_spot(app, name="New Conflicting Event")
+        with app.app_context():
+            member = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert member is not None
+            db.session.add(Assignment(spot_id=conflicting_spot_id, user_id=member.id, assigned_by_id=member.id))
+            db.session.commit()
+
+        response = member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
+
+        assert "překrývající se akci" in response.data.decode()
+        assert b"alert-danger" in response.data
+        assert f'href="/events/{conflicting_event_id}"'.encode() in response.data
+        with app.app_context():
+            assert db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id)) is None
+
     def test_assign_other_with_unknown_user_id_flashes(self, app, admin_client):
         """Passing a user_id that doesn't exist yields 'Uživatel nenalezen'."""
         _, spot_id = _make_event_with_spot(app)
@@ -743,6 +765,35 @@ class TestPessimisticLockHints:
             s for s in _captured_sql if "event_spot" in s.lower() and "updlock" in s.lower() and "select" in s.lower()
         ]
         assert lock_selects, f"no UPDLOCK on event_spot in: {_captured_sql}"
+
+    def test_overlapping_concurrent_claims_for_one_user_are_serialized(self, app, monkeypatch):
+        _, first_spot_id = _make_event_with_spot(app, name="Overlap Race First")
+        _, second_spot_id = _make_event_with_spot(app, name="Overlap Race Second")
+        start = Barrier(2)
+        monkeypatch.setattr("app.routes.assignments.audit", lambda *args, **kwargs: None)
+
+        with app.app_context():
+            user = _make_user("overlap_race@test.com", "Overlap Race", Role.MEMBER)
+            user_id = user.id
+
+        def claim(spot_id: int) -> bool:
+            with app.app_context():
+                user = db.session.get(UserAccount, user_id)
+                assert user is not None
+                start.wait()
+                return do_assign_user(spot_id, user, user).ok
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(claim, (first_spot_id, second_spot_id)))
+
+        assert results.count(True) == 1
+        with app.app_context():
+            assert (
+                db.session.scalar(
+                    db.select(db.func.count()).select_from(Assignment).where(Assignment.user_id == user_id)
+                )
+                == 1
+            )
 
     def test_equipment_plan_add_emits_updlock_on_equipment_type(self, app, admin_client, _captured_sql):
         event_id, _ = _make_event_with_spot(app)

@@ -30,6 +30,26 @@
   {% endif %}
 </div>
 
+{% if assignment_conflicts %}
+<div class="card border-warning mb-3">
+  <div class="card-header bg-warning bg-opacity-10 py-2">
+    <span class="fw-semibold">⚠ {% if show_all_assignment_conflicts %}Překrývající se přihlášky{% else %}Máte překrývající se přihlášky{% endif %} ({{ assignment_conflicts|length }})</span>
+  </div>
+  <ul class="list-group list-group-flush">
+    {% for user, first, second in assignment_conflicts %}
+    <li class="list-group-item py-2">
+      {% if show_all_assignment_conflicts %}<span class="fw-semibold">{{ user.name }}:</span>{% endif %}
+      <a href="{{ url_for('events.detail', event_id=first.id) }}" class="fw-semibold text-decoration-none">{{ first.name }}</a>
+      <span class="text-muted small">({{ first.start_datetime | localdt }}–{{ first.end_datetime | localdt }})</span>
+      <span class="mx-1">×</span>
+      <a href="{{ url_for('events.detail', event_id=second.id) }}" class="fw-semibold text-decoration-none">{{ second.name }}</a>
+      <span class="text-muted small">({{ second.start_datetime | localdt }}–{{ second.end_datetime | localdt }})</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {# ── Pending debriefings ──────────────────────────────────────────────────── #}
 {% if pending_debriefings %}
 <div class="card border-danger mb-3">

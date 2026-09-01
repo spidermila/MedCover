@@ -18,9 +18,11 @@ Service functions (shared with master_events table manager):
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from flask import Blueprint, Response, abort, flash, redirect, request, url_for
 from flask_login import current_user, login_required
+from markupsafe import Markup
 from sqlalchemy.exc import IntegrityError
 
 import app.mail as mailer
@@ -28,6 +30,7 @@ from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.user import UserAccount
+from app.queries import conflicting_events_for_users
 from app.utils import audit, get_or_404, require_permission
 
 assignments_bp = Blueprint("assignments", __name__, url_prefix="/assignments")
@@ -117,6 +120,24 @@ class AssignResult:
     assignment: Assignment | None = None
     event: Event | None = None
     user: UserAccount | None = None
+    conflict_event_id: int | None = None
+    conflict_event_name: str | None = None
+
+
+def _flash_assign_error(result: AssignResult) -> None:
+    """Flash an assignment error, linking to the conflicting event when present."""
+    if result.conflict_event_id is None:
+        flash(result.error, "warning")
+        return
+    assert result.user is not None
+    assert result.conflict_event_name is not None
+    conflict_link = Markup('<a href="{}" class="alert-link">{}</a>').format(
+        url_for("events.detail", event_id=result.conflict_event_id), result.conflict_event_name
+    )
+    flash(
+        Markup("Uživatel {} je již přihlášen na překrývající se akci {}.").format(result.user.name, conflict_link),
+        "danger",
+    )
 
 
 def do_assign_user(
@@ -173,6 +194,14 @@ def do_assign_user(
     if spot.assignment is not None:
         return AssignResult(ok=False, error="Tato pozice je již obsazena.", event=event)
 
+    # Serialize all assignments for this user until commit.  Different spots do
+    # not otherwise protect the duplicate-assignment and overlap checks below.
+    db.session.scalar(
+        db.select(UserAccount.id)
+        .where(UserAccount.id == user.id)
+        .with_hint(UserAccount, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+    )
+
     # User must not already be assigned to this event
     existing = db.session.scalar(
         db.select(Assignment)
@@ -186,6 +215,22 @@ def do_assign_user(
     # Optional eligibility check (for self-claim)
     if check_eligibility and not spot.is_eligible(user):
         return AssignResult(ok=False, error="Nemáte požadovanou kvalifikaci pro tuto pozici.", event=event)
+
+    now = datetime.now(timezone.utc)
+    if event.end_datetime > now:
+        conflicts = conflicting_events_for_users(
+            [user.id], event.start_datetime, event.end_datetime, exclude_event_id=event.id
+        ).get(user.id, [])
+        conflicts = [conflict for conflict in conflicts if conflict["end_datetime"] > now]
+        if conflicts:
+            return AssignResult(
+                ok=False,
+                error=f"Uživatel {user.name} je již přihlášen na překrývající se akci '{conflicts[0]['name']}'.",
+                event=event,
+                user=user,
+                conflict_event_id=conflicts[0]["id"],
+                conflict_event_name=conflicts[0]["name"],
+            )
 
     # Create assignment
     spot.assignment = Assignment(user_id=user.id, assigned_by_id=assigned_by.id)
@@ -272,7 +317,7 @@ def claim(spot_id: int) -> Response:
     if not result.ok:
         if result.event is None:
             abort(404)
-        flash(result.error, "warning")
+        _flash_assign_error(result)
         return redirect(url_for("events.detail", event_id=result.event.id))
 
     flash("Úspěšně přihlášeni na akci.", "success")
@@ -307,7 +352,7 @@ def release(assignment_id: int) -> Response:
     if not result.ok:
         if result.event is None:
             abort(404)
-        flash(result.error, "warning")
+        _flash_assign_error(result)
         return redirect(url_for("events.detail", event_id=result.event.id))
 
     flash("Odhlášení z akce bylo úspěšné.", "success")
@@ -348,7 +393,7 @@ def assign_other(spot_id: int) -> Response:
 
     if not result.ok:
         redirect_event = result.event or event
-        flash(result.error, "warning")
+        _flash_assign_error(result)
         return redirect(url_for("events.detail", event_id=redirect_event.id))
 
     flash(f"Uživatel {user.name} byl přiřazen na akci.", "success")

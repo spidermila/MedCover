@@ -15,7 +15,7 @@ from app.models.equipment import (
 )
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.user import UserAccount
-from app.queries import user_fillable_qual_ids
+from app.queries import assignment_conflicts, user_fillable_qual_ids
 
 main_bp = Blueprint("main", __name__)
 
@@ -294,6 +294,7 @@ def _pending_debriefings_section() -> list[Assignment]:
 def dashboard() -> str:
     now = datetime.now(timezone.utc)
     horizon = now + timedelta(days=current_user.dashboard_horizon_days)
+    show_all_assignment_conflicts = current_user.has_permission("event.assign_other")
 
     my_events, assigned_ids = _my_events_section(now, horizon)
     open_events, open_events_all = _open_events_section(now, horizon, assigned_ids)
@@ -319,6 +320,12 @@ def dashboard() -> str:
         pending_activations=pending_activations,
         missing_rp_events=_missing_rp_events_section(now),
         pending_debriefings=_pending_debriefings_section(),
+        assignment_conflicts=assignment_conflicts(
+            now,
+            None if show_all_assignment_conflicts else current_user.id,
+            include_drafts=current_user.has_permission("event.view_draft"),
+        ),
+        show_all_assignment_conflicts=show_all_assignment_conflicts,
         horizon_days=current_user.dashboard_horizon_days,
         EventStatus=EventStatus,
     )

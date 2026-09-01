@@ -7,7 +7,9 @@ from app.models.assignment import Assignment
 from app.models.equipment import EquipmentItem, EquipmentType, EventEquipmentPlan
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.role import Role
 from app.models.user import UserAccount
+from tests.conftest import _make_user
 
 
 class TestDashboardEventSortOrder:
@@ -267,6 +269,80 @@ class TestDashboard:
         response = member_client.get("/dashboard")
         assert response.status_code == 200
         assert "Member Upcoming Event" in response.data.decode()
+
+    def test_viewer_does_not_see_draft_assignment_conflicts(self, app, viewer_client):
+        now = datetime.now(timezone.utc) + timedelta(days=10)
+        with app.app_context():
+            viewer = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "viewer@test.com"))
+            me = MasterEvent(name="Conflict warning ME")
+            db.session.add(me)
+            db.session.flush()
+            first = Event(
+                name="First Conflict Event",
+                master_event_id=me.id,
+                status=EventStatus.DRAFT,
+                start_datetime=now,
+                end_datetime=now + timedelta(hours=4),
+            )
+            second = Event(
+                name="Second Conflict Event",
+                master_event_id=me.id,
+                status=EventStatus.ASSIGNMENTS_OPEN,
+                start_datetime=now + timedelta(hours=2),
+                end_datetime=now + timedelta(hours=6),
+            )
+            db.session.add_all([first, second])
+            db.session.flush()
+            for event in (first, second):
+                spot = EventSpot(event_id=event.id)
+                db.session.add(spot)
+                db.session.flush()
+                db.session.add(Assignment(spot_id=spot.id, user_id=viewer.id, assigned_by_id=viewer.id))
+            db.session.commit()
+            second_id = second.id
+
+        response = viewer_client.get("/dashboard")
+        body = response.data.decode()
+
+        assert "Máte překrývající se přihlášky" not in body
+        assert "First Conflict Event" not in body
+        assert "Second Conflict Event" in body
+        assert f'href="/events/{second_id}"' in body
+
+    def test_coordinator_sees_all_assignment_conflicts(self, app, coordinator_client):
+        now = datetime.now(timezone.utc) + timedelta(days=10)
+        with app.app_context():
+            member = _make_user("conflict_member@test.com", "Conflict Member", Role.MEMBER)
+            member_name = member.name
+            me = MasterEvent(name="Coordinator conflict ME")
+            db.session.add(me)
+            db.session.flush()
+            events = [
+                Event(
+                    name=name,
+                    master_event_id=me.id,
+                    status=EventStatus.ASSIGNMENTS_OPEN,
+                    start_datetime=now + timedelta(hours=start),
+                    end_datetime=now + timedelta(hours=end),
+                )
+                for name, start, end in (("Coordinator Conflict A", 0, 4), ("Coordinator Conflict B", 2, 6))
+            ]
+            db.session.add_all(events)
+            db.session.flush()
+            for event in events:
+                spot = EventSpot(event_id=event.id)
+                db.session.add(spot)
+                db.session.flush()
+                db.session.add(Assignment(spot_id=spot.id, user_id=member.id, assigned_by_id=member.id))
+            db.session.commit()
+
+        response = coordinator_client.get("/dashboard")
+        body = response.data.decode()
+
+        assert "Překrývající se přihlášky" in body
+        assert member_name in body
+        assert "Coordinator Conflict A" in body
+        assert "Coordinator Conflict B" in body
 
     def test_member_empty_state_no_crash(self, member_client):
         """A member with no events, assignments, or admin data must not crash the dashboard."""

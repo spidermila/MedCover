@@ -260,6 +260,42 @@ def conflicting_events_for_users(
     return result
 
 
+def assignment_conflicts(
+    now: datetime, user_id: UUID | None = None, *, include_drafts: bool = True
+) -> list[tuple[dict, dict, dict]]:
+    """Return active assignment-conflict pairs, optionally for one user.
+
+    Completed, cancelled, archived and already-ended events are ignored. The
+    query is deliberately unbounded by the dashboard horizon so a future
+    conflict is never hidden by that preference.
+    """
+    query = (
+        _assignment_conflict_base_query()
+        .add_columns(UserAccount.name)
+        .join(UserAccount, UserAccount.id == Assignment.user_id)
+        .where(Event.end_datetime > now)
+        .distinct()
+        .order_by(Event.start_datetime)
+    )
+    if user_id is not None:
+        query = query.where(Assignment.user_id == user_id)
+    if not include_drafts:
+        query = query.where(Event.status != EventStatus.DRAFT)
+
+    events_by_user: dict[UUID, tuple[dict, list[dict]]] = {}
+    for assignment_user_id, event_id, event_name, start, end, user_name in db.session.execute(query).all():
+        user, events = events_by_user.setdefault(assignment_user_id, ({"name": user_name}, []))
+        events.append({"id": event_id, "name": event_name, "start_datetime": start, "end_datetime": end})
+
+    return [
+        (user, first, second)
+        for user, events in events_by_user.values()
+        for index, first in enumerate(events)
+        for second in events[index + 1 :]
+        if second["start_datetime"] < first["end_datetime"]
+    ]
+
+
 def serialize_conflicts_for_template(
     conflicts_by_user: dict[UUID, list[dict]],
     event_url_for: Callable[[int], str],
