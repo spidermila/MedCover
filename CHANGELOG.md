@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-01
+
+### Added
+- Events can now be cloned from their detail page. The creation form is pre-filled from the source event while responsible person and assignments are not copied.
+- Cross-event assignment conflicts are shown in assignment pickers and on the dashboard. Assignments with an overlap remain possible and show a warning with a link to the conflicting event.
+- User list now shows qualifications, and the user detail page shows both roles and qualifications.
+
+### Changed
+- Form fields no longer show a green validity checkmark. Empty required fields keep only the red border, preventing validation messages from shifting page content.
+- Work report generation now defaults to the last completed calendar month.
+
 ### Fixed
 - Events list calendar view now honours the event-type filter (Zdravotní dozor / Školení / Prezentační akce). Previously the type buttons only filtered the table; the calendar showed every event regardless of which type filters were active. (#487)
+- The date/time picker no longer leaves an entered event date marked as invalid after a selection.
+- Cloning context is retained when the pre-filled event form has validation errors.
+- Date and time displays throughout the application now consistently use the configured application timezone.
 
 ## [1.0.0] - 2026-08-31
 
@@ -415,7 +429,8 @@ První stabilní vydání MedCoveru. Aplikace nahrazuje původní tabulku v Goog
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/spidermila/MedCover/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/spidermila/MedCover/compare/v0.19.1...v1.0.0
 [0.19.1]: https://github.com/spidermila/MedCover/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/spidermila/MedCover/compare/v0.18.0...v0.19.0
