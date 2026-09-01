@@ -667,8 +667,8 @@ class TestAssignErrorBranches:
         with app.app_context():
             assert db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id)) is None
 
-    def test_claim_rejects_overlap_with_draft_event(self, app, member_client):
-        """The shared assignment service blocks overlaps, including draft events."""
+    def test_claim_warns_but_allows_overlap_with_draft_event(self, app, member_client):
+        """The shared assignment service warns about overlaps, including draft events."""
         conflicting_event_id, conflicting_spot_id = _make_event_with_spot(
             app, EventStatus.DRAFT, name="Conflicting Draft"
         )
@@ -682,10 +682,10 @@ class TestAssignErrorBranches:
         response = member_client.post(f"/assignments/claim/{spot_id}", follow_redirects=True)
 
         assert "překrývající se akci" in response.data.decode()
-        assert b"alert-danger" in response.data
+        assert b"alert-warning" in response.data
         assert f'href="/events/{conflicting_event_id}"'.encode() in response.data
         with app.app_context():
-            assert db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id)) is None
+            assert db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id)) is not None
 
     def test_assign_other_with_unknown_user_id_flashes(self, app, admin_client):
         """Passing a user_id that doesn't exist yields 'Uživatel nenalezen'."""
@@ -766,7 +766,7 @@ class TestPessimisticLockHints:
         ]
         assert lock_selects, f"no UPDLOCK on event_spot in: {_captured_sql}"
 
-    def test_overlapping_concurrent_claims_for_one_user_are_serialized(self, app, monkeypatch):
+    def test_overlapping_concurrent_claims_for_one_user_are_allowed(self, app, monkeypatch):
         _, first_spot_id = _make_event_with_spot(app, name="Overlap Race First")
         _, second_spot_id = _make_event_with_spot(app, name="Overlap Race Second")
         start = Barrier(2)
@@ -786,13 +786,13 @@ class TestPessimisticLockHints:
         with ThreadPoolExecutor(max_workers=2) as executor:
             results = list(executor.map(claim, (first_spot_id, second_spot_id)))
 
-        assert results.count(True) == 1
+        assert results.count(True) == 2
         with app.app_context():
             assert (
                 db.session.scalar(
                     db.select(db.func.count()).select_from(Assignment).where(Assignment.user_id == user_id)
                 )
-                == 1
+                == 2
             )
 
     def test_equipment_plan_add_emits_updlock_on_equipment_type(self, app, admin_client, _captured_sql):

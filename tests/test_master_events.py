@@ -377,6 +377,7 @@ class TestTableManager:
         data = response.get_json()
         assert data["ok"] is True
         assert data["user_name"] == "TM Member"
+        assert data["warning"] is None
         with app.app_context():
             assignment = db.session.scalar(db.select(Assignment).where(Assignment.spot_id == spot_id))
             assert assignment is not None

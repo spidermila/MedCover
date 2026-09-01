@@ -507,7 +507,10 @@ def table_assign(me_id: int, spot_id: int) -> Response:
         code = 409 if result.event else 404
         return jsonify({"ok": False, "error": result.error}), code
 
-    return jsonify({"ok": True, "user_name": user.name, "assignment_id": result.assignment.id})
+    warning = None
+    if result.conflict_event_name is not None:
+        warning = f"Uživatel {user.name} je již přihlášen na překrývající se akci '{result.conflict_event_name}'."
+    return jsonify({"ok": True, "user_name": user.name, "assignment_id": result.assignment.id, "warning": warning})
 
 
 @master_events_bp.post("/<int:me_id>/table/unassign/<int:assignment_id>")

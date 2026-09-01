@@ -199,6 +199,7 @@
               ' title="Odhlásit">\u2715</button>';
             attachUnassign(cell.querySelector(".tm-unassign-btn"));
             flashRows(cell.closest("tr").dataset.eventId);
+            if (data.warning) alert(data.warning);
           } else {
             alert(data.error || "Chyba p\u0159i p\u0159i\u0159azen\u00ed.");
             cell.innerHTML = originalHtml;
@@ -249,6 +250,7 @@
               ' data-user-name="' + data.user_name + '"' +
               ' title="Odhlásit">\u2715</button>';
             attachUnassign(cell.querySelector(".tm-unassign-btn"));
+            if (data.warning) alert(data.warning);
           } else {
             alert(data.error || "Chyba p\u0159i p\u0159i\u0159azen\u00ed.");
             cell.innerHTML = originalHtml;
