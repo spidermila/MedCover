@@ -125,18 +125,21 @@ class AssignResult:
 
 
 def _flash_assign_error(result: AssignResult) -> None:
-    """Flash an assignment error, linking to the conflicting event when present."""
-    if result.conflict_event_id is None:
-        flash(result.error, "warning")
-        return
+    """Flash an assignment error."""
+    flash(result.error, "warning")
+
+
+def _flash_assignment_conflict_warning(result: AssignResult) -> None:
+    """Warn about a successful assignment overlapping another event."""
     assert result.user is not None
+    assert result.conflict_event_id is not None
     assert result.conflict_event_name is not None
     conflict_link = Markup('<a href="{}" class="alert-link">{}</a>').format(
         url_for("events.detail", event_id=result.conflict_event_id), result.conflict_event_name
     )
     flash(
         Markup("Uživatel {} je již přihlášen na překrývající se akci {}.").format(result.user.name, conflict_link),
-        "danger",
+        "warning",
     )
 
 
@@ -194,8 +197,8 @@ def do_assign_user(
     if spot.assignment is not None:
         return AssignResult(ok=False, error="Tato pozice je již obsazena.", event=event)
 
-    # Serialize all assignments for this user until commit.  Different spots do
-    # not otherwise protect the duplicate-assignment and overlap checks below.
+    # Serialize assignments for this user until commit. Different spots do not
+    # otherwise protect the duplicate-assignment check below.
     db.session.scalar(
         db.select(UserAccount.id)
         .where(UserAccount.id == user.id)
@@ -216,6 +219,8 @@ def do_assign_user(
     if check_eligibility and not spot.is_eligible(user):
         return AssignResult(ok=False, error="Nemáte požadovanou kvalifikaci pro tuto pozici.", event=event)
 
+    conflict_event_id: int | None = None
+    conflict_event_name: str | None = None
     now = datetime.now(timezone.utc)
     if event.end_datetime > now:
         conflicts = conflicting_events_for_users(
@@ -223,14 +228,8 @@ def do_assign_user(
         ).get(user.id, [])
         conflicts = [conflict for conflict in conflicts if conflict["end_datetime"] > now]
         if conflicts:
-            return AssignResult(
-                ok=False,
-                error=f"Uživatel {user.name} je již přihlášen na překrývající se akci '{conflicts[0]['name']}'.",
-                event=event,
-                user=user,
-                conflict_event_id=conflicts[0]["id"],
-                conflict_event_name=conflicts[0]["name"],
-            )
+            conflict_event_id = conflicts[0]["id"]
+            conflict_event_name = conflicts[0]["name"]
 
     # Create assignment
     spot.assignment = Assignment(user_id=user.id, assigned_by_id=assigned_by.id)
@@ -252,7 +251,14 @@ def do_assign_user(
         return AssignResult(ok=False, error="Tato pozice byla právě obsazena někým jiným.", event=event)
 
     mailer.send_assignment_confirmed(user, event, spot_description=spot.description)
-    return AssignResult(ok=True, assignment=spot.assignment, event=event, user=user)
+    return AssignResult(
+        ok=True,
+        assignment=spot.assignment,
+        event=event,
+        user=user,
+        conflict_event_id=conflict_event_id,
+        conflict_event_name=conflict_event_name,
+    )
 
 
 def do_unassign_user(
@@ -320,7 +326,10 @@ def claim(spot_id: int) -> Response:
         _flash_assign_error(result)
         return redirect(url_for("events.detail", event_id=result.event.id))
 
-    flash("Úspěšně přihlášeni na akci.", "success")
+    if result.conflict_event_id is not None:
+        _flash_assignment_conflict_warning(result)
+    else:
+        flash("Úspěšně přihlášeni na akci.", "success")
     return redirect(url_for("events.detail", event_id=result.event.id))
 
 
@@ -396,7 +405,10 @@ def assign_other(spot_id: int) -> Response:
         _flash_assign_error(result)
         return redirect(url_for("events.detail", event_id=redirect_event.id))
 
-    flash(f"Uživatel {user.name} byl přiřazen na akci.", "success")
+    if result.conflict_event_id is not None:
+        _flash_assignment_conflict_warning(result)
+    else:
+        flash(f"Uživatel {user.name} byl přiřazen na akci.", "success")
     return redirect(url_for("events.detail", event_id=result.event.id))
 
 
