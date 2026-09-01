@@ -117,12 +117,12 @@
     {# ── Right column: roles + qualifications ── #}
     <div class="col-12 col-lg-7">
 
-      {% if current_user.has_permission('user.assign_role') %}
       <div class="card mb-4">
         <div class="card-header fw-semibold">Role
           {{ help_icon("Role určují, co uživatel v systému smí dělat — jaké stránky vidí a jaké akce může provádět.") }}
         </div>
         <div class="card-body">
+          {% if current_user.has_permission('user.assign_role') %}
           <div class="d-flex flex-wrap gap-2">
             {% for role in all_roles %}
             <div class="form-check">
@@ -133,16 +133,24 @@
             </div>
             {% endfor %}
           </div>
+          {% else %}
+          <div class="d-flex flex-wrap gap-1">
+            {% for role in user.roles %}
+              {{ badge_secondary(role.name) }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endfor %}
+          </div>
+          {% endif %}
         </div>
       </div>
-      {% endif %}
 
-      {% if current_user.has_permission('user.assign_qualification') %}
       <div class="card mb-4">
         <div class="card-header fw-semibold">Kvalifikace
           {{ help_icon("Kvalifikace určují, na jaké pozice může uživatel nastoupit. Přiřazení zde ovlivňuje, které pozice si může uživatel vybrat při přihlašování na akci.") }}
         </div>
         <div class="card-body">
+          {% if current_user.has_permission('user.assign_qualification') %}
           <div class="row g-2">
             {% for cred in all_qualifications %}
             <div class="col-12 col-md-6">
@@ -155,9 +163,17 @@
             </div>
             {% endfor %}
           </div>
+          {% else %}
+          <div class="d-flex flex-wrap gap-1">
+            {% for cred in user.qualifications if not cred.is_deleted %}
+              {{ badge_secondary(cred.name) }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endfor %}
+          </div>
+          {% endif %}
         </div>
       </div>
-      {% endif %}
 
     </div>
   </div>
