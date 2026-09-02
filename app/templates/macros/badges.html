@@ -55,11 +55,23 @@
   Pass verbose=true on the event detail page for the full Czech sentence;
   the default compact form is used on the events list.
 #}
-{% macro obsazeni_badges(event, verbose=false) %}
-  {%- set mf = event.mandatory_filled_spots -%}
-  {%- set mt = event.mandatory_total_spots -%}
-  {%- set of = event.optional_filled_spots -%}
-  {%- set ot = event.optional_total_spots -%}
+{#
+  Optional `counts` dict lets a caller precompute {mandatory_total, mandatory_filled,
+  optional_total, optional_filled} once per row and skip five per-macro-call passes
+  over event.spots. When omitted, falls back to the Event properties.
+#}
+{% macro obsazeni_badges(event, verbose=false, counts=None) %}
+  {%- if counts -%}
+    {%- set mf = counts.mandatory_filled -%}
+    {%- set mt = counts.mandatory_total -%}
+    {%- set of = counts.optional_filled -%}
+    {%- set ot = counts.optional_total -%}
+  {%- else -%}
+    {%- set mf = event.mandatory_filled_spots -%}
+    {%- set mt = event.mandatory_total_spots -%}
+    {%- set of = event.optional_filled_spots -%}
+    {%- set ot = event.optional_total_spots -%}
+  {%- endif -%}
   {%- set mand_cls = 'bg-success' if mt > 0 and mf >= mt else 'bg-danger' -%}
   {%- set opt_cls  = 'bg-success' if ot > 0 and of >= ot else 'bg-warning text-black' -%}
   {%- if verbose -%}

@@ -88,21 +88,25 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
     qualification for which Q is a valid substitute (i.e. Q is an ancestor of
     that qualification in the parent chain).
 
-    This loads all non-deleted qualifications once (tiny table) and walks the
-    parent graph in Python — call it once per request and pass the result set to
-    :meth:`EventSpot.is_eligible_for` instead of calling the per-spot recursive
-    :meth:`EventSpot.is_eligible` in a loop.
+    Loads the qualification list and the parent M2M edges in two statements,
+    then walks the graph in Python — call it once per request and pass the
+    result set to :meth:`EventSpot.is_eligible_for` instead of calling the
+    per-spot recursive :meth:`EventSpot.is_eligible` in a loop.
     """
-    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
+    from app.models.qualification import Qualification, qualification_parents  # pylint: disable=import-outside-toplevel
 
-    all_quals: list[Qualification] = list(
-        db.session.scalars(db.select(Qualification).where(Qualification.is_deleted == sa.false())).all()
+    all_qual_ids: list[int] = list(
+        db.session.scalars(db.select(Qualification.id).where(Qualification.is_deleted == sa.false())).all()
     )
 
     user_qual_ids = {q.id for q in user.qualifications if not q.is_deleted}
 
-    # Build a mapping qual_id → set of parent IDs for fast lookup
-    parents_map: dict[int, list[int]] = {q.id: [p.id for p in q.parents] for q in all_quals}
+    parents_map: dict[int, list[int]] = {qid: [] for qid in all_qual_ids}
+    for child_id, parent_id in db.session.execute(
+        db.select(qualification_parents.c.qualification_id, qualification_parents.c.parent_id)
+    ).all():
+        if child_id in parents_map:
+            parents_map[child_id].append(parent_id)
 
     def _user_can_fill(qual_id: int, visited: frozenset[int]) -> bool:
         if qual_id in visited:
@@ -111,7 +115,7 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
             return True
         return any(_user_can_fill(pid, visited | {qual_id}) for pid in parents_map.get(qual_id, []))
 
-    return {q.id for q in all_quals if _user_can_fill(q.id, frozenset())}
+    return {qid for qid in all_qual_ids if _user_can_fill(qid, frozenset())}
 
 
 def in_maintenance_during(start_dt: datetime, end_dt: datetime) -> sa.sql.ClauseElement:

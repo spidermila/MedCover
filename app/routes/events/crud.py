@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from flask import Response, abort, flash, jsonify, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import collate, func
-from sqlalchemy.orm import noload, selectinload
+from sqlalchemy.orm import noload, raiseload, selectinload
 
 import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
@@ -260,9 +260,37 @@ def index() -> str:
 
     event_templates: list[EventTemplate] = []
     if current_user.has_permission("event.create"):
+        # Dropdown only reads t.id / t.name — raiseload avoids the
+        # spot_templates / equipment_plans / qualifications selectin cascade.
         event_templates = list(
-            db.session.scalars(db.select(EventTemplate).order_by(collate(EventTemplate.name, CS_COLLATION))).all()
+            db.session.scalars(
+                db.select(EventTemplate).options(raiseload("*")).order_by(collate(EventTemplate.name, CS_COLLATION))
+            ).all()
         )
+
+    # Precompute mandatory/optional totals + filled counts in one pass over each
+    # event's spots. Avoids five per-row sums (mandatory_total_spots,
+    # mandatory_filled_spots, optional_total_spots, optional_filled_spots,
+    # filled_spots) inside obsazeni_badges + the row template.
+    spot_counts: dict[int, dict[str, int]] = {}
+    for e in events:
+        mt = mf = ot = of = 0
+        for s in e.spots:
+            filled = s.assignment is not None
+            if s.is_optional:
+                ot += 1
+                if filled:
+                    of += 1
+            else:
+                mt += 1
+                if filled:
+                    mf += 1
+        spot_counts[e.id] = {
+            "mandatory_total": mt,
+            "mandatory_filled": mf,
+            "optional_total": ot,
+            "optional_filled": of,
+        }
 
     return render_template(
         "events/index.html",
@@ -283,6 +311,7 @@ def index() -> str:
         active_named_mes=active_named_mes,
         status_colors=STATUS_BADGE_COLORS,
         for_me=f["for_me"],
+        spot_counts=spot_counts,
     )
 
 
