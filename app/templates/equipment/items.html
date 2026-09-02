@@ -94,8 +94,9 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-primary btn-sm">Vzít s sebou</button>
               </form>
-              <button class="btn btn-outline-success btn-sm" type="button"
-                      data-bs-toggle="collapse" data-bs-target="#issue-form-{{ item.id }}">
+              <button class="btn btn-outline-success btn-sm btn-open-issue" type="button"
+                      data-item-id="{{ item.id }}"
+                      data-item-name="{{ item.name }}">
                 Vydat
               </button>
             {% endif %}
@@ -137,20 +138,6 @@
               </form>
             {% endif %}
           </div>
-          {% if current_user.has_permission('equipment_item.issue_personal') and not item.issued_to %}
-          <div class="collapse mt-1" id="issue-form-{{ item.id }}">
-            <form method="POST" action="{{ url_for('equipment.item_issue', item_id=item.id) }}" class="d-flex gap-1">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <select name="user_id" class="form-select form-select-sm" required>
-                <option value="">— vyberte uživatele —</option>
-                {% for u in active_users %}
-                  <option value="{{ u.id }}">{{ u.name }}</option>
-                {% endfor %}
-              </select>
-              <button type="submit" class="btn btn-success btn-sm">OK</button>
-            </form>
-          </div>
-          {% endif %}
           {% if current_user.has_permission('equipment_item.availability_modify') and item.is_available and not item.unavailability_since %}
           <div class="collapse mt-1" id="unavail-form-{{ item.id }}">
             <form method="POST" action="{{ url_for('equipment.item_mark_unavailable', item_id=item.id) }}"
@@ -185,8 +172,43 @@
 {% else %}
   <p class="text-muted">Žádné položky vybavení nenalezeny.</p>
 {% endif %}
+
+{# Shared „Vydat“ modal — one instance for the whole page instead of a hidden
+   collapse block per row. The user <select> is inlined once here. #}
+{% if current_user.has_permission('equipment_item.issue_personal') %}
+<div class="modal fade" id="issueItemModal" tabindex="-1" aria-labelledby="issueItemModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title fs-6" id="issueItemModalLabel">Vydat položku</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+      </div>
+      <form method="POST" id="issueItemForm">
+        <div class="modal-body py-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <p class="small mb-2">Vydat položku <strong id="issueItemName"></strong> uživateli:</p>
+          <select name="user_id" class="form-select form-select-sm" required>
+            <option value="">— vyberte uživatele —</option>
+            {% for u in active_users %}
+              <option value="{{ u.id }}">{{ u.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Zrušit</button>
+          <button type="submit" class="btn btn-success btn-sm">Vydat</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script type="application/json" id="issueItemCfg">{"actionBase": "{{ url_for('equipment.item_issue', item_id=0) | replace('/0/', '/__ID__/') }}"}</script>
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/table-sort.js') }}?v={{ static_ver }}"></script>
+{% if current_user.has_permission('equipment_item.issue_personal') %}
+<script src="{{ url_for('static', filename='js/equipment-items.js') }}?v={{ static_ver }}"></script>
+{% endif %}
 {% endblock %}
