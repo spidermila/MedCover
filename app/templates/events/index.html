@@ -240,7 +240,7 @@
           <td>
             {% if event.status == EventStatus.CANCELLED %}—
             {% else %}
-              {{ obsazeni_badges(event) }}
+              {{ obsazeni_badges(event, counts=spot_counts.get(event.id)) }}
             {% endif %}
           </td>
           <td>
