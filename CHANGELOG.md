@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Event lists on /events, /dashboard, and the /reports pages now visually distinguish event types by row background: „Školení“ rows use a subtle blue tint, „Prezentační akce“ rows a subtle amber tint; „Zdravotní dozor“ keeps the default background. Colors adapt to light and dark themes. (#502)
 - Equipment items list: the per-row „Vydat“ action now opens a shared modal with the user picker instead of expanding an inline form under the row. The full active-user `<select>` is emitted once per page instead of once per item, which cuts the page's HTML size dramatically for organisations with many items (roughly ~9 KB saved per item beyond the first). (#498)
+- Events list (`/events/`) loads about 10% faster by skipping the roles / qualifications cascade triggered for every unique assignee on the page. (#500)
 
 ### Fixed
 - Generated work-report xlsx (Výkaz práce) now opens with A4 portrait orientation and fit-to-page scaling, so the report block fills the printable area regardless of month length and users don't need to adjust Excel's page-setup dialog before printing. (#503)
