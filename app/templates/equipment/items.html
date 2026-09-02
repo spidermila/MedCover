@@ -96,7 +96,8 @@
               </form>
               <button class="btn btn-outline-success btn-sm btn-open-issue" type="button"
                       data-item-id="{{ item.id }}"
-                      data-item-name="{{ item.name }}">
+                      data-item-name="{{ item.name }}"
+                      title="Vydat položku „{{ item.name }}“">
                 Vydat
               </button>
             {% endif %}
@@ -187,7 +188,7 @@
         <div class="modal-body py-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <p class="small mb-2">Vydat položku <strong id="issueItemName"></strong> uživateli:</p>
-          <select name="user_id" class="form-select form-select-sm" required>
+          <select name="user_id" class="form-select form-select-sm" required aria-label="Vyberte uživatele">
             <option value="">— vyberte uživatele —</option>
             {% for u in active_users %}
               <option value="{{ u.id }}">{{ u.name }}</option>
