@@ -346,6 +346,18 @@ class TestEquipmentItemsList:
         response = member_client.get("/equipment/items/")
         assert response.status_code == 200
 
+    def test_list_renders_shared_issue_modal_when_permitted(self, admin_client):
+        """Admin can issue personal equipment, so the shared 'Vydat' modal should render."""
+        body = admin_client.get("/equipment/items/").data.decode()
+        assert 'id="issueItemModal"' in body
+        assert 'id="issueItemForm"' in body
+        assert 'id="issueItemCfg"' in body
+
+    def test_list_hides_shared_issue_modal_without_permission(self, viewer_client):
+        """Viewer lacks equipment_item.issue_personal, so the modal must not render."""
+        body = viewer_client.get("/equipment/items/").data.decode()
+        assert 'id="issueItemModal"' not in body
+
 
 # ── Item create: extended validation ─────────────────────────────────────────
 
