@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from flask import Response, abort, flash, jsonify, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import collate, func
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
@@ -211,8 +211,16 @@ def index() -> str:
     require_permission("event.view", "event.view_draft")
 
     f = _parse_index_filters()
+    # Assignment.user is lazy="selectin" (see models/assignment.py), and UserAccount.roles
+    # / .qualifications are lazy="selectin" too — so loading the page's spots cascades into
+    # per-user role + qualification batches even though the index template only ever reads
+    # .name on the RP. Override the cascade for this route.
     query = db.select(Event).options(
-        selectinload(Event.equipment_plans).selectinload(EventEquipmentPlan.equipment_type)  # type: ignore[arg-type]
+        selectinload(Event.equipment_plans).selectinload(EventEquipmentPlan.equipment_type),  # type: ignore[arg-type]
+        selectinload(Event.spots)  # type: ignore[arg-type]
+        .selectinload(EventSpot.assignment)
+        .selectinload(Assignment.user)
+        .options(noload(UserAccount.roles), noload(UserAccount.qualifications)),
     )
 
     if not current_user.has_permission("event.view_draft"):

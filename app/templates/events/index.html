@@ -211,10 +211,12 @@
       </thead>
       <tbody>
         {% for event in events %}
+        {% set me_is_general = event.master_event.is_general %}
+        {% set me_name = event.master_event.name %}
         <tr class="{{ event_type_row_class(event.event_type) }} {{ 'text-muted' if event.status == EventStatus.CANCELLED or event.archived }}"
             data-status="{{ event.status.name }}"
             data-eligible="{{ '1' if eligible_spot_map.get(event.id) else '0' }}"
-            data-me="{{ '' if event.master_event.is_general else event.master_event.name }}"
+            data-me="{{ '' if me_is_general else me_name }}"
             data-event-id="{{ event.id }}">
           <td class="px-2">
             <input type="checkbox" class="form-check-input row-event-check" value="{{ event.id }}"
@@ -222,7 +224,7 @@
           </td>
           <td>
             <a href="{{ url_for('events.detail', event_id=event.id) }}" class="text-decoration-none fw-semibold {{ 'text-muted text-decoration-line-through' if event.status == EventStatus.CANCELLED }}">
-              {{ event.name }}{% if not event.master_event.is_general %} <span class="fw-normal">({{ event.master_event.name }})</span>{% endif %}
+              {{ event.name }}{% if not me_is_general %} <span class="fw-normal">({{ me_name }})</span>{% endif %}
             </a>
             {% if event.paid %}<span class="badge bg-success ms-1">Placená</span>{% else %}<span class="badge bg-primary ms-1">Neplacená</span>{% endif %}
             {% if event.event_type != EventType.MEDICAL_COVER %}
