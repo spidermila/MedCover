@@ -151,6 +151,30 @@
   color: var(--bs-body-color) !important;
 }
 
+/* Dark mode: table-info / table-warning overrides.
+   Bootstrap's .table-info/.table-warning hard-code pale backgrounds + dark
+   text that stay identical in dark mode and become unreadable. Retint using
+   the theme-aware --bs-*-bg-subtle and --bs-*-text-emphasis variables so the
+   rows match the list-group-item-* look used on the dashboard. */
+[data-bs-theme="dark"] .table-info,
+[data-bs-theme="dark"] .table-info > * {
+  --bs-table-bg: var(--bs-info-bg-subtle);
+  --bs-table-striped-bg: var(--bs-info-bg-subtle);
+  --bs-table-hover-bg: rgba(255,255,255,0.05);
+  --bs-table-color: var(--bs-info-text-emphasis);
+  background-color: var(--bs-info-bg-subtle) !important;
+  color: var(--bs-info-text-emphasis) !important;
+}
+[data-bs-theme="dark"] .table-warning,
+[data-bs-theme="dark"] .table-warning > * {
+  --bs-table-bg: var(--bs-warning-bg-subtle);
+  --bs-table-striped-bg: var(--bs-warning-bg-subtle);
+  --bs-table-hover-bg: rgba(255,255,255,0.05);
+  --bs-table-color: var(--bs-warning-text-emphasis);
+  background-color: var(--bs-warning-bg-subtle) !important;
+  color: var(--bs-warning-text-emphasis) !important;
+}
+
 /* Dark mode: FullCalendar — wire FullCalendar CSS variables to Bootstrap */
 [data-bs-theme="dark"] .fc {
   --fc-page-bg-color: var(--bs-body-bg);
