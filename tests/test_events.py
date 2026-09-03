@@ -1475,11 +1475,23 @@ class TestEventTypes:
         resp = admin_client.get("/events/?statuses=DRAFT")
         assert resp.status_code == 200
         html = resp.data.decode()
-        # TRAINING rows tinted info; PRESENTATION rows tinted warning; MEDICAL_COVER not tinted.
-        assert "table-info" in html
-        assert "table-warning" in html
-        # MEDICAL_COVER row is present but carries neither tint class on its <tr>.
-        assert "Row Medical" in html
+
+        def row_classes(event_name: str) -> str:
+            # Match the <tr class="…"> whose contents (up to the next </tr>) contain event_name.
+            for m in re.finditer(r'<tr\s+class="([^"]*)"[^>]*>(.*?)</tr>', html, re.DOTALL):
+                if event_name in m.group(2):
+                    return m.group(1)
+            raise AssertionError(f"row for {event_name!r} not found in /events response")
+
+        training_cls = row_classes("Row Training")
+        presentation_cls = row_classes("Row Presentation")
+        medical_cls = row_classes("Row Medical")
+        assert "table-info" in training_cls
+        assert "table-warning" not in training_cls
+        assert "table-warning" in presentation_cls
+        assert "table-info" not in presentation_cls
+        assert "table-info" not in medical_cls
+        assert "table-warning" not in medical_cls
 
 
 # ── Delete draft event ────────────────────────────────────────────────────────

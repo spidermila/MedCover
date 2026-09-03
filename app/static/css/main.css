@@ -162,6 +162,7 @@
   --bs-table-striped-bg: var(--bs-info-bg-subtle);
   --bs-table-hover-bg: rgba(255,255,255,0.05);
   --bs-table-color: var(--bs-info-text-emphasis);
+
   background-color: var(--bs-info-bg-subtle) !important;
   color: var(--bs-info-text-emphasis) !important;
 }
@@ -171,8 +172,17 @@
   --bs-table-striped-bg: var(--bs-warning-bg-subtle);
   --bs-table-hover-bg: rgba(255,255,255,0.05);
   --bs-table-color: var(--bs-warning-text-emphasis);
+
   background-color: var(--bs-warning-bg-subtle) !important;
   color: var(--bs-warning-text-emphasis) !important;
+}
+
+/* Cancelled / archived events keep the tint but their text stays muted. */
+[data-bs-theme="dark"] .table-info.text-muted,
+[data-bs-theme="dark"] .table-info.text-muted > *,
+[data-bs-theme="dark"] .table-warning.text-muted,
+[data-bs-theme="dark"] .table-warning.text-muted > * {
+  color: var(--bs-secondary-color) !important;
 }
 
 /* Dark mode: FullCalendar — wire FullCalendar CSS variables to Bootstrap */
