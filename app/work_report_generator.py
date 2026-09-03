@@ -323,15 +323,17 @@ def _setup_worksheet(ws: Worksheet, month_name: str) -> None:
     """Set column widths, page orientation, margins."""
     for col_letter, width in _COL_WIDTHS.items():
         ws.column_dimensions[col_letter].width = width
-    ws.page_setup.orientation = "landscape"
+    # Match the legacy Google-Sheets "Dozory YYYY.xlsx" print layout so the
+    # user gets a print-ready A4 page without touching Excel's print dialog:
+    # portrait, fixed 91% scale (not fit-to-page, so every month renders at
+    # the same size regardless of day count), matching the sample's margins.
+    ws.page_setup.orientation = "portrait"
     ws.page_setup.paperSize = 9  # A4
-    ws.page_setup.fitToPage = True
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 1
-    ws.page_margins.left = 0.7
-    ws.page_margins.right = 0.7
-    ws.page_margins.top = 0.787
-    ws.page_margins.bottom = 0.787
+    ws.page_setup.scale = 91
+    ws.page_margins.left = 1.168
+    ws.page_margins.right = 0.748
+    ws.page_margins.top = 0.984
+    ws.page_margins.bottom = 0.984
     ws.page_margins.header = 0.0
     ws.page_margins.footer = 0.0
 
