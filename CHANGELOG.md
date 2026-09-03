@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Event lists on /events, /dashboard, and the /reports pages now visually distinguish event types by row background: „Školení“ rows use a subtle blue tint, „Prezentační akce“ rows a subtle amber tint; „Zdravotní dozor“ keeps the default background. Colors adapt to light and dark themes. (#502)
+
 ## [1.1.0] - 2026-09-01
 
 ### Added

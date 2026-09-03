@@ -117,7 +117,7 @@
       </thead>
       <tbody>
         {% for ev in group.events %}
-        <tr>
+        <tr class="{{ event_type_row_class(ev.event_type) }}">
           <td>
             <a href="{{ url_for('events.detail', event_id=ev.id) }}">{{ ev.name }}</a>
           </td>

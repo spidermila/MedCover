@@ -205,6 +205,23 @@ def create_app(
             return url_for("users.detail", user_id=entity_id)
         return None
 
+    @app.template_global()
+    def event_type_row_class(event_type: object, kind: str = "table") -> str:
+        """Return the Bootstrap contextual class tinting a row/list item by event type.
+
+        MEDICAL_COVER (the default type) returns an empty string so the row keeps
+        the theme's default background. Colors adapt to light/dark themes via
+        Bootstrap 5.3's data-bs-theme-aware --bs-*-bg-subtle variables.
+        """
+        if event_type is None:
+            return ""
+        mapping = {
+            "TRAINING": ("table-info", "list-group-item-info"),
+            "PRESENTATION": ("table-warning", "list-group-item-warning"),
+        }
+        idx = 0 if kind == "table" else 1
+        return mapping.get(getattr(event_type, "name", ""), ("", ""))[idx]
+
     @app.before_request
     def _set_csp_nonce() -> None:
         g.csp_nonce = secrets.token_hex(16)

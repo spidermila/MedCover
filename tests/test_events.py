@@ -1454,6 +1454,33 @@ class TestEventTypes:
         # Training badge label
         assert "Školení".encode() in resp.data
 
+    def test_row_background_reflects_event_type(self, app, admin_client):
+        me_id = _make_master_event(app)
+        rp_qual_id = _make_rp_qual(app)
+        admin_client.post(
+            "/events/create",
+            data={**_event_form_data(me_id, "Row Training", rp_qual_id=rp_qual_id), "event_type": "TRAINING"},
+            follow_redirects=True,
+        )
+        admin_client.post(
+            "/events/create",
+            data={**_event_form_data(me_id, "Row Presentation", rp_qual_id=rp_qual_id), "event_type": "PRESENTATION"},
+            follow_redirects=True,
+        )
+        admin_client.post(
+            "/events/create",
+            data={**_event_form_data(me_id, "Row Medical", rp_qual_id=rp_qual_id), "event_type": "MEDICAL_COVER"},
+            follow_redirects=True,
+        )
+        resp = admin_client.get("/events/?statuses=DRAFT")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # TRAINING rows tinted info; PRESENTATION rows tinted warning; MEDICAL_COVER not tinted.
+        assert "table-info" in html
+        assert "table-warning" in html
+        # MEDICAL_COVER row is present but carries neither tint class on its <tr>.
+        assert "Row Medical" in html
+
 
 # ── Delete draft event ────────────────────────────────────────────────────────
 
