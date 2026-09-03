@@ -495,8 +495,11 @@ def _build_totals_and_signatures(
     days_in_month: int,
     events_by_day: dict[int, tuple[Decimal, list[str]]],
     signature_image: bytes | None = None,
-) -> None:
-    """Write the totals row and signature rows below the day grid."""
+) -> int:
+    """Write the totals row and signature rows below the day grid.
+
+    Returns the row index of the last written row (the boss signature row).
+    """
     total_row = _FIRST_DATA_ROW + days_in_month
     _apply_row_height(ws, total_row)
     total_hours = float(sum(h for h, _ in events_by_day.values())) if events_by_day else 0.0
@@ -529,6 +532,8 @@ def _build_totals_and_signatures(
 
     if signature_image:
         _embed_signature(ws, signature_image, sig_worker)
+
+    return sig_boss
 
 
 def _col_width_to_pixels(width_chars: float) -> int:
@@ -621,11 +626,12 @@ def generate_work_report(user: UserAccount, year: int, month: int) -> Path:
     _build_header_block(ws, user, month_name, year)
     _build_column_headers(ws)
     _build_day_rows(ws, year, month, days_in_month, cz_holidays, events_by_day)
-    _build_totals_and_signatures(ws, year, month, days_in_month, events_by_day, signature_image=user.signature_image)
+    last_row = _build_totals_and_signatures(
+        ws, year, month, days_in_month, events_by_day, signature_image=user.signature_image
+    )
 
     # Scope fit-to-page to the report block; without this Excel would try to
     # fit any incidentally-referenced empty rows too, shrinking the output.
-    last_row = _FIRST_DATA_ROW + days_in_month + 7  # totals + 2 signature rows
     ws.print_area = f"A1:E{last_row}"
 
     instance_path = Path(current_app.instance_path)

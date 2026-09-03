@@ -205,6 +205,26 @@ class TestVykazGenerator:
         cell_a10 = ws.cell(row=10, column=1)
         assert cell_a10.fill.fgColor.rgb == "FFFFFF00", "Jan 1 must have yellow fill"
 
+    def test_generator_print_setup_is_a4_portrait_fit_to_page(self, app, tmp_path, monkeypatch):
+        """Generated xlsx opens print-ready: A4 portrait, fit-to-page, scoped print area."""
+
+        with app.app_context():
+            monkeypatch.setattr(app, "instance_path", str(tmp_path))
+            u = _make_user("vykaz_print@test.com", "Vykaz User", Role.MEMBER)
+            path = generate_work_report(u, 2026, 2)  # February = 28 days
+
+        wb = openpyxl.load_workbook(str(path))
+        ws = wb.active
+        assert ws.page_setup.orientation == "portrait"
+        assert ws.page_setup.paperSize == 9  # A4
+        assert ws.page_setup.fitToWidth == 1
+        assert ws.page_setup.fitToHeight == 1
+        assert ws.sheet_properties.pageSetUpPr.fitToPage is True
+        # Print area spans column A through E and ends at the boss-signature row
+        # (day-1 row 10 + 27 more days + 1 totals row + 7 rows to boss sig = row 45).
+        # openpyxl round-trips the print_area with a quoted sheet-name prefix.
+        assert ws.print_area == "'Únor'!$A$1:$E$45"
+
     def test_generator_weekend_red_font(self, app, tmp_path, monkeypatch):
         """Saturday day-name cell should use red font."""
 
