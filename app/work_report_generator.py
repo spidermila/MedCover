@@ -1,9 +1,8 @@
 """
 Výkaz práce (employee work report) xlsx generator.
 
-Generates a single-sheet openpyxl workbook that matches the layout of the
-legacy Google-Sheets "Dozory YYYY.xlsx" monthly report used by Czech Red
-Cross members to document worked hours for DPP payroll purposes.
+Generates a single-sheet openpyxl workbook that Czech Red Cross members
+use to document worked hours for DPP payroll purposes.
 
 Public entry point::
 
@@ -325,8 +324,7 @@ def _setup_worksheet(ws: Worksheet, month_name: str) -> None:
     for col_letter, width in _COL_WIDTHS.items():
         ws.column_dimensions[col_letter].width = width
     # A4 portrait, fit-to-page so the report block always fills the page
-    # without the user opening Excel's page-setup dialog. Margins match the
-    # legacy Google-Sheets "Dozory YYYY.xlsx" template. fitToPage requires
+    # without the user opening Excel's page-setup dialog. fitToPage requires
     # both page_setup.fitToWidth/Height AND sheet_properties.pageSetUpPr,
     # otherwise Excel silently falls back to 100 % scale.
     ws.page_setup.orientation = "portrait"
