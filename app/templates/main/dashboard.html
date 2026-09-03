@@ -112,7 +112,7 @@
   </div>
   <ul class="list-group list-group-flush">
     {% for e in missing_rp_events %}
-    <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+    <li class="list-group-item d-flex justify-content-between align-items-center py-2 {{ event_type_row_class(e.event_type, 'list') }}">
       <div>
         <a href="{{ url_for('events.detail', event_id=e.id) }}" class="fw-semibold text-decoration-none">{{ e.name }}</a>
         <small class="text-muted ms-2">{{ e.start_datetime | localdt }}</small>
@@ -133,7 +133,7 @@
   </div>
   <ul class="list-group list-group-flush">
     {% for e in attention_events %}
-    <li class="list-group-item list-group-item-action py-2">
+    <li class="list-group-item list-group-item-action py-2 {{ event_type_row_class(e.event_type, 'list') }}">
       <a href="{{ url_for('events.detail', event_id=e.id) }}" class="text-decoration-none stretched-link"></a>
       <div class="d-flex justify-content-between align-items-start">
         <div>
@@ -166,7 +166,7 @@
   </div>
   <ul class="list-group list-group-flush">
     {% for e, type_name, required, available, extra in equipment_shortage_events %}
-    <li class="list-group-item list-group-item-action py-2">
+    <li class="list-group-item list-group-item-action py-2 {{ event_type_row_class(e.event_type, 'list') }}">
       <a href="{{ url_for('events.detail', event_id=e.id) }}" class="text-decoration-none stretched-link" aria-label="{{ e.name }}"></a>
       <div class="d-flex justify-content-between align-items-start">
         <div>
@@ -193,7 +193,7 @@
   {% if my_events %}
   <ul class="list-group list-group-flush">
     {% for event, tags in my_events %}
-    <li class="list-group-item list-group-item-action py-2">
+    <li class="list-group-item list-group-item-action py-2 {{ event_type_row_class(event.event_type, 'list') }}">
       <a href="{{ url_for('events.detail', event_id=event.id) }}" class="text-decoration-none stretched-link"></a>
       <div class="d-flex justify-content-between align-items-start">
         <div>
@@ -262,7 +262,7 @@
   <ul class="list-group list-group-flush" id="open-eligible">
     {% if open_events %}
       {% for e in open_events %}
-      <li class="list-group-item list-group-item-action py-2">
+      <li class="list-group-item list-group-item-action py-2 {{ event_type_row_class(e.event_type, 'list') }}">
         <a href="{{ url_for('events.detail', event_id=e.id) }}" class="text-decoration-none stretched-link"></a>
         <div class="d-flex justify-content-between align-items-start">
           <div class="overflow-hidden me-2">
@@ -296,7 +296,7 @@
   {% if open_events_all | length > open_events | length %}
   <ul class="list-group list-group-flush d-none" id="open-all">
     {% for e in open_events_all %}
-    <li class="list-group-item list-group-item-action py-2">
+    <li class="list-group-item list-group-item-action py-2 {{ event_type_row_class(e.event_type, 'list') }}">
       <a href="{{ url_for('events.detail', event_id=e.id) }}" class="text-decoration-none stretched-link"></a>
       <div class="d-flex justify-content-between align-items-start">
         <div class="overflow-hidden me-2">

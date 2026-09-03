@@ -211,7 +211,7 @@
       </thead>
       <tbody>
         {% for event in events %}
-        <tr class="{{ 'text-muted' if event.status == EventStatus.CANCELLED or event.archived }}"
+        <tr class="{{ event_type_row_class(event.event_type) }} {{ 'text-muted' if event.status == EventStatus.CANCELLED or event.archived }}"
             data-status="{{ event.status.name }}"
             data-eligible="{{ '1' if eligible_spot_map.get(event.id) else '0' }}"
             data-me="{{ '' if event.master_event.is_general else event.master_event.name }}"

@@ -175,7 +175,7 @@
     </thead>
     <tbody>
       {% for row in rows %}
-      <tr>
+      <tr class="{{ event_type_row_class(row.event.event_type) }}">
         <td>
           <a href="{{ url_for('events.detail', event_id=row.event.id) }}">{{ row.event.name }}</a>
         </td>
