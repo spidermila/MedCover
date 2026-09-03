@@ -30,6 +30,7 @@ from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
 from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils.units import cm_to_EMU, pixels_to_EMU
+from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.worksheet import Worksheet
 from PIL import Image as PILImage
 
@@ -323,13 +324,16 @@ def _setup_worksheet(ws: Worksheet, month_name: str) -> None:
     """Set column widths, page orientation, margins."""
     for col_letter, width in _COL_WIDTHS.items():
         ws.column_dimensions[col_letter].width = width
-    # Match the legacy Google-Sheets "Dozory YYYY.xlsx" print layout so the
-    # user gets a print-ready A4 page without touching Excel's print dialog:
-    # portrait, fixed 91% scale (not fit-to-page, so every month renders at
-    # the same size regardless of day count), matching the sample's margins.
+    # A4 portrait, fit-to-page so the report block always fills the page
+    # without the user opening Excel's page-setup dialog. Margins match the
+    # legacy Google-Sheets "Dozory YYYY.xlsx" template. fitToPage requires
+    # both page_setup.fitToWidth/Height AND sheet_properties.pageSetUpPr,
+    # otherwise Excel silently falls back to 100 % scale.
     ws.page_setup.orientation = "portrait"
     ws.page_setup.paperSize = 9  # A4
-    ws.page_setup.scale = 91
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
     ws.page_margins.left = 1.168
     ws.page_margins.right = 0.748
     ws.page_margins.top = 0.984
@@ -618,6 +622,11 @@ def generate_work_report(user: UserAccount, year: int, month: int) -> Path:
     _build_column_headers(ws)
     _build_day_rows(ws, year, month, days_in_month, cz_holidays, events_by_day)
     _build_totals_and_signatures(ws, year, month, days_in_month, events_by_day, signature_image=user.signature_image)
+
+    # Scope fit-to-page to the report block; without this Excel would try to
+    # fit any incidentally-referenced empty rows too, shrinking the output.
+    last_row = _FIRST_DATA_ROW + days_in_month + 7  # totals + 2 signature rows
+    ws.print_area = f"A1:E{last_row}"
 
     instance_path = Path(current_app.instance_path)
     out_dir = instance_path / "work_report" / str(user.id)

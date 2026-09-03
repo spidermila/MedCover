@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event lists on /events, /dashboard, and the /reports pages now visually distinguish event types by row background: „Školení“ rows use a subtle blue tint, „Prezentační akce“ rows a subtle amber tint; „Zdravotní dozor“ keeps the default background. Colors adapt to light and dark themes. (#502)
 
 ### Fixed
-- Generated work-report xlsx (Výkaz práce) now opens with A4 portrait orientation and a fixed 91 % print scale matching the legacy Google-Sheets template, so users can print without adjusting Excel's page-setup dialog every month. (#503)
+- Generated work-report xlsx (Výkaz práce) now opens with A4 portrait orientation and fit-to-page scaling, so the report block fills the printable area regardless of month length and users don't need to adjust Excel's page-setup dialog before printing. (#503)
 
 ## [1.1.0] - 2026-09-01
 
