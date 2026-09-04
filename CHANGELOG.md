@@ -10,9 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Event lists on /events, /dashboard, and the /reports pages now visually distinguish event types by row background: „Školení“ rows use a subtle blue tint, „Prezentační akce“ rows a subtle amber tint; „Zdravotní dozor“ keeps the default background. Colors adapt to light and dark themes. (#502)
 - Equipment items list: the per-row „Vydat“ action now opens a shared modal with the user picker instead of expanding an inline form under the row. The full active-user `<select>` is emitted once per page instead of once per item, which cuts the page's HTML size dramatically for organisations with many items (roughly ~9 KB saved per item beyond the first). (#498)
+- DB backup directory is now a shared persistent volume mounted at `/backups` on both the web and scheduler containers; the configurable path in „Nastavení zálohování“ must now be an absolute path (default `/backups`), and the previous „relativní k adresáři projektu“ option is gone. A migration bumps the stored value to `/backups` on existing installs. Paired with an infra change that mounts an Azure Files share at the same path in Azure prod. (#497)
 
 ### Fixed
 - Generated work-report xlsx (Výkaz práce) now opens with A4 portrait orientation and fit-to-page scaling, so the report block fills the printable area regardless of month length and users don't need to adjust Excel's page-setup dialog before printing. (#503)
+- Automatic DB backups written by the scheduler are now visible in the web UI and survive container restarts — both containers share the `/backups` volume, so a backup written by one is immediately listable by the other. Previously each container had its own overlay `/app/backups`, so scheduler-written zips never appeared in the web UI and were wiped on the next revision swap. (#497)
+- `export_to_zip` now writes to a `.part` sidecar and atomically renames into place, so a crash mid-write no longer leaves a truncated `medcover_backup_*.zip` visible for download or restore. (#497)
 
 ## [1.1.0] - 2026-09-01
 

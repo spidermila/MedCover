@@ -19,10 +19,13 @@
       <ul class="small mb-2">
         <li>Seznamy akcí (na stránkách Akce, Přehled a Reporty) nově barevně odlišují typy akcí — „Školení“ má jemný modrý podklad, „Prezentační akce“ jemný jantarový; „Zdravotní dozor“ zůstává bez barvy. Barvy fungují ve světlém i tmavém režimu.</li>
         <li>V seznamu položek vybavení se tlačítko „Vydat“ otevírá v samostatném dialogu místo rozbalení formuláře pod řádkem. Stránka je díky tomu výrazně menší a rychleji se načítá, zejména při větším množství položek vybavení.</li>
+        <li>Nastavení zálohování: pole „Adresář zálohy“ nyní vyžaduje absolutní cestu (výchozí <code>/backups</code>); relativní cesty k adresáři projektu již nejsou podporovány.</li>
       </ul>
       <h6 class="text-danger">✦ Opraveno</h6>
       <ul class="small mb-0">
 <li>Vygenerovaný Výkaz práce (xlsx) se otevře v tiskovém nastavení A4 na výšku a tabulka se automaticky přizpůsobí velikosti stránky, ať má měsíc jakýkoliv počet dní. Není třeba před každým tiskem ručně upravovat vzhled stránky v Excelu.</li>
+        <li>Automatické zálohy databáze vytvářené plánovačem jsou nyní viditelné ve webovém rozhraní a přežijí restart aplikace. Zálohy se nově ukládají do sdíleného perzistentního úložiště, které vidí webový server i plánovač.</li>
+        <li>Při chybě během zapisování zálohy se již ve výpisu záloh neobjeví nekompletní soubor — záloha se nejprve zapíše jako dočasný soubor a až po úspěšném dokončení se přejmenuje na finální název.</li>
       </ul>
     </div>
   </div>

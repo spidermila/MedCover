@@ -117,8 +117,11 @@
         <div class="col-md-6">
           <label class="form-label" for="backup_dir">Adresář zálohy</label>
           <input type="text" class="form-control" id="backup_dir" name="backup_dir"
-                 value="{{ settings.backup_dir }}" required>
-          <div class="form-text">Relativní k adresáři projektu nebo absolutní cesta.</div>
+                 value="{{ settings.backup_dir }}" pattern="/.*" required>
+          <div class="form-text">
+            Absolutní cesta k adresáři. Výchozí <code>/backups</code> odpovídá sdílenému
+            svazku, který vidí webový i plánovač kontejner.
+          </div>
         </div>
 
         <div class="col-md-3">

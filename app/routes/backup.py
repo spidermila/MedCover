@@ -9,7 +9,7 @@ import logging
 import re
 from pathlib import Path
 
-from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
@@ -28,11 +28,7 @@ _BACKUP_FILENAME_RE = re.compile(r"^medcover_backup_\d{8}_\d{6}_\d+\.zip$")
 
 
 def _resolve_backup_dir() -> Path:
-    settings = get_settings()
-    backup_dir = Path(settings.backup_dir)
-    if not backup_dir.is_absolute():
-        backup_dir = Path(current_app.root_path).parent / backup_dir
-    return backup_dir
+    return Path(get_settings().backup_dir)
 
 
 def _safe_backup_path(filename: str) -> Path:
@@ -253,7 +249,15 @@ def save_settings() -> Response:
         "backup_schedule_hour": settings.backup_schedule_hour,
     }
 
-    settings.backup_dir = request.form.get("backup_dir", "backups").strip() or "backups"
+    submitted_dir = request.form.get("backup_dir", "").strip()
+    if submitted_dir and Path(submitted_dir).is_absolute():
+        settings.backup_dir = submitted_dir
+    else:
+        flash(
+            "Adresář zálohy musí být zadán jako absolutní cesta (např. „/backups“). " "Zadaná hodnota byla ignorována.",
+            "warning",
+        )
+
     try:
         keep = int(request.form.get("backup_keep_count", "7"))
         settings.backup_keep_count = max(1, min(keep, 365))
