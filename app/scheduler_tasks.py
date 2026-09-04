@@ -184,14 +184,16 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
 
 
 def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
-    """Run an automatic backup if scheduled backups are enabled and it is the right hour.
+    """Run an automatic backup if scheduled backups are enabled and the time is due.
 
-    The task is designed to be called every hour by the scheduler.  It only
+    The task is designed to be called every minute by the scheduler.  It only
     creates a backup if:
       1. backup_schedule_enabled is True in AppSettings.
-      2. The current UTC hour matches backup_schedule_hour.
-      3. No backup file already exists for today (prevents double-runs on
-         scheduler restarts).
+      2. The current local time (app timezone) is at or after today's
+         scheduled HH:MM. The "at or after" tolerance means a delayed tick
+         (e.g. after a container restart mid-window) still catches up rather
+         than skipping the whole day.
+      3. No backup file already exists for today's local date.
 
     Args:
         db_session: An active SQLAlchemy session bound to the current app context.
@@ -215,21 +217,40 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
     from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
 
     local_tz = get_app_tz()
-    local_hour = now.astimezone(local_tz).hour
-    if local_hour != settings.backup_schedule_hour:
+    local_now = now.astimezone(local_tz)
+    scheduled_today = local_now.replace(
+        hour=settings.backup_schedule_hour,
+        minute=settings.backup_schedule_minute,
+        second=0,
+        microsecond=0,
+    )
+    if local_now < scheduled_today:
         log.debug(
-            "Scheduled backup: skipped — hour mismatch (now=%d scheduled=%d).",
-            local_hour,
-            settings.backup_schedule_hour,
+            "Scheduled backup: skipped — too early (local=%s scheduled=%s).",
+            local_now.isoformat(timespec="minutes"),
+            scheduled_today.isoformat(timespec="minutes"),
         )
         return False
 
-    # Skip if a backup was already created today (UTC date) to avoid duplicates.
-    today_prefix = f"medcover_backup_{now.strftime('%Y%m%d')}_"
+    # Idempotency: at most one backup per local date. Parse the UTC timestamp
+    # embedded in each existing filename and convert to the app-local date;
+    # filesystem mtime is unreliable in tests (which inject ``now``).
+    today_local = local_now.date()
     existing = list_backups(settings.backup_dir)
-    if any(b["name"].startswith(today_prefix) for b in existing):
-        log.debug("Scheduled backup: already have a backup for today, skipping.")
-        return False
+    for entry in existing:
+        parts = entry["name"].removeprefix("medcover_backup_").split("_")
+        # parts = [YYYYMMDD, HHMMSS, micros, "UTC.zip"] for current files;
+        # older files (pre-UTC-suffix) end with "micros.zip" — same layout for
+        # the first two positions, which is all we need.
+        if len(parts) < 2:
+            continue
+        try:
+            file_utc = datetime.strptime(parts[0] + parts[1], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if file_utc.astimezone(local_tz).date() == today_local:
+            log.debug("Scheduled backup: already have a backup for today (local), skipping.")
+            return False
 
     try:
         zip_path = export_to_zip(settings.backup_dir, now=now)

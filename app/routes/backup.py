@@ -24,7 +24,10 @@ log = logging.getLogger(__name__)
 backup_bp = Blueprint("backup", __name__, url_prefix="/admin/backup")
 
 # Filename pattern — only allow files we created to prevent path traversal.
-_BACKUP_FILENAME_RE = re.compile(r"^medcover_backup_\d{8}_\d{6}_\d+\.zip$")
+# The ``_UTC`` suffix is present on files created after the switch to explicit
+# UTC timestamps; older files (produced before that change) lack it, so the
+# suffix is optional to keep pre-existing backups downloadable / restorable.
+_BACKUP_FILENAME_RE = re.compile(r"^medcover_backup_\d{8}_\d{6}_\d+(?:_UTC)?\.zip$")
 
 
 def _resolve_backup_dir() -> Path:
@@ -247,6 +250,7 @@ def save_settings() -> Response:
         "backup_keep_count": settings.backup_keep_count,
         "backup_schedule_enabled": settings.backup_schedule_enabled,
         "backup_schedule_hour": settings.backup_schedule_hour,
+        "backup_schedule_minute": settings.backup_schedule_minute,
     }
 
     submitted_dir = request.form.get("backup_dir", "").strip()
@@ -266,17 +270,30 @@ def save_settings() -> Response:
 
     settings.backup_schedule_enabled = "backup_schedule_enabled" in request.form
 
+    # HH:MM in the app's configured timezone. Accept either a combined
+    # ``backup_schedule_time=HH:MM`` from the <input type="time"> field, or,
+    # for API/curl compatibility, individual hour + minute fields.
+    time_str = request.form.get("backup_schedule_time", "").strip()
+    if time_str and ":" in time_str:
+        hour_str, _, minute_str = time_str.partition(":")
+    else:
+        hour_str = request.form.get("backup_schedule_hour", "2")
+        minute_str = request.form.get("backup_schedule_minute", "0")
     try:
-        hour = int(request.form.get("backup_schedule_hour", "2"))
-        settings.backup_schedule_hour = max(0, min(hour, 23))
+        settings.backup_schedule_hour = max(0, min(int(hour_str), 23))
     except ValueError:
         settings.backup_schedule_hour = 2
+    try:
+        settings.backup_schedule_minute = max(0, min(int(minute_str), 59))
+    except ValueError:
+        settings.backup_schedule_minute = 0
 
     new = {
         "backup_dir": settings.backup_dir,
         "backup_keep_count": settings.backup_keep_count,
         "backup_schedule_enabled": settings.backup_schedule_enabled,
         "backup_schedule_hour": settings.backup_schedule_hour,
+        "backup_schedule_minute": settings.backup_schedule_minute,
     }
     audit("edit", "AppSettings", "1", "Nastavení zálohování upraveno", {"before": old, "after": new})
     db.session.commit()

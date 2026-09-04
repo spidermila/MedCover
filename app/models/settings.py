@@ -57,8 +57,11 @@ class AppSettings(db.Model):  # type: ignore[misc]
     backup_keep_count = db.Column(db.Integer, default=7, nullable=False, server_default="7")
     # When True, the scheduler will create an automatic daily backup.
     backup_schedule_enabled = db.Column(db.Boolean, default=False, nullable=False, server_default="false")
-    # Hour of day (0–23, server local time) at which the scheduled backup runs.
+    # Hour of day (0–23) at which the scheduled backup runs, in the app's
+    # configured timezone (see ``timezone`` above), not UTC.
     backup_schedule_hour = db.Column(db.Integer, default=2, nullable=False, server_default="2")
+    # Minute of the hour (0–59), same timezone as ``backup_schedule_hour``.
+    backup_schedule_minute = db.Column(db.Integer, default=0, nullable=False, server_default="0")
 
     # --- Session security ---
     # How long a login session lasts (hours). Flask sets a cookie with this lifetime.

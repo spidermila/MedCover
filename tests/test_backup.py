@@ -6,6 +6,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path as _Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -252,32 +253,51 @@ class TestRunScheduledBackup:
             result = run_scheduled_backup(_db.session)
             assert result is False
 
-    def test_returns_false_wrong_hour(self, app, tmp_path):
+    def test_returns_false_before_scheduled_time(self, app, tmp_path):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 3
+            settings.backup_schedule_minute = 30
             settings.backup_dir = str(tmp_path)
             _db.session.commit()
 
-            # Pass a time that is NOT hour 3
-            fake_now = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+            # January: Europe/Prague = UTC+1, so 02:00 UTC = 03:00 local (before 03:30).
+            fake_now = datetime(2026, 1, 1, 2, 0, 0, tzinfo=timezone.utc)
             result = run_scheduled_backup(_db.session, now=fake_now)
             assert result is False
 
-    def test_creates_backup_at_correct_hour(self, app, tmp_path):
+    def test_creates_backup_at_exact_scheduled_minute(self, app, tmp_path):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 2
+            settings.backup_schedule_minute = 30
             settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
 
-            # January: Europe/Prague = UTC+1, so 01:00 UTC = 02:00 local
-            fake_now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc)
+            # January: Europe/Prague = UTC+1, so 01:30 UTC = 02:30 local.
+            fake_now = datetime(2026, 1, 1, 1, 30, 0, tzinfo=timezone.utc)
             result = run_scheduled_backup(_db.session, now=fake_now)
             assert result is True
+            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+
+    def test_creates_backup_on_late_tick_after_missed_window(self, app, tmp_path):
+        """If the scheduler is delayed past the scheduled minute, the next tick
+        should still fire the backup (tolerant window), rather than skip the day."""
+        with app.app_context():
+            settings = get_settings()
+            settings.backup_schedule_enabled = True
+            settings.backup_schedule_hour = 2
+            settings.backup_schedule_minute = 30
+            settings.backup_dir = str(tmp_path)
+            settings.backup_keep_count = 7
+            _db.session.commit()
+
+            # Local 04:15 — well past scheduled 02:30, no backup yet today.
+            fake_now = datetime(2026, 1, 1, 3, 15, 0, tzinfo=timezone.utc)
+            assert run_scheduled_backup(_db.session, now=fake_now) is True
             assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
 
     def test_skips_if_already_backed_up_today(self, app, tmp_path):
@@ -285,6 +305,7 @@ class TestRunScheduledBackup:
             settings = get_settings()
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 2
+            settings.backup_schedule_minute = 0
             settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
@@ -295,6 +316,26 @@ class TestRunScheduledBackup:
             assert run_scheduled_backup(_db.session, now=fake_now) is True
             # Second run same hour same day should be skipped
             assert run_scheduled_backup(_db.session, now=fake_now) is False
+            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+
+    def test_dedupe_uses_local_date_not_utc(self, app, tmp_path):
+        """A backup taken late on local day N (early UTC day N+1) must still
+        count as "today's" backup for the next tick on local day N."""
+        with app.app_context():
+            settings = get_settings()
+            settings.backup_schedule_enabled = True
+            settings.backup_schedule_hour = 23
+            settings.backup_schedule_minute = 45
+            settings.backup_dir = str(tmp_path)
+            settings.backup_keep_count = 7
+            _db.session.commit()
+
+            # January: Europe/Prague = UTC+1. Local 2026-01-01 23:45 = UTC 22:45.
+            first_tick = datetime(2026, 1, 1, 22, 45, 0, tzinfo=timezone.utc)
+            assert run_scheduled_backup(_db.session, now=first_tick) is True
+            # Ten minutes later: local 23:55 (same local day), UTC 22:55.
+            second_tick = datetime(2026, 1, 1, 22, 55, 0, tzinfo=timezone.utc)
+            assert run_scheduled_backup(_db.session, now=second_tick) is False
             assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
 
 
@@ -684,3 +725,102 @@ class TestBackupSettingsRoute:
         )
         with app.app_context():
             assert get_settings().backup_dir == "/backups"
+
+
+class TestExportToZipFilename:
+    def test_filename_contains_utc_suffix(self, app, tmp_path):
+        with app.app_context():
+            path = export_to_zip(tmp_path)
+        assert path.name.endswith("_UTC.zip")
+        assert path.name.startswith("medcover_backup_")
+
+    def test_filename_uses_utc_timestamp_regardless_of_input_tz(self, app, tmp_path):
+        # 03:00 in a UTC+3 zone is 00:00 UTC — the filename must reflect UTC.
+        local = datetime(2026, 6, 15, 3, 0, 0, tzinfo=ZoneInfo("Europe/Moscow"))
+        with app.app_context():
+            path = export_to_zip(tmp_path, now=local)
+        assert "20260615_000000" in path.name
+
+
+class TestBackupScheduleTimeFormField:
+    def test_hhmm_field_parsed(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        client.post(
+            "/admin/backup/settings",
+            data={
+                "csrf_token": csrf,
+                "backup_dir": "/backups",
+                "backup_keep_count": "5",
+                "backup_schedule_time": "04:37",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            settings = get_settings()
+            assert settings.backup_schedule_hour == 4
+            assert settings.backup_schedule_minute == 37
+
+    def test_hour_and_minute_fields_still_accepted(self, app, client):
+        """API-style submission with separate hour/minute fields keeps working."""
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        client.post(
+            "/admin/backup/settings",
+            data={
+                "csrf_token": csrf,
+                "backup_dir": "/backups",
+                "backup_keep_count": "5",
+                "backup_schedule_hour": "9",
+                "backup_schedule_minute": "15",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            settings = get_settings()
+            assert settings.backup_schedule_hour == 9
+            assert settings.backup_schedule_minute == 15
+
+    def test_invalid_hhmm_falls_back_to_defaults(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        client.post(
+            "/admin/backup/settings",
+            data={
+                "csrf_token": csrf,
+                "backup_dir": "/backups",
+                "backup_keep_count": "5",
+                "backup_schedule_time": "not:a:time",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            settings = get_settings()
+            assert settings.backup_schedule_hour == 2
+            assert settings.backup_schedule_minute == 0
+
+    def test_out_of_range_values_clamped(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        client.post(
+            "/admin/backup/settings",
+            data={
+                "csrf_token": csrf,
+                "backup_dir": "/backups",
+                "backup_keep_count": "5",
+                "backup_schedule_time": "99:99",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            settings = get_settings()
+            assert settings.backup_schedule_hour == 23
+            assert settings.backup_schedule_minute == 59

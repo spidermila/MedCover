@@ -5,7 +5,7 @@ Exports all application data (except app_settings and alembic_version) to a
 JSON-in-zip archive, and restores from such an archive.
 
 Backup file layout:
-    medcover_backup_<YYYYMMDD_HHMMSS>.zip
+    medcover_backup_<YYYYMMDD>_<HHMMSS>_<micros>_UTC.zip
         └── backup.json
               {
                 "version": "1.0",
@@ -145,8 +145,11 @@ def export_to_zip(backup_dir: str | Path, now: datetime | None = None) -> Path:
         "tables": tables_data,
     }
 
-    ts = now.strftime("%Y%m%d_%H%M%S_%f")
-    zip_path = backup_path / f"medcover_backup_{ts}.zip"
+    # Timestamp is always UTC so filenames sort chronologically regardless of
+    # the app's configured timezone. The explicit ``_UTC`` suffix makes the
+    # zone unambiguous when files are copied off the server for archival.
+    ts = now.astimezone(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    zip_path = backup_path / f"medcover_backup_{ts}_UTC.zip"
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
