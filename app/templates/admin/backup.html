@@ -143,12 +143,11 @@
         </div>
 
         <div class="col-md-3">
-          <label class="form-label" for="backup_schedule_hour">
-            Hodina spuštění (0–23, UTC)
-          </label>
-          <input type="number" class="form-control" id="backup_schedule_hour"
-                 name="backup_schedule_hour" min="0" max="23"
-                 value="{{ settings.backup_schedule_hour }}" required>
+          <label class="form-label" for="backup_schedule_time">Čas spuštění</label>
+          <input type="time" class="form-control" id="backup_schedule_time"
+                 name="backup_schedule_time" step="60"
+                 value="{{ '%02d:%02d'|format(settings.backup_schedule_hour, settings.backup_schedule_minute) }}" required>
+          <div class="form-text">Čas v časovém pásmu aplikace ({{ settings.timezone }}).</div>
         </div>
 
       </div>
