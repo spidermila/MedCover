@@ -30,7 +30,7 @@
       <td>
         {% if backup_schedule_enabled %}
           <span class="badge badge-ok">Povoleno</span>
-          — denně ve {{ "%02d:00"|format(backup_schedule_hour) }} UTC
+          — denně ve {{ "%02d:%02d"|format(backup_schedule_hour, backup_schedule_minute) }} ({{ backup_schedule_tz }})
         {% else %}
           <span class="badge badge-warn">Vypnuto</span>
         {% endif %}

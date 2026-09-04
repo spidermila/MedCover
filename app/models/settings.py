@@ -48,14 +48,25 @@ class AppSettings(db.Model):  # type: ignore[misc]
     dev_email_allowlist = db.Column(db.Text, nullable=True)
 
     # --- Backup ---
-    # Directory (relative to project root or absolute) where backup .zip files are stored.
-    backup_dir = db.Column(db.String(512), default="backups", nullable=False, server_default="backups")
+    # Absolute directory where backup .zip files are stored. In containerised
+    # deployments this is mounted from a shared external volume (see
+    # DEVOPS.md → "Backups volume") so both the web and scheduler containers
+    # see the same files. Must be an absolute path.
+    backup_dir = db.Column(db.String(512), default="/backups", nullable=False, server_default="/backups")
     # Maximum number of backup files to keep; oldest are pruned automatically.
     backup_keep_count = db.Column(db.Integer, default=7, nullable=False, server_default="7")
     # When True, the scheduler will create an automatic daily backup.
     backup_schedule_enabled = db.Column(db.Boolean, default=False, nullable=False, server_default="false")
-    # Hour of day (0–23, server local time) at which the scheduled backup runs.
+    # Hour of day (0–23) at which the scheduled backup runs, in the app's
+    # configured timezone (see ``timezone`` above), not UTC.
     backup_schedule_hour = db.Column(db.Integer, default=2, nullable=False, server_default="2")
+    # Minute of the hour (0–59), same timezone as ``backup_schedule_hour``.
+    backup_schedule_minute = db.Column(db.Integer, default=0, nullable=False, server_default="0")
+    # Local date on which the scheduled backup last fired. Used purely as a
+    # dedupe key so a delayed / re-run scheduler tick doesn't fire twice on the
+    # same local day. Independent of ad-hoc admin-triggered backups — those do
+    # not update this field and do not suppress the scheduled run.
+    backup_last_scheduled_run_date = db.Column(db.Date, nullable=True)
 
     # --- Session security ---
     # How long a login session lasts (hours). Flask sets a cookie with this lifetime.

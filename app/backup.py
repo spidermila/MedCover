@@ -5,7 +5,7 @@ Exports all application data (except app_settings and alembic_version) to a
 JSON-in-zip archive, and restores from such an archive.
 
 Backup file layout:
-    medcover_backup_<YYYYMMDD_HHMMSS>.zip
+    medcover_backup_<YYYYMMDD>_<HHMMSS>_<micros>_UTC.zip
         └── backup.json
               {
                 "version": "1.0",
@@ -28,9 +28,9 @@ extra columns from an older or newer backup.  This means:
   fail at the DB level — the restore routine surfaces this as an error.
 """
 
-import io
 import json
 import logging
+import os
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -144,13 +144,29 @@ def export_to_zip(backup_dir: str | Path, now: datetime | None = None) -> Path:
         "tables": tables_data,
     }
 
-    ts = now.strftime("%Y%m%d_%H%M%S_%f")
-    zip_path = backup_path / f"medcover_backup_{ts}.zip"
+    # Timestamp is always UTC so filenames sort chronologically regardless of
+    # the app's configured timezone. The explicit ``_UTC`` suffix makes the
+    # zone unambiguous when files are copied off the server for archival.
+    ts = now.astimezone(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    zip_path = backup_path / f"medcover_backup_{ts}_UTC.zip"
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("backup.json", json.dumps(payload, ensure_ascii=False, indent=2))
-    zip_path.write_bytes(buf.getvalue())
+    # Write to a sibling .part file and rename into place so a crash mid-write
+    # never leaves a half-written medcover_backup_*.zip visible in the UI. The
+    # rename stays inside backup_path, which matters when the directory is a
+    # shared SMB mount (Azure Files) where cross-device renames raise EXDEV.
+    # Compressing straight into the file keeps one archive-sized copy out of
+    # memory, which matters for a large export in the gunicorn worker.
+    tmp_path = zip_path.with_suffix(".zip.part")
+    try:
+        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("backup.json", json.dumps(payload, ensure_ascii=False, indent=2))
+        os.replace(tmp_path, zip_path)
+    except OSError:
+        # Don't leave the sidecar behind: it is invisible to list_backups() and
+        # prune_old_backups() (both glob "*.zip"), so orphans would accumulate
+        # forever on a repeatedly failing write and fill the share.
+        tmp_path.unlink(missing_ok=True)
+        raise
 
     total_rows = sum(len(v) for v in tables_data.values())
     log.info("Backup written to %s (%d tables, %d rows)", zip_path, len(all_tables), total_rows)

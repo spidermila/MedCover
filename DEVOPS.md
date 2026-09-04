@@ -284,6 +284,7 @@ The embedded summary below reflects the actual file. Key points:
 
 - `web` uses `flask run --debug` (hot reload) in dev; production uses gunicorn via `CMD` in the Dockerfile
 - Both containers mount `.:/app` so local code changes reflect immediately
+- Both containers mount the shared named volume `backups` at `/backups` — see [Backups volume](#backups-volume) below
 - Both containers have healthchecks; the scheduler checks a heartbeat file written every ~5 s
 - `db` uses **MSSQL 2022 Express** (`mcr.microsoft.com/mssql/server:2022-latest`) with Czech collation and RCSI enabled
 
@@ -298,6 +299,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app          # Hot reload: local code changes reflect immediately
+      - backups:/backups   # Shared with scheduler — see "Backups volume" below
     env_file: .env
     ports:
       - "5000:5000"
@@ -317,6 +319,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      - backups:/backups
     env_file: .env
     depends_on:
       web:
@@ -353,7 +356,25 @@ services:
 
 volumes:
   mssql_data:
+  backups:
 ```
+
+### Backups volume
+
+The web and scheduler containers must share the directory that DB backup
+zips are written to — otherwise the scheduler writes a nightly backup that
+the web UI never sees, and either container losing its overlay filesystem
+wipes the file. Both containers mount the same volume at `/backups`:
+
+- **Dev + self-hosted prod** (`docker-compose.yml`, `docker-compose.prod.yml`):
+  named volume `backups`. Survives `docker compose down`; wiped only by
+  `docker compose down -v`.
+- **Azure prod**: an Azure Files SMB share mounted at `/backups` on both
+  Container Apps. Provisioned by the `medcover-infra` repo.
+
+`AppSettings.backup_dir` (configurable at `/admin/backup`) defaults to
+`/backups` and must be an absolute path. The mount point is deliberately
+**outside** `/app` so it never collides with the dev `.:/app` bind mount.
 
 ---
 

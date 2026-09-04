@@ -9,7 +9,7 @@ import logging
 import re
 from pathlib import Path
 
-from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
@@ -24,15 +24,14 @@ log = logging.getLogger(__name__)
 backup_bp = Blueprint("backup", __name__, url_prefix="/admin/backup")
 
 # Filename pattern — only allow files we created to prevent path traversal.
-_BACKUP_FILENAME_RE = re.compile(r"^medcover_backup_\d{8}_\d{6}_\d+\.zip$")
+# The ``_UTC`` suffix is present on files created after the switch to explicit
+# UTC timestamps; older files (produced before that change) lack it, so the
+# suffix is optional to keep pre-existing backups downloadable / restorable.
+_BACKUP_FILENAME_RE = re.compile(r"^medcover_backup_\d{8}_\d{6}_\d+(?:_UTC)?\.zip$")
 
 
 def _resolve_backup_dir() -> Path:
-    settings = get_settings()
-    backup_dir = Path(settings.backup_dir)
-    if not backup_dir.is_absolute():
-        backup_dir = Path(current_app.root_path).parent / backup_dir
-    return backup_dir
+    return Path(get_settings().backup_dir)
 
 
 def _safe_backup_path(filename: str) -> Path:
@@ -251,9 +250,18 @@ def save_settings() -> Response:
         "backup_keep_count": settings.backup_keep_count,
         "backup_schedule_enabled": settings.backup_schedule_enabled,
         "backup_schedule_hour": settings.backup_schedule_hour,
+        "backup_schedule_minute": settings.backup_schedule_minute,
     }
 
-    settings.backup_dir = request.form.get("backup_dir", "backups").strip() or "backups"
+    submitted_dir = request.form.get("backup_dir", "").strip()
+    if submitted_dir and Path(submitted_dir).is_absolute():
+        settings.backup_dir = submitted_dir
+    else:
+        flash(
+            "Adresář zálohy musí být zadán jako absolutní cesta (např. „/backups“). " "Zadaná hodnota byla ignorována.",
+            "warning",
+        )
+
     try:
         keep = int(request.form.get("backup_keep_count", "7"))
         settings.backup_keep_count = max(1, min(keep, 365))
@@ -262,17 +270,31 @@ def save_settings() -> Response:
 
     settings.backup_schedule_enabled = "backup_schedule_enabled" in request.form
 
+    # HH:MM in the app's configured timezone. Accept either a combined
+    # ``backup_schedule_time=HH:MM`` from the <input type="time"> field, or,
+    # for API/curl compatibility, individual hour + minute fields.
+    time_str = request.form.get("backup_schedule_time", "").strip()
+    if time_str and ":" in time_str:
+        # Browsers may append seconds (HH:MM:SS) despite step="60" — ignore them.
+        hour_str, minute_str = time_str.split(":")[:2]
+    else:
+        hour_str = request.form.get("backup_schedule_hour", "2")
+        minute_str = request.form.get("backup_schedule_minute", "0")
     try:
-        hour = int(request.form.get("backup_schedule_hour", "2"))
-        settings.backup_schedule_hour = max(0, min(hour, 23))
+        settings.backup_schedule_hour = max(0, min(int(hour_str), 23))
     except ValueError:
         settings.backup_schedule_hour = 2
+    try:
+        settings.backup_schedule_minute = max(0, min(int(minute_str), 59))
+    except ValueError:
+        settings.backup_schedule_minute = 0
 
     new = {
         "backup_dir": settings.backup_dir,
         "backup_keep_count": settings.backup_keep_count,
         "backup_schedule_enabled": settings.backup_schedule_enabled,
         "backup_schedule_hour": settings.backup_schedule_hour,
+        "backup_schedule_minute": settings.backup_schedule_minute,
     }
     audit("edit", "AppSettings", "1", "Nastavení zálohování upraveno", {"before": old, "after": new})
     db.session.commit()

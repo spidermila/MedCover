@@ -30,6 +30,8 @@ class BackupStatusBlock(BaseBlock):
             "title": config.get("title", self.default_config["title"]),
             "backup_schedule_enabled": settings.backup_schedule_enabled,
             "backup_schedule_hour": settings.backup_schedule_hour,
+            "backup_schedule_minute": settings.backup_schedule_minute,
+            "backup_schedule_tz": settings.timezone,
             "backup_keep_count": settings.backup_keep_count,
             "backup_dir": str(backup_dir),
         }
