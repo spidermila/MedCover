@@ -5,6 +5,7 @@ import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path as _Path
 
 import pytest
 
@@ -582,3 +583,104 @@ class TestBackupRoutes:
         assert b"selhala" not in resp.data
         with app.app_context():
             assert _db.session.get(MasterEvent, me_id) is not None
+
+
+class TestExportToZipAtomicWrite:
+    """The zip must appear in the target directory only after it is fully written.
+
+    On a shared SMB mount (Azure Files in prod) or any other mount, a crash
+    mid-write must never leave a truncated medcover_backup_*.zip that the
+    web UI would then list and offer for download or restore.
+    """
+
+    def test_partial_file_not_visible_on_write_failure(self, app, tmp_path, monkeypatch):
+        with app.app_context():
+            real_write_bytes = _Path.write_bytes
+
+            def failing_write_bytes(self, data):
+                # Fail only for the .part sidecar; anything else falls through.
+                if self.suffix == ".part":
+                    real_write_bytes(self, data)
+                    raise OSError("simulated mid-write failure")
+                return real_write_bytes(self, data)
+
+            monkeypatch.setattr(_Path, "write_bytes", failing_write_bytes)
+
+            with pytest.raises(OSError, match="simulated"):
+                export_to_zip(tmp_path)
+
+        visible = list(tmp_path.glob("medcover_backup_*.zip"))
+        assert visible == [], "no half-written zip should be listed"
+
+    def test_no_part_file_left_after_successful_write(self, app, tmp_path):
+        with app.app_context():
+            export_to_zip(tmp_path)
+        assert list(tmp_path.glob("*.part")) == []
+        assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+
+
+class TestBackupSettingsRoute:
+    """save_settings must enforce the absolute-path invariant on backup_dir."""
+
+    def test_absolute_path_accepted(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        resp = client.post(
+            "/admin/backup/settings",
+            data={
+                "csrf_token": csrf,
+                "backup_dir": "/backups",
+                "backup_keep_count": "5",
+                "backup_schedule_hour": "2",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        with app.app_context():
+            assert get_settings().backup_dir == "/backups"
+
+    def test_relative_path_rejected_previous_value_kept(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+            settings = get_settings()
+            settings.backup_dir = "/backups"
+            _db.session.commit()
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        resp = client.post(
+            "/admin/backup/settings",
+            data={
+                "csrf_token": csrf,
+                "backup_dir": "relative/dir",
+                "backup_keep_count": "5",
+                "backup_schedule_hour": "2",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "absolutn\u00ed cesta".encode() in resp.data
+        with app.app_context():
+            assert get_settings().backup_dir == "/backups"
+
+    def test_empty_path_rejected_previous_value_kept(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+            settings = get_settings()
+            settings.backup_dir = "/backups"
+            _db.session.commit()
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        client.post(
+            "/admin/backup/settings",
+            data={
+                "csrf_token": csrf,
+                "backup_dir": "   ",
+                "backup_keep_count": "5",
+                "backup_schedule_hour": "2",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            assert get_settings().backup_dir == "/backups"

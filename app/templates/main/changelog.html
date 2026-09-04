@@ -26,6 +26,7 @@
         <li>V seznamu položek vybavení se tlačítko „Vydat“ otevírá v samostatném dialogu místo rozbalení formuláře pod řádkem. Stránka je díky tomu výrazně menší a rychleji se načítá, zejména při větším množství položek vybavení.</li>
         <li>Seznam akcí se načítá zhruba o 10 % rychleji.</li>
         <li>Seznam akcí a nástěnka se načítají s výrazně menším počtem databázových dotazů. Nabídka „Nová akce ze šablony“ už nenačítá všechny pozice, vybavení a kvalifikace každé šablony a stavové štítky obsazení se poskládají jedním průchodem místo pěti.</li>
+        <li>Nastavení zálohování: pole „Adresář zálohy“ nyní vyžaduje absolutní cestu (výchozí <code>/backups</code>); relativní cesty k adresáři projektu již nejsou podporovány.</li>
       </ul>
       <h6 class="text-danger">✦ Opraveno</h6>
       <ul class="small mb-0">
@@ -33,6 +34,8 @@
         <li>Přehled za období a přehled uživatele nyní počítají zadaná data podle časového pásma aplikace, ne podle UTC. Akce začínající kolem půlnoci se dříve mohly započítat do sousedního dne.</li>
         <li>Pokud v přehledu zadáte datum „od“ pozdější než datum „do“, zobrazí se srozumitelná chyba místo prázdného výsledku.</li>
         <li>Vygenerovaný Výkaz práce (xlsx) se otevře v tiskovém nastavení A4 na výšku a tabulka se automaticky přizpůsobí velikosti stránky, ať má měsíc jakýkoliv počet dní. Není třeba před každým tiskem ručně upravovat vzhled stránky v Excelu.</li>
+        <li>Automatické zálohy databáze vytvářené plánovačem jsou nyní viditelné ve webovém rozhraní a přežijí restart aplikace. Zálohy se nově ukládají do sdíleného perzistentního úložiště, které vidí webový server i plánovač.</li>
+        <li>Při chybě během zapisování zálohy se již ve výpisu záloh neobjeví nekompletní soubor — záloha se nejprve zapíše jako dočasný soubor a až po úspěšném dokončení se přejmenuje na finální název.</li>
       </ul>
     </div>
   </div>

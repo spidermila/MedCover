@@ -16,12 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Equipment items list: the per-row „Vydat“ action now opens a shared modal with the user picker instead of expanding an inline form under the row. The full active-user `<select>` is emitted once per page instead of once per item, which cuts the page's HTML size dramatically for organisations with many items (roughly ~9 KB saved per item beyond the first). (#498)
 - Events list (`/events/`) loads about 10% faster by skipping the roles / qualifications cascade triggered for every unique assignee on the page. (#500)
 - Events list and dashboard now issue fewer database queries per request. The „Nová akce ze šablony“ dropdown no longer loads each template's spots, equipment plans, and qualifications; the qualification-hierarchy lookup used for eligibility runs in two statements instead of one per qualification; and per-row staffing badges reuse a single pre-computed count instead of scanning each event's spots five times. (#501)
+- DB backup directory is now a shared persistent volume mounted at `/backups` on both the web and scheduler containers; the configurable path in „Nastavení zálohování“ must now be an absolute path (default `/backups`), and the previous „relativní k adresáři projektu“ option is gone. A migration bumps the stored value to `/backups` on existing installs. Paired with an infra change that mounts an Azure Files share at the same path in Azure prod. (#497)
 
 ### Fixed
 - Soft-deleting a qualification that sits in the middle of a substitution chain no longer severs it: with X substituting for Y and Y for Z, deleting Y keeps holders of X eligible for spots requiring Z. Deleted qualifications are kept as pass-through links in the hierarchy but are never themselves fillable, so eligibility badges and lists now match the per-spot eligibility check. (#501)
 - Date-range filters on the „Přehled za období“ and per-user reports now interpret the picked dates in the application timezone rather than UTC. Events starting in the hour around midnight were previously counted in the neighbouring day's range. (#475)
 - Reports with a date range now show an error when the „od“ date is after the „do“ date, instead of silently rendering an empty result. (#475)
 - Generated work-report xlsx (Výkaz práce) now opens with A4 portrait orientation and fit-to-page scaling, so the report block fills the printable area regardless of month length and users don't need to adjust Excel's page-setup dialog before printing. (#503)
+- Automatic DB backups written by the scheduler are now visible in the web UI and survive container restarts — both containers share the `/backups` volume, so a backup written by one is immediately listable by the other. Previously each container had its own overlay `/app/backups`, so scheduler-written zips never appeared in the web UI and were wiped on the next revision swap. (#497)
+- `export_to_zip` now writes to a `.part` sidecar and atomically renames into place, so a crash mid-write no longer leaves a truncated `medcover_backup_*.zip` visible for download or restore. (#497)
 
 ## [1.1.0] - 2026-09-01
 
