@@ -31,6 +31,7 @@ extra columns from an older or newer backup.  This means:
 import io
 import json
 import logging
+import os
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -150,7 +151,14 @@ def export_to_zip(backup_dir: str | Path, now: datetime | None = None) -> Path:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("backup.json", json.dumps(payload, ensure_ascii=False, indent=2))
-    zip_path.write_bytes(buf.getvalue())
+
+    # Write to a sibling .part file and rename into place so a crash mid-write
+    # never leaves a half-written medcover_backup_*.zip visible in the UI. The
+    # rename stays inside backup_path, which matters when the directory is a
+    # shared SMB mount (Azure Files) where cross-device renames raise EXDEV.
+    tmp_path = zip_path.with_suffix(".zip.part")
+    tmp_path.write_bytes(buf.getvalue())
+    os.replace(tmp_path, zip_path)
 
     total_rows = sum(len(v) for v in tables_data.values())
     log.info("Backup written to %s (%d tables, %d rows)", zip_path, len(all_tables), total_rows)

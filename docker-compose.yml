@@ -9,6 +9,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      - backups:/backups
     env_file: .env
     ports:
       - "5000:5000"
@@ -44,6 +45,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      - backups:/backups
     env_file: .env
     dns:
       - 8.8.8.8
@@ -106,3 +108,7 @@ services:
 
 volumes:
   mssql_data:
+  # Shared persistent volume for DB backups — mirrors the Azure Files share
+  # mounted at /backups in prod so both web and scheduler containers see the
+  # same files. Survives `compose down`; wiped only by `compose down -v`.
+  backups:

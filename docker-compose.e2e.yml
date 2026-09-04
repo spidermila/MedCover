@@ -26,6 +26,7 @@ services:
     command: ["flask", "run", "--debug", "--host=0.0.0.0"]
     volumes:
       - ./scripts:/app/scripts:ro
+      - backups:/backups
     environment:
       FLASK_ENV: development
       FLASK_DEBUG: "1"
@@ -75,3 +76,8 @@ services:
     depends_on:
       web-e2e:
         condition: service_healthy
+
+volumes:
+  # Mirrors the shared /backups mount from dev and prod so any e2e code path
+  # that touches the backup directory sees the same layout as production.
+  backups:
