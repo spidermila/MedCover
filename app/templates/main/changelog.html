@@ -21,6 +21,7 @@
         <li>V seznamu položek vybavení se tlačítko „Vydat“ otevírá v samostatném dialogu místo rozbalení formuláře pod řádkem. Stránka je díky tomu výrazně menší a rychleji se načítá, zejména při větším množství položek vybavení.</li>
         <li>Nastavení zálohování: pole „Adresář zálohy“ nyní vyžaduje absolutní cestu (výchozí <code>/backups</code>); relativní cesty k adresáři projektu již nejsou podporovány.</li>
         <li>Nastavení zálohování: původní pole „Hodina spuštění“ je nahrazeno výběrem času „Čas spuštění“ (HH:MM), který se řídi časovým pásmem aplikace — dosud byl čas myslně označen jako UTC, ale hodnota již byla v místním čase.</li>
+        <li>Ručně spuštěná záloha již neblokuje plánovanou dennní zálohu: plánovaná záloha se v nastaveném čase spustí i tehdy, pokud administrátor v ten den již nějakou zálohu vytvořil ručně. Každá záloha navíc (ruční i plánovaná) se započítává do limitu „Počet uchovávaných záloh“, takže při překročení limitu se nejstarší zálohy smažou dříve.</li>
       </ul>
       <h6 class="text-danger">✦ Opraveno</h6>
       <ul class="small mb-0">

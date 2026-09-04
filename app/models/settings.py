@@ -62,6 +62,11 @@ class AppSettings(db.Model):  # type: ignore[misc]
     backup_schedule_hour = db.Column(db.Integer, default=2, nullable=False, server_default="2")
     # Minute of the hour (0–59), same timezone as ``backup_schedule_hour``.
     backup_schedule_minute = db.Column(db.Integer, default=0, nullable=False, server_default="0")
+    # Local date on which the scheduled backup last fired. Used purely as a
+    # dedupe key so a delayed / re-run scheduler tick doesn't fire twice on the
+    # same local day. Independent of ad-hoc admin-triggered backups — those do
+    # not update this field and do not suppress the scheduled run.
+    backup_last_scheduled_run_date = db.Column(db.Date, nullable=True)
 
     # --- Session security ---
     # How long a login session lasts (hours). Flask sets a cookie with this lifetime.

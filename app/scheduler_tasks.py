@@ -193,7 +193,12 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
          scheduled HH:MM. The "at or after" tolerance means a delayed tick
          (e.g. after a container restart mid-window) still catches up rather
          than skipping the whole day.
-      3. No backup file already exists for today's local date.
+      3. The scheduled trigger hasn't already fired today (tracked via
+         AppSettings.backup_last_scheduled_run_date, in the app timezone).
+         Ad-hoc admin-triggered backups do NOT touch that field and do NOT
+         suppress the scheduled run — the daily cap applies to scheduled runs
+         only. Extra ad-hoc backups count against ``backup_keep_count`` and
+         may cause older automatic backups to be pruned sooner.
 
     Args:
         db_session: An active SQLAlchemy session bound to the current app context.
@@ -202,7 +207,7 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
     Returns:
         True if a backup was created, False otherwise.
     """
-    from app.backup import export_to_zip, list_backups, prune_old_backups  # pylint: disable=import-outside-toplevel
+    from app.backup import export_to_zip, prune_old_backups  # pylint: disable=import-outside-toplevel
     from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
     from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
 
@@ -232,31 +237,20 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
         )
         return False
 
-    # Idempotency: at most one backup per local date. Parse the UTC timestamp
-    # embedded in each existing filename and convert to the app-local date;
-    # filesystem mtime is unreliable in tests (which inject ``now``).
+    # Idempotency: at most one *scheduled* backup per local date. Kept in
+    # AppSettings (not derived from the filesystem) so ad-hoc admin backups
+    # neither suppress the scheduled run nor let it fire twice.
     today_local = local_now.date()
-    existing = list_backups(settings.backup_dir)
-    for entry in existing:
-        parts = entry["name"].removeprefix("medcover_backup_").split("_")
-        # parts = [YYYYMMDD, HHMMSS, micros, "UTC.zip"] for current files;
-        # older files (pre-UTC-suffix) end with "micros.zip" — same layout for
-        # the first two positions, which is all we need.
-        if len(parts) < 2:
-            continue
-        try:
-            file_utc = datetime.strptime(parts[0] + parts[1], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-        if file_utc.astimezone(local_tz).date() == today_local:
-            log.debug("Scheduled backup: already have a backup for today (local), skipping.")
-            return False
+    if settings.backup_last_scheduled_run_date == today_local:
+        log.debug("Scheduled backup: already ran today (%s), skipping.", today_local.isoformat())
+        return False
 
     try:
         zip_path = export_to_zip(settings.backup_dir, now=now)
         pruned = prune_old_backups(settings.backup_dir, settings.backup_keep_count)
         log.info("Scheduled backup created: %s (pruned %d old files)", zip_path.name, len(pruned))
 
+        settings.backup_last_scheduled_run_date = today_local
         db_session.add(
             AuditLogEntry(
                 actor_id=None,
