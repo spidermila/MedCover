@@ -181,7 +181,9 @@ if __name__ == "__main__":
     schedule.every(1).minutes.do(_logged_task("close_completed_events", close_completed_events))
     schedule.every(5).minutes.do(_logged_task("send_reminders", send_reminders))
     schedule.every(1).hours.do(_logged_task("send_admin_digest", send_admin_digest_task))
-    schedule.every(1).hours.do(_logged_task("scheduled_backup", scheduled_backup_task))
+    # Poll every minute so an HH:MM schedule can fire on the configured minute.
+    # The task itself short-circuits cheaply when the time isn't due yet.
+    schedule.every(1).minutes.do(_logged_task("scheduled_backup", scheduled_backup_task))
     schedule.every(15).minutes.do(_logged_task("record_metrics", record_metrics))
     schedule.every(1).hours.do(_logged_task("cleanup_work_report", cleanup_work_report))
 
