@@ -3,7 +3,7 @@
 import json
 import time
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path as _Path
 from zoneinfo import ZoneInfo
@@ -300,7 +300,7 @@ class TestRunScheduledBackup:
             assert run_scheduled_backup(_db.session, now=fake_now) is True
             assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
 
-    def test_skips_if_already_backed_up_today(self, app, tmp_path):
+    def test_second_tick_same_day_is_deduped(self, app, tmp_path):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
@@ -312,15 +312,13 @@ class TestRunScheduledBackup:
 
             # January: Europe/Prague = UTC+1, so 01:00 UTC = 02:00 local
             fake_now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc)
-            # First run should succeed
             assert run_scheduled_backup(_db.session, now=fake_now) is True
-            # Second run same hour same day should be skipped
             assert run_scheduled_backup(_db.session, now=fake_now) is False
             assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
 
     def test_dedupe_uses_local_date_not_utc(self, app, tmp_path):
-        """A backup taken late on local day N (early UTC day N+1) must still
-        count as "today's" backup for the next tick on local day N."""
+        """A scheduled run late on local day N (early UTC day N+1) must count
+        as today's *scheduled* run for the next tick on local day N."""
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
@@ -337,6 +335,52 @@ class TestRunScheduledBackup:
             second_tick = datetime(2026, 1, 1, 22, 55, 0, tzinfo=timezone.utc)
             assert run_scheduled_backup(_db.session, now=second_tick) is False
             assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+
+    def test_ad_hoc_backup_does_not_suppress_scheduled_run(self, app, tmp_path):
+        """An ad-hoc backup in the same directory must not block the scheduled
+        run. The dedupe key is the DB-stored last-scheduled-run date, not the
+        presence of any file on disk."""
+        with app.app_context():
+            settings = get_settings()
+            settings.backup_schedule_enabled = True
+            settings.backup_schedule_hour = 13
+            settings.backup_schedule_minute = 30
+            settings.backup_dir = str(tmp_path)
+            settings.backup_keep_count = 7
+            _db.session.commit()
+
+            # Simulate an ad-hoc backup an admin ran earlier today, before the
+            # scheduled time. Local 2026-01-01 10:00 = UTC 09:00.
+            ad_hoc_time = datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
+            export_to_zip(tmp_path, now=ad_hoc_time)
+            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+
+            # Scheduled tick at local 13:30 = UTC 12:30. Must still fire.
+            fake_now = datetime(2026, 1, 1, 12, 30, 0, tzinfo=timezone.utc)
+            assert run_scheduled_backup(_db.session, now=fake_now) is True
+            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 2
+
+            # And a second scheduled tick the same day is still deduped.
+            fake_now_later = datetime(2026, 1, 1, 12, 31, 0, tzinfo=timezone.utc)
+            assert run_scheduled_backup(_db.session, now=fake_now_later) is False
+            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 2
+
+    def test_scheduled_run_stamps_last_run_date(self, app, tmp_path):
+        with app.app_context():
+            settings = get_settings()
+            settings.backup_schedule_enabled = True
+            settings.backup_schedule_hour = 2
+            settings.backup_schedule_minute = 0
+            settings.backup_dir = str(tmp_path)
+            settings.backup_last_scheduled_run_date = None
+            _db.session.commit()
+
+            fake_now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc)
+            assert run_scheduled_backup(_db.session, now=fake_now) is True
+            _db.session.expire_all()
+            settings = get_settings()
+            # 2026-01-01 01:00 UTC = 2026-01-01 02:00 Europe/Prague
+            assert settings.backup_last_scheduled_run_date == date(2026, 1, 1)
 
 
 # ── Route tests ───────────────────────────────────────────────────────────────
