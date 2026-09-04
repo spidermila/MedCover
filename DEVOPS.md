@@ -299,6 +299,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app          # Hot reload: local code changes reflect immediately
+      - backups:/backups   # Shared with scheduler — see "Backups volume" below
     env_file: .env
     ports:
       - "5000:5000"
@@ -318,6 +319,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      - backups:/backups
     env_file: .env
     depends_on:
       web:

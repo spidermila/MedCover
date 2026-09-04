@@ -275,7 +275,8 @@ def save_settings() -> Response:
     # for API/curl compatibility, individual hour + minute fields.
     time_str = request.form.get("backup_schedule_time", "").strip()
     if time_str and ":" in time_str:
-        hour_str, _, minute_str = time_str.partition(":")
+        # Browsers may append seconds (HH:MM:SS) despite step="60" — ignore them.
+        hour_str, minute_str = time_str.split(":")[:2]
     else:
         hour_str = request.form.get("backup_schedule_hour", "2")
         minute_str = request.form.get("backup_schedule_minute", "0")

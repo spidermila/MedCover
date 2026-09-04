@@ -5,13 +5,13 @@ import time
 import zipfile
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
-from pathlib import Path as _Path
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from app.backup import export_to_zip, list_backups, prune_old_backups, restore_from_zip
 from app.extensions import db as _db
+from app.models.audit import AuditLogEntry
 from app.models.event import Event
 from app.models.master_event import MasterEvent
 from app.models.role import Role
@@ -19,6 +19,12 @@ from app.models.settings import get_settings
 from app.models.user import UserAccount
 from app.scheduler_tasks import run_scheduled_backup
 from tests.conftest import _get_csrf, _login, _make_user
+
+
+def _fail_mid_write(self, *args, **kwargs):
+    """Simulate the archive write dying partway through (full disk, lost mount)."""
+    raise OSError("simulated mid-write failure")
+
 
 # ── Core engine tests ─────────────────────────────────────────────────────────
 
@@ -680,16 +686,7 @@ class TestExportToZipAtomicWrite:
 
     def test_partial_file_not_visible_on_write_failure(self, app, tmp_path, monkeypatch):
         with app.app_context():
-            real_write_bytes = _Path.write_bytes
-
-            def failing_write_bytes(self, data):
-                # Fail only for the .part sidecar; anything else falls through.
-                if self.suffix == ".part":
-                    real_write_bytes(self, data)
-                    raise OSError("simulated mid-write failure")
-                return real_write_bytes(self, data)
-
-            monkeypatch.setattr(_Path, "write_bytes", failing_write_bytes)
+            monkeypatch.setattr(zipfile.ZipFile, "writestr", _fail_mid_write)
 
             with pytest.raises(OSError, match="simulated"):
                 export_to_zip(tmp_path)
@@ -745,7 +742,7 @@ class TestBackupSettingsRoute:
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        assert "absolutn\u00ed cesta".encode() in resp.data
+        assert "absolutní cesta".encode() in resp.data
         with app.app_context():
             assert get_settings().backup_dir == "/backups"
 
@@ -868,3 +865,73 @@ class TestBackupScheduleTimeFormField:
             settings = get_settings()
             assert settings.backup_schedule_hour == 23
             assert settings.backup_schedule_minute == 59
+
+    def test_seconds_in_time_field_ignored(self, app, client):
+        """Some browsers submit HH:MM:SS; the seconds must not blank the minute."""
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        client.post(
+            "/admin/backup/settings",
+            data={
+                "csrf_token": csrf,
+                "backup_dir": "/backups",
+                "backup_keep_count": "5",
+                "backup_schedule_time": "04:37:00",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            settings = get_settings()
+            assert settings.backup_schedule_hour == 4
+            assert settings.backup_schedule_minute == 37
+
+
+class TestScheduledBackupFailureHandling:
+    """A failing backup target must not turn the every-minute poll into a
+    per-minute retry storm of audit rows and tracebacks."""
+
+    def test_failed_attempt_is_not_retried_the_same_day(self, app, tmp_path, monkeypatch):
+        with app.app_context():
+            settings = get_settings()
+            settings.backup_schedule_enabled = True
+            settings.backup_schedule_hour = 2
+            settings.backup_schedule_minute = 0
+            settings.backup_dir = str(tmp_path)
+            settings.backup_last_scheduled_run_date = None
+            _db.session.commit()
+
+            calls = []
+
+            def boom(*args, **kwargs):
+                calls.append(1)
+                raise OSError("no space left on device")
+
+            monkeypatch.setattr("app.backup.export_to_zip", boom)
+
+            # January: Europe/Prague = UTC+1, so 01:00 UTC = 02:00 local.
+            assert run_scheduled_backup(_db.session, now=datetime(2026, 1, 1, 1, 0, tzinfo=timezone.utc)) is False
+            # A minute later — must not attempt again.
+            assert run_scheduled_backup(_db.session, now=datetime(2026, 1, 1, 1, 1, tzinfo=timezone.utc)) is False
+            assert len(calls) == 1
+
+            # Next local day it tries again.
+            assert run_scheduled_backup(_db.session, now=datetime(2026, 1, 2, 1, 0, tzinfo=timezone.utc)) is False
+            assert len(calls) == 2
+
+            # Each failed attempt is recorded in the audit log.
+            errors = _db.session.query(AuditLogEntry).filter_by(entity_type="Backup", action_type="error").all()
+            assert len(errors) == 2
+            assert all(e.summary for e in errors)
+
+    def test_part_sidecar_removed_on_write_failure(self, app, tmp_path, monkeypatch):
+        """Orphaned .part files are invisible to prune_old_backups(), so a
+        repeatedly failing write must not leak them into the backup share."""
+        with app.app_context():
+            monkeypatch.setattr(zipfile.ZipFile, "writestr", _fail_mid_write)
+            with pytest.raises(OSError, match="simulated"):
+                export_to_zip(tmp_path)
+
+        assert list(tmp_path.glob("*.part")) == []
+        assert list(tmp_path.glob("medcover_backup_*.zip")) == []

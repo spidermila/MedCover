@@ -7,7 +7,7 @@ importing or patching the scheduler module itself.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import sqlalchemy as sa
@@ -183,6 +183,39 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
     return True
 
 
+def _record_failed_scheduled_backup(db_session: Any, exc: BaseException, today_local: date) -> bool:
+    """Log a failed scheduled backup and mark the day as attempted.
+
+    Always returns False so callers can ``return`` it directly.
+    """
+    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
+    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
+
+    log.error("Scheduled backup failed: %s", exc, exc_info=True)
+    # The export reads through db_session; roll back before writing the audit
+    # row so a session left dirty by the failure can't take the bookkeeping
+    # commit down with it.
+    db_session.rollback()
+    # Stamp the date on failure too. The task is polled every minute, so
+    # without this a persistent failure (full disk, unmounted share) would
+    # retry ~1440 times a day, each writing an audit row and a traceback.
+    # One attempt per local day; the error surfaces in the audit log and the
+    # admin digest.
+    get_settings().backup_last_scheduled_run_date = today_local
+    db_session.add(
+        AuditLogEntry(
+            actor_id=None,
+            action_type="error",
+            entity_type="Backup",
+            entity_id="error",
+            summary=f"Automatická záloha selhala: {exc}",
+            changes_json={"error": str(exc)},
+        )
+    )
+    db_session.commit()
+    return False
+
+
 def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
     """Run an automatic backup if scheduled backups are enabled and the time is due.
 
@@ -193,8 +226,10 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
          scheduled HH:MM. The "at or after" tolerance means a delayed tick
          (e.g. after a container restart mid-window) still catches up rather
          than skipping the whole day.
-      3. The scheduled trigger hasn't already fired today (tracked via
-         AppSettings.backup_last_scheduled_run_date, in the app timezone).
+      3. The scheduled trigger hasn't already been attempted today (tracked
+         via AppSettings.backup_last_scheduled_run_date, in the app timezone).
+         A failed attempt counts: the date is stamped either way, so a broken
+         backup target produces one error per day, not one per minute.
          Ad-hoc admin-triggered backups do NOT touch that field and do NOT
          suppress the scheduled run — the daily cap applies to scheduled runs
          only. Extra ad-hoc backups count against ``backup_keep_count`` and
@@ -247,7 +282,20 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
 
     try:
         zip_path = export_to_zip(settings.backup_dir, now=now)
+    except Exception as exc:
+        return _record_failed_scheduled_backup(db_session, exc, today_local)
+
+    # Pruning is housekeeping, not part of the backup: a failure here (a file
+    # locked by another process, a read-only share) must not report the
+    # already-written archive as a failed backup, nor leave the run unstamped
+    # and so re-exported on the next minute's tick.
+    try:
         pruned = prune_old_backups(settings.backup_dir, settings.backup_keep_count)
+    except OSError as exc:
+        log.warning("Scheduled backup: pruning old files failed: %s", exc, exc_info=True)
+        pruned = []
+
+    try:
         log.info("Scheduled backup created: %s (pruned %d old files)", zip_path.name, len(pruned))
 
         settings.backup_last_scheduled_run_date = today_local
@@ -264,18 +312,7 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
         db_session.commit()
         return True
     except Exception as exc:
-        log.error("Scheduled backup failed: %s", exc, exc_info=True)
-        db_session.add(
-            AuditLogEntry(
-                actor_id=None,
-                action_type="error",
-                entity_type="Backup",
-                entity_id="error",
-                changes_json={"error": str(exc)},
-            )
-        )
-        db_session.commit()
-        return False
+        return _record_failed_scheduled_backup(db_session, exc, today_local)
 
 
 def cleanup_work_report_files(instance_path: str, now: datetime | None = None) -> int:

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generated work-report xlsx (Výkaz práce) now opens with A4 portrait orientation and fit-to-page scaling, so the report block fills the printable area regardless of month length and users don't need to adjust Excel's page-setup dialog before printing. (#503)
 - Automatic DB backups written by the scheduler are now visible in the web UI and survive container restarts — both containers share the `/backups` volume, so a backup written by one is immediately listable by the other. Previously each container had its own overlay `/app/backups`, so scheduler-written zips never appeared in the web UI and were wiped on the next revision swap. (#497)
 - `export_to_zip` now writes to a `.part` sidecar and atomically renames into place, so a crash mid-write no longer leaves a truncated `medcover_backup_*.zip` visible for download or restore. (#497)
+- A failed scheduled backup is now recorded in the audit log instead of raising: the error entry was created without the required `summary`, so the failure handler itself died with an IntegrityError and the operator got no record of the failed backup. The failed attempt also counts against the one-run-per-local-day guard, so a persistently broken backup target logs one error per day rather than one per scheduler tick. (#497)
 
 ## [1.1.0] - 2026-09-01
 
