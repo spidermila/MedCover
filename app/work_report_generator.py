@@ -33,6 +33,8 @@ from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.worksheet import Worksheet
 from PIL import Image as PILImage
 
+from app.xlsx import cell
+
 if TYPE_CHECKING:
     from app.models import UserAccount
 
@@ -253,31 +255,6 @@ def _apply_row_height(ws: Worksheet, row: int, height: float = _ROW_HEIGHT) -> N
     ws.row_dimensions[row].height = height
 
 
-def _write_cell(
-    ws: Worksheet,
-    row: int,
-    col: int,
-    value: object = None,
-    *,
-    font: Font | None = None,
-    fill: PatternFill | None = None,
-    alignment: Alignment | None = None,
-    border: Border | None = None,
-    number_format: str | None = None,
-) -> None:
-    cell = ws.cell(row=row, column=col, value=value)
-    if font is not None:
-        cell.font = font
-    if fill is not None:
-        cell.fill = fill
-    if alignment is not None:
-        cell.alignment = alignment
-    if border is not None:
-        cell.border = border
-    if number_format is not None:
-        cell.number_format = number_format
-
-
 def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tuple[Decimal, list[str]]]:
     """Return {day: (total_hours, [event_names])} for the user's paid completed events."""
     from app.extensions import db  # pylint: disable=import-outside-toplevel
@@ -351,7 +328,7 @@ def _build_header_block(
         _apply_row_height(ws, r)
 
     ws.merge_cells("A3:E3")
-    _write_cell(
+    cell(
         ws,
         3,
         1,
@@ -362,8 +339,8 @@ def _build_header_block(
         border=_INFO_TITLE_A,
     )
     for col in (2, 3, 4):
-        _write_cell(ws, 3, col, None, border=_INFO_TITLE_MID)
-    _write_cell(ws, 3, 5, None, border=_INFO_TITLE_E)
+        cell(ws, 3, col, None, border=_INFO_TITLE_MID)
+    cell(ws, 3, 5, None, border=_INFO_TITLE_E)
 
     for row_num, label, value in (
         (4, "Jméno pracovníka:", user.name),
@@ -372,31 +349,31 @@ def _build_header_block(
     ):
         ws.merge_cells(f"A{row_num}:C{row_num}")
         ws.merge_cells(f"D{row_num}:E{row_num}")
-        _write_cell(ws, row_num, 1, label, font=_STD_FONT, fill=_CYAN_FILL, border=_INFO_LABEL)
-        _write_cell(ws, row_num, 2, None, border=_INFO_MID_B)
-        _write_cell(ws, row_num, 3, None, border=_INFO_MID_C)
-        _write_cell(ws, row_num, 4, value, font=_STD_FONT, border=_INFO_VALUE_D)
-        _write_cell(ws, row_num, 5, None, border=_INFO_VALUE_E)
+        cell(ws, row_num, 1, label, font=_STD_FONT, fill=_CYAN_FILL, border=_INFO_LABEL)
+        cell(ws, row_num, 2, None, border=_INFO_MID_B)
+        cell(ws, row_num, 3, None, border=_INFO_MID_C)
+        cell(ws, row_num, 4, value, font=_STD_FONT, border=_INFO_VALUE_D)
+        cell(ws, row_num, 5, None, border=_INFO_VALUE_E)
 
-    _write_cell(ws, 7, 1, None, border=_INFO_SPACER_A)
-    _write_cell(ws, 7, 2, None, border=_INFO_SPACER_B)
-    _write_cell(ws, 7, 3, None, border=_INFO_SPACER_C)
+    cell(ws, 7, 1, None, border=_INFO_SPACER_A)
+    cell(ws, 7, 2, None, border=_INFO_SPACER_B)
+    cell(ws, 7, 3, None, border=_INFO_SPACER_C)
     ws.merge_cells("D7:E7")
-    _write_cell(ws, 7, 4, None, border=_INFO_SPACER_D)
-    _write_cell(ws, 7, 5, None, border=_INFO_SPACER_E)
+    cell(ws, 7, 4, None, border=_INFO_SPACER_D)
+    cell(ws, 7, 5, None, border=_INFO_SPACER_E)
 
-    _write_cell(ws, 8, 1, "Měsíc:", font=_STD_FONT, fill=_CYAN_FILL, border=_INFO_MONTH_A)
-    _write_cell(ws, 8, 2, None, fill=_CYAN_FILL, border=_INFO_MONTH_B)
-    _write_cell(ws, 8, 3, month_name, font=_STD_FONT, alignment=Alignment(horizontal="left"), border=_INFO_MONTH_C)
-    _write_cell(ws, 8, 4, "Rok:", font=_STD_FONT, fill=_CYAN_FILL, border=_INFO_MONTH_D)
-    _write_cell(ws, 8, 5, year, font=_STD_FONT, alignment=Alignment(horizontal="left"), border=_INFO_MONTH_E)
+    cell(ws, 8, 1, "Měsíc:", font=_STD_FONT, fill=_CYAN_FILL, border=_INFO_MONTH_A)
+    cell(ws, 8, 2, None, fill=_CYAN_FILL, border=_INFO_MONTH_B)
+    cell(ws, 8, 3, month_name, font=_STD_FONT, alignment=Alignment(horizontal="left"), border=_INFO_MONTH_C)
+    cell(ws, 8, 4, "Rok:", font=_STD_FONT, fill=_CYAN_FILL, border=_INFO_MONTH_D)
+    cell(ws, 8, 5, year, font=_STD_FONT, alignment=Alignment(horizontal="left"), border=_INFO_MONTH_E)
 
 
 def _build_column_headers(ws: Worksheet) -> None:
     """Write the column-header row (row 9)."""
     _apply_row_height(ws, _HEADER_ROW)
     ws.merge_cells("D9:E9")
-    _write_cell(
+    cell(
         ws,
         9,
         1,
@@ -406,7 +383,7 @@ def _build_column_headers(ws: Worksheet) -> None:
         alignment=Alignment(horizontal="center"),
         border=_HDR_BORDER_A,
     )
-    _write_cell(
+    cell(
         ws,
         9,
         2,
@@ -416,7 +393,7 @@ def _build_column_headers(ws: Worksheet) -> None:
         alignment=Alignment(horizontal="center"),
         border=_HDR_BORDER_B,
     )
-    _write_cell(
+    cell(
         ws,
         9,
         3,
@@ -426,7 +403,7 @@ def _build_column_headers(ws: Worksheet) -> None:
         alignment=Alignment(horizontal="center", wrap_text=True),
         border=_HDR_BORDER_C,
     )
-    _write_cell(
+    cell(
         ws,
         9,
         4,
@@ -436,7 +413,7 @@ def _build_column_headers(ws: Worksheet) -> None:
         alignment=Alignment(horizontal="center"),
         border=_HDR_BORDER_D,
     )
-    _write_cell(ws, 9, 5, None, border=_HDR_BORDER_E)
+    cell(ws, 9, 5, None, border=_HDR_BORDER_E)
 
 
 def _build_day_rows(
@@ -465,10 +442,8 @@ def _build_day_rows(
         description = ", ".join(names) if names else None
 
         ws.merge_cells(f"D{row}:E{row}")
-        _write_cell(
-            ws, row, 1, day, font=_STD_FONT, fill=fill, alignment=Alignment(horizontal="center"), border=_DAY_BORDER_A
-        )
-        _write_cell(
+        cell(ws, row, 1, day, font=_STD_FONT, fill=fill, alignment=Alignment(horizontal="center"), border=_DAY_BORDER_A)
+        cell(
             ws,
             row,
             2,
@@ -477,13 +452,9 @@ def _build_day_rows(
             alignment=Alignment(horizontal="center"),
             border=_DAY_BORDER_B,
         )
-        _write_cell(
-            ws, row, 3, hours_display, font=_STD_FONT, alignment=Alignment(horizontal="center"), border=_DAY_BORDER_C
-        )
-        _write_cell(
-            ws, row, 4, description, font=_STD_FONT, alignment=Alignment(horizontal="left"), border=_DAY_BORDER_D
-        )
-        _write_cell(ws, row, 5, None, border=_DAY_BORDER_E)
+        cell(ws, row, 3, hours_display, font=_STD_FONT, alignment=Alignment(horizontal="center"), border=_DAY_BORDER_C)
+        cell(ws, row, 4, description, font=_STD_FONT, alignment=Alignment(horizontal="left"), border=_DAY_BORDER_D)
+        cell(ws, row, 5, None, border=_DAY_BORDER_E)
 
 
 def _build_totals_and_signatures(
@@ -502,22 +473,22 @@ def _build_totals_and_signatures(
     _apply_row_height(ws, total_row)
     total_hours = float(sum(h for h, _ in events_by_day.values())) if events_by_day else 0.0
     ws.merge_cells(f"D{total_row}:E{total_row}")
-    _write_cell(ws, total_row, 1, "Celkem hodin", font=_BOLD_FONT, border=_TOTAL_BORDER_A)
-    _write_cell(ws, total_row, 2, None, font=_BOLD_FONT, border=_TOTAL_BORDER_B)
-    _write_cell(
+    cell(ws, total_row, 1, "Celkem hodin", font=_BOLD_FONT, border=_TOTAL_BORDER_A)
+    cell(ws, total_row, 2, None, font=_BOLD_FONT, border=_TOTAL_BORDER_B)
+    cell(
         ws, total_row, 3, total_hours, font=_BOLD_FONT, alignment=Alignment(horizontal="center"), border=_TOTAL_BORDER_C
     )
-    _write_cell(ws, total_row, 4, None, border=_TOTAL_BORDER_D)
-    _write_cell(ws, total_row, 5, None, border=_TOTAL_BORDER_E)
+    cell(ws, total_row, 4, None, border=_TOTAL_BORDER_D)
+    cell(ws, total_row, 5, None, border=_TOTAL_BORDER_E)
 
     sig_worker = total_row + 4
     sig_boss = total_row + 7
     for r in (sig_worker, sig_boss):
         _apply_row_height(ws, r)
 
-    _write_cell(ws, sig_worker, 1, "Datum a podpis pracovníka:", font=_BOLD_FONT)
+    cell(ws, sig_worker, 1, "Datum a podpis pracovníka:", font=_BOLD_FONT)
     last_day_date = date(year, month, days_in_month)
-    _write_cell(
+    cell(
         ws,
         sig_worker,
         4,
@@ -526,7 +497,7 @@ def _build_totals_and_signatures(
         alignment=Alignment(horizontal="left"),
         number_format="DD.MM.YYYY",
     )
-    _write_cell(ws, sig_boss, 1, "Datum a podpis nadřízeného pracovníka:", font=_BOLD_FONT)
+    cell(ws, sig_boss, 1, "Datum a podpis nadřízeného pracovníka:", font=_BOLD_FONT)
 
     if signature_image:
         _embed_signature(ws, signature_image, sig_worker)
