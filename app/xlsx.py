@@ -21,8 +21,8 @@ neutralised.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from datetime import date, datetime
+from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from openpyxl import Workbook
@@ -143,17 +143,16 @@ class TableSheet:
     columns: list[Column]
     rows: list[Sequence[object]]
     totals_row: Sequence[object] | None = None
-    autofilter: bool = field(default=True)
+    autofilter: bool = True
 
 
 def _write_row(ws: Worksheet, row: int, columns: list[Column], values: Sequence[object], font: Font) -> None:
-    for i, column in enumerate(columns, 1):
-        value = values[i - 1] if i - 1 < len(values) else None
+    for i, (column, value) in enumerate(zip(columns, values, strict=True), 1):
         number_format = column.number_format
         if isinstance(value, Decimal):
+            # Real numbers, not preformatted strings, so Excel sums them
+            # whatever the viewer's decimal separator is.
             value = float(value)
-        elif isinstance(value, datetime):
-            value = value.date()
         if isinstance(value, date) and number_format is None:
             number_format = DATE_FORMAT
         cell(
