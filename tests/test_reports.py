@@ -15,8 +15,8 @@ from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.printout_generator import _cell
-from app.routes.reports import _compute_user_stats
+from app.routes.reports import _compute_user_stats, _parse_date_range, _work_summary_data
+from app.xlsx import cell as _cell
 from tests.conftest import _get_csrf, _login, _make_user
 
 
@@ -990,7 +990,7 @@ class TestPrintoutReport:
     ],
 )
 def test_cell_escapes_formula_starters(payload):
-    """_cell() must prefix any formula-starter string with an apostrophe."""
+    """cell() must prefix any formula-starter string with an apostrophe."""
     wb = Workbook()
     ws = wb.active
     _cell(ws, 1, 1, payload)
@@ -1001,7 +1001,7 @@ def test_cell_escapes_formula_starters(payload):
 
 
 def test_cell_leaves_safe_strings_unchanged():
-    """_cell() must not alter strings that don't start with a formula character."""
+    """cell() must not alter strings that don't start with a formula character."""
     wb = Workbook()
     ws = wb.active
     safe_values = ["Zdravotník", "Jan Novák", "Akce 2026", "", "100"]
@@ -1011,7 +1011,7 @@ def test_cell_leaves_safe_strings_unchanged():
 
 
 def test_cell_leaves_non_string_values_unchanged():
-    """_cell() must not touch numbers, None, or other non-string types."""
+    """cell() must not touch numbers, None, or other non-string types."""
     wb = Workbook()
     ws = wb.active
     for i, val in enumerate([0, 42, 3.14, None, True], start=1):
@@ -1087,3 +1087,233 @@ class TestArchivedEventsExcludedFromReports:
         assert resp.status_code == 200
         assert b"Active UR Event" in resp.data
         assert b"Archived UR Event" not in resp.data
+
+
+class TestWorkSummaryReport:
+    """Přehled výkazů — per-person / per-event hours, HTML view and xlsx export."""
+
+    def _setup(self, app, suffix: str):
+        """Create an admin, a member and a master event; return their ids/emails."""
+        with app.app_context():
+            admin = _make_user(f"admin_ws_{suffix}@test.com", "Admin WS", Role.ADMIN)
+            member = _make_user(f"member_ws_{suffix}@test.com", "Člen Výkaz", Role.MEMBER)
+            me = _make_me(f"ME WS {suffix}")
+            return admin, member, me
+
+    @staticmethod
+    def _range(now: datetime) -> tuple[str, str]:
+        return (now - timedelta(days=30)).strftime("%Y-%m-%d"), (now + timedelta(days=30)).strftime("%Y-%m-%d")
+
+    def test_requires_login(self, client):
+        resp = client.get("/reports/work-summary")
+        assert resp.status_code == 302
+
+    def test_form_renders_without_dates(self, app, client):
+        self._setup(app, "form")
+        _login(client, "admin_ws_form@test.com")
+        resp = client.get("/reports/work-summary")
+        assert resp.status_code == 200
+        assert "Přehled výkazů".encode() in resp.data
+
+    def test_viewer_can_open_report(self, app, client):
+        """Viewer holds report.view, same as for every other report."""
+        with app.app_context():
+            _make_user("viewer_ws@test.com", "Viewer WS", Role.VIEWER)
+        _login(client, "viewer_ws@test.com")
+        resp = client.get("/reports/work-summary")
+        assert resp.status_code == 200
+
+    def test_role_without_report_view_is_refused(self, app, client):
+        with app.app_context():
+            _make_user("dm_ws@test.com", "DM WS", Role.DEBRIEFING_MANAGER)
+        _login(client, "dm_ws@test.com")
+        resp = client.get("/reports/work-summary")
+        assert resp.status_code in (302, 403)
+
+    def test_completed_paid_event_counts_as_served_and_paid(self, app, client):
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "paid")
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            ev = _make_event(
+                db.session.merge(me),
+                "Placená akce",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=3),
+            )
+            ev.paid = True
+            db.session.commit()
+            _make_assignment(_make_spot(ev), member, admin)
+
+        _login(client, "admin_ws_paid@test.com")
+        from_d, to_d = self._range(now)
+        resp = client.get(f"/reports/work-summary?from_date={from_d}&to_date={to_d}")
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "Placená akce" in html
+        assert "Člen Výkaz" in html
+
+    def test_unpaid_completed_event_counts_as_free(self, app, client):
+
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "free")
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            ev = _make_event(
+                db.session.merge(me),
+                "Neplacená akce",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=3),
+            )
+            ev.paid = False
+            db.session.commit()
+            _make_assignment(_make_spot(ev), member, admin)
+
+            from_d, to_d = self._range(now)
+            groups = _work_summary_data(*_parse_date_range(from_d, to_d))
+            total = next(g.total for g in groups if g.total.user_name == "Člen Výkaz")
+            assert total.hours_served == Decimal("3.0")
+            assert total.hours_free == Decimal("3.0")
+            assert total.hours_paid == Decimal("0")
+            assert total.hours_planned == Decimal("0")
+
+    def test_future_event_counts_as_planned(self, app, client):
+
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "future")
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            ev = _make_event(
+                db.session.merge(me),
+                "Budoucí akce",
+                EventStatus.PUBLISHED,
+                start=now + timedelta(days=3),
+                end=now + timedelta(days=3, hours=5),
+            )
+            _make_assignment(_make_spot(ev), member, admin)
+
+            from_d, to_d = self._range(now)
+            groups = _work_summary_data(*_parse_date_range(from_d, to_d))
+            total = next(g.total for g in groups if g.total.user_name == "Člen Výkaz")
+            assert total.hours_planned == Decimal("5.0")
+            assert total.hours_served == Decimal("0")
+
+    def test_past_but_not_completed_counts_scheduled_and_is_flagged(self, app, client):
+
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "incomplete")
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            ev = _make_event(
+                db.session.merge(me),
+                "Nedokončená akce",
+                EventStatus.ASSIGNMENTS_CLOSED,
+                start=now - timedelta(days=1),
+                end=now - timedelta(days=1) + timedelta(hours=6),
+            )
+            _make_assignment(_make_spot(ev), member, admin)
+
+            from_d, to_d = self._range(now)
+            groups = _work_summary_data(*_parse_date_range(from_d, to_d))
+            group = next(g for g in groups if g.total.user_name == "Člen Výkaz")
+            assert group.total.hours_served == Decimal("6.0")
+            assert group.rows[0].incomplete is True
+            assert "nedokončeno" in group.rows[0].status_label
+
+    def test_draft_cancelled_and_archived_events_excluded(self, app, client):
+
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "excluded")
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            me = db.session.merge(me)
+            for name, status in (("Koncept akce", EventStatus.DRAFT), ("Zrušená akce", EventStatus.CANCELLED)):
+                ev = _make_event(me, name, status, start=now - timedelta(days=2), end=now - timedelta(days=2, hours=-3))
+                _make_assignment(_make_spot(ev), member, admin)
+            archived = _make_event(
+                me,
+                "Archivovaná akce",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=3),
+            )
+            archived.archived = True
+            db.session.commit()
+            _make_assignment(_make_spot(archived), member, admin)
+
+            from_d, to_d = self._range(now)
+            groups = _work_summary_data(*_parse_date_range(from_d, to_d))
+            assert groups == []
+
+    def test_two_spots_on_same_event_are_not_double_counted(self, app, client):
+
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "dedupe")
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            ev = _make_event(
+                db.session.merge(me),
+                "Dvě pozice",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=4),
+            )
+            ev.paid = True
+            db.session.commit()
+            _make_assignment(_make_spot(ev), member, admin)
+            _make_assignment(_make_spot(ev), member, admin)
+
+            from_d, to_d = self._range(now)
+            groups = _work_summary_data(*_parse_date_range(from_d, to_d))
+            group = next(g for g in groups if g.total.user_name == "Člen Výkaz")
+            assert len(group.rows) == 1
+            assert group.total.hours_served == Decimal("4.0")
+
+    def test_xlsx_export_has_two_sheets_and_numeric_hours(self, app, client):
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "xlsx")
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            ev = _make_event(
+                db.session.merge(me),
+                "Excel akce",
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=2, minutes=30),
+            )
+            ev.paid = True
+            db.session.commit()
+            _make_assignment(_make_spot(ev), member, admin)
+
+        _login(client, "admin_ws_xlsx@test.com")
+        from_d, to_d = self._range(now)
+        resp = client.get(f"/reports/work-summary?from_date={from_d}&to_date={to_d}&format=xlsx")
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp.headers["Content-Type"]
+
+        wb = load_workbook(io.BytesIO(resp.data))
+        assert wb.sheetnames == ["Výkazy", "Souhrn"]
+
+        detail = wb["Výkazy"]
+        header_row = 3
+        data = [c.value for c in detail[header_row + 1]]
+        assert data[0] == "Člen Výkaz"
+        assert data[1] == "Excel akce"
+        # Hours must be real numbers so Excel sums them in any locale.
+        assert isinstance(data[4], (int, float))
+        assert data[4] == pytest.approx(2.5)
+        assert detail.auto_filter.ref is not None
+
+        summary = wb["Souhrn"]
+        totals_row = [c.value for c in summary[header_row + 2]]
+        assert totals_row[0] == "Celkem"
+        assert totals_row[1] == pytest.approx(2.5)

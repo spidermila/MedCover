@@ -102,5 +102,20 @@
       </div>
     </div>
   </div>
+
+  <div class="col-md-4">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body d-flex flex-column">
+        <h5 class="card-title">Přehled výkazů</h5>
+        <p class="card-text text-muted flex-grow-1">
+          Odsloužené, plánované, placené a neplacené hodiny po jednotlivých lidech a akcích
+          pro kontrolu papírových výkazů. Ke stažení v Excelu.
+        </p>
+        <a href="{{ url_for('reports.work_summary_report') }}" class="btn btn-outline-danger mt-2">
+          Zobrazit přehled
+        </a>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
