@@ -106,16 +106,6 @@ def title_block(ws: Worksheet, title: str, subtitle: str, n_cols: int) -> int:
     return 3  # header row
 
 
-def col_letter(col: int) -> str:
-    """1-based column index to its letter.
-
-    A thin alias for openpyxl's helper, kept so callers do not have to reach
-    for a cell on the sheet — row 1 is merged by :func:`title_block`, and a
-    MergedCell carries no ``column_letter``.
-    """
-    return get_column_letter(col)
-
-
 # ── Generic table sheet ───────────────────────────────────────────────────────
 
 
@@ -174,7 +164,7 @@ def build_table_sheet(ws: Worksheet, sheet: TableSheet) -> None:
 
     centre = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for i, column in enumerate(sheet.columns, 1):
-        ws.column_dimensions[col_letter(i)].width = column.width
+        ws.column_dimensions[get_column_letter(i)].width = column.width
         cell(ws, header_row, i, column.header, font=HEADER_FONT, fill=HEADER_FILL, alignment=centre, border=THIN)
     ws.row_dimensions[header_row].height = 30
 
@@ -185,7 +175,7 @@ def build_table_sheet(ws: Worksheet, sheet: TableSheet) -> None:
 
     # The autofilter must not cover the totals row, or sorting would move it.
     if sheet.autofilter:
-        ws.auto_filter.ref = f"A{header_row}:{col_letter(n_cols)}{max(row - 1, header_row)}"
+        ws.auto_filter.ref = f"A{header_row}:{get_column_letter(n_cols)}{max(row - 1, header_row)}"
 
     if sheet.totals_row is not None:
         _write_row(ws, row, sheet.columns, sheet.totals_row, BOLD_FONT)
@@ -195,8 +185,6 @@ def build_table_sheet(ws: Worksheet, sheet: TableSheet) -> None:
 
 def build_workbook(sheets: list[TableSheet]) -> Workbook:
     """Build a workbook from one or more table sheets. Caller saves/streams it."""
-    if not sheets:
-        raise ValueError("build_workbook needs at least one sheet")
     wb = Workbook()
     first = wb.active
     first.title = sheets[0].sheet_name

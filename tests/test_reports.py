@@ -2,7 +2,7 @@
 
 import io
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -1128,7 +1128,7 @@ class TestWorkSummaryReport:
             _make_user("dm_ws@test.com", "DM WS", Role.DEBRIEFING_MANAGER)
         _login(client, "dm_ws@test.com")
         resp = client.get("/reports/work-summary")
-        assert resp.status_code in (302, 403)
+        assert resp.status_code == 403
 
     def test_completed_paid_event_counts_as_served_and_paid(self, app, client):
         now = datetime.now(timezone.utc)
@@ -1314,6 +1314,40 @@ class TestWorkSummaryReport:
             assert len(group.rows) == 1
             assert group.total.hours_served == Decimal("4.0")
 
+    def test_range_boundaries_use_app_timezone(self, app, client):
+        """An event at 00:30 Prague on 1 Feb belongs to February, not to January.
+
+        Picked to straddle the boundary: under the old UTC parsing this event
+        fell into the January range instead, so a regression fails this test.
+        """
+        with app.app_context():
+            # 2026-01-31 23:30Z == 2026-02-01 00:30 Europe/Prague (UTC+1).
+            start = datetime(2026, 1, 31, 23, 30, tzinfo=timezone.utc)
+            admin = _make_user("admin_ws_tz@test.com", "Admin WS TZ", Role.ADMIN)
+            member = _make_user("member_ws_tz@test.com", "Člen TZ", Role.MEMBER)
+            me = _make_me("ME WS tz")
+            ev = _make_event(
+                me,
+                "Půlnoční akce",
+                EventStatus.COMPLETED,
+                start=start,
+                end=start + timedelta(hours=2),
+            )
+            _make_assignment(_make_spot(ev), member, admin)
+
+            in_january = _work_summary_data(*_parse_date_range("2026-01-01", "2026-01-31"))
+            assert in_january == []
+
+            in_february = _work_summary_data(*_parse_date_range("2026-02-01", "2026-02-28"))
+            assert [g.total.user_name for g in in_february] == ["Člen TZ"]
+
+    def test_swapped_dates_are_rejected(self, app, client):
+        self._setup(app, "swapped")
+        _login(client, "admin_ws_swapped@test.com")
+        resp = client.get("/reports/work-summary?from_date=2026-03-10&to_date=2026-03-01")
+        assert resp.status_code == 200
+        assert "musí být před datem" in resp.data.decode()
+
     def test_xlsx_export_escapes_formula_starters(self, app, client):
         """Event names reach the sheet through the generic builder — still inert."""
         now = datetime.now(timezone.utc)
@@ -1373,6 +1407,9 @@ class TestWorkSummaryReport:
         # Hours must be real numbers so Excel sums them in any locale.
         assert isinstance(data[4], (int, float))
         assert data[4] == pytest.approx(2.5)
+        # Datum must be a real date cell, not a preformatted string.
+        assert isinstance(data[2], (datetime, date))
+        assert detail.cell(row=header_row + 1, column=3).number_format == "DD.MM.YYYY"
         assert detail.auto_filter.ref is not None
 
         summary = wb["Souhrn"]

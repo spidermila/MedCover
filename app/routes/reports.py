@@ -2,7 +2,7 @@
 Reports & Statistics blueprint.
 
 Routes:
-  GET /reports/                          — index (three report cards)
+  GET /reports/                          — index (report cards)
   GET /reports/user                      — own per-user report (shortcut)
   GET /reports/user/<user_id>            — per-user report
   GET /reports/master-event/<me_id>      — per-master-event report
@@ -161,11 +161,19 @@ def _parse_date_range(from_date_str: str, to_date_str: str) -> tuple[datetime, d
     app timezone (rather than UTC) keeps events in the hour around midnight on
     the side of the range the user sees them on in the UI.
     """
+    try:
+        from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
+        to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("Neplatný formát data.") from exc
+
+    if from_date > to_date:
+        raise ValueError("Datum „od“ musí být před datem „do“.")
+
     tz = get_app_tz()
-    from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
-    to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date() + timedelta(days=1)
+    day_after = to_date + timedelta(days=1)
     from_dt = datetime(from_date.year, from_date.month, from_date.day, tzinfo=tz)
-    to_dt = datetime(to_date.year, to_date.month, to_date.day, tzinfo=tz)
+    to_dt = datetime(day_after.year, day_after.month, day_after.day, tzinfo=tz)
     return from_dt, to_dt
 
 
@@ -611,13 +619,13 @@ def date_range_report() -> str | Response:
         )
     try:
         from_dt, to_dt = _parse_date_range(from_date_str, to_date_str)
-    except ValueError:
+    except ValueError as exc:
         return render_template(
             "reports/date_range.html",
             results=None,
             from_date=from_date_str,
             to_date=to_date_str,
-            error="Neplatný formát data.",
+            error=str(exc),
             quick_ranges=_quick_ranges(),
         )
 
@@ -874,13 +882,13 @@ def work_summary_report() -> str | Response:
         )
     try:
         from_dt, to_dt = _parse_date_range(from_date_str, to_date_str)
-    except ValueError:
+    except ValueError as exc:
         return render_template(
             "reports/work_summary.html",
             groups=None,
             from_date=from_date_str,
             to_date=to_date_str,
-            error="Neplatný formát data.",
+            error=str(exc),
             quick_ranges=_quick_ranges(),
         )
 
@@ -937,7 +945,7 @@ def printout() -> str | Response:
             return render_template("reports/printout.html", master_events=master_events)
 
         if from_dt >= to_dt:
-            flash("Datum 'od' musí být před datem 'do'.", "danger")
+            flash("Datum „od“ musí být před datem „do“.", "danger")
             return render_template("reports/printout.html", master_events=master_events)
 
     selected_me: MasterEvent | None = None

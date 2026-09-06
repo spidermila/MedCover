@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Date-range filters on the „Přehled za období“ and per-user reports now interpret the picked dates in the application timezone rather than UTC. Events starting in the hour around midnight were previously counted in the neighbouring day's range. (#475)
+- Reports with a date range now show an error when the „od“ date is after the „do“ date, instead of silently rendering an empty result. (#475)
 - Generated work-report xlsx (Výkaz práce) now opens with A4 portrait orientation and fit-to-page scaling, so the report block fills the printable area regardless of month length and users don't need to adjust Excel's page-setup dialog before printing. (#503)
 
 ## [1.1.0] - 2026-09-01

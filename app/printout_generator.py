@@ -15,10 +15,11 @@ from typing import TYPE_CHECKING
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.utils import get_app_tz
-from app.xlsx import HEADER_FILL, HEADER_FONT, STD_FONT, THIN, cell, col_letter, title_block
+from app.xlsx import HEADER_FILL, HEADER_FONT, STD_FONT, THIN, cell, title_block
 
 if TYPE_CHECKING:
     from app.models.event import Event
@@ -37,7 +38,7 @@ def _build_signature_sheet(
     widths = [12, 34, 26, 22, 22, 38]
 
     for i, w in enumerate(widths, 1):
-        ws.column_dimensions[col_letter(i)].width = w
+        ws.column_dimensions[get_column_letter(i)].width = w
 
     n_cols = len(headers)
     subtitle = _subtitle(date_range, me_name)
@@ -88,9 +89,9 @@ def _build_overview_sheet(
     spot_width = 28
 
     for i, w in enumerate(fixed_widths, 1):
-        ws.column_dimensions[col_letter(i)].width = w
+        ws.column_dimensions[get_column_letter(i)].width = w
     for j in range(max_spots):
-        ws.column_dimensions[col_letter(len(fixed_headers) + j + 1)].width = spot_width
+        ws.column_dimensions[get_column_letter(len(fixed_headers) + j + 1)].width = spot_width
 
     n_cols = len(fixed_headers) + max_spots
     subtitle = _subtitle(date_range, me_name)
