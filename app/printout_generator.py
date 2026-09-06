@@ -14,86 +14,14 @@ Public entry point::
 from typing import TYPE_CHECKING
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.utils import get_app_tz
+from app.xlsx import HEADER_FILL, HEADER_FONT, STD_FONT, THIN, cell, col_letter, title_block
 
 if TYPE_CHECKING:
     from app.models.event import Event
-
-# ── Styles ────────────────────────────────────────────────────────────────────
-
-_HEADER_FILL = PatternFill("solid", fgColor="FF4472C4")  # dark blue
-_TITLE_FILL = PatternFill("solid", fgColor="FFD9E1F2")  # light blue
-
-_HEADER_FONT = Font(name="Calibri", size=10, bold=True, color="FFFFFFFF")
-_TITLE_FONT = Font(name="Calibri", size=10, bold=True)
-_INFO_FONT = Font(name="Calibri", size=9)
-_STD_FONT = Font(name="Calibri", size=10)
-
-
-def _side(style: str) -> Side:
-    return Side(border_style=style)
-
-
-_THIN = Border(
-    left=_side("thin"),
-    right=_side("thin"),
-    top=_side("thin"),
-    bottom=_side("thin"),
-)
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-
-_FORMULA_STARTERS = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _cell(
-    ws: Worksheet,
-    row: int,
-    col: int,
-    value: object = None,
-    *,
-    font: Font | None = None,
-    fill: PatternFill | None = None,
-    alignment: Alignment | None = None,
-    border: Border | None = None,
-) -> None:
-    if isinstance(value, str) and value.startswith(_FORMULA_STARTERS):
-        value = "'" + value
-    c = ws.cell(row=row, column=col, value=value)
-    if font is not None:
-        c.font = font
-    if fill is not None:
-        c.fill = fill
-    if alignment is not None:
-        c.alignment = alignment
-    if border is not None:
-        c.border = border
-
-
-def _title_block(ws: Worksheet, title: str, subtitle: str, n_cols: int) -> int:
-    """Write a two-row title block merged across all columns. Returns the next row number."""
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
-    _cell(
-        ws, 1, 1, title, font=_TITLE_FONT, fill=_TITLE_FILL, alignment=Alignment(horizontal="center", vertical="center")
-    )
-    ws.row_dimensions[1].height = 22
-
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
-    _cell(
-        ws, 2, 1, subtitle, font=_INFO_FONT, fill=_TITLE_FILL, alignment=Alignment(horizontal="left", vertical="center")
-    )
-    ws.row_dimensions[2].height = 15
-
-    return 3  # header row
-
-
-def _col_letter(ws: Worksheet, col: int) -> str:
-    return ws.cell(row=1, column=col).column_letter
 
 
 # ── Sheet 1: Podpisy (Signatures) ─────────────────────────────────────────────
@@ -109,16 +37,16 @@ def _build_signature_sheet(
     widths = [12, 34, 26, 22, 22, 38]
 
     for i, w in enumerate(widths, 1):
-        ws.column_dimensions[_col_letter(ws, i)].width = w
+        ws.column_dimensions[col_letter(i)].width = w
 
     n_cols = len(headers)
     subtitle = _subtitle(date_range, me_name)
-    hdr_row = _title_block(ws, "Sestava pro tisk — Podpisy", subtitle, n_cols)
+    hdr_row = title_block(ws, "Sestava pro tisk — Podpisy", subtitle, n_cols)
 
     # Column headers
     centre = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for i, h in enumerate(headers, 1):
-        _cell(ws, hdr_row, i, h, font=_HEADER_FONT, fill=_HEADER_FILL, alignment=centre, border=_THIN)
+        cell(ws, hdr_row, i, h, font=HEADER_FONT, fill=HEADER_FILL, alignment=centre, border=THIN)
     ws.row_dimensions[hdr_row].height = 18
 
     # Data — one row per (event, spot)
@@ -138,7 +66,7 @@ def _build_signature_sheet(
             desc = spot.description or ""
 
             for col, val in enumerate([date_str, event.name, person, quals, desc, ""], 1):
-                _cell(ws, row, col, val, font=_STD_FONT, alignment=left, border=_THIN)
+                cell(ws, row, col, val, font=STD_FONT, alignment=left, border=THIN)
 
             ws.row_dimensions[row].height = 28  # room for handwriting
             row += 1
@@ -160,28 +88,28 @@ def _build_overview_sheet(
     spot_width = 28
 
     for i, w in enumerate(fixed_widths, 1):
-        ws.column_dimensions[_col_letter(ws, i)].width = w
+        ws.column_dimensions[col_letter(i)].width = w
     for j in range(max_spots):
-        ws.column_dimensions[_col_letter(ws, len(fixed_headers) + j + 1)].width = spot_width
+        ws.column_dimensions[col_letter(len(fixed_headers) + j + 1)].width = spot_width
 
     n_cols = len(fixed_headers) + max_spots
     subtitle = _subtitle(date_range, me_name)
-    hdr_row = _title_block(ws, "Sestava pro tisk — Přehled", subtitle, n_cols)
+    hdr_row = title_block(ws, "Sestava pro tisk — Přehled", subtitle, n_cols)
 
     # Column headers
     centre = Alignment(horizontal="center", vertical="center")
     for i, h in enumerate(fixed_headers, 1):
-        _cell(ws, hdr_row, i, h, font=_HEADER_FONT, fill=_HEADER_FILL, alignment=centre, border=_THIN)
+        cell(ws, hdr_row, i, h, font=HEADER_FONT, fill=HEADER_FILL, alignment=centre, border=THIN)
     for j in range(max_spots):
-        _cell(
+        cell(
             ws,
             hdr_row,
             len(fixed_headers) + j + 1,
             f"Pozice {j + 1}",
-            font=_HEADER_FONT,
-            fill=_HEADER_FILL,
+            font=HEADER_FONT,
+            fill=HEADER_FILL,
             alignment=centre,
-            border=_THIN,
+            border=THIN,
         )
     ws.row_dimensions[hdr_row].height = 18
 
@@ -195,14 +123,14 @@ def _build_overview_sheet(
         date_str = event.start_datetime.astimezone(tz).strftime("%d.%m.%Y")
 
         for col, val in enumerate([date_str, event.name, event.status.value], 1):
-            _cell(
+            cell(
                 ws,
                 row,
                 col,
                 val,
-                font=_STD_FONT,
+                font=STD_FONT,
                 alignment=Alignment(horizontal="left", vertical="center"),
-                border=_THIN,
+                border=THIN,
             )
 
         for j in range(max_spots):
@@ -211,7 +139,7 @@ def _build_overview_sheet(
                 cell_val = spot.assignment.user.name if spot.assignment else ""
             else:
                 cell_val = ""
-            _cell(ws, row, len(fixed_headers) + j + 1, cell_val, font=_STD_FONT, alignment=left, border=_THIN)
+            cell(ws, row, len(fixed_headers) + j + 1, cell_val, font=STD_FONT, alignment=left, border=THIN)
 
         ws.row_dimensions[row].height = 18
         row += 1

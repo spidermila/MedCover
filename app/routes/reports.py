@@ -7,8 +7,10 @@ Routes:
   GET /reports/user/<user_id>            — per-user report
   GET /reports/master-event/<me_id>      — per-master-event report
   GET /reports/date-range                — date-range report (form + results)
+  GET /reports/work-summary              — work-summary report (form + results)
 
-All report routes accept ?format=csv to download the data as a CSV file.
+All report routes accept ?format=csv to download the data as a CSV file;
+the work-summary report offers ?format=xlsx instead.
 
 Permission: report.view  (users may always view their own per-user report)
 """
@@ -16,6 +18,7 @@ Permission: report.view  (users may always view their own per-user report)
 import csv
 import io
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -24,6 +27,7 @@ from typing import cast
 import sqlalchemy as sa
 from flask import Blueprint, Response, abort, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from openpyxl import Workbook
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
@@ -35,6 +39,7 @@ from app.models.user import UserAccount
 from app.printout_generator import generate_printout
 from app.queries import active_master_events_list, active_users_list
 from app.utils import czech_sort_key, get_app_tz, quick_date_ranges, require_permission
+from app.xlsx import HOURS_FORMAT, Column, TableSheet, build_workbook
 
 reports_bp = Blueprint("reports", __name__, url_prefix="/reports")
 
@@ -145,6 +150,25 @@ def _resolve_next_shifts(rows: list[tuple[UserAccount, UserStats]], now: datetim
         stats.next_shift = next_shifts.get(_user.id)
 
 
+# ── Date-range parsing ────────────────────────────────────────────────────────
+
+
+def _parse_date_range(from_date_str: str, to_date_str: str) -> tuple[datetime, datetime]:
+    """Parse two ``YYYY-MM-DD`` strings into a half-open range in the app timezone.
+
+    Both dates are inclusive for the user, so the returned upper bound is the
+    start of the day after *to_date_str*. Interpreting the boundaries in the
+    app timezone (rather than UTC) keeps events in the hour around midnight on
+    the side of the range the user sees them on in the UI.
+    """
+    tz = get_app_tz()
+    from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
+    to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date() + timedelta(days=1)
+    from_dt = datetime(from_date.year, from_date.month, from_date.day, tzinfo=tz)
+    to_dt = datetime(to_date.year, to_date.month, to_date.day, tzinfo=tz)
+    return from_dt, to_dt
+
+
 # ── CSV helper ────────────────────────────────────────────────────────────────
 
 
@@ -156,6 +180,17 @@ def _csv_response(rows: list[list[str]], filename: str) -> Response:
     writer.writerows(rows)
     response = make_response(buf.getvalue())
     response.headers["Content-Type"] = "text/csv; charset=utf-8-sig"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _xlsx_response(wb: Workbook, filename: str) -> Response:
+    """Return an openpyxl workbook as a downloadable xlsx file."""
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    response = make_response(buf.getvalue())
+    response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
@@ -302,10 +337,11 @@ def user_report(user_id: uuid.UUID) -> str | Response:
 
     if from_date_str or to_date_str:
         try:
+            tz = get_app_tz()
             if from_date_str:
-                from_dt = datetime.strptime(from_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                from_dt = datetime.strptime(from_date_str, "%Y-%m-%d").replace(tzinfo=tz)
             if to_date_str:
-                to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+                to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=tz) + timedelta(days=1)
         except ValueError:
             date_error = "Neplatný formát data."
             from_date_str = ""
@@ -574,8 +610,7 @@ def date_range_report() -> str | Response:
             quick_ranges=_quick_ranges(),
         )
     try:
-        from_dt = datetime.strptime(from_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        to_dt = datetime.strptime(to_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+        from_dt, to_dt = _parse_date_range(from_date_str, to_date_str)
     except ValueError:
         return render_template(
             "reports/date_range.html",
@@ -609,6 +644,250 @@ def date_range_report() -> str | Response:
     return render_template(
         "reports/date_range.html",
         results=results,
+        from_date=from_date_str,
+        to_date=to_date_str,
+        quick_ranges=_quick_ranges(),
+    )
+
+
+# ── Work-summary report (Přehled výkazů) ──────────────────────────────────────
+
+# Events in these states never appear in the work-summary report: drafts are not
+# real commitments and cancelled events were never worked.
+_WORK_SUMMARY_EXCLUDED_STATUSES = [EventStatus.DRAFT, EventStatus.CANCELLED]
+
+_INCOMPLETE_SUFFIX = " — nedokončeno"
+
+
+@dataclass(frozen=True)
+class WorkSummaryRow:
+    """One (person, event) line of the work-summary report."""
+
+    user_name: str
+    event_name: str
+    start_datetime: datetime
+    status_label: str
+    incomplete: bool
+    hours_served: Decimal
+    hours_planned: Decimal
+    hours_paid: Decimal
+    hours_free: Decimal
+
+    @property
+    def hours_total(self) -> Decimal:
+        return self.hours_served + self.hours_planned
+
+
+@dataclass
+class WorkSummaryTotal:
+    """Per-person totals across every work-summary row for that person."""
+
+    user_name: str
+    hours_served: Decimal = field(default_factory=lambda: Decimal("0"))
+    hours_planned: Decimal = field(default_factory=lambda: Decimal("0"))
+    hours_paid: Decimal = field(default_factory=lambda: Decimal("0"))
+    hours_free: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    @property
+    def hours_total(self) -> Decimal:
+        return self.hours_served + self.hours_planned
+
+    def add(self, row: WorkSummaryRow) -> None:
+        self.hours_served += row.hours_served
+        self.hours_planned += row.hours_planned
+        self.hours_paid += row.hours_paid
+        self.hours_free += row.hours_free
+
+
+@dataclass
+class WorkSummaryGroup:
+    """One person's work-summary rows together with their totals."""
+
+    total: WorkSummaryTotal
+    rows: list[WorkSummaryRow]
+
+
+def _work_summary_row(user_name: str, ev: Event, now: datetime) -> WorkSummaryRow:
+    """Build one row, splitting the event's hours into served / planned / paid / free.
+
+    An event that has already started but has not been completed yet counts its
+    scheduled hours as served and is flagged, so hours are not silently lost
+    while the responsible person's debriefing is still outstanding.
+    """
+    zero = Decimal("0")
+    incomplete = False
+    if ev.status == EventStatus.COMPLETED:
+        served, planned = ev.billable_hours, zero
+    elif ev.start_datetime <= now:
+        served, planned = ev.scheduled_hours, zero
+        incomplete = True
+    else:
+        served, planned = zero, ev.scheduled_hours
+
+    return WorkSummaryRow(
+        user_name=user_name,
+        event_name=ev.name,
+        start_datetime=ev.start_datetime,
+        status_label=ev.status.value + (_INCOMPLETE_SUFFIX if incomplete else ""),
+        incomplete=incomplete,
+        hours_served=served,
+        hours_planned=planned,
+        hours_paid=served if ev.paid else zero,
+        hours_free=zero if ev.paid else served,
+    )
+
+
+def _work_summary_data(from_dt: datetime, to_dt: datetime) -> list[WorkSummaryGroup]:
+    """Collect the work-summary rows for the given range, grouped by person."""
+    date_filter = (
+        Event.start_datetime >= from_dt,
+        Event.start_datetime < to_dt,
+        Event.status.notin_(_WORK_SUMMARY_EXCLUDED_STATUSES),
+        Event.archived == sa.false(),
+    )
+
+    events = {ev.id: ev for ev in db.session.scalars(db.select(Event).where(*date_filter)).unique().all()}
+
+    # One row per assigned person per event. Someone holding two spots on the
+    # same event must not have their hours counted twice, hence the DISTINCT.
+    assignments = db.session.execute(
+        db.select(Assignment.user_id, UserAccount.name, EventSpot.event_id)
+        .join(EventSpot, Assignment.spot_id == EventSpot.id)
+        .join(Event, EventSpot.event_id == Event.id)
+        .join(UserAccount, Assignment.user_id == UserAccount.id)
+        .where(*date_filter)
+        .distinct()
+    ).all()
+
+    now = datetime.now(timezone.utc)
+    groups: dict[uuid.UUID, WorkSummaryGroup] = {}
+    for user_id, user_name, event_id in assignments:
+        row = _work_summary_row(user_name, events[event_id], now)
+        group = groups.get(user_id)
+        if group is None:
+            group = groups[user_id] = WorkSummaryGroup(total=WorkSummaryTotal(user_name=user_name), rows=[])
+        group.rows.append(row)
+        group.total.add(row)
+
+    result = list(groups.values())
+    result.sort(key=lambda g: czech_sort_key(g.total.user_name))
+    for group in result:
+        group.rows.sort(key=lambda r: (r.start_datetime, r.event_name))
+    return result
+
+
+def _work_summary_columns(*, with_event: bool) -> list[Column]:
+    """Column spec for the detail sheet (``with_event``) or the totals sheet."""
+    hours = [
+        Column("Hodiny odsloužené", 17, align="right", number_format=HOURS_FORMAT),
+        Column("Hodiny plánované", 17, align="right", number_format=HOURS_FORMAT),
+        Column("Hodiny celkem", 15, align="right", number_format=HOURS_FORMAT),
+        Column("Hodiny placené", 15, align="right", number_format=HOURS_FORMAT),
+        Column("Hodiny zdarma", 15, align="right", number_format=HOURS_FORMAT),
+    ]
+    if not with_event:
+        return [Column("Jméno", 26)] + hours
+    return [
+        Column("Jméno", 26),
+        Column("Název akce", 34),
+        Column("Datum", 12, align="center"),
+        Column("Stav", 26),
+    ] + hours
+
+
+def _hours_values(item: WorkSummaryRow | WorkSummaryTotal) -> list[object]:
+    return [item.hours_served, item.hours_planned, item.hours_total, item.hours_paid, item.hours_free]
+
+
+def _work_summary_sheets(groups: list[WorkSummaryGroup], date_range: str) -> list[TableSheet]:
+    """Build the two-sheet workbook spec: flat filterable detail, then per-person totals."""
+    subtitle = f"Období: {date_range}"
+
+    detail_rows: list[Sequence[object]] = [
+        [
+            row.user_name,
+            row.event_name,
+            row.start_datetime.astimezone(get_app_tz()).date(),
+            row.status_label,
+            *_hours_values(row),
+        ]
+        for group in groups
+        for row in group.rows
+    ]
+
+    totals = [g.total for g in groups]
+    summary_rows: list[Sequence[object]] = [[t.user_name, *_hours_values(t)] for t in totals]
+    grand_total = _work_summary_grand_total(totals)
+
+    return [
+        TableSheet(
+            sheet_name="Výkazy",
+            title="Přehled výkazů",
+            subtitle=subtitle,
+            columns=_work_summary_columns(with_event=True),
+            rows=detail_rows,
+        ),
+        TableSheet(
+            sheet_name="Souhrn",
+            title="Přehled výkazů — souhrn",
+            subtitle=subtitle,
+            columns=_work_summary_columns(with_event=False),
+            rows=summary_rows,
+            totals_row=["Celkem", *_hours_values(grand_total)],
+            autofilter=False,
+        ),
+    ]
+
+
+def _work_summary_grand_total(totals: list[WorkSummaryTotal]) -> WorkSummaryTotal:
+    """Sum every per-person total into a single grand-total row."""
+    grand = WorkSummaryTotal(user_name="Celkem")
+    for total in totals:
+        grand.hours_served += total.hours_served
+        grand.hours_planned += total.hours_planned
+        grand.hours_paid += total.hours_paid
+        grand.hours_free += total.hours_free
+    return grand
+
+
+@reports_bp.get("/work-summary")
+@login_required
+def work_summary_report() -> str | Response:
+    require_permission("report.view")
+
+    from_date_str = request.args.get("from_date", "").strip()
+    to_date_str = request.args.get("to_date", "").strip()
+
+    if not from_date_str or not to_date_str:
+        return render_template(
+            "reports/work_summary.html",
+            groups=None,
+            from_date=from_date_str,
+            to_date=to_date_str,
+            quick_ranges=_quick_ranges(),
+        )
+    try:
+        from_dt, to_dt = _parse_date_range(from_date_str, to_date_str)
+    except ValueError:
+        return render_template(
+            "reports/work_summary.html",
+            groups=None,
+            from_date=from_date_str,
+            to_date=to_date_str,
+            error="Neplatný formát data.",
+            quick_ranges=_quick_ranges(),
+        )
+
+    groups = _work_summary_data(from_dt, to_dt)
+
+    if request.args.get("format") == "xlsx":
+        wb = build_workbook(_work_summary_sheets(groups, f"{from_date_str} – {to_date_str}"))
+        return _xlsx_response(wb, f"prehled_vykazu_{from_date_str}_{to_date_str}.xlsx")
+
+    return render_template(
+        "reports/work_summary.html",
+        groups=groups,
+        grand_total=_work_summary_grand_total([g.total for g in groups]),
         from_date=from_date_str,
         to_date=to_date_str,
         quick_ranges=_quick_ranges(),
@@ -690,12 +969,4 @@ def printout() -> str | Response:
     date_range = f"{from_date_str} – {to_date_str}" if has_dates else "vše"
     wb = generate_printout(list(events), date_range, me_name)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-
-    filename = f"sestava_{from_date_str}_{to_date_str}.xlsx"
-    response = make_response(buf.getvalue())
-    response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
+    return _xlsx_response(wb, f"sestava_{from_date_str}_{to_date_str}.xlsx")
