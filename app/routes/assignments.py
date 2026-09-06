@@ -291,7 +291,7 @@ def do_unassign_user(
         summary = f"'{unassigned_by.name}' odhlásil '{user.name}' z akce '{event.name}'"
     else:
         summary = f"Uživatel '{user.name}' se odhlásil z akce '{event.name}'"
-    audit("delete", "Assignment", assignment.id, summary)
+    audit("delete", "Event", event.id, summary)
     _auto_clear_rp(event, user)
     db.session.delete(assignment)
     _auto_reopen_if_freed(event)
