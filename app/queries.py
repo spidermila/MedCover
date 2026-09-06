@@ -88,21 +88,33 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
     qualification for which Q is a valid substitute (i.e. Q is an ancestor of
     that qualification in the parent chain).
 
-    This loads all non-deleted qualifications once (tiny table) and walks the
-    parent graph in Python — call it once per request and pass the result set to
-    :meth:`EventSpot.is_eligible_for` instead of calling the per-spot recursive
-    :meth:`EventSpot.is_eligible` in a loop.
-    """
-    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
+    Loads the qualification list and the parent M2M edges in two statements,
+    then walks the graph in Python — call it once per request and pass the
+    result set to :meth:`EventSpot.is_eligible_for` instead of calling the
+    per-spot recursive :meth:`EventSpot.is_eligible` in a loop.
 
-    all_quals: list[Qualification] = list(
-        db.session.scalars(db.select(Qualification).where(Qualification.is_deleted == sa.false())).all()
-    )
+    Soft-deleted qualifications stay in the graph as pass-through nodes so that
+    deleting a qualification in the middle of a chain does not sever it (X → Y → Z
+    with Y deleted still lets a holder of X fill a Z spot), matching the recursive
+    :meth:`Qualification.can_be_filled_by` walk over the unfiltered ``parents``
+    relationship.  They are excluded from the returned set and from the user's own
+    qualifications, so a deleted qualification is never itself fillable.
+    """
+    from app.models.qualification import Qualification, qualification_parents  # pylint: disable=import-outside-toplevel
+
+    quals: list[tuple[int, bool]] = [
+        (qid, bool(deleted))
+        for qid, deleted in db.session.execute(db.select(Qualification.id, Qualification.is_deleted)).all()
+    ]
 
     user_qual_ids = {q.id for q in user.qualifications if not q.is_deleted}
 
-    # Build a mapping qual_id → set of parent IDs for fast lookup
-    parents_map: dict[int, list[int]] = {q.id: [p.id for p in q.parents] for q in all_quals}
+    parents_map: dict[int, list[int]] = {qid: [] for qid, _ in quals}
+    for child_id, parent_id in db.session.execute(
+        db.select(qualification_parents.c.qualification_id, qualification_parents.c.parent_id)
+    ).all():
+        if child_id in parents_map:
+            parents_map[child_id].append(parent_id)
 
     def _user_can_fill(qual_id: int, visited: frozenset[int]) -> bool:
         if qual_id in visited:
@@ -111,7 +123,7 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
             return True
         return any(_user_can_fill(pid, visited | {qual_id}) for pid in parents_map.get(qual_id, []))
 
-    return {q.id for q in all_quals if _user_can_fill(q.id, frozenset())}
+    return {qid for qid, deleted in quals if not deleted and _user_can_fill(qid, frozenset())}
 
 
 def in_maintenance_during(start_dt: datetime, end_dt: datetime) -> sa.sql.ClauseElement:

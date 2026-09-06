@@ -9,6 +9,7 @@ from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.queries import user_fillable_qual_ids
 from tests.conftest import _make_user
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -479,3 +480,93 @@ class TestCanBeFilledBy:
             # Should complete without RecursionError
             result = a.can_be_filled_by(b)
             assert isinstance(result, bool)
+
+
+# ── Batched hierarchy walk: user_fillable_qual_ids ────────────────────────────
+
+
+class TestUserFillableQualIds:
+    """`user_fillable_qual_ids` must agree with the recursive `can_be_filled_by` walk."""
+
+    def test_direct_and_transitive_hierarchy(self, app):
+        with app.app_context():
+            gp = _make_qual("FillableGrandParent")
+            p = _make_qual("FillableParent")
+            c = _make_qual("FillableChild")
+            unrelated = _make_qual("FillableUnrelated")
+            p.parents.append(gp)
+            c.parents.append(p)
+            db.session.commit()
+            user = _make_user_with_qual(app, gp)
+
+            fillable = user_fillable_qual_ids(user)
+
+            assert {gp.id, p.id, c.id} <= fillable
+            assert unrelated.id not in fillable
+
+    def test_soft_deleted_middle_qualification_keeps_chain_intact(self, app):
+        """X → Y → Z: soft-deleting Y must not sever the chain between X and Z."""
+        with app.app_context():
+            x = _make_qual("ChainAncestor")
+            y = _make_qual("ChainMiddle")
+            z = _make_qual("ChainDescendant")
+            y.parents.append(x)
+            z.parents.append(y)
+            db.session.commit()
+            user = _make_user_with_qual(app, x)
+
+            y.soft_delete()
+            db.session.commit()
+
+            fillable = user_fillable_qual_ids(user)
+
+            assert z.id in fillable, "deleting a qualification mid-chain broke the hierarchy"
+            assert y.id not in fillable, "a soft-deleted qualification must never be fillable"
+            assert x.id in fillable
+
+    def test_soft_deleted_middle_qualification_matches_is_eligible(self, app):
+        """The batched set and the per-spot recursive check must reach the same verdict."""
+        with app.app_context():
+            x = _make_qual("ParityAncestor")
+            y = _make_qual("ParityMiddle")
+            z = _make_qual("ParityDescendant")
+            y.parents.append(x)
+            z.parents.append(y)
+            db.session.commit()
+            user = _make_user_with_qual(app, x)
+            spot_id = _make_event_spot_with_qual(z)
+
+            y.soft_delete()
+            db.session.commit()
+
+            spot = db.session.get(EventSpot, spot_id)
+            fillable = user_fillable_qual_ids(user)
+
+            assert spot.is_eligible(user) is True
+            assert spot.is_eligible_for(fillable) is spot.is_eligible(user)
+
+    def test_user_holding_only_a_deleted_qualification_fills_nothing(self, app):
+        """A tombstone qualification a user still holds grants no eligibility."""
+        with app.app_context():
+            parent = _make_qual("HeldDeletedParent")
+            child = _make_qual("HeldDeletedChild")
+            child.parents.append(parent)
+            db.session.commit()
+            user = _make_user_with_qual(app, parent)
+
+            parent.soft_delete()
+            db.session.commit()
+
+            assert user_fillable_qual_ids(user) == set()
+
+    def test_cycle_does_not_crash(self, app):
+        with app.app_context():
+            a = _make_qual("FillableCycleA")
+            b = _make_qual("FillableCycleB")
+            a.parents.append(b)
+            b.parents.append(a)
+            db.session.commit()
+            user = _make_user_with_qual(app, a)
+
+            # Both are reachable from a, and the walk must terminate.
+            assert user_fillable_qual_ids(user) == {a.id, b.id}
