@@ -9,6 +9,7 @@ from sqlalchemy import event as sa_event
 
 from app.extensions import db
 from app.models.assignment import Assignment
+from app.models.audit import AuditLogEntry
 from app.models.equipment import EquipmentItem, EquipmentType
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
@@ -101,6 +102,21 @@ class TestAssignmentRelease:
         with app.app_context():
             remaining = db.session.get(Assignment, assignment_id)
             assert remaining is None
+            audit_entry = db.session.scalar(
+                db.select(AuditLogEntry)
+                .where(AuditLogEntry.action_type == "delete", AuditLogEntry.entity_type == "Event")
+                .order_by(AuditLogEntry.id.desc())
+            )
+            assert audit_entry is not None
+            assert audit_entry.entity_id == str(event_id)
+
+        with app.app_context():
+            _make_user("audit-admin@test.com", "Audit Admin", Role.ADMIN)
+        audit_client = app.test_client()
+        _login(audit_client, "audit-admin@test.com")
+        response = audit_client.get("/admin/audit-log/")
+        assert response.status_code == 200
+        assert f'href="/events/{event_id}"'.encode() in response.data
 
 
 class TestAdminAssignment:
