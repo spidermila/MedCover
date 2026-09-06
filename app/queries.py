@@ -92,16 +92,24 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
     then walks the graph in Python — call it once per request and pass the
     result set to :meth:`EventSpot.is_eligible_for` instead of calling the
     per-spot recursive :meth:`EventSpot.is_eligible` in a loop.
+
+    Soft-deleted qualifications stay in the graph as pass-through nodes so that
+    deleting a qualification in the middle of a chain does not sever it (X → Y → Z
+    with Y deleted still lets a holder of X fill a Z spot), matching the recursive
+    :meth:`Qualification.can_be_filled_by` walk over the unfiltered ``parents``
+    relationship.  They are excluded from the returned set and from the user's own
+    qualifications, so a deleted qualification is never itself fillable.
     """
     from app.models.qualification import Qualification, qualification_parents  # pylint: disable=import-outside-toplevel
 
-    all_qual_ids: list[int] = list(
-        db.session.scalars(db.select(Qualification.id).where(Qualification.is_deleted == sa.false())).all()
-    )
+    quals: list[tuple[int, bool]] = [
+        (qid, bool(deleted))
+        for qid, deleted in db.session.execute(db.select(Qualification.id, Qualification.is_deleted)).all()
+    ]
 
     user_qual_ids = {q.id for q in user.qualifications if not q.is_deleted}
 
-    parents_map: dict[int, list[int]] = {qid: [] for qid in all_qual_ids}
+    parents_map: dict[int, list[int]] = {qid: [] for qid, _ in quals}
     for child_id, parent_id in db.session.execute(
         db.select(qualification_parents.c.qualification_id, qualification_parents.c.parent_id)
     ).all():
@@ -115,7 +123,7 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
             return True
         return any(_user_can_fill(pid, visited | {qual_id}) for pid in parents_map.get(qual_id, []))
 
-    return {qid for qid in all_qual_ids if _user_can_fill(qid, frozenset())}
+    return {qid for qid, deleted in quals if not deleted and _user_can_fill(qid, frozenset())}
 
 
 def in_maintenance_during(start_dt: datetime, end_dt: datetime) -> sa.sql.ClauseElement:
