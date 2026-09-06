@@ -7,12 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- New report „Přehled výkazů“ under Přehledy: a date range produces one row per person and event with served, planned, paid and free hours, subtotals per person and a grand total. Downloadable as an xlsx workbook with a flat, auto-filtered detail sheet and a per-person summary sheet, for checking the paper work reports members hand in. Hours are written as real numbers so Excel sums them regardless of the user's decimal separator. (#475)
+
 ### Changed
 - Event lists on /events, /dashboard, and the /reports pages now visually distinguish event types by row background: „Školení“ rows use a subtle blue tint, „Prezentační akce“ rows a subtle amber tint; „Zdravotní dozor“ keeps the default background. Colors adapt to light and dark themes. (#502)
 - Equipment items list: the per-row „Vydat“ action now opens a shared modal with the user picker instead of expanding an inline form under the row. The full active-user `<select>` is emitted once per page instead of once per item, which cuts the page's HTML size dramatically for organisations with many items (roughly ~9 KB saved per item beyond the first). (#498)
 - Events list (`/events/`) loads about 10% faster by skipping the roles / qualifications cascade triggered for every unique assignee on the page. (#500)
 
 ### Fixed
+- Date-range filters on the „Přehled za období“ and per-user reports now interpret the picked dates in the application timezone rather than UTC. Events starting in the hour around midnight were previously counted in the neighbouring day's range. (#475)
 - Generated work-report xlsx (Výkaz práce) now opens with A4 portrait orientation and fit-to-page scaling, so the report block fills the printable area regardless of month length and users don't need to adjust Excel's page-setup dialog before printing. (#503)
 
 ## [1.1.0] - 2026-09-01

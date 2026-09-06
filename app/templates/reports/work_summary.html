@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Přehled výkazů — MedCover{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Přehled výkazů</h2>
+  <a href="{{ url_for('reports.index') }}" class="btn btn-outline-secondary btn-sm">← Zpět na přehledy</a>
+</div>
+
+{# Date-range form #}
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('reports.work_summary_report') }}" class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label for="from_date" class="form-label">Od data</label>
+        <input type="text" class="form-control flatpickr-date" id="from_date" name="from_date"
+               value="{{ from_date }}">
+      </div>
+      <div class="col-md-4">
+        <label for="to_date" class="form-label">Do data</label>
+        <input type="text" class="form-control flatpickr-date" id="to_date" name="to_date"
+               value="{{ to_date }}">
+      </div>
+      <div class="col-md-4">
+        <button type="submit" class="btn btn-danger w-100">Zobrazit přehled</button>
+      </div>
+    </form>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      {% for label, fd, td in quick_ranges %}
+      <a href="{{ url_for('reports.work_summary_report', from_date=fd, to_date=td) }}"
+         class="btn btn-outline-secondary btn-sm">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if error is defined and error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+{% if groups is not none %}
+
+<div class="mb-3 text-end">
+  <a href="{{ url_for('reports.work_summary_report', from_date=from_date, to_date=to_date, format='xlsx') }}"
+     class="btn btn-outline-success btn-sm">⬇ Stáhnout XLSX</a>
+</div>
+
+{% if groups %}
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Jméno</th>
+        <th>Název akce</th>
+        <th class="text-nowrap">Datum</th>
+        <th>Stav</th>
+        <th class="text-end">Hodiny odsloužené</th>
+        <th class="text-end">Hodiny plánované</th>
+        <th class="text-end">Hodiny celkem</th>
+        <th class="text-end">Hodiny placené</th>
+        <th class="text-end">Hodiny zdarma</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group in groups %}
+        {% for row in group.rows %}
+        <tr {% if row.incomplete %}class="table-warning"{% endif %}>
+          <td>{% if loop.first %}{{ row.user_name }}{% endif %}</td>
+          <td>{{ row.event_name }}</td>
+          <td class="text-nowrap">{{ row.start_datetime | localdt("%d.%m.%Y") }}</td>
+          <td>{{ row.status_label }}</td>
+          <td class="text-end">{{ row.hours_served | cznum }}</td>
+          <td class="text-end">{{ row.hours_planned | cznum }}</td>
+          <td class="text-end">{{ row.hours_total | cznum }}</td>
+          <td class="text-end">{{ row.hours_paid | cznum }}</td>
+          <td class="text-end">{{ row.hours_free | cznum }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="table-light fw-semibold">
+          <td colspan="4">Celkem — {{ group.total.user_name }}</td>
+          <td class="text-end">{{ group.total.hours_served | cznum }}</td>
+          <td class="text-end">{{ group.total.hours_planned | cznum }}</td>
+          <td class="text-end">{{ group.total.hours_total | cznum }}</td>
+          <td class="text-end">{{ group.total.hours_paid | cznum }}</td>
+          <td class="text-end">{{ group.total.hours_free | cznum }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="table-secondary fw-bold">
+        <td colspan="4">Celkem za období</td>
+        <td class="text-end">{{ grand_total.hours_served | cznum }}</td>
+        <td class="text-end">{{ grand_total.hours_planned | cznum }}</td>
+        <td class="text-end">{{ grand_total.hours_total | cznum }}</td>
+        <td class="text-end">{{ grand_total.hours_paid | cznum }}</td>
+        <td class="text-end">{{ grand_total.hours_free | cznum }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+<p class="text-muted small">
+  Řádky označené „nedokončeno“ patří akcím, které již proběhly, ale zatím nebyly dokončeny —
+  počítají se plánované hodiny.
+</p>
+{% else %}
+<div class="alert alert-info">V zadaném období nejsou žádné výkazy.</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
