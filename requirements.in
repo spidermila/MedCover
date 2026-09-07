@@ -19,3 +19,4 @@ openpyxl
 icalendar
 Pillow
 pillow-heif
+azure-monitor-opentelemetry

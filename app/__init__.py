@@ -20,6 +20,34 @@ from .models.assignment import Assignment
 _STARTUP_TS: str = str(int(_time.time()))
 
 
+# Set once the Azure Monitor exporter has been started, so repeated create_app()
+# calls in one process do not stack duplicate exporters.
+_telemetry_configured = False
+
+
+def configure_telemetry() -> bool:
+    """Start OpenTelemetry export to Azure Monitor when configured.
+
+    Enabled only when ``APPLICATIONINSIGHTS_CONNECTION_STRING`` is set in the
+    environment, so local development, tests and CI are a no-op. Returns True
+    when the exporter was started by this call.
+    """
+    global _telemetry_configured  # pylint: disable=global-statement
+
+    if _telemetry_configured or not os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+        return False
+
+    # Imported lazily: the package is only installed/needed where telemetry runs,
+    # and importing the OpenTelemetry SDK is not free.
+    from azure.monitor.opentelemetry import (  # pylint: disable=import-outside-toplevel
+        configure_azure_monitor,
+    )
+
+    configure_azure_monitor()  # reads the connection string from the environment
+    _telemetry_configured = True
+    return True
+
+
 def create_app(
     config_name: str | None = None,
     db_url: str | None = None,
@@ -27,6 +55,10 @@ def create_app(
 ) -> Flask:
     if config_name is None:
         config_name = os.getenv("FLASK_ENV", "development")
+
+    # Must run before the Flask object exists: auto-instrumentation patches the
+    # Flask class, so only apps created afterwards are traced.
+    configure_telemetry()
 
     app = Flask(__name__)
     app.config.from_object(config_by_name[config_name])
