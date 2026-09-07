@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - New report „Přehled výkazů“ under Přehledy: a date range produces one row per person and event with served, planned, paid and free hours, subtotals per person and a grand total. Downloadable as an xlsx workbook with a flat, auto-filtered detail sheet and a per-person summary sheet, for checking the paper work reports members hand in. Hours are written as real numbers so Excel sums them regardless of the user's decimal separator. (#475)
+- Optional OpenTelemetry export to Azure Monitor. When the environment provides
+  `APPLICATIONINSIGHTS_CONNECTION_STRING`, the app factory starts the exporter and
+  request, dependency and exception telemetry is collected automatically. Without the
+  variable — local development, tests, CI — nothing is started and behaviour is unchanged.
 
 ### Changed
 - Event detail page groups the planned values together: „Plánovaný počet účastníků“ now appears directly under „Plánovaný konec“, above the actual values („Skutečný začátek“, „Skutečný konec“, „Skutečný počet účastníků“). (#518)
