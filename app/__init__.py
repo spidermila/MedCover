@@ -271,6 +271,7 @@ def create_app(
             settings = get_settings()
         except Exception:
             # DB not ready yet (e.g. running migrations) — let it through
+            db.session.rollback()
             return None
 
         if not settings.setup_complete:
