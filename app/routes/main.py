@@ -8,7 +8,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
-from app.models.assignment import Assignment
+from app.models.assignment import Assignment, DebriefingRecord
 from app.models.equipment import (
     EquipmentItem,
     EventEquipmentPlan,
@@ -271,8 +271,6 @@ def _pending_debriefings_section() -> list[Assignment]:
     """Assignments where the user has a completed event but no debriefing yet."""
     if not current_user.has_permission("debriefing.submit_own"):
         return []
-    from app.models.assignment import DebriefingRecord  # pylint: disable=import-outside-toplevel
-
     return list(
         db.session.scalars(
             db.select(Assignment)

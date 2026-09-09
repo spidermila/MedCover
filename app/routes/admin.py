@@ -8,7 +8,11 @@ from flask_login import login_required
 from sqlalchemy import collate
 
 from app.extensions import db
+from app.models.audit import AuditLogEntry
+from app.models.event import Event, EventStatus
 from app.models.feedback import UserFeedback
+from app.models.outbox import OutboxEmail
+from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS
 from app.models.settings import get_settings
 from app.models.user import UserAccount
 from app.utils import CS_COLLATION, get_or_404, require_permission
@@ -75,10 +79,6 @@ def _check_smtp(settings: object) -> dict:
 
 def _admin_statistics(now: datetime) -> dict:
     """Collect user/event/outbox/audit statistics for the admin dashboard."""
-    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
-    from app.models.event import Event, EventStatus  # pylint: disable=import-outside-toplevel
-    from app.models.outbox import OutboxEmail  # pylint: disable=import-outside-toplevel
-
     user_total = db.session.scalar(
         db.select(db.func.count()).select_from(UserAccount).where(UserAccount.is_archived == sa.false())
     )
@@ -176,8 +176,6 @@ def index() -> str:
 def permissions() -> str:
     require_permission("admin.view")
 
-    from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS  # pylint: disable=import-outside-toplevel
-
     role_names = list(ROLE_PERMISSIONS.keys())  # Admin, Coordinator, Member, Viewer
     return render_template(
         "admin/permissions.html",
@@ -194,8 +192,6 @@ def permissions() -> str:
 @login_required
 def audit_log_list() -> str:
     require_permission("admin.view")
-
-    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
 
     page = request.args.get("page", 1, type=int)
     f_entity_type = request.args.get("entity_type", "").strip()
@@ -275,8 +271,6 @@ def audit_log_list() -> str:
 @login_required
 def audit_log_detail(entry_id: int) -> str:
     require_permission("admin.view")
-
-    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
 
     entry = get_or_404(AuditLogEntry, entry_id)
 

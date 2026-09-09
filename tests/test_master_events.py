@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import event as sa_event
+
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.audit import AuditLogEntry
@@ -712,10 +714,6 @@ class TestTableManagerConflictDetection:
 
     def test_batched_single_query_for_multiple_events(self, app, admin_client):
         """Rendering the Table Manager should batch conflict lookups so we don't run one query per row."""
-        from sqlalchemy import event as sa_event  # pylint: disable=import-outside-toplevel
-
-        from app.extensions import db as _db  # pylint: disable=import-outside-toplevel
-
         with app.app_context():
             me = _make_me("Batched TM ME")
             other_me = _make_me("Other ME for batched TM")
@@ -761,7 +759,7 @@ class TestTableManagerConflictDetection:
                 assignment_selects.append(sql)
 
         with app.app_context():
-            engine = _db.engine
+            engine = db.engine
         sa_event.listen(engine, "before_execute", _before_execute)
         try:
             resp = admin_client.get(f"/master-events/{me_id}/table")

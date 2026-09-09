@@ -14,7 +14,8 @@ from flask_mail import Message
 
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db, mail
-from app.models.role import Role
+from app.models.master_event import MasterEvent
+from app.models.role import ROLE_PERMISSIONS, Role
 from app.models.settings import AppSettings, get_settings
 from app.models.user import UserAccount
 
@@ -173,8 +174,6 @@ def done() -> str:
 
 def _ensure_roles() -> None:
     """Idempotently create all roles."""
-    from app.models.role import ROLE_PERMISSIONS  # pylint: disable=import-outside-toplevel
-
     for role_name in ROLE_PERMISSIONS:
         if not db.session.scalar(db.select(Role).where(Role.name == role_name)):
             db.session.add(Role(name=role_name))
@@ -183,8 +182,6 @@ def _ensure_roles() -> None:
 
 def _ensure_general_me() -> None:
     """Idempotently create the built-in General master event."""
-    from app.models.master_event import MasterEvent  # pylint: disable=import-outside-toplevel
-
     if not db.session.scalar(db.select(MasterEvent).where(MasterEvent.is_general == sa.true())):
         db.session.add(
             MasterEvent(

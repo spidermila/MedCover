@@ -439,6 +439,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
+        # Keep the CLI's tailored installation error available when the optional package is absent.
         import openpyxl  # pylint: disable=import-outside-toplevel
     except ImportError:
         print(

@@ -3,7 +3,10 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import sqlalchemy as sa
+
 from app.digest.base import BaseBlock
+from app.models.event import Event, EventStatus
 
 
 class UpcomingEventsBlock(BaseBlock):
@@ -19,10 +22,6 @@ class UpcomingEventsBlock(BaseBlock):
     }
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
-        import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
-
-        from app.models.event import Event, EventStatus  # pylint: disable=import-outside-toplevel
-
         now = datetime.now(timezone.utc)
         days_ahead = int(config.get("days_ahead", 7))
         until = now + timedelta(days=days_ahead)

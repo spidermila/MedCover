@@ -3,9 +3,10 @@ import hashlib
 from datetime import datetime, timezone
 
 from cryptography.fernet import Fernet
-from flask import Flask, current_app
+from flask import Flask, current_app, g
 
 from app.extensions import db
+from app.extensions import mail as _mail
 
 
 def _fernet() -> Fernet:
@@ -151,8 +152,6 @@ class AppSettings(db.Model):  # type: ignore[misc]
         app.config["MAIL_DEFAULT_SENDER"] = self.smtp_default_sender
 
         # Reinitialise Flask-Mail so the cached _Mail state picks up new values
-        from app.extensions import mail as _mail  # pylint: disable=import-outside-toplevel
-
         _mail.init_app(app)
 
     def __repr__(self) -> str:
@@ -181,8 +180,6 @@ def get_settings() -> AppSettings:
         return row
 
     try:
-        from flask import g  # pylint: disable=import-outside-toplevel
-
         if not hasattr(g, "_medcover_settings"):
             g._medcover_settings = _fetch()
         return g._medcover_settings

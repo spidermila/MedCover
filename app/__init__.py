@@ -1,5 +1,7 @@
 import os
 import secrets
+import socket
+import sys
 import time as _time
 from datetime import datetime, timedelta, timezone
 from itertools import groupby as itertools_groupby
@@ -7,6 +9,8 @@ from operator import attrgetter
 
 import click
 from flask import Flask, g, redirect, render_template, request, url_for
+from flask_mail import Message
+from sqlalchemy import inspect as sa_inspect
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from .config import config_by_name
@@ -15,6 +19,9 @@ from .extensions import csrf, db, login_manager
 from .extensions import mail as _flask_mail
 from .extensions import migrate
 from .models.assignment import Assignment
+from .models.event import Event
+from .models.settings import get_settings
+from .utils import get_app_tz
 
 # Computed once at import/startup; used as a cache-busting version for static files.
 _STARTUP_TS: str = str(int(_time.time()))
@@ -53,7 +60,7 @@ def create_app(
 
     attach_msi_token_auth(app, db)
 
-    # Import models here so Flask-Migrate discovers all tables
+    # Import only after db.init_app so Flask-Migrate sees the complete model registry.
     with app.app_context():
         from . import models  # noqa: F401 # pylint: disable=import-outside-toplevel
 
@@ -61,14 +68,13 @@ def create_app(
         # handles HTTP requests and therefore never triggers before_request) gets
         # a correctly configured Flask-Mail on startup.
         try:
-            from .models.settings import get_settings  # pylint: disable=import-outside-toplevel
-
             _settings = get_settings()
             if _settings and _settings.smtp_configured:
                 _settings.apply_to_app(app)
         except Exception:
             pass  # DB not ready yet (first migration run)
 
+    # Routes import this module's app factory, so load them only after it is defined.
     from .routes import register_blueprints  # pylint: disable=import-outside-toplevel
 
     register_blueprints(app)
@@ -78,9 +84,7 @@ def create_app(
     def _inject_app_config() -> dict:
         """Inject app config and feature flags into all templates."""
         try:
-            from .models.settings import get_settings as _gs  # pylint: disable=import-outside-toplevel
-
-            _s = _gs()
+            _s = get_settings()
             feedback_enabled = _s.feedback_enabled
         except Exception:
             feedback_enabled = True
@@ -97,8 +101,6 @@ def create_app(
             return "—"
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        from .utils import get_app_tz  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
         return dt.astimezone(get_app_tz()).strftime(fmt)
 
     @app.template_filter("localdate")
@@ -115,9 +117,7 @@ def create_app(
     def midpoint_iso_filter(event: object) -> str:
         """Return the midpoint between event.start_datetime and event.end_datetime
         formatted as 'YYYY-MM-DDTHH:MM' for a datetime-local input."""
-        from app.models.event import Event as _Event  # pylint: disable=import-outside-toplevel
-
-        if not isinstance(event, _Event):
+        if not isinstance(event, Event):
             return ""
         start = event.start_datetime
         end = event.end_datetime
@@ -126,8 +126,6 @@ def create_app(
         if end.tzinfo is None:
             end = end.replace(tzinfo=timezone.utc)
         mid = start + (end - start) / 2
-        from .utils import get_app_tz  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
         return mid.astimezone(get_app_tz()).strftime("%Y-%m-%dT%H:%M")
 
     _CZECH_DAY_ABBR = ["po", "út", "st", "čt", "pá", "so", "ne"]
@@ -139,8 +137,6 @@ def create_app(
             return ""
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        from .utils import get_app_tz  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
         return _CZECH_DAY_ABBR[dt.astimezone(get_app_tz()).weekday()]
 
     @app.template_filter("cznum")
@@ -259,8 +255,6 @@ def create_app(
         Skips static files, the setup blueprint itself, and auth routes
         (so the app doesn't get into a redirect loop before the DB is seeded).
         """
-        from .models.settings import get_settings  # pylint: disable=import-outside-toplevel
-
         # Allow static files, setup pages, and health probe through unconditionally
         if request.endpoint and (
             request.endpoint.startswith("setup.") or request.endpoint == "static" or request.endpoint == "main.health"
@@ -316,10 +310,6 @@ def register_cli_commands(app: Flask) -> None:
         that updated alembic_version but failed to apply the DDL).
         Exits non-zero and prints a clear error if anything is missing.
         """
-        import sys  # pylint: disable=import-outside-toplevel
-
-        from sqlalchemy import inspect as sa_inspect  # pylint: disable=import-outside-toplevel
-
         inspector = sa_inspect(db.engine)
         existing_tables = set(inspector.get_table_names())
 
@@ -365,15 +355,6 @@ def register_cli_commands(app: Flask) -> None:
         Example:
             docker compose exec web flask send-test-email <your-address@domain.com>
         """
-        import socket  # pylint: disable=import-outside-toplevel
-        import sys  # pylint: disable=import-outside-toplevel
-        import time  # pylint: disable=import-outside-toplevel
-
-        from flask_mail import Message  # pylint: disable=import-outside-toplevel
-
-        from app.extensions import mail as _flask_mail  # pylint: disable=import-outside-toplevel
-        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
-
         settings = get_settings()
         if not settings.smtp_configured:
             print("✘ SMTP is not configured in AppSettings. Run the setup wizard first.")
@@ -391,10 +372,10 @@ def register_cli_commands(app: Flask) -> None:
 
         # TCP reachability check
         print(f"1/2  Checking TCP connectivity to {settings.smtp_server}:{settings.smtp_port} …", end=" ", flush=True)
-        t0 = time.monotonic()
+        t0 = _time.monotonic()
         try:
             with socket.create_connection((settings.smtp_server, settings.smtp_port), timeout=5):
-                ms = int((time.monotonic() - t0) * 1000)
+                ms = int((_time.monotonic() - t0) * 1000)
                 print(f"OK ({ms} ms)")
         except (TimeoutError, OSError) as exc:
             print(f"FAILED — {exc}")
@@ -402,7 +383,7 @@ def register_cli_commands(app: Flask) -> None:
 
         # Actual SMTP send
         print("2/2  Sending test email via SMTP …", end=" ", flush=True)
-        t0 = time.monotonic()
+        t0 = _time.monotonic()
         try:
             msg = Message(
                 subject="MedCover — Test SMTP",
@@ -416,10 +397,10 @@ def register_cli_commands(app: Flask) -> None:
                 ),
             )
             _flask_mail.send(msg)
-            ms = int((time.monotonic() - t0) * 1000)
+            ms = int((_time.monotonic() - t0) * 1000)
             print(f"OK ({ms} ms)")
             print(f"\n✔ Test email successfully sent to {to_email}")
         except Exception as exc:  # noqa: BLE001
-            ms = int((time.monotonic() - t0) * 1000)
+            ms = int((_time.monotonic() - t0) * 1000)
             print(f"FAILED ({ms} ms) — {exc}")
             sys.exit(1)

@@ -47,6 +47,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(calendar_bp)
 
     if app.config.get("DEV_LOGIN_ENABLED"):
+        # Do not load development-only authentication routes in production.
         from .dev import dev_bp  # pylint: disable=import-outside-toplevel
 
         app.register_blueprint(dev_bp)

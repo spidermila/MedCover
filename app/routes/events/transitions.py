@@ -10,7 +10,7 @@ import app.mail as mailer
 from app.extensions import db
 from app.models.event import Event, EventStatus
 from app.models.user import UserAccount
-from app.utils import audit, get_or_404, require_permission
+from app.utils import audit, get_app_tz, get_or_404, require_permission
 
 from . import events_bp
 from ._helpers import TRANSITIONS, copy_equipment, copy_spots_with_assignments
@@ -155,8 +155,6 @@ def split_event(event_id: int) -> Response:
         return redirect(url_for("events.detail", event_id=event_id))
 
     try:
-        from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
-
         tz = get_app_tz()
         split_dt = datetime.fromisoformat(raw_dt).replace(tzinfo=tz)
     except ValueError:

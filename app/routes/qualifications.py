@@ -14,7 +14,16 @@ from flask_login import login_required
 from sqlalchemy import collate
 
 from app.extensions import db
-from app.models.qualification import Qualification
+from app.models.event import (
+    Event,
+    EventSpot,
+    EventSpotTemplate,
+    EventStatus,
+    EventTemplate,
+    spot_qualifications,
+    spot_template_qualifications,
+)
+from app.models.qualification import Qualification, user_qualifications
 from app.utils import CS_COLLATION, audit, diff_changes, get_or_404, require_permission
 
 qualifications_bp = Blueprint("qualifications", __name__, url_prefix="/qualifications")
@@ -163,14 +172,6 @@ def delete_confirm(cred_id: int) -> str | Response:
         flash("Tato kvalifikace již byla smazána.", "warning")
         return redirect(url_for("qualifications.index"))
 
-    from app.models.event import (  # pylint: disable=import-outside-toplevel
-        Event,
-        EventSpot,
-        EventSpotTemplate,
-        EventStatus,
-        EventTemplate,
-    )
-
     _FIXED = (EventStatus.COMPLETED, EventStatus.CANCELLED)
 
     # Active spots (editable events) — will be unlinked
@@ -225,15 +226,6 @@ def delete(cred_id: int) -> Response:
     if cred.is_deleted:
         flash("Tato kvalifikace již byla smazána.", "warning")
         return redirect(url_for("qualifications.index"))
-
-    from app.models.event import (  # pylint: disable=import-outside-toplevel
-        Event,
-        EventSpot,
-        EventStatus,
-        spot_qualifications,
-        spot_template_qualifications,
-    )
-    from app.models.qualification import user_qualifications  # pylint: disable=import-outside-toplevel
 
     _FIXED = (EventStatus.COMPLETED, EventStatus.CANCELLED)
     qual_name = cred.name

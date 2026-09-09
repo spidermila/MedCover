@@ -4,10 +4,17 @@ import html
 import logging
 from typing import Any
 
+import sqlalchemy as sa
 from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from app.digest.registry import BLOCK_REGISTRY
+from app.digest.renderer import render_digest
 from app.extensions import db
+from app.mail import send_admin_digest, user_can_receive_notification
+from app.models.digest import DigestBlock, get_digest_schedule
+from app.models.settings import get_settings
+from app.models.user import UserAccount
 
 log = logging.getLogger(__name__)
 
@@ -35,10 +42,6 @@ def _require_digest_perm() -> None:
 @login_required
 def index() -> str:
     _require_digest_perm()
-    from app.digest.registry import BLOCK_REGISTRY  # pylint: disable=import-outside-toplevel
-    from app.models.digest import get_digest_schedule  # pylint: disable=import-outside-toplevel
-    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
-
     schedule = get_digest_schedule()
     return render_template(
         "admin/digest/index.html",
@@ -54,8 +57,6 @@ def index() -> str:
 @login_required
 def save() -> Response:
     _require_digest_perm()
-    from app.models.digest import get_digest_schedule  # pylint: disable=import-outside-toplevel
-
     schedule = get_digest_schedule()
 
     client_version = request.form.get("version", type=int, default=0)
@@ -85,11 +86,6 @@ _MAX_INSTANCES_PER_TYPE = 5
 @login_required
 def add_block() -> Response:
     _require_digest_perm()
-    import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
-
-    from app.digest.registry import BLOCK_REGISTRY  # pylint: disable=import-outside-toplevel
-    from app.models.digest import DigestBlock, get_digest_schedule  # pylint: disable=import-outside-toplevel
-
     block_type = request.form.get("block_type", "").strip()
     if block_type not in BLOCK_REGISTRY:
         flash("Neplatný typ bloku.", "danger")
@@ -138,11 +134,6 @@ def add_block() -> Response:
 @login_required
 def save_block(block_id: int) -> Response:
     _require_digest_perm()
-    import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
-
-    from app.digest.registry import BLOCK_REGISTRY  # pylint: disable=import-outside-toplevel
-    from app.models.digest import DigestBlock, get_digest_schedule  # pylint: disable=import-outside-toplevel
-
     schedule = get_digest_schedule()
     # SQLAlchemy's mssql dialect silently drops .with_for_update(); use an
     # explicit T-SQL row-level UPDLOCK to serialize concurrent edits.
@@ -179,11 +170,6 @@ def save_block(block_id: int) -> Response:
 @login_required
 def delete_block(block_id: int) -> Response:
     _require_digest_perm()
-    import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
-
-    from app.digest.registry import BLOCK_REGISTRY  # pylint: disable=import-outside-toplevel
-    from app.models.digest import DigestBlock, get_digest_schedule  # pylint: disable=import-outside-toplevel
-
     schedule = get_digest_schedule()
     block = db.session.scalar(
         sa.select(DigestBlock).where(
@@ -256,10 +242,6 @@ def _merge_block_config(block_type: str, config: dict[str, object], form: Any) -
 @login_required
 def toggle_block(block_id: int) -> dict[str, object]:
     _require_digest_perm()
-    import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
-
-    from app.models.digest import DigestBlock, get_digest_schedule  # pylint: disable=import-outside-toplevel
-
     schedule = get_digest_schedule()
     # SQLAlchemy's mssql dialect silently drops .with_for_update(); use an
     # explicit T-SQL row-level UPDLOCK to serialize concurrent toggles.
@@ -287,10 +269,6 @@ def toggle_block(block_id: int) -> dict[str, object]:
 @login_required
 def reorder_blocks() -> dict[str, bool]:
     _require_digest_perm()
-    import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
-
-    from app.models.digest import DigestBlock  # pylint: disable=import-outside-toplevel
-
     ids: list[int] = request.get_json(silent=True) or []
     if len(ids) > 50:
         abort(400)
@@ -307,8 +285,6 @@ def reorder_blocks() -> dict[str, bool]:
 @login_required
 def preview() -> Response:
     _require_digest_perm()
-
-    from app.digest.renderer import render_digest  # pylint: disable=import-outside-toplevel
 
     digest_html = render_digest(db.session)
     # Sandbox the digest content in an iframe to prevent XSS from admin-controlled
@@ -330,10 +306,6 @@ def preview() -> Response:
 @login_required
 def send_test() -> Response:
     _require_digest_perm()
-    from app.digest.renderer import render_digest  # pylint: disable=import-outside-toplevel
-    from app.mail import send_admin_digest  # pylint: disable=import-outside-toplevel
-    from app.models.digest import get_digest_schedule  # pylint: disable=import-outside-toplevel
-
     email = request.form.get("test_email", "").strip()
     if not email:
         flash("Zadejte e-mailovou adresu.", "danger")
@@ -354,13 +326,6 @@ def send_test() -> Response:
 @login_required
 def send_now() -> Response:
     _require_digest_perm()
-    import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
-
-    from app.digest.renderer import render_digest  # pylint: disable=import-outside-toplevel
-    from app.mail import send_admin_digest, user_can_receive_notification  # pylint: disable=import-outside-toplevel
-    from app.models.digest import get_digest_schedule  # pylint: disable=import-outside-toplevel
-    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
-
     schedule = get_digest_schedule()
     html = render_digest(db.session)
 

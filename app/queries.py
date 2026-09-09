@@ -23,6 +23,8 @@ from app.models.equipment import (
 )
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.qualification import Qualification, qualification_parents
+from app.models.qualification import user_qualifications as uq_table
 from app.models.user import UserAccount
 from app.utils import CS_COLLATION
 
@@ -48,9 +50,6 @@ def active_users_list() -> Sequence[UserAccount]:
 
 def rp_eligible_users_list() -> list[UserAccount]:
     """Return active users who hold at least one qualification with can_be_rp=True."""
-    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
-    from app.models.qualification import user_qualifications as uq_table  # pylint: disable=import-outside-toplevel
-
     # Subquery to get distinct user IDs (avoids PG DISTINCT + ORDER BY conflict)
     eligible_ids = (
         db.select(UserAccount.id)
@@ -100,8 +99,6 @@ def user_fillable_qual_ids(user: UserAccount) -> set[int]:
     relationship.  They are excluded from the returned set and from the user's own
     qualifications, so a deleted qualification is never itself fillable.
     """
-    from app.models.qualification import Qualification, qualification_parents  # pylint: disable=import-outside-toplevel
-
     quals: list[tuple[int, bool]] = [
         (qid, bool(deleted))
         for qid, deleted in db.session.execute(db.select(Qualification.id, Qualification.is_deleted)).all()

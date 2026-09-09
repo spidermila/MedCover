@@ -23,6 +23,7 @@ login_manager.login_message_category = "warning"
 
 @login_manager.user_loader
 def load_user(user_id: str) -> UserAccount | None:
+    # Import after extension construction: UserAccount imports this module's db object.
     from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
 
     try:
