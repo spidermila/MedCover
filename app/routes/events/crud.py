@@ -72,7 +72,7 @@ _VALID_SORT_COLS = {"start", "name", "status", "total", "rp"}
 def _parse_index_filters() -> dict:
     """Extract and validate all filter/sort params from the request query string."""
     show_archived = request.args.get("archived") == "1"
-    page = request.args.get("page", 1, type=int)
+    page = min(request.args.get("page", 1, type=int), 1_000_000)
 
     if "statuses" not in request.args:
         active_statuses = list(_DEFAULT_STATUSES)
