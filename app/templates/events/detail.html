@@ -169,6 +169,9 @@
         <h6 class="card-subtitle text-muted mb-2">Termín</h6>
         <p class="mb-1"><strong>Plánovaný začátek:</strong> {{ event.start_datetime | localdt }}</p>
         <p class="mb-0"><strong>Plánovaný konec:</strong> {{ event.end_datetime | localdt }}</p>
+        {% if event.event_type == EventType.TRAINING and event.planned_participants_count is not none %}
+          <p class="mb-0"><strong>Plánovaný počet účastníků:</strong> {{ event.planned_participants_count }}</p>
+        {% endif %}
         {% if event.assignments_open_datetime %}
           {% if event.assignments_open_datetime <= now %}
             <p class="mb-0 mt-1 small text-muted">Přihlášky otevřeny: {{ event.assignments_open_datetime | localdt }}</p>
@@ -186,9 +189,6 @@
             <p class="mb-0"><strong>Skutečný počet účastníků:</strong> {{ event.post_event_count }}</p>
           {% endif %}
         {% endif %}
-        {% endif %}
-        {% if event.event_type == EventType.TRAINING and event.planned_participants_count is not none %}
-          <p class="mb-0 mt-1"><strong>Plánovaný počet účastníků:</strong> {{ event.planned_participants_count }}</p>
         {% endif %}
       </div>
     </div>
