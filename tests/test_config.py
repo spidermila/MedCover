@@ -3,7 +3,11 @@
 import os
 from unittest.mock import patch
 
-from app.config import DevelopmentConfig, ProductionConfig
+from app.config import Config, DevelopmentConfig, ProductionConfig
+
+
+def test_database_pool_liveness_options():
+    assert Config.SQLALCHEMY_ENGINE_OPTIONS == {"pool_pre_ping": True, "pool_recycle": 1800}
 
 
 class TestDevelopmentConfigInitApp:

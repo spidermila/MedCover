@@ -14,6 +14,7 @@ _VERSION_FILE = pathlib.Path(__file__).parent.parent / "VERSION"
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "")
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "")
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True, "pool_recycle": 1800}
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT: int | None = (
