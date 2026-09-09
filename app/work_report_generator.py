@@ -33,6 +33,9 @@ from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.worksheet import Worksheet
 from PIL import Image as PILImage
 
+from app.extensions import db
+from app.models import Assignment, Event, EventSpot, EventStatus
+
 if TYPE_CHECKING:
     from app.models import UserAccount
 
@@ -280,9 +283,6 @@ def _write_cell(
 
 def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tuple[Decimal, list[str]]]:
     """Return {day: (total_hours, [event_names])} for the user's paid completed events."""
-    from app.extensions import db  # pylint: disable=import-outside-toplevel
-    from app.models import Assignment, Event, EventSpot, EventStatus  # pylint: disable=import-outside-toplevel
-
     period_start = datetime(year, month, 1, tzinfo=timezone.utc)
     last_day = calendar.monthrange(year, month)[1]
     period_end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)

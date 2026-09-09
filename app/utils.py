@@ -7,6 +7,12 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
+from flask import abort, url_for
+from flask_login import current_user
+
+from app.extensions import db
+from app.models.audit import AuditLogEntry
+from app.models.settings import get_settings
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -23,8 +29,6 @@ def get_app_tz() -> ZoneInfo:
     initial setup before the DB is seeded, or in CLI commands).
     """
     try:
-        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
-
         settings = get_settings()
         if settings and settings.timezone:
             return ZoneInfo(settings.timezone)
@@ -130,8 +134,6 @@ def safe_next(next_url: str | None, fallback: str | None = None) -> str:
 
     Use this **everywhere** the app redirects to a user-supplied URL.
     """
-    from flask import url_for  # pylint: disable=import-outside-toplevel
-
     _fallback = fallback or url_for("main.dashboard")
     if not next_url:
         return _fallback
@@ -152,11 +154,7 @@ def external_url_for(endpoint: str, **values: object) -> str:
     Falls back to Flask's built-in ``_external=True`` behaviour when no base URL is
     configured so that local / test environments still produce valid links.
     """
-    from flask import url_for  # pylint: disable=import-outside-toplevel
-
     try:
-        from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
-
         base: str | None = get_settings().app_base_url
     except Exception:
         base = None
@@ -195,11 +193,6 @@ def audit(
     The caller is responsible for committing. Use within a transaction so that
     the audit row is rolled back together with the business change on failure.
     """
-    from flask_login import current_user  # pylint: disable=import-outside-toplevel
-
-    from app.extensions import db  # pylint: disable=import-outside-toplevel
-    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
-
     db.session.add(
         AuditLogEntry(
             actor_id=current_user.id,
@@ -217,10 +210,6 @@ def get_or_404(model: type[T], pk: object) -> T:
 
     Standard idiom for view functions to resolve a URL parameter to an entity.
     """
-    from flask import abort  # pylint: disable=import-outside-toplevel
-
-    from app.extensions import db  # pylint: disable=import-outside-toplevel
-
     obj = db.session.get(model, pk)
     if obj is None:
         abort(404)
@@ -232,9 +221,6 @@ def require_permission(*codes: str) -> None:
 
     Call inline at the top of view functions that already use ``@login_required``.
     """
-    from flask import abort  # pylint: disable=import-outside-toplevel
-    from flask_login import current_user  # pylint: disable=import-outside-toplevel
-
     if not current_user.has_any_permission(*codes):
         abort(403)
 

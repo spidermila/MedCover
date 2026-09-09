@@ -3,7 +3,10 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import sqlalchemy as sa
+
 from app.digest.base import BaseBlock
+from app.models.audit import AuditLogEntry
 
 _ALL_ENTITY_TYPES = [
     "Event",
@@ -38,10 +41,6 @@ class AuditLogBlock(BaseBlock):
     }
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
-        import sqlalchemy as sa  # pylint: disable=import-outside-toplevel
-
-        from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
-
         hours = int(config.get("hours", 24))
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
         max_rows = int(config.get("max_rows", 50))

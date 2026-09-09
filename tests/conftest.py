@@ -8,6 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 import pyodbc
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 
 from app import create_app
 from app.extensions import db as _db
@@ -75,6 +76,7 @@ def pytest_configure(config: pytest.Config) -> None:
         _check_db_reachable(url)
         return
 
+    # Testcontainers is optional when TEST_DATABASE_URL supplies an existing database.
     from testcontainers.mssql import SqlServerContainer  # pylint: disable=import-outside-toplevel
 
     container = SqlServerContainer(
@@ -106,8 +108,6 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def _check_db_reachable(url: str) -> None:
     """Exit immediately with a clear message if the DB is not reachable."""
-    from sqlalchemy.exc import OperationalError  # pylint: disable=import-outside-toplevel
-
     try:
         engine = create_engine(url, connect_args={"connect_timeout": 5})
         with engine.connect() as conn:

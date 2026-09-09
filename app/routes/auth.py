@@ -5,10 +5,12 @@ from typing import Any
 
 from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-from app.config import LOGIN_LOCKOUT_MINUTES, LOGIN_MAX_ATTEMPTS
+from app.config import LOGIN_LOCKOUT_MINUTES, LOGIN_MAX_ATTEMPTS, RESET_TOKEN_MINUTES
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
+from app.mail import _base_context, _enqueue, send_account_activated
 from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
 from app.models.role import Role
@@ -23,11 +25,7 @@ _INVITE_SALT = "invite"
 
 def _send_mail(to: str, subject: str, template: str, **ctx: Any) -> None:
     """Render an HTML email template and enqueue it via the outbox."""
-    from flask import render_template as rt  # pylint: disable=import-outside-toplevel
-
-    from app.mail import _base_context, _enqueue  # pylint: disable=import-outside-toplevel
-
-    html_body = rt(template, **_base_context(), **ctx)
+    html_body = render_template(template, **_base_context(), **ctx)
     _enqueue(
         to,
         subject,
@@ -37,19 +35,11 @@ def _send_mail(to: str, subject: str, template: str, **ctx: Any) -> None:
 
 
 def _make_signed_token(payload: str, salt: str, max_age_seconds: int) -> str:
-    from itsdangerous import URLSafeTimedSerializer  # pylint: disable=import-outside-toplevel
-
     s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
     return s.dumps(payload, salt=salt)
 
 
 def _load_signed_token(token: str, salt: str, max_age_seconds: int) -> str | None:
-    from itsdangerous import (  # pylint: disable=import-outside-toplevel
-        BadSignature,
-        SignatureExpired,
-        URLSafeTimedSerializer,
-    )
-
     s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
     try:
         return s.loads(token, salt=salt, max_age=max_age_seconds)
@@ -126,8 +116,6 @@ def forgot_password() -> str | Response:
         # Always show the same message to prevent user enumeration.
         flash("Pokud je e-mail registrován, byl odeslán odkaz pro obnovení hesla.", "info")
         if user and not user.is_archived:
-            from app.config import RESET_TOKEN_MINUTES  # pylint: disable=import-outside-toplevel
-
             nonce = secrets.token_hex(16)
             user.password_reset_nonce = nonce
             token = _make_signed_token(f"{user.id}:{nonce}", _RESET_SALT, RESET_TOKEN_MINUTES * 60)
@@ -157,8 +145,6 @@ def forgot_password() -> str | Response:
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token: str) -> str | Response:
-    from app.config import RESET_TOKEN_MINUTES  # pylint: disable=import-outside-toplevel
-
     payload = _load_signed_token(token, _RESET_SALT, RESET_TOKEN_MINUTES * 60)
     if not payload or ":" not in payload:
         return render_template("auth/reset_invalid.html"), 400
@@ -252,8 +238,6 @@ def register(token: str) -> str | Response:
                 )
             )
             db.session.commit()
-            from app.mail import send_account_activated  # pylint: disable=import-outside-toplevel
-
             send_account_activated(user)
             flash("Registrace dokončena. Nyní se můžete přihlásit.", "success")
             return redirect(url_for("auth.login"))

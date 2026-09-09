@@ -30,11 +30,14 @@ from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.qualification import Qualification
+from app.models.user import UserAccount
 from app.queries import (
     active_users_list,
     serialize_conflicts_for_template,
     user_conflicts_across_events,
 )
+from app.routes.assignments import do_assign_user, do_unassign_user
 from app.utils import (
     CS_COLLATION,
     audit,
@@ -355,8 +358,6 @@ def _build_table_rows(events: list) -> tuple[list[dict], int]:
 
 def _compute_eligible_users(rows: list[dict], all_users: list) -> None:
     """Annotate each row with ``eligible_users`` list (users who can fill those spots)."""
-    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
-
     all_quals = db.session.scalars(db.select(Qualification).where(Qualification.is_deleted == sa.false())).all()
     parents_map: dict[int, list[int]] = {q.id: [p.id for p in q.parents] for q in all_quals}
 
@@ -477,9 +478,6 @@ def table_manager(me_id: int) -> str:
 @master_events_bp.post("/<int:me_id>/table/assign/<int:spot_id>")
 @login_required
 def table_assign(me_id: int, spot_id: int) -> Response:
-    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
-    from app.routes.assignments import do_assign_user  # pylint: disable=import-outside-toplevel
-
     # Pre-check: load spot & event for ME ownership and permission check
     spot = db.session.get(EventSpot, spot_id)
     if spot is None:
@@ -516,8 +514,6 @@ def table_assign(me_id: int, spot_id: int) -> Response:
 @master_events_bp.post("/<int:me_id>/table/unassign/<int:assignment_id>")
 @login_required
 def table_unassign(me_id: int, assignment_id: int) -> Response:
-    from app.routes.assignments import do_unassign_user  # pylint: disable=import-outside-toplevel
-
     assignment = db.session.get(Assignment, assignment_id)
     if assignment is None:
         return jsonify({"ok": False, "error": "Přiřazení nenalezeno."}), 404
@@ -562,9 +558,6 @@ def _handle_advance_status(event: Event) -> Response:
         diff_changes({"status": before_status}, {"status": target_status.value}),
     )
     db.session.commit()
-    import app.mail as mailer  # pylint: disable=import-outside-toplevel
-    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
-
     active_users = db.session.scalars(
         db.select(UserAccount).where(UserAccount.is_active == sa.true()).where(UserAccount.is_archived == sa.false())
     ).all()
@@ -723,8 +716,6 @@ def table_event_update(me_id: int, event_id: int) -> Response:
 def table_spots_update(me_id: int) -> Response:
     """Add or remove spots for a given (event, qualification) row."""
     require_permission("event.edit")
-
-    from app.models.qualification import Qualification  # pylint: disable=import-outside-toplevel
 
     event_id_str = request.form.get("event_id", "").strip()
     qual_ids_json = request.form.get("qual_ids_json", "[]").strip()

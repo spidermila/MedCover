@@ -9,9 +9,11 @@ import sqlalchemy as sa
 from flask import Blueprint, Response, flash, g, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+import app.mail as mailer
 from app.extensions import db
 from app.mail import NOTIFICATION_CATALOG
-from app.models.event import Event
+from app.models.assignment import Assignment
+from app.models.event import Event, EventSpot
 from app.models.outbox import OutboxEmail
 from app.models.settings import get_settings
 from app.utils import audit, diff_changes, get_app_tz, require_permission
@@ -210,8 +212,6 @@ def test_notification(code: str) -> Response:
         flash("Nepodařilo se najít žádnou akci pro zkušební oznámení.", "warning")
         return redirect(url_for("notifications.index"))
 
-    import app.mail as mailer  # pylint: disable=import-outside-toplevel
-
     send_immediately_raw = request.form.get("send_immediately", "0")
     send_immediately = send_immediately_raw == "1"
 
@@ -239,15 +239,10 @@ def test_notification(code: str) -> Response:
             fake_changes: dict = {"description": ["—", "Zkušební oznámení"]}
             mailer.send_event_changed(current_user, event, fake_changes)
         elif code == "unfilled_reminder":
-            from app.models.event import EventSpot  # pylint: disable=import-outside-toplevel
-
             spots = db.session.scalars(db.select(EventSpot).where(EventSpot.event_id == event.id).limit(5)).all()
             mailer.send_unfilled_spots_reminder(current_user, event, unfilled=list(spots) or [None])
         elif code == "debriefing_invitation":
             # Build a minimal stand-in assignment for the debriefing URL
-            from app.models.assignment import Assignment  # pylint: disable=import-outside-toplevel
-            from app.models.event import EventSpot  # pylint: disable=import-outside-toplevel
-
             fake_assignment = db.session.scalar(
                 db.select(Assignment)
                 .join(EventSpot, Assignment.spot_id == EventSpot.id)

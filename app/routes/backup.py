@@ -14,9 +14,11 @@ from flask_login import current_user, login_required
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
+from app.backup import export_to_zip, list_backups, prune_old_backups, restore_from_zip
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.settings import get_settings
+from app.models.user import UserAccount
 from app.utils import audit, require_permission
 
 log = logging.getLogger(__name__)
@@ -53,8 +55,6 @@ def _safe_backup_path(filename: str) -> Path:
 def index() -> str:
     require_permission("admin.view")
 
-    from app.backup import list_backups  # pylint: disable=import-outside-toplevel
-
     backup_dir = _resolve_backup_dir()
     backups = list_backups(backup_dir)
     settings = get_settings()
@@ -73,8 +73,6 @@ def index() -> str:
 @login_required
 def run_backup() -> Response:
     require_permission("backup.run")
-
-    from app.backup import export_to_zip, prune_old_backups  # pylint: disable=import-outside-toplevel
 
     backup_dir = _resolve_backup_dir()
     settings = get_settings()
@@ -171,9 +169,6 @@ def upload_restore() -> Response:
 
 def _do_restore(zip_path: Path, actor_id: int | None) -> None:
     """Run restore_from_zip and flash success/error."""
-    from app.backup import restore_from_zip  # pylint: disable=import-outside-toplevel
-    from app.models.user import UserAccount  # pylint: disable=import-outside-toplevel
-
     try:
         restore_from_zip(zip_path)
         # AuditLogEntry written *after* restore — session was wiped and reloaded.
