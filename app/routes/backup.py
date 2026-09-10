@@ -32,7 +32,7 @@ backup_bp = Blueprint("backup", __name__, url_prefix="/admin/backup")
 _BACKUP_FILENAME_RE = re.compile(r"^medcover_backup_\d{8}_\d{6}_\d+(?:_UTC)?\.zip$")
 
 
-def _resolve_backup_dir() -> Path:
+def _backup_dir() -> Path:
     return Path(get_settings().backup_dir)
 
 
@@ -40,7 +40,7 @@ def _safe_backup_path(filename: str) -> Path:
     """Return absolute path for *filename*, raising 404 on invalid/traversal names."""
     if not _BACKUP_FILENAME_RE.match(filename):
         abort(404)
-    path = _resolve_backup_dir() / filename
+    path = _backup_dir() / filename
     if not path.exists():
         abort(404)
     return path
@@ -54,7 +54,7 @@ def _safe_backup_path(filename: str) -> Path:
 def index() -> str:
     require_permission("admin.view")
 
-    backup_dir = _resolve_backup_dir()
+    backup_dir = _backup_dir()
     backups = list_backups(backup_dir)
     settings = get_settings()
     return render_template(
@@ -73,7 +73,7 @@ def index() -> str:
 def run_backup() -> Response:
     require_permission("backup.run")
 
-    backup_dir = _resolve_backup_dir()
+    backup_dir = _backup_dir()
     settings = get_settings()
     try:
         zip_path = export_to_zip(backup_dir)
@@ -150,7 +150,7 @@ def upload_restore() -> Response:
         return redirect(url_for("backup.index"))
 
     # Save uploaded file to a temp location inside backup_dir then restore.
-    backup_dir = _resolve_backup_dir()
+    backup_dir = _backup_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = backup_dir / f"_upload_{secure_filename(file.filename)}"
     try:

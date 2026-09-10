@@ -13,7 +13,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from app.backup import export_to_zip, list_backups, prune_old_backups
+from app.backup import export_to_zip, prune_old_backups
 from app.digest.renderer import render_digest
 from app.mail import send_admin_digest, send_unfilled_spots_reminder
 from app.models.audit import AuditLogEntry
@@ -187,9 +187,6 @@ def _record_failed_scheduled_backup(db_session: Any, exc: BaseException, today_l
 
     Always returns False so callers can ``return`` it directly.
     """
-    from app.models.audit import AuditLogEntry  # pylint: disable=import-outside-toplevel
-    from app.models.settings import get_settings  # pylint: disable=import-outside-toplevel
-
     log.error("Scheduled backup failed: %s", exc, exc_info=True)
     # The export reads through db_session; roll back before writing the audit
     # row so a session left dirty by the failure can't take the bookkeeping
