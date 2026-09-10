@@ -47,3 +47,14 @@ def test_exporter_is_started_only_once(monkeypatch):
     assert configure_telemetry() is True
     assert configure_telemetry() is False
     assert len(calls) == 1
+
+
+def test_missing_package_disables_telemetry(monkeypatch, caplog):
+    """A connection string without the telemetry deps installed must not break startup."""
+    monkeypatch.setitem(sys.modules, "azure.monitor.opentelemetry", None)
+    monkeypatch.setattr(app_package, "_telemetry_configured", False)
+    monkeypatch.setenv(ENV_VAR, "InstrumentationKey=00000000-0000-0000-0000-000000000000")
+
+    with caplog.at_level("WARNING"):
+        assert configure_telemetry() is False
+    assert "azure-monitor-opentelemetry is not installed" in caplog.text

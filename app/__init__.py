@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 import time as _time
@@ -37,11 +38,20 @@ def configure_telemetry() -> bool:
     if _telemetry_configured or not os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"):
         return False
 
-    # Imported lazily: the package is only installed/needed where telemetry runs,
-    # and importing the OpenTelemetry SDK is not free.
-    from azure.monitor.opentelemetry import (  # pylint: disable=import-outside-toplevel
-        configure_azure_monitor,
-    )
+    # Imported lazily: the OpenTelemetry stack ships in requirements-telemetry.txt,
+    # which only the container image installs, and importing the SDK is not free.
+    try:
+        from azure.monitor.opentelemetry import (  # pylint: disable=import-outside-toplevel
+            configure_azure_monitor,
+        )
+    except ImportError:
+        # Connection string set in an environment without the telemetry deps
+        # (a local venv, CI): run without telemetry rather than refusing to start.
+        logging.getLogger(__name__).warning(
+            "APPLICATIONINSIGHTS_CONNECTION_STRING is set but "
+            "azure-monitor-opentelemetry is not installed; telemetry is disabled."
+        )
+        return False
 
     configure_azure_monitor()  # reads the connection string from the environment
     _telemetry_configured = True
