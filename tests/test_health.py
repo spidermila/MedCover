@@ -1,5 +1,9 @@
 """Tests for the /health endpoint."""
 
+from unittest.mock import patch
+
+from app.extensions import db
+
 
 def test_health_returns_200(client):
     response = client.get("/health")
@@ -31,3 +35,17 @@ def test_health_db_ok_returns_ok_status(client):
     data = response.get_json()
     # In a test environment with a working DB, status should be 'ok'
     assert data["status"] == "ok"
+
+
+def test_setup_guard_rolls_back_after_settings_db_error(app):
+    """A swallowed setup lookup failure must not poison the request session."""
+    setup_guard = next(fn for fn in app.before_request_funcs[None] if fn.__name__ == "_setup_guard")
+
+    with app.test_request_context("/"):
+        with (
+            patch("app.models.settings.get_settings", side_effect=Exception("DB unavailable")),
+            patch.object(db.session, "rollback") as rollback,
+        ):
+            assert setup_guard() is None
+
+    rollback.assert_called_once_with()
