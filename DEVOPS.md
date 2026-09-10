@@ -120,6 +120,7 @@ MedCover/
 ├── .dockerignore
 ├── requirements.txt            # Production dependencies (compiled from .in files)
 ├── requirements-dev.txt        # Dev/test extras (compiled from .in files)
+├── requirements-telemetry.txt  # Azure Monitor/OpenTelemetry deps — image only
 ├── requirements-e2e.txt        # E2E test deps: pytest-playwright
 ├── Makefile                    # Shortcuts: make e2e, make test
 ├── tox.ini                     # tox envs: py314 (unit), e2e (playwright)
@@ -182,7 +183,8 @@ docker compose exec web flask db upgrade
 ### Run tests
 
 Tests run on the **host** in a local Python 3.14 virtualenv. The application
-image (`Dockerfile`) installs only `requirements.txt` (production), so the
+image (`Dockerfile`) installs only `requirements.txt` plus
+`requirements-telemetry.txt` (production), so the
 running `web`/`scheduler` containers do **not** contain pytest/tox — running
 the suite inside them does not work. CI follows the same host-based approach
 (see `.github/workflows/ci.yml`).
@@ -385,8 +387,9 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+COPY requirements.txt requirements-telemetry.txt ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
+    && pip install --no-cache-dir --require-hashes -r requirements-telemetry.txt
 
 COPY . .
 
@@ -420,9 +423,11 @@ Dependencies are managed with **pip-tools** (`.in` → `.txt` compilation with h
 | `requirements.in` | Top-level production dependencies |
 | `requirements-dev.in` | Dev/test extras (extends production) |
 | `requirements-e2e.in` | Playwright E2E test deps |
+| `requirements-telemetry.in` | Azure Monitor exporter — installed in the image only, never locally or in CI |
 | `requirements.txt` | Compiled lock file with hashes (committed) |
 | `requirements-dev.txt` | Compiled dev lock file with hashes (committed) |
 | `requirements-e2e.txt` | Compiled E2E lock file with hashes (committed) |
+| `requirements-telemetry.txt` | Compiled telemetry lock file with hashes (committed); compiled with `requirements.txt` as a constraint so shared packages cannot drift to a second version |
 
 ### Adding or upgrading a dependency
 
@@ -452,6 +457,7 @@ Copy `.env.example` to `.env` for local development. Never commit `.env`.
 | `FLASK_ENV` | `development` or `production` | `development` |
 | `SECRET_KEY` | Flask session secret — generate a strong random value | `openssl rand -hex 32` |
 | `DATABASE_URL` | MSSQL connection string | `mssql+pyodbc://medcover:Dev_Password1!@db:1433/medcover_dev?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes` |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional. When set, the app exports OpenTelemetry traces/metrics to Azure Monitor. Unset (local, CI) means no telemetry. | supplied by the hosting environment |
 
 > **Email / SMTP:** SMTP credentials are configured through the web UI setup wizard on first run and stored Fernet-encrypted in the `app_settings` database table. No `MAIL_*` environment variables are required.
 

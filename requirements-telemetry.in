@@ -1,0 +1,9 @@
+# MedCover telemetry dependencies — installed in the container image only.
+# Edit this file, then run: scripts/compile_requirements.sh
+# to regenerate requirements-telemetry.txt
+#
+# Kept out of requirements.in so local development and CI do not install the
+# OpenTelemetry stack. The app factory imports it lazily and skips telemetry
+# entirely when APPLICATIONINSIGHTS_CONNECTION_STRING is unset.
+
+azure-monitor-opentelemetry
