@@ -36,6 +36,7 @@ echo "==> Compiling all requirements files ..."
     pip install --quiet pip-tools &&
     pip-compile --upgrade --generate-hashes --output-file=requirements.txt requirements.in &&
     pip-compile --upgrade --generate-hashes --output-file=requirements-dev.txt requirements-dev.in &&
+    pip-compile --upgrade --generate-hashes -c requirements.txt --output-file=requirements-telemetry.txt requirements-telemetry.in &&
     pip-compile --upgrade --generate-hashes --output-file=requirements-e2e.txt requirements-e2e.in
   "
 
