@@ -908,7 +908,7 @@ class TestScheduledBackupFailureHandling:
                 calls.append(1)
                 raise OSError("no space left on device")
 
-            monkeypatch.setattr("app.backup.export_to_zip", boom)
+            monkeypatch.setattr("app.scheduler_tasks.export_to_zip", boom)
 
             # January: Europe/Prague = UTC+1, so 01:00 UTC = 02:00 local.
             assert run_scheduled_backup(_db.session, now=datetime(2026, 1, 1, 1, 0, tzinfo=timezone.utc)) is False
