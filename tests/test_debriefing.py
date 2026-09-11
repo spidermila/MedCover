@@ -1,6 +1,7 @@
 """Tests for the debriefing blueprint — redesigned two-part form, final submission."""
 
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
@@ -8,6 +9,7 @@ from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.master_event import MasterEvent
 from app.models.role import Role
+from app.routes.debriefing import PER_PAGE
 from tests.conftest import _login, _make_user
 
 _ASSIGNED_EMAIL = "assigned_member@test.com"
@@ -487,3 +489,166 @@ class TestDebriefingEventTypes:
         assert resp.status_code == 200
         # RP section should not appear for PRESENTATION
         assert "Skutečný začátek".encode() not in resp.data
+
+
+# ── /debriefing/manage pagination ─────────────────────────────────────────────
+
+
+def _make_completed_events(app, count: int, *, year: int = 2024, days_apart: int = 1) -> list[str]:
+    """Create `count` completed events and return their names ordered newest-first
+    (the order /debriefing/manage renders them in). With `days_apart=0` every event
+    starts at the same instant, so only the id tiebreaker keeps the order total."""
+    with app.app_context():
+        me = MasterEvent(name="Pagination ME")
+        db.session.add(me)
+        db.session.flush()
+        creator = _make_user("pager_creator@test.com", "Pager Creator", Role.ADMIN)
+
+        names = []
+        for i in range(count):
+            name = f"Stránkovaná akce {i:03d}"
+            names.append(name)
+            start = datetime(year, 1, 1, 10, 0, tzinfo=timezone.utc) + timedelta(days=i * days_apart)
+            db.session.add(
+                Event(
+                    name=name,
+                    master_event_id=me.id,
+                    start_datetime=start,
+                    end_datetime=start + timedelta(hours=4),
+                    status=EventStatus.COMPLETED,
+                    created_by_id=creator.id,
+                )
+            )
+        db.session.commit()
+    return list(reversed(names))
+
+
+def _rendered_names(resp, names: list[str]) -> list[str]:
+    """Names from `names` present in the response, in render order."""
+    html = resp.get_data(as_text=True)
+    found = [(html.index(n), n) for n in names if n in html]
+    return [n for _, n in sorted(found)]
+
+
+class TestDebriefingManagePagination:
+    def test_first_page_caps_at_per_page(self, app):
+        names = _make_completed_events(app, PER_PAGE + 5)
+        c = _debrief_manager_client(app)
+        resp = c.get("/debriefing/manage")
+        assert resp.status_code == 200
+        assert _rendered_names(resp, names) == names[:PER_PAGE]
+
+    def test_second_page_is_the_next_disjoint_slice(self, app):
+        names = _make_completed_events(app, PER_PAGE + 5)
+        c = _debrief_manager_client(app)
+        page2 = _rendered_names(c.get("/debriefing/manage?page=2"), names)
+        assert page2 == names[PER_PAGE:]
+
+    def test_page_beyond_last_is_empty_not_error(self, app):
+        _make_completed_events(app, 3)
+        c = _debrief_manager_client(app)
+        resp = c.get("/debriefing/manage?page=99")
+        assert resp.status_code == 200
+        assert "Stránkovaná akce" not in resp.get_data(as_text=True)
+
+    def test_huge_page_is_empty_not_error(self, app):
+        _make_completed_events(app, 3)
+        c = _debrief_manager_client(app)
+        resp = c.get("/debriefing/manage?page=9999999999999999999999")
+        assert resp.status_code == 200
+        assert "Stránkovaná akce" not in resp.get_data(as_text=True)
+
+    def test_invalid_page_falls_back_to_first_page(self, app):
+        names = _make_completed_events(app, PER_PAGE + 5)
+        c = _debrief_manager_client(app)
+        for bad in ("abc", "-3", "0", "", "1.5"):
+            resp = c.get(f"/debriefing/manage?page={bad}")
+            assert resp.status_code == 200
+            assert _rendered_names(resp, names) == names[:PER_PAGE], bad
+
+    def test_page_links_preserve_date_filter(self, app):
+        _make_completed_events(app, PER_PAGE + 5)
+        c = _debrief_manager_client(app)
+        resp = c.get("/debriefing/manage?from_date=2024-01-01&to_date=2024-12-31")
+        page_links = re.findall(r'href="([^"]*page=[^"]*)"', resp.get_data(as_text=True))
+        assert page_links
+        assert all("from_date=2024-01-01" in href and "to_date=2024-12-31" in href for href in page_links)
+
+    def test_filter_still_applies_on_later_pages(self, app):
+        names = _make_completed_events(app, PER_PAGE + 5)
+        c = _debrief_manager_client(app)
+        # Filter to the oldest PER_PAGE + 1 events only; page 2 then holds exactly one.
+        cutoff = (datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=PER_PAGE)).strftime("%Y-%m-%d")
+        resp = c.get(f"/debriefing/manage?to_date={cutoff}&page=2")
+        assert resp.status_code == 200
+        assert _rendered_names(resp, names) == [names[-1]]
+
+    def test_counter_shows_total_not_page_size(self, app):
+        total = PER_PAGE + 5
+        _make_completed_events(app, total)
+        c = _debrief_manager_client(app)
+        assert f"Celkem {total} akcí" in c.get("/debriefing/manage").get_data(as_text=True)
+
+    def test_counter_uses_nominative_plural_for_small_counts(self, app):
+        _make_completed_events(app, 3)
+        c = _debrief_manager_client(app)
+        html = c.get("/debriefing/manage").get_data(as_text=True)
+        assert "Celkem 3 akce" in html
+        assert "Celkem 3 akcí" not in html
+
+    def test_counter_uses_genitive_plural_from_five_up(self, app):
+        _make_completed_events(app, 5)
+        c = _debrief_manager_client(app)
+        assert "Celkem 5 akcí" in c.get("/debriefing/manage").get_data(as_text=True)
+
+    def test_pager_hidden_on_single_page(self, app):
+        _make_completed_events(app, 3)
+        c = _debrief_manager_client(app)
+        assert "Stránkování debriefingů" not in c.get("/debriefing/manage").get_data(as_text=True)
+
+    def test_pager_shown_when_multiple_pages(self, app):
+        _make_completed_events(app, PER_PAGE + 1)
+        c = _debrief_manager_client(app)
+        assert "Stránkování debriefingů" in c.get("/debriefing/manage").get_data(as_text=True)
+
+    def test_non_manager_still_forbidden_on_page_two(self, app, admin_client):
+        assert admin_client.get("/debriefing/manage?page=2").status_code == 403
+
+    def test_page_links_omit_absent_date_filter(self, app):
+        _make_completed_events(app, PER_PAGE + 5)
+        c = _debrief_manager_client(app)
+        html = c.get("/debriefing/manage").get_data(as_text=True)
+        # Only the pager links; the quick-range buttons legitimately carry dates.
+        page_links = re.findall(r'href="([^"]*page=[^"]*)"', html)
+        assert page_links
+        assert all("from_date=" not in href and "to_date=" not in href for href in page_links)
+
+    def test_pages_stay_disjoint_when_start_times_tie(self, app):
+        names = _make_completed_events(app, PER_PAGE * 2, days_apart=0)
+        c = _debrief_manager_client(app)
+        page1 = _rendered_names(c.get("/debriefing/manage"), names)
+        page2 = _rendered_names(c.get("/debriefing/manage?page=2"), names)
+        assert len(page1) == PER_PAGE
+        assert len(page2) == PER_PAGE
+        assert not set(page1) & set(page2)
+        assert page1 + page2 == names
+
+    def test_counter_shows_total_on_later_pages(self, app):
+        total = PER_PAGE + 5
+        _make_completed_events(app, total)
+        c = _debrief_manager_client(app)
+        assert f"Celkem {total} akcí" in c.get("/debriefing/manage?page=2").get_data(as_text=True)
+
+    def test_no_pager_markup_at_exactly_one_full_page(self, app):
+        _make_completed_events(app, PER_PAGE)
+        c = _debrief_manager_client(app)
+        html = c.get("/debriefing/manage").get_data(as_text=True)
+        assert 'class="pagination' not in html
+        assert "Stránkování debriefingů" not in html
+
+    def test_empty_states_keep_their_wording(self, app):
+        c = _debrief_manager_client(app)
+        assert "Žádné dokončené akce." in c.get("/debriefing/manage").get_data(as_text=True)
+        _make_completed_events(app, 3)
+        resp = c.get("/debriefing/manage?from_date=2030-01-01&to_date=2030-12-31")
+        assert "Žádné záznamy neodpovídají zvolenému období." in resp.get_data(as_text=True)

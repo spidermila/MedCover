@@ -28,6 +28,10 @@ from app.utils import audit, diff_changes, get_app_tz, get_or_404, quick_date_ra
 
 debriefing_bp = Blueprint("debriefing", __name__, url_prefix="/debriefing")
 
+# Events per page on /debriefing/manage. Lower than the events list because each
+# event renders a full card with a nested participant table.
+PER_PAGE = 20
+
 
 # ── Submit a debriefing ───────────────────────────────────────────────────────
 
@@ -237,9 +241,10 @@ def manage() -> str:
     to_date_str = request.args.get("to_date", "").strip()
 
     query = (
-        db.select(Event)
-        .where(Event.status == EventStatus.COMPLETED)
-        .order_by(Event.start_datetime.desc())
+        db.select(Event).where(Event.status == EventStatus.COMPLETED)
+        # start_datetime is not unique; the id keeps the order total so paging
+        # can neither skip nor repeat a row.
+        .order_by(Event.start_datetime.desc(), Event.id.desc())
         # Eager-load the whole spot → assignment → debriefing chain so the
         # template's selectattr('debriefing') / rejectattr('debriefing')
         # filters don't fire one lazy SELECT per assignment.
@@ -262,11 +267,16 @@ def manage() -> str:
         except ValueError:
             to_date_str = ""
 
-    events_with_debriefings = db.session.scalars(query).all()
+    # Cap the requested page: an unbounded ?page= makes the computed OFFSET overflow
+    # the driver's bigint parameter, which raises a 500 and poisons the pooled
+    # connection. A million pages is far beyond any realistic data volume.
+    page = min(request.args.get("page", 1, type=int), 1_000_000)
+    pagination = db.paginate(query, page=page, per_page=PER_PAGE, error_out=False)
 
     return render_template(
         "debriefing/manage.html",
-        events=events_with_debriefings,
+        events=pagination.items,
+        pagination=pagination,
         from_date=from_date_str,
         to_date=to_date_str,
         quick_ranges=quick_date_ranges(),

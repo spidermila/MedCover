@@ -3,6 +3,15 @@
 {% from 'macros/badges.html' import badge_event_note_status, badge_warning, badge_secondary %}
 {% block title %}Správa debriefingů — MedCover{% endblock %}
 
+{# ── Helper macro: generate debriefing.manage URL preserving the date filter ── #}
+{% macro filter_url(page=None) %}
+  {{- url_for('debriefing.manage',
+    page=page,
+    from_date=from_date or None,
+    to_date=to_date or None,
+  ) -}}
+{%- endmacro %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="mb-0">Debriefing
@@ -36,7 +45,7 @@
       <a href="{{ url_for('debriefing.manage', from_date=fd, to_date=td) }}"
          class="btn btn-outline-secondary btn-sm">{{ label }}</a>
       {% endfor %}
-      <span class="text-muted small ms-auto">Zobrazeno {{ events | length }} záznamů</span>
+      <span class="text-muted small ms-auto">Celkem {{ pagination.total }} {{ 'akce' if 1 <= pagination.total <= 4 else 'akcí' }}</span>
     </div>
   </div>
 </div>
@@ -123,5 +132,34 @@
 
 </div>
 {% endfor %}
+
+{# ── Pagination ───────────────────────────────────────────────────────────── #}
+{% if pagination.pages > 1 %}
+<nav aria-label="Stránkování debriefingů" class="mt-2">
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <ul class="pagination pagination-sm mb-0">
+      <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+        <a class="page-link" href="{{ filter_url(page=pagination.prev_num) }}">‹</a>
+      </li>
+      {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+          <li class="page-item {{ 'active' if p == pagination.page }}">
+            <a class="page-link" href="{{ filter_url(page=p) }}">{{ p }}</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+        <a class="page-link" href="{{ filter_url(page=pagination.next_num) }}">›</a>
+      </li>
+    </ul>
+    <small class="text-muted">
+      {{ (pagination.page - 1) * pagination.per_page + 1 }}–{{ [pagination.page * pagination.per_page, pagination.total] | min }}
+      z celkem {{ pagination.total }} akcí
+    </small>
+  </div>
+</nav>
+{% endif %}
 {% endif %}
 {% endblock %}
