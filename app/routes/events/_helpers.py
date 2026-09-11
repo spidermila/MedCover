@@ -9,6 +9,7 @@ from markupsafe import Markup
 from sqlalchemy import collate
 
 from app.extensions import db
+from app.models.assignment import Assignment
 from app.models.equipment import EquipmentType, EventEquipmentPlan
 from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.qualification import Qualification
@@ -233,8 +234,6 @@ def build_spots(event: Event, form: dict) -> None:
 
 def copy_spots_with_assignments(source: Event, target: Event) -> None:
     """Copy spots (+ qualifications + existing assignments) from source to target."""
-    from app.models.assignment import Assignment  # pylint: disable=import-outside-toplevel
-
     for spot in source.spots:
         new_spot = EventSpot(
             event_id=target.id,

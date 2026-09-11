@@ -7,13 +7,12 @@ from typing import Any
 from flask import render_template
 
 from app.digest.registry import BLOCK_REGISTRY
+from app.models.digest import get_digest_schedule
+from app.utils import get_app_tz
 
 
 def render_digest(db_session: Any) -> str:
     """Render the full admin digest as an HTML string."""
-    from app.models.digest import get_digest_schedule  # pylint: disable=import-outside-toplevel
-    from app.utils import get_app_tz  # pylint: disable=import-outside-toplevel
-
     schedule = get_digest_schedule()
     block_sections: list[str] = []
 
