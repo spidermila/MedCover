@@ -24,7 +24,15 @@ from sqlalchemy.orm import selectinload
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
 from app.models.event import Event, EventSpot, EventStatus, EventType
-from app.utils import audit, diff_changes, get_app_tz, get_or_404, quick_date_ranges, require_permission
+from app.utils import (
+    audit,
+    diff_changes,
+    get_app_tz,
+    get_or_404,
+    page_arg,
+    quick_date_ranges,
+    require_permission,
+)
 
 debriefing_bp = Blueprint("debriefing", __name__, url_prefix="/debriefing")
 
@@ -234,7 +242,7 @@ def submit(assignment_id: int) -> str | Response:
 
 @debriefing_bp.get("/manage")
 @login_required
-def manage() -> str:
+def manage() -> str | Response:
     require_permission("debriefing.view_all")
 
     from_date_str = request.args.get("from_date", "").strip()
@@ -267,11 +275,18 @@ def manage() -> str:
         except ValueError:
             to_date_str = ""
 
-    # Cap the requested page: an unbounded ?page= makes the computed OFFSET overflow
-    # the driver's bigint parameter, which raises a 500 and poisons the pooled
-    # connection. A million pages is far beyond any realistic data volume.
-    page = min(request.args.get("page", 1, type=int), 1_000_000)
-    pagination = db.paginate(query, page=page, per_page=PER_PAGE, error_out=False)
+    pagination = db.paginate(query, page=page_arg(), per_page=PER_PAGE, error_out=False)
+    # A page past the end (stale link, or a filter that now matches fewer events)
+    # would render an empty list with no pager; send the user to the last page.
+    if not pagination.items and pagination.page > 1:
+        return redirect(
+            url_for(
+                "debriefing.manage",
+                page=pagination.pages if pagination.pages > 1 else None,
+                from_date=from_date_str or None,
+                to_date=to_date_str or None,
+            )
+        )
 
     return render_template(
         "debriefing/manage.html",
