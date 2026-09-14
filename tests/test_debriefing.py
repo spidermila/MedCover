@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
 
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
@@ -544,19 +545,44 @@ class TestDebriefingManagePagination:
         page2 = _rendered_names(c.get("/debriefing/manage?page=2"), names)
         assert page2 == names[PER_PAGE:]
 
-    def test_page_beyond_last_is_empty_not_error(self, app):
-        _make_completed_events(app, 3)
+    def test_page_beyond_last_redirects_to_last_page(self, app):
+        _make_completed_events(app, PER_PAGE + 5)
         c = _debrief_manager_client(app)
         resp = c.get("/debriefing/manage?page=99")
-        assert resp.status_code == 200
-        assert "Stránkovaná akce" not in resp.get_data(as_text=True)
+        assert resp.status_code == 302
+        assert parse_qs(urlsplit(resp.headers["Location"]).query) == {"page": ["2"]}
 
-    def test_huge_page_is_empty_not_error(self, app):
-        _make_completed_events(app, 3)
+    def test_huge_page_redirects_to_last_page(self, app):
+        _make_completed_events(app, PER_PAGE + 5)
         c = _debrief_manager_client(app)
         resp = c.get("/debriefing/manage?page=9999999999999999999999")
+        assert resp.status_code == 302
+        assert parse_qs(urlsplit(resp.headers["Location"]).query) == {"page": ["2"]}
+
+    def test_page_beyond_last_redirect_keeps_date_filter(self, app):
+        _make_completed_events(app, PER_PAGE + 5)
+        c = _debrief_manager_client(app)
+        resp = c.get("/debriefing/manage?from_date=2024-01-01&to_date=2024-12-31&page=99")
+        assert resp.status_code == 302
+        assert parse_qs(urlsplit(resp.headers["Location"]).query) == {
+            "page": ["2"],
+            "from_date": ["2024-01-01"],
+            "to_date": ["2024-12-31"],
+        }
+
+    def test_redirect_lands_on_a_page_that_renders(self, app):
+        names = _make_completed_events(app, PER_PAGE + 5)
+        c = _debrief_manager_client(app)
+        resp = c.get("/debriefing/manage?page=99", follow_redirects=True)
         assert resp.status_code == 200
-        assert "Stránkovaná akce" not in resp.get_data(as_text=True)
+        assert _rendered_names(resp, names) == names[PER_PAGE:]
+
+    def test_later_page_with_no_matches_redirects_to_unpaged_view(self, app):
+        _make_completed_events(app, 3)
+        c = _debrief_manager_client(app)
+        resp = c.get("/debriefing/manage?from_date=2030-01-01&page=3")
+        assert resp.status_code == 302
+        assert parse_qs(urlsplit(resp.headers["Location"]).query) == {"from_date": ["2030-01-01"]}
 
     def test_invalid_page_falls_back_to_first_page(self, app):
         names = _make_completed_events(app, PER_PAGE + 5)

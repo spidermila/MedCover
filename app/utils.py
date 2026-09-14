@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
-from flask import abort, url_for
+from flask import abort, request, url_for
 from flask_login import current_user
 
 from app.extensions import db
@@ -247,6 +247,22 @@ def parse_enum(enum_class: type[E], value: object, default: E | None = None) -> 
         return enum_class(value)  # type: ignore[call-arg]
     except ValueError, KeyError:
         return default
+
+
+# ── Pagination ────────────────────────────────────────────────────────────────
+
+# Upper bound for ?page=: an unbounded value makes the computed OFFSET overflow the
+# driver's bigint parameter, which raises a 500 and poisons the pooled connection.
+# A million pages is far beyond any realistic data volume.
+MAX_PAGE = 1_000_000
+
+
+def page_arg() -> int:
+    """Return the 1-based ?page= query argument, clamped to [1, MAX_PAGE].
+
+    Missing or non-integer values fall back to 1.
+    """
+    return max(1, min(request.args.get("page", 1, type=int), MAX_PAGE))
 
 
 # ── Date-range quick-fill buttons ─────────────────────────────────────────────
