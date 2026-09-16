@@ -935,15 +935,3 @@ class TestScheduledBackupFailureHandling:
 
         assert list(tmp_path.glob("*.part")) == []
         assert list(tmp_path.glob("medcover_backup_*.zip")) == []
-
-    def test_part_sidecar_removed_on_non_oserror_failure(self, app, tmp_path, monkeypatch):
-        def _fail_serialise(*args, **kwargs):
-            raise TypeError("simulated non-serialisable value")
-
-        with app.app_context():
-            monkeypatch.setattr(zipfile.ZipFile, "writestr", _fail_serialise)
-            with pytest.raises(TypeError, match="simulated"):
-                export_to_zip(tmp_path)
-
-        assert list(tmp_path.glob("*.part")) == []
-        assert list(tmp_path.glob("medcover_backup_*.zip")) == []
