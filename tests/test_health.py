@@ -43,7 +43,7 @@ def test_setup_guard_rolls_back_after_settings_db_error(app):
 
     with app.test_request_context("/"):
         with (
-            patch("app.models.settings.get_settings", side_effect=Exception("DB unavailable")),
+            patch("app.get_settings", side_effect=Exception("DB unavailable")),
             patch.object(db.session, "rollback") as rollback,
         ):
             assert setup_guard() is None
