@@ -24,9 +24,21 @@ from sqlalchemy.orm import selectinload
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
 from app.models.event import Event, EventSpot, EventStatus, EventType
-from app.utils import audit, diff_changes, get_app_tz, get_or_404, quick_date_ranges, require_permission
+from app.utils import (
+    audit,
+    diff_changes,
+    get_app_tz,
+    get_or_404,
+    page_arg,
+    quick_date_ranges,
+    require_permission,
+)
 
 debriefing_bp = Blueprint("debriefing", __name__, url_prefix="/debriefing")
+
+# Events per page on /debriefing/manage. Lower than the events list because each
+# event renders a full card with a nested participant table.
+PER_PAGE = 20
 
 
 # ── Submit a debriefing ───────────────────────────────────────────────────────
@@ -230,16 +242,17 @@ def submit(assignment_id: int) -> str | Response:
 
 @debriefing_bp.get("/manage")
 @login_required
-def manage() -> str:
+def manage() -> str | Response:
     require_permission("debriefing.view_all")
 
     from_date_str = request.args.get("from_date", "").strip()
     to_date_str = request.args.get("to_date", "").strip()
 
     query = (
-        db.select(Event)
-        .where(Event.status == EventStatus.COMPLETED)
-        .order_by(Event.start_datetime.desc())
+        db.select(Event).where(Event.status == EventStatus.COMPLETED)
+        # start_datetime is not unique; the id keeps the order total so paging
+        # can neither skip nor repeat a row.
+        .order_by(Event.start_datetime.desc(), Event.id.desc())
         # Eager-load the whole spot → assignment → debriefing chain so the
         # template's selectattr('debriefing') / rejectattr('debriefing')
         # filters don't fire one lazy SELECT per assignment.
@@ -262,11 +275,23 @@ def manage() -> str:
         except ValueError:
             to_date_str = ""
 
-    events_with_debriefings = db.session.scalars(query).all()
+    pagination = db.paginate(query, page=page_arg(), per_page=PER_PAGE, error_out=False)
+    # A page past the end (stale link, or a filter that now matches fewer events)
+    # would render an empty list with no pager; send the user to the last page.
+    if not pagination.items and pagination.page > 1:
+        return redirect(
+            url_for(
+                "debriefing.manage",
+                page=pagination.pages if pagination.pages > 1 else None,
+                from_date=from_date_str or None,
+                to_date=to_date_str or None,
+            )
+        )
 
     return render_template(
         "debriefing/manage.html",
-        events=events_with_debriefings,
+        events=pagination.items,
+        pagination=pagination,
         from_date=from_date_str,
         to_date=to_date_str,
         quick_ranges=quick_date_ranges(),
