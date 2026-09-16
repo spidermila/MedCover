@@ -12,8 +12,9 @@ RUN apt-get update \
     && apt-get purge -y --auto-remove curl gnupg2 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+COPY requirements.txt requirements-telemetry.txt ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
+    && pip install --no-cache-dir --require-hashes -r requirements-telemetry.txt
 
 COPY . .
 

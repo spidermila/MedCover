@@ -117,8 +117,11 @@
         <div class="col-md-6">
           <label class="form-label" for="backup_dir">Adresář zálohy</label>
           <input type="text" class="form-control" id="backup_dir" name="backup_dir"
-                 value="{{ settings.backup_dir }}" required>
-          <div class="form-text">Relativní k adresáři projektu nebo absolutní cesta.</div>
+                 value="{{ settings.backup_dir }}" pattern="/.*" required>
+          <div class="form-text">
+            Absolutní cesta k adresáři. Výchozí <code>/backups</code> odpovídá sdílenému
+            svazku, který vidí webový i plánovač kontejner.
+          </div>
         </div>
 
         <div class="col-md-3">
@@ -128,8 +131,8 @@
                  value="{{ settings.backup_keep_count }}" required>
         </div>
 
-        <div class="col-md-3 d-flex align-items-end">
-          <div class="form-check pb-2">
+        <div class="col-12">
+          <div class="form-check">
             <input class="form-check-input" type="checkbox" id="backup_schedule_enabled"
                    name="backup_schedule_enabled"
                    {% if settings.backup_schedule_enabled %}checked{% endif %}>
@@ -140,12 +143,11 @@
         </div>
 
         <div class="col-md-3">
-          <label class="form-label" for="backup_schedule_hour">
-            Hodina spuštění (0–23, UTC)
-          </label>
-          <input type="number" class="form-control" id="backup_schedule_hour"
-                 name="backup_schedule_hour" min="0" max="23"
-                 value="{{ settings.backup_schedule_hour }}" required>
+          <label class="form-label" for="backup_schedule_time">Čas spuštění</label>
+          <input type="time" class="form-control" id="backup_schedule_time"
+                 name="backup_schedule_time" step="60"
+                 value="{{ '%02d:%02d'|format(settings.backup_schedule_hour, settings.backup_schedule_minute) }}" required>
+          <div class="form-text">Čas v časovém pásmu aplikace ({{ settings.timezone }}).</div>
         </div>
 
       </div>
