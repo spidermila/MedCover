@@ -161,10 +161,12 @@ def export_to_zip(backup_dir: str | Path, now: datetime | None = None) -> Path:
         with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("backup.json", json.dumps(payload, ensure_ascii=False, indent=2))
         os.replace(tmp_path, zip_path)
-    except OSError:
+    except Exception:
         # Don't leave the sidecar behind: it is invisible to list_backups() and
         # prune_old_backups() (both glob "*.zip"), so orphans would accumulate
-        # forever on a repeatedly failing write and fill the share.
+        # forever on a repeatedly failing write and fill the share. Not just
+        # OSError: a non-serialisable value (TypeError) or a zipfile error must
+        # clean up too.
         tmp_path.unlink(missing_ok=True)
         raise
 
