@@ -78,15 +78,11 @@ def _auto_clear_rp(event: Event, user: UserAccount) -> None:
     """If the leaving user is the current RP, reassign to next eligible or clear."""
     if event.responsible_person_id == user.id:
         # Find another RP-eligible person still assigned to this event
-        for spot in event.spots:
-            if (
-                spot.assignment is not None
-                and spot.assignment.user_id != user.id
-                and spot.assignment.user.is_rp_eligible()
-            ):
-                event.responsible_person_id = spot.assignment.user.id
+        for assignment in event.assignments:
+            if assignment.user_id != user.id and assignment.user.is_rp_eligible():
+                event.responsible_person_id = assignment.user.id
                 event.version += 1
-                new_rp = spot.assignment.user.name
+                new_rp = assignment.user.name
                 audit(
                     "edit",
                     "Event",
@@ -207,9 +203,7 @@ def do_assign_user(
 
     # User must not already be assigned to this event
     existing = db.session.scalar(
-        db.select(Assignment)
-        .join(EventSpot, Assignment.spot_id == EventSpot.id)
-        .where(EventSpot.event_id == event.id, Assignment.user_id == user.id)
+        db.select(Assignment).where(Assignment.event_id == event.id, Assignment.user_id == user.id)
     )
     if existing:
         msg = duplicate_error or f"Uživatel {user.name} je již přihlášen na tuto akci."
@@ -275,7 +269,7 @@ def do_unassign_user(
 
     Returns AssignResult with ok=True on success, or ok=False with error message.
     """
-    event = db.session.get(Event, assignment.spot.event_id)
+    event = db.session.get(Event, assignment.event_id)
     if event is None:
         return AssignResult(ok=False, error="Akce nenalezena.")
 
@@ -286,7 +280,7 @@ def do_unassign_user(
         return AssignResult(ok=False, error="Tuto akci řídí koordinátor — odhlašování není povoleno.", event=event)
 
     user = assignment.user
-    spot_description = assignment.spot.description
+    spot_description = assignment.spot.description if assignment.spot else None
     if unassigned_by is not None and unassigned_by.id != user.id:
         summary = f"'{unassigned_by.name}' odhlásil '{user.name}' z akce '{event.name}'"
     else:
@@ -340,7 +334,7 @@ def claim(spot_id: int) -> Response:
 @login_required
 def release(assignment_id: int) -> Response:
     assignment = get_or_404(Assignment, assignment_id)
-    event = get_or_404(Event, assignment.spot.event_id)
+    event = get_or_404(Event, assignment.event_id)
 
     # Only own assignment unless elevated permission on this event
     if assignment.user_id != current_user.id:
@@ -419,7 +413,7 @@ def assign_other(spot_id: int) -> Response:
 @login_required
 def unassign_other(assignment_id: int) -> Response:
     assignment = get_or_404(Assignment, assignment_id)
-    event = get_or_404(Event, assignment.spot.event_id)
+    event = get_or_404(Event, assignment.event_id)
 
     # Permission: either event.assign_other or RP-elevated on this event
     if not event.user_can_manage_assignments(current_user):

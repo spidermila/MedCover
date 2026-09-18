@@ -136,8 +136,7 @@ def _resolve_next_shifts(rows: list[tuple[UserAccount, UserStats]], now: datetim
         row[0]: row[1]
         for row in db.session.execute(
             db.select(Assignment.user_id, func.min(Event.start_datetime))
-            .join(EventSpot, Assignment.spot_id == EventSpot.id)
-            .join(Event, EventSpot.event_id == Event.id)
+            .join(Event, Assignment.event_id == Event.id)
             .where(
                 Assignment.user_id.in_(user_ids),
                 Event.status.in_(_FUTURE_STATUSES),
@@ -226,9 +225,7 @@ def _spot_and_assignment_data(event_ids: list[int], events: list[Event]) -> tupl
     spot_map: dict[int, tuple[int, int]] = {row.event_id: (row.total_spots, row.filled_spots) for row in spot_agg}
 
     asgn_rows = db.session.execute(
-        db.select(Assignment, EventSpot.event_id)
-        .join(EventSpot, Assignment.spot_id == EventSpot.id)
-        .where(EventSpot.event_id.in_(event_ids))
+        db.select(Assignment, Assignment.event_id).where(Assignment.event_id.in_(event_ids))
     ).all()
     event_map = {ev.id: ev for ev in events}
     pairs = [(row.Assignment, event_map[row.event_id]) for row in asgn_rows]
@@ -363,11 +360,10 @@ def user_report(user_id: uuid.UUID) -> str | Response:
     query = (
         db.select(Assignment)
         .where(Assignment.user_id == user_id)
-        .join(Assignment.spot)
-        .join(EventSpot.event)
+        .join(Assignment.event)
         .where(Event.archived == sa.false())
         .options(
-            selectinload(Assignment.spot).selectinload(EventSpot.event),  # type: ignore[arg-type]
+            selectinload(Assignment.event),  # type: ignore[arg-type]
         )
         .order_by(Event.start_datetime)
     )
@@ -378,7 +374,7 @@ def user_report(user_id: uuid.UUID) -> str | Response:
 
     assignments = list(db.session.scalars(query).unique().all())
 
-    pairs = [(a, a.spot.event) for a in assignments if a.spot and a.spot.event]
+    pairs = [(a, a.event) for a in assignments]
     stats = _compute_user_stats(pairs, now)
     _resolve_next_shifts([(user, stats)], now)
 
@@ -765,9 +761,8 @@ def _work_summary_data(from_dt: datetime, to_dt: datetime) -> list[WorkSummaryGr
     # One row per assigned person per event. Someone holding two spots on the
     # same event must not have their hours counted twice, hence the DISTINCT.
     assignments = db.session.execute(
-        db.select(Assignment.user_id, UserAccount.name, EventSpot.event_id)
-        .join(EventSpot, Assignment.spot_id == EventSpot.id)
-        .join(Event, EventSpot.event_id == Event.id)
+        db.select(Assignment.user_id, UserAccount.name, Assignment.event_id)
+        .join(Event, Assignment.event_id == Event.id)
         .join(UserAccount, Assignment.user_id == UserAccount.id)
         .where(*date_filter)
         .distinct()

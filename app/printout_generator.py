@@ -25,6 +25,22 @@ if TYPE_CHECKING:
     from app.models.event import Event
 
 
+def _participant_rows(event: Event) -> list[tuple[str, str, str]]:
+    if event.staffing_mode == "CONDITIONS":
+        return [
+            (a.user.name, ", ".join(q.name for q in a.user.qualifications if not q.is_deleted), "")
+            for a in event.assignments
+        ]
+    return [
+        (
+            s.assignment.user.name if s.assignment else "",
+            ", ".join(q.name for q in s.required_qualifications if not q.is_deleted),
+            s.description or "",
+        )
+        for s in sorted(event.spots, key=lambda s: s.id)
+    ]
+
+
 # ── Sheet 1: Podpisy (Signatures) ─────────────────────────────────────────────
 
 
@@ -56,15 +72,12 @@ def _build_signature_sheet(
     left = Alignment(horizontal="left", vertical="center")
 
     for event in events:
-        spots = sorted(event.spots, key=lambda s: s.id)
-        if not spots:
+        participants = _participant_rows(event)
+        if not participants:
             continue
         date_str = event.start_datetime.astimezone(tz).strftime("%d.%m.%Y")
 
-        for spot in spots:
-            person = spot.assignment.user.name if spot.assignment else ""
-            quals = ", ".join(q.name for q in spot.required_qualifications if not q.is_deleted)
-            desc = spot.description or ""
+        for person, quals, desc in participants:
 
             for col, val in enumerate([date_str, event.name, person, quals, desc, ""], 1):
                 cell(ws, row, col, val, font=STD_FONT, alignment=left, border=THIN)
@@ -82,7 +95,7 @@ def _build_overview_sheet(
     date_range: str,
     me_name: str | None,
 ) -> None:
-    max_spots = max((len(e.spots) for e in events), default=1)
+    max_spots = max((len(_participant_rows(e)) for e in events), default=1)
 
     fixed_headers = ["Datum", "Název akce", "Stav"]
     fixed_widths = [12, 34, 18]
@@ -120,7 +133,7 @@ def _build_overview_sheet(
     left = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     for event in events:
-        spots = sorted(event.spots, key=lambda s: s.id)
+        participants = _participant_rows(event)
         date_str = event.start_datetime.astimezone(tz).strftime("%d.%m.%Y")
 
         for col, val in enumerate([date_str, event.name, event.status.value], 1):
@@ -135,9 +148,8 @@ def _build_overview_sheet(
             )
 
         for j in range(max_spots):
-            if j < len(spots):
-                spot = spots[j]
-                cell_val = spot.assignment.user.name if spot.assignment else ""
+            if j < len(participants):
+                cell_val = participants[j][0]
             else:
                 cell_val = ""
             cell(ws, row, len(fixed_headers) + j + 1, cell_val, font=STD_FONT, alignment=left, border=THIN)

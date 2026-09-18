@@ -56,7 +56,7 @@
 <div class="text-muted">Žádné dokončené akce.</div>
 {% else %}
 {% for event in events %}
-{% set assignments = event.spots | map(attribute='assignment') | select | list %}
+{% set assignments = event.assignments %}
 {% set submitted = assignments | selectattr('debriefing') | list %}
 {% set pending = assignments | rejectattr('debriefing') | list %}
 <div class="card mb-3">

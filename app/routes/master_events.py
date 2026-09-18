@@ -412,8 +412,7 @@ def table_manager(me_id: int) -> str:
         user_event_ids = set(
             db.session.scalars(
                 db.select(Event.id)
-                .join(EventSpot, EventSpot.event_id == Event.id)
-                .join(Assignment, Assignment.spot_id == EventSpot.id)
+                .join(Assignment, Assignment.event_id == Event.id)
                 .where(Event.master_event_id == me_id, Assignment.user_id == current_user.id)
             ).all()
         )
@@ -426,7 +425,7 @@ def table_manager(me_id: int) -> str:
     # Per-event set of already-assigned user IDs (for picker filtering)
     event_assigned: dict[int, set[int]] = {}
     for event in events:
-        event_assigned[event.id] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
+        event_assigned[event.id] = {a.user_id for a in event.assignments}
 
     # Cross-event assignment conflicts (batched: one query for all displayed events).
     # Restrict to the union of eligible users across visible rows so the DB does the
@@ -518,7 +517,7 @@ def table_unassign(me_id: int, assignment_id: int) -> Response:
     if assignment is None:
         return jsonify({"ok": False, "error": "Přiřazení nenalezeno."}), 404
 
-    event = db.session.get(Event, assignment.spot.event_id)
+    event = db.session.get(Event, assignment.event_id)
     if event is None or event.master_event_id != me_id:
         return jsonify({"ok": False, "error": "Akce nenalezena."}), 404
 

@@ -251,8 +251,8 @@ def create_app(
                 return url_for("events.detail", event_id=eid_int)
             if entity_type == "Assignment":
                 asgn = db.session.get(Assignment, eid_int)
-                if asgn and asgn.spot:
-                    return url_for("events.detail", event_id=asgn.spot.event_id)
+                if asgn:
+                    return url_for("events.detail", event_id=asgn.event_id)
                 return None
             if entity_type == "MasterEvent":
                 return url_for("master_events.detail", me_id=eid_int)

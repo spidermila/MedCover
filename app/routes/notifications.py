@@ -243,12 +243,7 @@ def test_notification(code: str) -> Response:
             mailer.send_unfilled_spots_reminder(current_user, event, unfilled=list(spots) or [None])
         elif code == "debriefing_invitation":
             # Build a minimal stand-in assignment for the debriefing URL
-            fake_assignment = db.session.scalar(
-                db.select(Assignment)
-                .join(EventSpot, Assignment.spot_id == EventSpot.id)
-                .where(EventSpot.event_id == event.id)
-                .limit(1)
-            )
+            fake_assignment = db.session.scalar(db.select(Assignment).where(Assignment.event_id == event.id).limit(1))
             if fake_assignment is None:
                 flash("Akce nemá žádné přihlášení — nelze odeslat zkušební pozvánku k debriefingu.", "warning")
                 return redirect(url_for("notifications.index"))

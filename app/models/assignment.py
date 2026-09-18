@@ -9,6 +9,7 @@ from app.extensions import db
 from app.models.event import EventSpot
 
 if TYPE_CHECKING:
+    from app.models.event import Event
     from app.models.user import UserAccount
 
 
@@ -22,7 +23,7 @@ class Assignment(db.Model):  # type: ignore[misc]
     )
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False, index=True)
     spot_id = db.Column(db.Integer, db.ForeignKey("event_spot.id"), nullable=True)
-    event = db.relationship("Event", back_populates="assignments")
+    event: Mapped[Event] = db.relationship("Event", back_populates="assignments")
     user_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=False)
     assigned_by_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=True)
     assigned_at = db.Column(
