@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy.orm import Mapped
+from sqlalchemy import event
+from sqlalchemy.engine import Connection
+from sqlalchemy.orm import Mapped, Mapper
 
 from app.extensions import db
+from app.models.event import EventSpot
 
 if TYPE_CHECKING:
     from app.models.user import UserAccount
@@ -13,7 +16,13 @@ class Assignment(db.Model):  # type: ignore[misc]
     __tablename__ = "assignment"
 
     id = db.Column(db.Integer, primary_key=True)
-    spot_id = db.Column(db.Integer, db.ForeignKey("event_spot.id"), unique=True, nullable=False)
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "user_id", name="uq_assignment_event_user"),
+        db.Index("ix_assignment_spot_unique", "spot_id", unique=True, mssql_where=db.text("spot_id IS NOT NULL")),
+    )
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False, index=True)
+    spot_id = db.Column(db.Integer, db.ForeignKey("event_spot.id"), nullable=True)
+    event = db.relationship("Event", back_populates="assignments")
     user_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=False)
     assigned_by_id = db.Column(db.Uuid, db.ForeignKey("user_account.id"), nullable=True)
     assigned_at = db.Column(
@@ -72,3 +81,13 @@ class DebriefingRecord(db.Model):  # type: ignore[misc]
 
     def __repr__(self) -> str:
         return f"<DebriefingRecord assignment={self.assignment_id} event_note_status={self.event_note_status}>"
+
+
+@event.listens_for(Assignment, "before_insert")
+def fill_assignment_event(mapper: Mapper, connection: Connection, target: Assignment) -> None:
+    """Keep legacy spot-based constructors consistent with direct participation."""
+    if target.spot_id is not None:
+        event_id = connection.scalar(db.select(EventSpot.event_id).where(EventSpot.id == target.spot_id))
+        if target.event_id is not None and target.event_id != event_id:
+            raise ValueError("Assignment event does not match its spot")
+        target.event_id = event_id

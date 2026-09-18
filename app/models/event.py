@@ -34,6 +34,11 @@ class EventStatus(str, enum.Enum):
     CANCELLED = "Zrušena"
 
 
+class StaffingMode(str, enum.Enum):
+    SPOTS = "SPOTS"
+    CONDITIONS = "CONDITIONS"
+
+
 class EventType(str, enum.Enum):
     MEDICAL_COVER = "Zdravotní dozor"
     TRAINING = "Školení"
@@ -81,6 +86,15 @@ class EventTemplate(db.Model):  # type: ignore[misc]
     # Optimistic locking — increment on every write; catch StaleDataError → HTTP 409
     version = db.Column(db.Integer, default=1, nullable=False)
 
+    minimum_participants = db.Column(db.Integer, nullable=False, default=1)
+    maximum_participants = db.Column(db.Integer, nullable=False, default=1)
+    qualification_requirements = db.relationship(
+        "EventTemplateQualificationRequirement",
+        back_populates="template",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     spot_templates = db.relationship(
         "EventSpotTemplate",
         back_populates="template",
@@ -117,6 +131,33 @@ class EventSpotTemplate(db.Model):  # type: ignore[misc]
 
 class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     __tablename__ = "event"
+    __table_args__ = (
+        db.CheckConstraint(
+            "staffing_mode = 'SPOTS' OR (minimum_participants IS NOT NULL AND "
+            "maximum_participants IS NOT NULL AND minimum_participants >= 1 AND "
+            "maximum_participants >= minimum_participants)",
+            name="ck_event_condition_capacity",
+        ),
+    )
+
+    staffing_mode = db.Column(
+        db.Enum(StaffingMode, name="staffing_mode_enum"), nullable=False, default=StaffingMode.SPOTS
+    )
+    minimum_participants = db.Column(db.Integer, nullable=True)
+    maximum_participants = db.Column(db.Integer, nullable=True)
+    assignments: Mapped[list[Assignment]] = db.relationship(
+        "Assignment",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="Assignment.assigned_at, Assignment.id",
+    )
+    qualification_requirements = db.relationship(
+        "EventQualificationRequirement",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
@@ -339,3 +380,31 @@ class EventSpot(db.Model):  # type: ignore[misc]
 
     def __repr__(self) -> str:
         return f"<EventSpot {self.id} event={self.event_id}>"
+
+
+class EventQualificationRequirement(db.Model):  # type: ignore[misc]
+    __tablename__ = "event_qualification_requirement"
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "qualification_id", name="uq_event_requirement"),
+        db.CheckConstraint("minimum_count > 0", name="ck_event_requirement_minimum"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id", ondelete="CASCADE"), nullable=False)
+    qualification_id = db.Column(db.Integer, db.ForeignKey("qualification.id"), nullable=False)
+    minimum_count = db.Column(db.Integer, nullable=False)
+    event = db.relationship("Event", back_populates="qualification_requirements")
+    qualification = db.relationship("Qualification", lazy="selectin")
+
+
+class EventTemplateQualificationRequirement(db.Model):  # type: ignore[misc]
+    __tablename__ = "event_template_qualification_requirement"
+    __table_args__ = (
+        db.UniqueConstraint("template_id", "qualification_id", name="uq_template_requirement"),
+        db.CheckConstraint("minimum_count > 0", name="ck_template_requirement_minimum"),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    template_id = db.Column(db.Integer, db.ForeignKey("event_template.id", ondelete="CASCADE"), nullable=False)
+    qualification_id = db.Column(db.Integer, db.ForeignKey("qualification.id"), nullable=False)
+    minimum_count = db.Column(db.Integer, nullable=False)
+    template = db.relationship("EventTemplate", back_populates="qualification_requirements")
+    qualification = db.relationship("Qualification", lazy="selectin")

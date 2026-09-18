@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from openpyxl import Workbook, load_workbook
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
@@ -1306,7 +1307,9 @@ class TestWorkSummaryReport:
             ev.paid = True
             db.session.commit()
             _make_assignment(_make_spot(ev), member, admin)
-            _make_assignment(_make_spot(ev), member, admin)
+            with pytest.raises(IntegrityError):
+                _make_assignment(_make_spot(ev), member, admin)
+            db.session.rollback()
 
             from_d, to_d = self._range(now)
             groups = _work_summary_data(*_parse_date_range(from_d, to_d))
