@@ -1,6 +1,7 @@
 services:
   web:
     platform: linux/amd64
+    image: localhost/medcover_web:latest
     build:
       context: .
       args:
@@ -8,7 +9,7 @@ services:
     command: flask run --host=0.0.0.0 --debug
     restart: unless-stopped
     volumes:
-      - .:/app
+      - .:/app:z
       - backups:/backups
     env_file: .env
     ports:
@@ -36,6 +37,7 @@ services:
 
   scheduler:
     platform: linux/amd64
+    image: localhost/medcover_scheduler:latest
     build:
       context: .
       args:
@@ -44,7 +46,7 @@ services:
     command: python scheduler/main.py
     restart: unless-stopped
     volumes:
-      - .:/app
+      - .:/app:z
       - backups:/backups
     env_file: .env
     dns:
@@ -80,7 +82,7 @@ services:
     ports:
       - "1433:1433"
     volumes:
-      - mssql_data:/var/opt/mssql
+      - mssql_data:/var/opt/mssql:z
     healthcheck:
       test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "DevPassword123!", "-C", "-Q", "SELECT 1", "-b"]
       interval: 10s
