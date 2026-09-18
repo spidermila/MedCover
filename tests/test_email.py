@@ -19,7 +19,6 @@ from click.testing import CliRunner
 from flask import g as flask_g
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
-import scheduler.main as scheduler_main
 from app.extensions import db
 from app.mail import (
     _EVENT_CHANGED_CHANGE_TYPE,
@@ -2403,7 +2402,7 @@ class TestSchedulerRequestContextBoundary:
             # scheduler_main.app points at the test DB. process_email_queue wraps the
             # drain in app.test_request_context, so it must NOT raise.
             with patch("app.create_app", return_value=app):
-                importlib.reload(scheduler_main)
+                scheduler_main = importlib.import_module("scheduler.main")
 
             with patch("flask_mail.Mail.send"):
                 scheduler_main.process_email_queue()  # must not raise
@@ -2422,6 +2421,7 @@ class TestProcessEmailQueueDispatch:
     def _import_scheduler(self, app):
         """Reload scheduler.main per test with the test app injected."""
         with patch("app.create_app", return_value=app):
+            scheduler_main = importlib.import_module("scheduler.main")
             importlib.reload(scheduler_main)
         self._sm = scheduler_main
         yield
