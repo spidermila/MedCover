@@ -70,21 +70,20 @@ def feed(token: str) -> Response:
 
     assignments = db.session.scalars(
         sa.select(Assignment)
-        .join(Assignment.spot)
-        .join(EventSpot.event)
+        .join(Assignment.event)
         .where(
             Assignment.user_id == user.id,
             Event.status.notin_(_PERSONAL_EXCLUDED_STATUSES),
             Event.archived == sa.false(),
         )
-        .options(selectinload(Assignment.spot).selectinload(EventSpot.event))  # type: ignore[arg-type]
+        .options(selectinload(Assignment.event))  # type: ignore[arg-type]
     ).all()
 
     cal = _make_calendar(f"MedCover – {user.name}", "Vaše akce v systému MedCover")
 
     for assignment in assignments:
         spot = assignment.spot
-        event = spot.event
+        event = assignment.event
 
         vevent = ICalEvent()
         vevent.add("uid", f"event-{event.id}@medcover")
@@ -97,7 +96,7 @@ def feed(token: str) -> Response:
             vevent.add("location", event.address)
 
         description_parts: list[str] = []
-        if spot.description:
+        if spot and spot.description:
             description_parts.append(f"Místo: {spot.description}")
         if event.description:
             description_parts.append(event.description)

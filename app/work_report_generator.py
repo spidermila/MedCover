@@ -34,7 +34,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from PIL import Image as PILImage
 
 from app.extensions import db
-from app.models import Assignment, Event, EventSpot, EventStatus
+from app.models import Assignment, Event, EventStatus
 from app.xlsx import cell
 
 if TYPE_CHECKING:
@@ -266,8 +266,7 @@ def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tu
     rows = (
         db.session.execute(
             sa.select(Event)
-            .join(EventSpot, EventSpot.event_id == Event.id)
-            .join(Assignment, Assignment.spot_id == EventSpot.id)
+            .join(Assignment, Assignment.event_id == Event.id)
             .where(
                 Assignment.user_id == user_id,
                 Event.status == EventStatus.COMPLETED,

@@ -17,7 +17,7 @@ from app.extensions import db
 from app.mail import _base_context, send_account_activated
 from app.models.assignment import Assignment
 from app.models.equipment import EquipmentItem
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event, EventStatus
 from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
@@ -80,15 +80,14 @@ def profile() -> str | Response:
     now = datetime.now(timezone.utc)
     upcoming = db.session.scalars(
         db.select(Assignment)
-        .join(Assignment.spot)
-        .join(EventSpot.event)
+        .join(Assignment.event)
         .where(
             Assignment.user_id == user.id,
             Event.start_datetime >= now,
             Event.status != EventStatus.CANCELLED,
         )
         .order_by(Event.start_datetime)
-        .options(selectinload(Assignment.spot).selectinload(EventSpot.event))  # type: ignore[arg-type]
+        .options(selectinload(Assignment.event))  # type: ignore[arg-type]
         .limit(10)
     ).all()
     # Lazy-init iCal token on first profile visit.

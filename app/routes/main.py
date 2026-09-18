@@ -13,7 +13,7 @@ from app.models.equipment import (
     EquipmentItem,
     EventEquipmentPlan,
 )
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event, EventStatus
 from app.models.user import UserAccount
 from app.queries import assignment_conflicts, user_fillable_qual_ids
 
@@ -40,11 +40,7 @@ def changelog() -> str:
 def _my_events_section(now: datetime, horizon: datetime) -> tuple[list[tuple[Event, list[str]]], set[int]]:
     """Build the 'Moje akce' section and return (tagged_events, assigned_event_id_set)."""
     assigned_event_id_set: set = set(
-        db.session.scalars(
-            db.select(EventSpot.event_id)
-            .join(Assignment, Assignment.spot_id == EventSpot.id)
-            .where(Assignment.user_id == current_user.id)
-        ).all()
+        db.session.scalars(db.select(Assignment.event_id).where(Assignment.user_id == current_user.id)).all()
     )
 
     my_events_query = (
@@ -274,8 +270,7 @@ def _pending_debriefings_section() -> list[Assignment]:
     return list(
         db.session.scalars(
             db.select(Assignment)
-            .join(EventSpot, Assignment.spot_id == EventSpot.id)
-            .join(Event, EventSpot.event_id == Event.id)
+            .join(Event, Assignment.event_id == Event.id)
             .outerjoin(DebriefingRecord, DebriefingRecord.assignment_id == Assignment.id)
             .where(
                 Assignment.user_id == current_user.id,

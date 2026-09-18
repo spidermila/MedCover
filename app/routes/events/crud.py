@@ -536,7 +536,7 @@ def detail(event_id: int) -> str | Response:
         eligible_users = list(active_users_list())
 
     # Users already assigned to a spot on this event (for picker filtering)
-    assigned_user_ids: set[int] = {spot.assignment.user_id for spot in event.spots if spot.assignment is not None}
+    assigned_user_ids: set[int] = {a.user_id for a in event.assignments}
 
     # Users assigned to another (non-cancelled/non-completed/non-archived) event
     # overlapping this one. Restricted to eligible users at the DB level; one query.
@@ -621,9 +621,9 @@ def detail(event_id: int) -> str | Response:
     # Users currently assigned to this event who are RP-eligible (for set_rp dropdown)
     rp_eligible_attendees: list[UserAccount] = []
     if current_user.has_any_permission("event.set_responsible_person"):
-        for spot in event.spots:
-            if spot.assignment and spot.assignment.user.is_rp_eligible():
-                rp_eligible_attendees.append(spot.assignment.user)
+        for assignment in event.assignments:
+            if assignment.user.is_rp_eligible():
+                rp_eligible_attendees.append(assignment.user)
 
     return render_template(
         "events/detail.html",
@@ -768,7 +768,7 @@ def edit(event_id: int) -> str | Response:
         # Notify assigned users about the change (only if something actually changed).
         actual_changes = diff_changes(before, after)
         if actual_changes:
-            assigned_users = [spot.assignment.user for spot in event.spots if spot.assignment is not None]
+            assigned_users = [a.user for a in event.assignments]
             for u in assigned_users:
                 mailer.send_event_changed(u, event, actual_changes)
             db.session.commit()  # commit the enqueued outbox rows

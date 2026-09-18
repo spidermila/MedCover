@@ -74,10 +74,10 @@ def transition(event_id: int) -> Response:
             mailer.send_assignments_opened(u, event)
     elif target_status == EventStatus.COMPLETED:
         # Send debriefing invitations to everyone who held a spot on this event.
-        for spot in event.spots:
-            if spot.assignment is not None and not spot.assignment.debriefing_email_sent:
-                mailer.send_debriefing_invitation(spot.assignment, event)
-                spot.assignment.debriefing_email_sent = True
+        for assignment in event.assignments:
+            if not assignment.debriefing_email_sent:
+                mailer.send_debriefing_invitation(assignment, event)
+                assignment.debriefing_email_sent = True
 
     # Persist enqueued outbox rows (and debriefing_email_sent flag updates);
     # enqueue_deferred only flushes, so without this commit the pending rows

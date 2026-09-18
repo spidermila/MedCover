@@ -21,7 +21,7 @@ from app.models.equipment import (
     EquipmentItem,
     EventEquipmentPlan,
 )
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification, qualification_parents
 from app.models.qualification import user_qualifications as uq_table
@@ -188,8 +188,7 @@ def _assignment_conflict_base_query() -> sa.Select:
     """
     return (
         db.select(Assignment.user_id, Event.id, Event.name, Event.start_datetime, Event.end_datetime)
-        .join(EventSpot, EventSpot.id == Assignment.spot_id)
-        .join(Event, Event.id == EventSpot.event_id)
+        .join(Event, Event.id == Assignment.event_id)
         .where(
             Event.status.not_in([EventStatus.CANCELLED, EventStatus.COMPLETED]),
             Event.archived == sa.false(),

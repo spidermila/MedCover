@@ -327,7 +327,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         if self.is_centrally_coordinated:
             return False
         # Check: user is assigned to this event
-        return any(s.assignment is not None and s.assignment.user_id == user.id for s in self.spots)
+        return any(a.user_id == user.id for a in self.assignments)
 
     def __repr__(self) -> str:
         return f"<Event {self.id}: {self.name} [{self.status}]>"

@@ -300,9 +300,7 @@ def set_rp(event_id: int) -> Response:
 
     # User must currently occupy a spot on this event
     assigned = db.session.scalar(
-        db.select(Assignment)
-        .join(EventSpot, Assignment.spot_id == EventSpot.id)
-        .where(EventSpot.event_id == event_id, Assignment.user_id == user_id)
+        db.select(Assignment).where(Assignment.event_id == event_id, Assignment.user_id == user_id)
     )
     if assigned is None:
         flash("Vybraný uživatel nemá obsazenou pozici na této akci.", "warning")

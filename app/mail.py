@@ -738,7 +738,7 @@ def _flush_and_notify(event: Event, send_fn: Callable[[UserAccount, Event], None
         .execution_options(synchronize_session="fetch")
     )
 
-    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
+    assigned_users = [a.user for a in event.assignments]
     recipients: dict = {u.id: u for u in assigned_users}
 
     pending_user_ids = db.session.scalars(
@@ -776,7 +776,7 @@ def notify_unarchived(event: Event) -> None:
     unarchived. Caller is expected to commit the surrounding business
     transaction before calling this, then commit again afterward to
     persist the enqueued rows (send_event_unarchived only flushes)."""
-    assigned_users = [s.assignment.user for s in event.spots if s.assignment]
+    assigned_users = [a.user for a in event.assignments]
     for user in assigned_users:
         send_event_unarchived(user, event)
 

@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
-from app.models.event import Event, EventSpot, EventStatus, EventType
+from app.models.event import Event, EventStatus, EventType
 from app.utils import (
     audit,
     diff_changes,
@@ -149,7 +149,7 @@ def _apply_rp_actuals_to_event(
 @login_required
 def submit(assignment_id: int) -> str | Response:
     assignment = get_or_404(Assignment, assignment_id)
-    event: Event = assignment.spot.event
+    event: Event = assignment.event
 
     # Only the assigned user may submit their own debriefing
     if assignment.user_id != current_user.id:
@@ -257,7 +257,7 @@ def manage() -> str | Response:
         # template's selectattr('debriefing') / rejectattr('debriefing')
         # filters don't fire one lazy SELECT per assignment.
         .options(
-            selectinload(Event.spots).selectinload(EventSpot.assignment).selectinload(Assignment.debriefing),
+            selectinload(Event.assignments).selectinload(Assignment.debriefing),
         )
     )
 
@@ -308,5 +308,5 @@ def event_overview(event_id: int) -> str:
 
     event = get_or_404(Event, event_id)
 
-    assignments = [s.assignment for s in event.spots if s.assignment is not None]
+    assignments = list(event.assignments)
     return render_template("debriefing/event_overview.html", event=event, assignments=assignments)
