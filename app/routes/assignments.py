@@ -19,6 +19,7 @@ Service functions (shared with master_events table manager):
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from uuid import UUID
 
 from flask import Blueprint, Response, abort, flash, redirect, request, url_for
 from flask_login import current_user, login_required
@@ -28,7 +29,7 @@ from sqlalchemy.exc import IntegrityError
 import app.mail as mailer
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event, EventSpot, EventStatus, StaffingMode
 from app.models.user import UserAccount
 from app.queries import conflicting_events_for_users
 from app.utils import audit, get_or_404, require_permission
@@ -54,8 +55,14 @@ def auto_close_if_full(
     ``allowed_from`` lets the import path close events that were created in
     ``DRAFT`` (regular claim/release always start from ``ASSIGNMENTS_OPEN``).
     """
-    if event.status in allowed_from and event.total_spots > 0 and event.filled_spots >= event.total_spots:
+    full = (
+        len(event.assignments) >= event.maximum_participants
+        if event.staffing_mode == StaffingMode.CONDITIONS
+        else event.total_spots > 0 and event.filled_spots >= event.total_spots
+    )
+    if event.status in allowed_from and full:
         event.status = EventStatus.ASSIGNMENTS_CLOSED
+        event.capacity_closed = event.staffing_mode == StaffingMode.CONDITIONS
         event.version += 1
         suffix = f" {context}" if context else ""
         audit(
@@ -98,8 +105,11 @@ def _auto_clear_rp(event: Event, user: UserAccount) -> None:
 
 def _auto_reopen_if_freed(event: Event) -> None:
     """Re-open assignments if they were closed and a spot just freed up."""
-    if event.status == EventStatus.ASSIGNMENTS_CLOSED:
+    if event.status == EventStatus.ASSIGNMENTS_CLOSED and (
+        event.staffing_mode != StaffingMode.CONDITIONS or event.capacity_closed
+    ):
         event.status = EventStatus.ASSIGNMENTS_OPEN
+        event.capacity_closed = False
         event.version += 1
         audit("status_change", "Event", event.id, "Přihlašování automaticky znovuotevřeno — uvolněna pozice")
 
@@ -226,7 +236,7 @@ def do_assign_user(
             conflict_event_name = conflicts[0]["name"]
 
     # Create assignment
-    spot.assignment = Assignment(user_id=user.id, assigned_by_id=assigned_by.id)
+    spot.assignment = Assignment(event_id=event.id, user_id=user.id, assigned_by_id=assigned_by.id)
     db.session.add(spot.assignment)
     db.session.flush()
 
@@ -273,7 +283,15 @@ def do_unassign_user(
     if event is None:
         return AssignResult(ok=False, error="Akce nenalezena.")
 
-    if event.status == EventStatus.COMPLETED or event.archived:
+    if event.staffing_mode == StaffingMode.CONDITIONS:
+        event = lock_condition_event(event.id)
+        if event is None:
+            return AssignResult(False, "Akce nenalezena.")
+    if (
+        event.status == EventStatus.COMPLETED
+        or event.archived
+        or (event.staffing_mode == StaffingMode.CONDITIONS and event.status == EventStatus.CANCELLED)
+    ):
         return AssignResult(ok=False, error="Nelze odhlásit uživatele z dokončené nebo archivované akce.", event=event)
 
     if block_centrally_coordinated and event.is_centrally_coordinated:
@@ -293,6 +311,7 @@ def do_unassign_user(
     db.session.commit()
 
     mailer.send_assignment_released(user, event, spot_description=spot_description)
+    db.session.commit()
     return AssignResult(ok=True, event=event, user=user)
 
 
@@ -432,3 +451,118 @@ def unassign_other(assignment_id: int) -> Response:
 
     flash(f"Uživatel {result.user.name} byl odhlášen z akce.", "success")
     return redirect(url_for("events.detail", event_id=result.event.id))
+
+
+def lock_condition_event(event_id: int) -> Event | None:
+    """Serialize capacity changes on the event and refresh previously loaded state."""
+    return db.session.scalar(
+        db.select(Event)
+        .where(Event.id == event_id)
+        .with_hint(Event, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+        .execution_options(populate_existing=True)
+    )
+
+
+def refresh_responsible_person(event: Event) -> None:
+    eligible = [a.user for a in event.assignments if a.user.is_rp_eligible()]
+    if any(u.id == event.responsible_person_id for u in eligible):
+        return
+    person_id = eligible[0].id if eligible else None
+    if event.responsible_person_id != person_id:
+        event.responsible_person_id = person_id
+        event.version += 1
+        audit("edit", "Event", event.id, "Zodpovědná osoba přepočtena podle účasti a aktivních kvalifikací")
+
+
+def do_assign_event(
+    event_id: int, user: UserAccount, assigned_by: UserAccount, *, self_claim: bool = False
+) -> AssignResult:
+    """Assign to a condition event under the same lock as capacity edits/releases."""
+    if not user.is_active or user.is_archived:
+        return AssignResult(False, "Uživatel nenalezen nebo není aktivní.")
+    event = lock_condition_event(event_id)
+    if event is None:
+        return AssignResult(False, "Akce nenalezena.")
+    if event.staffing_mode != StaffingMode.CONDITIONS:
+        return AssignResult(False, "Tato akce používá pozice.", event=event)
+    if self_claim:
+        permitted = (
+            user.id == assigned_by.id
+            and assigned_by.has_permission("event.assign_own")
+            and (not event.is_centrally_coordinated or assigned_by.has_permission("event.assign_other"))
+        )
+        statuses: tuple[EventStatus, ...] = (EventStatus.ASSIGNMENTS_OPEN,)
+    else:
+        permitted = event.user_can_manage_assignments(assigned_by)
+        statuses = (EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED)
+    if not permitted:
+        return AssignResult(False, "Nemáte oprávnění k přiřazení na tuto akci.", event=event)
+    if event.archived or event.status not in statuses:
+        return AssignResult(False, "Přiřazení není možné v aktuálním stavu akce.", event=event)
+    if any(a.user_id == user.id for a in event.assignments):
+        return AssignResult(False, "Uživatel je již přihlášen na tuto akci.", event=event)
+    if len(event.assignments) >= event.maximum_participants:
+        return AssignResult(False, "Maximální kapacita akce je naplněna.", event=event)
+    now = datetime.now(timezone.utc)
+    conflicts = conflicting_events_for_users(
+        [user.id], event.start_datetime, event.end_datetime, exclude_event_id=event.id
+    ).get(user.id, [])
+    conflicts = [c for c in conflicts if c["end_datetime"] > now and event.end_datetime > now]
+    assignment = Assignment(event=event, user=user, assigned_by_id=assigned_by.id)
+    db.session.add(assignment)
+    try:
+        db.session.flush()
+        refresh_responsible_person(event)
+        auto_close_if_full(event)
+        audit("create", "Event", event.id, f"'{assigned_by.name}' přihlásil/a '{user.name}' na akci '{event.name}'")
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return AssignResult(False, "Uživatel je již přihlášen na tuto akci.", event=event)
+    mailer.send_assignment_confirmed(user, event)
+    db.session.commit()
+    return AssignResult(
+        True,
+        assignment=assignment,
+        event=event,
+        user=user,
+        conflict_event_id=conflicts[0]["id"] if conflicts else None,
+        conflict_event_name=conflicts[0]["name"] if conflicts else None,
+    )
+
+
+@assignments_bp.post("/event/<int:event_id>/claim")
+@login_required
+def claim_event(event_id: int) -> Response:
+    require_permission("event.assign_own")
+    result = do_assign_event(event_id, current_user, current_user, self_claim=True)
+    if result.event is None:
+        abort(404)
+    if not result.ok:
+        _flash_assign_error(result)
+    elif result.conflict_event_id is not None:
+        _flash_assignment_conflict_warning(result)
+    else:
+        flash("Úspěšně přihlášeni na akci.", "success")
+    return redirect(url_for("events.detail", event_id=event_id))
+
+
+@assignments_bp.post("/event/<int:event_id>/assign")
+@login_required
+def assign_event_other(event_id: int) -> Response:
+    event = get_or_404(Event, event_id)
+    if not event.user_can_manage_assignments(current_user):
+        abort(403)
+    try:
+        user_id = UUID(request.form.get("user_id", ""))
+    except ValueError:
+        abort(400)
+    user = get_or_404(UserAccount, user_id)
+    result = do_assign_event(event_id, user, current_user)
+    if not result.ok:
+        _flash_assign_error(result)
+    elif result.conflict_event_id is not None:
+        _flash_assignment_conflict_warning(result)
+    else:
+        flash(f"Uživatel {user.name} byl přiřazen na akci.", "success")
+    return redirect(url_for("events.detail", event_id=event_id))

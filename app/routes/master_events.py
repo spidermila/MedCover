@@ -547,6 +547,7 @@ def _handle_advance_status(event: Event) -> Response:
     if not current_user.has_permission(required_perm):
         return jsonify({"ok": False, "error": "Nemáte oprávnění pro tuto operaci."}), 403
     before_status = event.status.value
+    event.capacity_closed = False
     event.status = target_status
     event.version += 1
     audit(

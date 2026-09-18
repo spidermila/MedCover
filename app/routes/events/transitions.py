@@ -41,6 +41,7 @@ def transition(event_id: int) -> Response:
         abort(403)
 
     previous_status = event.status
+    event.capacity_closed = False
     event.status = target_status
     event.version += 1
     audit(
