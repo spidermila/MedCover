@@ -24,6 +24,7 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import CalendarView, UserAccount
 from app.models.user import user_roles as user_roles_table
+from app.routes.assignments import refresh_responsible_person
 from app.signature import (
     MAX_UPLOAD_BYTES,
     SignatureError,
@@ -457,6 +458,13 @@ def _apply_qualification_update(user: UserAccount, qual_ids: list[int]) -> bool:
     after_quals = sorted((c.name for c in user.qualifications), key=czech_sort_key)
     if before_quals == after_quals:
         return False
+    for event in db.session.scalars(
+        db.select(Event)
+        .join(Assignment, Assignment.event_id == Event.id)
+        .where(Assignment.user_id == user.id, Event.status.not_in([EventStatus.COMPLETED, EventStatus.CANCELLED]))
+        .order_by(Event.id)
+    ).all():
+        refresh_responsible_person(event)
     audit(
         "edit",
         "UserAccount",

@@ -143,6 +143,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     staffing_mode = db.Column(
         db.Enum(StaffingMode, name="staffing_mode_enum"), nullable=False, default=StaffingMode.SPOTS
     )
+    capacity_closed = db.Column(db.Boolean, nullable=False, default=False, server_default="0")
     minimum_participants = db.Column(db.Integer, nullable=True)
     maximum_participants = db.Column(db.Integer, nullable=True)
     assignments: Mapped[list[Assignment]] = db.relationship(

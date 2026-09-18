@@ -195,7 +195,12 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         Requires both a qualification with can_be_rp=True and the
         event.assign_own permission (excludes Viewers and inactive roles).
         """
-        return self.has_permission("event.assign_own") and any(q.can_be_rp for q in self.qualifications)
+        return (
+            self.is_active
+            and not self.is_archived
+            and self.has_permission("event.assign_own")
+            and any(q.can_be_rp and not q.is_deleted for q in self.qualifications)
+        )
 
     # Flask-Login: use str(uuid) as session token
     def get_id(self) -> str:
