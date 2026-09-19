@@ -8,8 +8,9 @@ from flask_login import current_user, login_required
 
 import app.mail as mailer
 from app.extensions import db
-from app.models.event import Event, EventStatus
+from app.models.event import Event, EventStatus, StaffingMode
 from app.models.user import UserAccount
+from app.routes.assignments import auto_close_if_full, lock_condition_event
 from app.utils import audit, get_app_tz, get_or_404, require_permission
 
 from . import events_bp
@@ -145,6 +146,8 @@ def split_event(event_id: int) -> Response:
     require_permission("event.create")
 
     event = get_or_404(Event, event_id)
+    if event.staffing_mode == StaffingMode.CONDITIONS:
+        event = lock_condition_event(event_id) or event
 
     if event.status in (EventStatus.CANCELLED, EventStatus.COMPLETED):
         flash("Dokončené nebo zrušené akce nelze rozdělit.", "danger")
@@ -208,10 +211,13 @@ def split_event(event_id: int) -> Response:
 
     copy_spots_with_assignments(event, part2)
     copy_equipment(event, part2)
+    if part2.staffing_mode == StaffingMode.CONDITIONS:
+        db.session.flush()
+        auto_close_if_full(part2)
 
     audit("create", "Event", part2.id, f"Akce '{part2.name}' vytvořena rozdělením akce '{original_name}' (část 2/2)")
 
     db.session.commit()
 
-    flash(f"Akce byla rozdělena. Vznikla nová akce '{part2.name}' s otevřenými přihláškami.", "success")
+    flash(f"Akce byla rozdělena. Vznikla nová akce '{part2.name}' se zkopírovanými účastníky.", "success")
     return redirect(url_for("events.detail", event_id=part2.id))

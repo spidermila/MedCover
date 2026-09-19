@@ -3,8 +3,9 @@ import pytest
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import Event, EventStatus, EventType, StaffingMode
+from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _make_master_event, _make_rp_qual
+from tests.conftest import _make_master_event, _make_rp_qual, _make_user
 
 
 def _form(app, **extra):
@@ -73,9 +74,11 @@ def test_condition_edit_cannot_reduce_capacity_below_participation(app, admin_cl
         event = db.session.scalar(db.select(Event))
         event_id = event.id
         user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
-        event.assignments = [Assignment(user=user)]
+        second = _make_user("capacity@test.com", "Second", Role.MEMBER)
+        event.assignments.clear()
+        event.assignments = [Assignment(user=user), Assignment(user=second)]
         db.session.commit()
-    response = admin_client.post(f"/events/{event_id}/edit", data={**data, "maximum_participants": "0"})
+    response = admin_client.post(f"/events/{event_id}/edit", data={**data, "maximum_participants": "1"})
     assert response.status_code == 200
     with app.app_context():
         assert db.session.get(Event, event_id).maximum_participants == 3
