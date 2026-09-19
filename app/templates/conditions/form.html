@@ -1,0 +1,46 @@
+{% macro requirement_row(qualification_id='', count=1) %}
+<div class="condition-row d-flex gap-2 align-items-end mb-2">
+  <label class="flex-grow-1">Kvalifikace
+    <select name="requirement_qualification" class="form-select" required>
+      <option value="">— Vyberte kvalifikaci —</option>
+      {% for qualification in condition_qualifications %}
+      <option value="{{ qualification.id }}" {{ 'selected' if qualification.id|string == qualification_id|string }}>{{ qualification.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Minimum
+    <input type="number" name="requirement_count" class="form-control" min="1" required value="{{ count }}">
+  </label>
+  <button type="button" class="btn btn-outline-secondary remove-condition" aria-label="Odebrat podmínku">Odebrat</button>
+</div>
+{% endmacro %}
+<fieldset class="col-12 mb-3">
+  <legend>Podmínky obsazení</legend>
+  <div class="d-flex gap-3 mb-3">
+    <label>Minimum účastníků
+      <input type="number" name="minimum_participants" class="form-control" min="1" required
+             value="{{ request.form.get('minimum_participants', condition_owner.minimum_participants if condition_owner else 1) }}">
+    </label>
+    <label>Maximum účastníků
+      <input type="number" name="maximum_participants" class="form-control" min="1" required
+             value="{{ request.form.get('maximum_participants', condition_owner.maximum_participants if condition_owner else 1) }}">
+    </label>
+  </div>
+  <p class="text-muted">Minima vyjadřují pokrytí kvalifikací, nikoliv pracovní role. Přihlášení omezuje pouze maximální kapacita.</p>
+  <div id="conditionRows">
+    {% if request.method == 'POST' %}
+      {% set counts = request.form.getlist('requirement_count') %}
+      {% for qid in request.form.getlist('requirement_qualification') %}
+        {{ requirement_row(qid, counts[loop.index0] if loop.index0 < counts|length else '') }}
+      {% endfor %}
+    {% elif condition_owner and condition_owner.qualification_requirements %}
+      {% for requirement in condition_owner.qualification_requirements %}
+        {{ requirement_row(requirement.qualification_id, requirement.minimum_count) }}
+      {% endfor %}
+    {% else %}
+      {{ requirement_row() }}
+    {% endif %}
+  </div>
+  <button type="button" id="addCondition" class="btn btn-outline-danger btn-sm">Přidat podmínku</button>
+  <template id="conditionRowTemplate">{{ requirement_row() }}</template>
+</fieldset>

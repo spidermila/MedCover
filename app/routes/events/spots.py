@@ -108,6 +108,8 @@ def bulk_action() -> Response:
 def add_spot(event_id: int) -> Response:
     require_permission("event.edit")
     event = get_or_404(Event, event_id)
+    if event.staffing_mode == "CONDITIONS":
+        abort(400)
 
     description = request.form.get("description", "").strip() or None
     is_optional = request.form.get("is_optional") == "1"

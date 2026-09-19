@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from flask import g, has_request_context
+from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
 from app.models.event import Event
@@ -203,3 +204,20 @@ def user_helps_staffing(event: Event, user: UserAccount) -> bool:
         or sum(r.covered for r in after.requirements) > sum(r.covered for r in before.requirements)
         or (not before.rp_valid and user.is_rp_eligible())
     )
+
+
+def condition_plan_from_form(
+    form: MultiDict[str, str], *, participant_count: int = 0
+) -> tuple[int, int, list[tuple[int, int]]]:
+    try:
+        minimum = int(form.get("minimum_participants", ""))
+        maximum = int(form.get("maximum_participants", ""))
+        qualification_ids = form.getlist("requirement_qualification")
+        counts = form.getlist("requirement_count")
+        if len(qualification_ids) != len(counts):
+            raise ValueError
+        requirements = [(int(qid), int(count)) for qid, count in zip(qualification_ids, counts)]
+    except TypeError, ValueError:
+        raise ValueError("Zadejte platná celá čísla pro kapacitu a kvalifikační minima.") from None
+    validate_condition_plan(minimum, maximum, requirements, participant_count=participant_count)
+    return minimum, maximum, requirements

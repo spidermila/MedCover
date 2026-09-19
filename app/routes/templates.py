@@ -16,32 +16,13 @@ from sqlalchemy import collate
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.equipment import EquipmentType, EventTemplateEquipmentPlan
-from app.models.event import EventSpotTemplate, EventTemplate, EventType
+from app.models.event import EventTemplate, EventType
 from app.models.qualification import Qualification
+from app.routes.events._helpers import apply_condition_plan
+from app.staffing import condition_plan_from_form
 from app.utils import CS_COLLATION, audit, check_version_conflict, diff_changes, get_or_404, require_permission
 
 templates_bp = Blueprint("templates", __name__, url_prefix="/templates")
-
-
-def _parse_spot_slots(form: dict) -> list[tuple[str | None, bool, list[int]]]:
-    """Parse spot template data from form.
-
-    Expects spot_desc_N, spot_cred_N (multiple checkboxes), spot_optional_N,
-    and spot_total fields.
-    Returns list of (description, is_optional, qualification_ids) for each slot.
-    """
-    try:
-        spot_total = int(form.get("spot_total", 0) or 0)
-    except ValueError, TypeError:
-        spot_total = 0
-
-    slots: list[tuple[str | None, bool, list[int]]] = []
-    for n in range(spot_total):
-        desc = (form.get(f"spot_desc_{n}") or "").strip() or None
-        is_optional = form.get(f"spot_optional_{n}") == "1"
-        qual_ids = [int(c) for c in form.getlist(f"spot_cred_{n}") if str(c).isdigit()]
-        slots.append((desc, is_optional, qual_ids))
-    return slots
 
 
 def _rebuild_equipment_plans(template: EventTemplate, form: dict) -> None:
@@ -63,52 +44,6 @@ def _rebuild_equipment_plans(template: EventTemplate, form: dict) -> None:
                     quantity_required=qty,
                 )
                 db.session.add(ep)
-
-
-def _rebuild_spot_templates(template: EventTemplate, slots: list[tuple[str | None, bool, list[int]]]) -> None:
-    """Delete existing spot templates and recreate from slots."""
-    for st in list(template.spot_templates):
-        db.session.delete(st)
-    db.session.flush()
-    for desc, is_optional, qual_ids in slots:
-        st = EventSpotTemplate(template_id=template.id, description=desc, is_optional=is_optional)
-        if qual_ids:
-            creds = db.session.scalars(
-                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted == sa.false())
-            ).all()
-            st.required_qualifications = list(creds)
-        db.session.add(st)
-
-
-def _validate_template_slots(slots: list[tuple[str | None, bool, list[int]]]) -> str | None:
-    """Validate that template slot configuration satisfies the RP-capable spot constraint.
-
-    Operates on raw slot data (before DB objects are created). Checks against
-    DB-loaded qualification IDs with can_be_rp=True.
-
-    Returns an error message string if the configuration is invalid, or None if valid.
-    """
-    if not slots:
-        return "Šablona musí mít alespoň jednu pozici."
-
-    mandatory_slots = [s for s in slots if not s[1]]
-    if not mandatory_slots:
-        return "Šablona musí mít alespoň jednu povinnou pozici."
-
-    qual_can_be_rp_ids = set(
-        db.session.scalars(
-            db.select(Qualification.id).where(
-                Qualification.can_be_rp == sa.true(),
-                Qualification.is_deleted == sa.false(),
-            )
-        ).all()
-    )
-
-    for _desc, _is_optional, qual_ids in mandatory_slots:
-        if any(qid in qual_can_be_rp_ids for qid in qual_ids):
-            return None
-
-    return "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci umožňující roli zodpovědné osoby."
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
@@ -169,10 +104,10 @@ def create() -> str | Response:
                 EventType=EventType,
             )
 
-        slots = _parse_spot_slots(request.form)
-        slot_error = _validate_template_slots(slots)
-        if slot_error:
-            flash(slot_error, "danger")
+        try:
+            plan = condition_plan_from_form(request.form)
+        except ValueError as exc:
+            flash(str(exc), "danger")
             return render_template(
                 "templates/form.html",
                 template=None,
@@ -187,10 +122,9 @@ def create() -> str | Response:
             paid=paid,
             event_type=event_type,
         )
+        apply_condition_plan(tmpl, plan)
         db.session.add(tmpl)
         db.session.flush()
-
-        _rebuild_spot_templates(tmpl, slots)
         _rebuild_equipment_plans(tmpl, request.form)
 
         audit("create", "EventTemplate", tmpl.id, f"Vytvořena šablona akce '{tmpl.name}'")
@@ -272,13 +206,13 @@ def edit(template_id: int) -> str | Response:
             "description": tmpl.description,
             "paid": tmpl.paid,
             "event_type": tmpl.event_type.name,
-            "spot_count": len(tmpl.spot_templates),
+            "requirements": [(r.qualification_id, r.minimum_count) for r in tmpl.qualification_requirements],
         }
 
-        slots = _parse_spot_slots(request.form)
-        slot_error = _validate_template_slots(slots)
-        if slot_error:
-            flash(slot_error, "danger")
+        try:
+            plan = condition_plan_from_form(request.form)
+        except ValueError as exc:
+            flash(str(exc), "danger")
             return render_template(
                 "templates/form.html",
                 template=tmpl,
@@ -293,7 +227,7 @@ def edit(template_id: int) -> str | Response:
         tmpl.event_type = event_type
         tmpl.version += 1
 
-        _rebuild_spot_templates(tmpl, slots)
+        apply_condition_plan(tmpl, plan)
         _rebuild_equipment_plans(tmpl, request.form)
 
         after = {
@@ -301,7 +235,7 @@ def edit(template_id: int) -> str | Response:
             "description": tmpl.description,
             "paid": tmpl.paid,
             "event_type": tmpl.event_type.name,
-            "spot_count": len(slots),
+            "requirements": plan[2],
         }
 
         audit(

@@ -11,7 +11,16 @@ from sqlalchemy import collate
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.equipment import EquipmentType, EventEquipmentPlan
-from app.models.event import Event, EventSpot, EventStatus, EventType
+from app.models.event import (
+    Event,
+    EventQualificationRequirement,
+    EventSpot,
+    EventStatus,
+    EventTemplate,
+    EventTemplateQualificationRequirement,
+    EventType,
+    StaffingMode,
+)
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
@@ -185,6 +194,11 @@ def parse_event_form(form: dict, existing: Event | None = None) -> tuple[Event |
 
     assert start_dt is not None and end_dt is not None  # mypy: validated above
 
+    rp_id = fields["responsible_person_id"]
+    if rp_id and (
+        existing is None or not any(str(a.user_id) == rp_id and a.user.is_rp_eligible() for a in existing.assignments)
+    ):
+        return None, "Zodpovědná osoba musí být způsobilým účastníkem této akce."
     kwargs = {
         "name": fields["name"],
         "master_event_id": int(fields["master_event_id"]),
@@ -232,8 +246,23 @@ def build_spots(event: Event, form: dict) -> None:
         db.session.add(spot)
 
 
-def copy_spots_with_assignments(source: Event, target: Event) -> None:
-    """Copy spots (+ qualifications + existing assignments) from source to target."""
+def copy_spots_with_assignments(source: Event, target: Event, *, include_assignments: bool = True) -> None:
+    """Copy the source staffing mode and plan; split also copies participation."""
+    target.staffing_mode = source.staffing_mode
+    if source.staffing_mode == StaffingMode.CONDITIONS:
+        apply_condition_plan(
+            target,
+            (
+                source.minimum_participants,
+                source.maximum_participants,
+                [(r.qualification_id, r.minimum_count) for r in source.qualification_requirements],
+            ),
+        )
+        if include_assignments:
+            target.assignments = [
+                Assignment(user_id=a.user_id, assigned_by_id=a.assigned_by_id) for a in source.assignments
+            ]
+        return
     for spot in source.spots:
         new_spot = EventSpot(
             event_id=target.id,
@@ -244,7 +273,7 @@ def copy_spots_with_assignments(source: Event, target: Event) -> None:
         db.session.add(new_spot)
         db.session.flush()  # need new_spot.id for the assignment
 
-        if spot.assignment is not None:
+        if include_assignments and spot.assignment is not None:
             new_assignment = Assignment(
                 spot_id=new_spot.id,
                 user_id=spot.assignment.user_id,
@@ -389,3 +418,19 @@ def validate_event_spots_config(spots: list[EventSpot]) -> str | None:
             return None
 
     return "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci umožňující roli zodpovědné osoby."
+
+
+def apply_condition_plan(target: Event | EventTemplate, plan: tuple[int, int, list[tuple[int, int]]]) -> None:
+    target.minimum_participants, target.maximum_participants, requirements = plan
+    target.qualification_requirements.clear()
+    if target.id is not None:
+        db.session.flush()
+    if isinstance(target, Event):
+        target.qualification_requirements = [
+            EventQualificationRequirement(qualification_id=qid, minimum_count=count) for qid, count in requirements
+        ]
+    else:
+        target.qualification_requirements = [
+            EventTemplateQualificationRequirement(qualification_id=qid, minimum_count=count)
+            for qid, count in requirements
+        ]
