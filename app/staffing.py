@@ -128,10 +128,12 @@ class RequirementCoverage:
     qualification: Qualification
     minimum_count: int
     participants: list[UserAccount]
+    allocated_count: int = 0
 
     @property
     def covered(self) -> int:
-        return len(self.participants)
+        """Minimum coverage found by the matcher, independent of display names."""
+        return self.allocated_count
 
     @property
     def deficit(self) -> int:
@@ -200,8 +202,17 @@ def _evaluate(event: Event, participants: list[UserAccount]) -> StaffingSummary:
 
         for user_index in range(len(participants)):
             match(user_index, set())
+        allocated: defaultdict[int, int] = defaultdict(int)
         for slot, user_index in sorted(owners.items()):
-            coverage[slots[slot]].participants.append(participants[user_index])
+            allocated[slots[slot]] += 1
+        for index in indexes:
+            fillers_for_requirement = fillers[index]
+            coverage[index].participants = [
+                participant
+                for participant, qualifications in zip(participants, held)
+                if qualifications & fillers_for_requirement
+            ]
+            coverage[index].allocated_count = allocated[index]
     rp_valid = any(u.id == event.responsible_person_id and u.is_rp_eligible() for u in participants)
     return StaffingSummary(
         len(participants), event.minimum_participants, event.maximum_participants, coverage, rp_valid
