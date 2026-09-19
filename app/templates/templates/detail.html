@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ template.name }} — MedCover{% endblock %}
+{% block content %}
+<h2>{{ template.name }}</h2>
+{% if template.is_legacy %}
+<div class="alert alert-info">Původní šablona slouží pouze jako předloha. Její obsah můžete ručně přenést do nové podmínkové šablony a poté původní šablonu smazat. Úpravy ani vytváření akcí z této šablony nejsou povoleny.</div>
+{% endif %}
+<p>{{ template.event_type.value }} · {{ 'Placená' if template.paid else 'Neplacená' }}</p>
+<p class="text-prewrap">{{ template.description or 'Bez popisu' }}</p>
+{% if template.is_legacy %}
+<h3>Původní pozice</h3>
+<ul>
+{% for spot in template.spot_templates %}
+<li>{{ spot.description or 'Bez popisu' }} — {{ 'Volitelná' if spot.is_optional else 'Povinná' }}
+  <ul>{% for qualification in spot.required_qualifications %}<li>{{ qualification.name }}{% if qualification.is_deleted %} (smazaná kvalifikace){% endif %}</li>{% else %}<li>Bez kvalifikačního omezení</li>{% endfor %}</ul>
+</li>
+{% else %}<li>Žádné pozice</li>{% endfor %}
+</ul>
+{% else %}
+<p>Minimum: {{ template.minimum_participants }} · Maximum: {{ template.maximum_participants }}</p>
+<ul>{% for requirement in template.qualification_requirements %}<li>{{ requirement.qualification.name }}: {{ requirement.minimum_count }}</li>{% endfor %}</ul>
+{% endif %}
+<h3>Vybavení</h3>
+<ul>{% for plan in template.equipment_plans %}<li>{{ plan.equipment_type.name }}: {{ plan.quantity_required }}</li>{% else %}<li>Bez požadavků na vybavení</li>{% endfor %}</ul>
+<div class="d-flex gap-2">
+<a class="btn btn-outline-secondary" href="{{ url_for('templates.index') }}">Zpět</a>
+{% if current_user.has_permission('event_template.create') %}<a class="btn btn-danger" href="{{ url_for('templates.create') }}">Nová šablona</a>{% endif %}
+{% if not template.is_legacy %}
+{% if current_user.has_permission('event_template.edit') %}<a class="btn btn-outline-secondary" href="{{ url_for('templates.edit', template_id=template.id) }}">Upravit</a>{% endif %}
+{% if current_user.has_permission('event.create') %}<a class="btn btn-outline-danger" href="{{ url_for('events.create_from_template', template_id=template.id) }}">Použít</a>{% endif %}
+{% endif %}
+{% if current_user.has_permission('event_template.delete') %}
+<form method="POST" action="{{ url_for('templates.delete', template_id=template.id) }}" data-confirm="Opravdu smazat tuto šablonu?">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-warning">Smazat</button>
+</form>
+{% endif %}
+</div>
+{% endblock %}

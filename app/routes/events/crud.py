@@ -271,7 +271,10 @@ def index() -> str:
         # spot_templates / equipment_plans / qualifications selectin cascade.
         event_templates = list(
             db.session.scalars(
-                db.select(EventTemplate).options(raiseload("*")).order_by(collate(EventTemplate.name, CS_COLLATION))
+                db.select(EventTemplate)
+                .where(EventTemplate.minimum_participants.is_not(None), EventTemplate.maximum_participants.is_not(None))
+                .options(raiseload("*"))
+                .order_by(collate(EventTemplate.name, CS_COLLATION))
             ).all()
         )
 
@@ -401,6 +404,16 @@ def feed() -> Response:
 def create() -> str | Response:
     require_permission("event.create")
 
+    # The ordinary form posts its template ID here; never trust a forged source.
+    template_id = request.form.get("template_id") or request.args.get("template_id")
+    if template_id:
+        try:
+            template_id_int = int(template_id)
+        except ValueError:
+            abort(400)
+        if get_or_404(EventTemplate, template_id_int).is_legacy:
+            abort(403, description="Z původní šablony nelze vytvářet akce.")
+
     cloned_from: Event | None = None
     clone_event_id = request.args.get("clone_event_id", type=int)
     if clone_event_id is not None:
@@ -510,6 +523,8 @@ def create() -> str | Response:
 def create_from_template(template_id: int) -> str | Response:
     require_permission("event.create")
     tmpl = get_or_404(EventTemplate, template_id)
+    if tmpl.is_legacy:
+        abort(403, description="Z původní šablony nelze vytvářet akce.")
 
     master_events = active_master_events_list()
     users = rp_eligible_users_list()

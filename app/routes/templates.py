@@ -9,7 +9,7 @@ Permissions:
 """
 
 import sqlalchemy as sa
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import collate
 
@@ -58,6 +58,13 @@ def index() -> str:
         db.select(EventTemplate).order_by(collate(EventTemplate.name, CS_COLLATION))
     ).all()
     return render_template("templates/index.html", templates=all_templates)
+
+
+@templates_bp.get("/<int:template_id>")
+@login_required
+def detail(template_id: int) -> str:
+    require_permission("event_template.view")
+    return render_template("templates/detail.html", template=get_or_404(EventTemplate, template_id))
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
@@ -151,6 +158,8 @@ def edit(template_id: int) -> str | Response:
     require_permission("event_template.edit")
 
     tmpl = get_or_404(EventTemplate, template_id)
+    if tmpl.is_legacy:
+        abort(403, description="Původní šablona slouží pouze jako předloha pro ruční vytvoření nové šablony.")
 
     qualifications = db.session.scalars(
         db.select(Qualification)

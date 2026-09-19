@@ -14,8 +14,6 @@ depends_on = None
 
 def upgrade():
     connection = op.get_bind()
-    if connection.scalar(sa.text("SELECT COUNT(*) FROM event_template")):
-        raise RuntimeError("Remove existing event templates through the UI before migrating conditions.")
     duplicates = connection.execute(sa.text(
         "SELECT s.event_id, a.user_id, COUNT(*) AS assignments FROM assignment a "
         "JOIN event_spot s ON s.id = a.spot_id GROUP BY s.event_id, a.user_id HAVING COUNT(*) > 1"
@@ -53,7 +51,7 @@ def upgrade():
     op.create_index("ix_assignment_event_id", "assignment", ["event_id"])
     op.create_unique_constraint("uq_assignment_event_user", "assignment", ["event_id", "user_id"])
     for column in ("minimum_participants", "maximum_participants"):
-        op.add_column("event_template", sa.Column(column, sa.Integer(), nullable=False))
+        op.add_column("event_template", sa.Column(column, sa.Integer(), nullable=True))
     for table, owner, key, short in (
         ("event_qualification_requirement", "event", "event_id", "event"),
         ("event_template_qualification_requirement", "event_template", "template_id", "template"),
@@ -72,7 +70,9 @@ def downgrade():
     connection = op.get_bind()
     if connection.scalar(sa.text("SELECT COUNT(*) FROM event WHERE staffing_mode = 'CONDITIONS'")):
         raise RuntimeError("Cannot downgrade: condition events would lose their plan and participation.")
-    if connection.scalar(sa.text("SELECT COUNT(*) FROM event_template")):
+    if connection.scalar(sa.text("SELECT COUNT(*) FROM event_template WHERE minimum_participants IS NOT NULL "
+                                 "OR maximum_participants IS NOT NULL")) or connection.scalar(
+            sa.text("SELECT COUNT(*) FROM event_template_qualification_requirement")):
         raise RuntimeError("Cannot downgrade: condition templates would lose their plan.")
     op.drop_table("event_template_qualification_requirement")
     op.drop_table("event_qualification_requirement")

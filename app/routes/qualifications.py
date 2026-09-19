@@ -23,7 +23,6 @@ from app.models.event import (
     EventTemplate,
     EventTemplateQualificationRequirement,
     spot_qualifications,
-    spot_template_qualifications,
 )
 from app.models.qualification import Qualification, user_qualifications
 from app.routes.assignments import refresh_responsible_person
@@ -253,7 +252,7 @@ def delete_confirm(cred_id: int) -> str | Response:
     # Users holding this qualification — will be unlinked
     affected_users = list(cred.holders.all())
 
-    # Templates referencing this qualification — will be unlinked
+    # Legacy templates retain the qualification as a historical reference
     affected_templates = (
         db.session.scalars(
             db.select(EventTemplate)
@@ -318,25 +317,7 @@ def delete(cred_id: int) -> Response:
             f"Kvalifikace '{qual_name}' odebrána z {len(active_spot_ids)} aktivní(ch) pozice/pozic akcí",
         )
 
-    # ── Remove from event templates ────────────────────────────────────────────
-    tmpl_count = (
-        db.session.scalar(
-            db.select(db.func.count())
-            .select_from(spot_template_qualifications)
-            .where(spot_template_qualifications.c.qualification_id == cred_id)
-        )
-        or 0
-    )
-    if tmpl_count:
-        db.session.execute(
-            spot_template_qualifications.delete().where(spot_template_qualifications.c.qualification_id == cred_id)
-        )
-        audit(
-            "qualification_unlinked",
-            "Qualification",
-            cred.id,
-            f"Kvalifikace '{qual_name}' odebrána z {tmpl_count} šablony/šablon",
-        )
+    # Legacy template references retain qualification tombstones for manual recreation.
 
     # ── Remove from user qualifications ───────────────────────────────────────
     user_count = (

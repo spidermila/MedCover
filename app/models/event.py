@@ -87,8 +87,8 @@ class EventTemplate(db.Model):  # type: ignore[misc]
     # Optimistic locking — increment on every write; catch StaleDataError → HTTP 409
     version = db.Column(db.Integer, default=1, nullable=False)
 
-    minimum_participants = db.Column(db.Integer, nullable=False, default=1)
-    maximum_participants = db.Column(db.Integer, nullable=False, default=1)
+    minimum_participants = db.Column(db.Integer, nullable=True)
+    maximum_participants = db.Column(db.Integer, nullable=True)
     qualification_requirements: Mapped[list[EventTemplateQualificationRequirement]] = db.relationship(
         "EventTemplateQualificationRequirement",
         back_populates="template",
@@ -108,6 +108,10 @@ class EventTemplate(db.Model):  # type: ignore[misc]
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    @property
+    def is_legacy(self) -> bool:
+        return self.minimum_participants is None or self.maximum_participants is None
 
     def __repr__(self) -> str:
         return f"<EventTemplate {self.name}>"

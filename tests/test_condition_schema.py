@@ -4,18 +4,18 @@ from pathlib import Path
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import inspect, text
+from sqlalchemy import Integer, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models.assignment import Assignment, DebriefingRecord
-from app.models.event import Event, EventSpot, StaffingMode
+from app.models.event import Event, EventSpot, EventTemplate, StaffingMode
 from app.models.role import Role
 from tests.conftest import _make_event_with_spot, _make_user
 
 
-def migration():
-    path = Path("migrations/versions/9e8f7a6b5c4d_condition_staffing_foundation.py")
+def migration(filename="9e8f7a6b5c4d_condition_staffing_foundation.py"):
+    path = Path("migrations/versions") / filename
     spec = importlib.util.spec_from_file_location("conditions_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -99,9 +99,27 @@ def test_migration_backfills_without_losing_debriefing(app):
                 "VALUES ('Old template', 0, 'MEDICAL_COVER', GETUTCDATE(), GETUTCDATE(), 1)"
             )
         )
-        with pytest.raises(RuntimeError, match="Remove existing event templates"):
-            migration().upgrade()
-        db.session.execute(text("DELETE FROM event_template WHERE name = 'Old template'"))
+        template_id = db.session.scalar(text("SELECT id FROM event_template WHERE name='Old template'"))
+        legacy_spot = db.session.scalar(
+            text(
+                "INSERT INTO event_spot_template (template_id, description, is_optional) "
+                "OUTPUT inserted.id VALUES (:id, 'Old position', 1)"
+            ),
+            {"id": template_id},
+        )
+        qualification_id = db.session.scalar(
+            text(
+                "INSERT INTO qualification (name, can_be_rp, is_deleted) "
+                "OUTPUT inserted.id VALUES ('Old qualification', 1, 0)"
+            )
+        )
+        db.session.execute(
+            text("INSERT INTO spot_template_qualifications (spot_template_id, qualification_id) VALUES (:spot, :qual)"),
+            {"spot": legacy_spot, "qual": qualification_id},
+        )
+        migration().upgrade()
+        # A legacy reference can be downgraded and upgraded without losing contents.
+        migration().downgrade()
         migration().upgrade()
         db.session.commit()
         db.session.expire_all()
@@ -109,3 +127,29 @@ def test_migration_backfills_without_losing_debriefing(app):
         assert db.session.get(DebriefingRecord, record_id).assignment_id == assignment_id
         assert db.session.get(Event, event_id).staffing_mode == StaffingMode.SPOTS
         assert db.session.get(EventSpot, spot_id) is not None
+        template = db.session.get(EventTemplate, template_id)
+        assert template.is_legacy
+        assert template.spot_templates[0].id == legacy_spot
+        assert template.spot_templates[0].description == "Old position"
+        assert template.spot_templates[0].is_optional
+        assert template.spot_templates[0].required_qualifications[0].id == qualification_id
+
+
+def test_template_repair_migration_preserves_already_upgraded_plans(app):
+    with app.app_context():
+        template = EventTemplate(name="Existing condition plan", minimum_participants=2, maximum_participants=3)
+        db.session.add(template)
+        db.session.commit()
+        ops = migration().op
+        for column in ("minimum_participants", "maximum_participants"):
+            ops.alter_column("event_template", column, existing_type=Integer(), nullable=False)
+        repair = migration("b2c3d4e5f6a7_preserve_legacy_templates.py")
+        repair.upgrade()
+        repair.downgrade()
+        db.session.commit()
+        assert not template.is_legacy
+        assert (template.minimum_participants, template.maximum_participants) == (2, 3)
+        columns = {c["name"]: c for c in inspect(db.session.connection()).get_columns("event_template")}
+        assert columns["minimum_participants"]["nullable"] and columns["maximum_participants"]["nullable"]
+        with pytest.raises(RuntimeError, match="condition templates"):
+            migration().downgrade()
