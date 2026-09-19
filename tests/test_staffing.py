@@ -60,6 +60,23 @@ def test_matching_reuses_users_only_across_independent_hierarchies(app):
         assert not evaluate_staffing(event).is_staffing_sufficient
 
 
+def test_requirement_lists_all_eligible_participants_without_fixing_assignment(app):
+    with app.app_context():
+        event, doctor, medic, driver = _plan(app)
+        first = _make_user("eligible-first@test.com", "First", Role.MEMBER)
+        second = _make_user("eligible-second@test.com", "Second", Role.MEMBER)
+        first.qualifications = [doctor, driver]
+        second.qualifications = [doctor, driver]
+        event.assignments.extend([Assignment(user=first), Assignment(user=second)])
+        db.session.commit()
+
+        summary = evaluate_staffing(event)
+        by_name = {r.qualification.name: r for r in summary.requirements}
+        assert [u.name for u in by_name["Driver"].participants] == ["First", "Second"]
+        assert by_name["Driver"].covered == 1
+        assert by_name["Driver"].deficit == 0
+
+
 @pytest.mark.parametrize("case", ["minimum", "maximum", "count", "duplicate", "hierarchy", "rp", "capacity", "missing"])
 def test_invalid_plans_are_rejected(app, case):
     with app.app_context():
