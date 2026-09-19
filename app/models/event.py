@@ -88,7 +88,7 @@ class EventTemplate(db.Model):  # type: ignore[misc]
 
     minimum_participants = db.Column(db.Integer, nullable=False, default=1)
     maximum_participants = db.Column(db.Integer, nullable=False, default=1)
-    qualification_requirements = db.relationship(
+    qualification_requirements: Mapped[list[EventTemplateQualificationRequirement]] = db.relationship(
         "EventTemplateQualificationRequirement",
         back_populates="template",
         cascade="all, delete-orphan",
@@ -153,7 +153,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         lazy="selectin",
         order_by="Assignment.assigned_at, Assignment.id",
     )
-    qualification_requirements = db.relationship(
+    qualification_requirements: Mapped[list[EventQualificationRequirement]] = db.relationship(
         "EventQualificationRequirement",
         back_populates="event",
         cascade="all, delete-orphan",
@@ -394,7 +394,7 @@ class EventQualificationRequirement(db.Model):  # type: ignore[misc]
     qualification_id = db.Column(db.Integer, db.ForeignKey("qualification.id"), nullable=False)
     minimum_count = db.Column(db.Integer, nullable=False)
     event = db.relationship("Event", back_populates="qualification_requirements")
-    qualification = db.relationship("Qualification", lazy="selectin")
+    qualification: Mapped[Qualification] = db.relationship("Qualification", lazy="selectin")
 
 
 class EventTemplateQualificationRequirement(db.Model):  # type: ignore[misc]
@@ -408,4 +408,4 @@ class EventTemplateQualificationRequirement(db.Model):  # type: ignore[misc]
     qualification_id = db.Column(db.Integer, db.ForeignKey("qualification.id"), nullable=False)
     minimum_count = db.Column(db.Integer, nullable=False)
     template = db.relationship("EventTemplate", back_populates="qualification_requirements")
-    qualification = db.relationship("Qualification", lazy="selectin")
+    qualification: Mapped[Qualification] = db.relationship("Qualification", lazy="selectin")

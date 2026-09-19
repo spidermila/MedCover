@@ -31,11 +31,15 @@ def _event_form_data(master_event_id: int, name: str = "Test Event", rp_qual_id:
         "start_datetime": "2030-06-01T10:00",
         "end_datetime": "2030-06-01T18:00",
         "spot_count": "0",
+        "minimum_participants": "1",
+        "maximum_participants": "1",
     }
     if rp_qual_id is not None:
         data["spot_total"] = "1"
         data["spot_desc_0"] = "Zdravotník"
         data["spot_cred_0"] = str(rp_qual_id)
+        data["requirement_qualification"] = str(rp_qual_id)
+        data["requirement_count"] = "1"
     return data
 
 
@@ -186,8 +190,7 @@ class TestEventCreate:
         assert 'value="Source Event"' in html
         assert f'action="/events/create?clone_event_id={event_id}"' in html
         assert 'name="version"' not in html
-        admin_option = html.split(f'value="{admin_id}"', 1)[1].split("</option>", 1)[0]
-        assert "selected" not in admin_option
+        assert f'value="{admin_id}"' not in html
         with app.app_context():
             assert len(db.session.scalars(db.select(Event)).all()) == 1
 
@@ -253,7 +256,8 @@ class TestEventCreate:
         data = _event_form_data(me_id, rp_qual_id=rp_qual_id)
         data["responsible_person_id"] = rp_id
         response = admin_client.post("/events/create", data=data, follow_redirects=False)
-        assert response.status_code == 302  # not 500
+        assert response.status_code == 200  # A new event has no eligible attendees yet.
+        assert "způsobilým účastníkem" in response.data.decode()
 
 
 class TestEventDetail:
@@ -431,7 +435,7 @@ class TestEventEdit:
         response = admin_client.post(
             f"/events/{event_id}/edit",
             data={
-                **_event_form_data(me_id, name="Updated Event"),
+                **_event_form_data(me_id, name="Updated Event", rp_qual_id=rp_qual_id),
                 "version": str(version),
             },
             follow_redirects=False,
@@ -553,7 +557,7 @@ class TestAuditChangeTracking:
         admin_client.post(
             f"/events/{event_id}/edit",
             data={
-                **_event_form_data(me_id, name="Renamed Event"),
+                **_event_form_data(me_id, name="Renamed Event", rp_qual_id=rp_qual_id),
                 "version": str(version),
             },
             follow_redirects=False,
@@ -586,7 +590,7 @@ class TestAuditChangeTracking:
         admin_client.post(
             f"/events/{event_id}/edit",
             data={
-                **_event_form_data(me_id, name="Test Event"),
+                **_event_form_data(me_id, name="Test Event", rp_qual_id=rp_qual_id),
                 "version": str(version),
             },
             follow_redirects=False,
@@ -815,12 +819,12 @@ class TestBulkAction:
 
 class TestAddSpot:
     def test_admin_can_add_spot(self, app, admin_client):
-        me_id = _make_master_event(app)
+        event_id = _make_event_in_status(app)
         rp_qual_id = _make_rp_qual(app)
-        admin_client.post("/events/create", data=_event_form_data(me_id, rp_qual_id=rp_qual_id), follow_redirects=True)
         with app.app_context():
-            event = db.session.scalar(db.select(Event).where(Event.name == "Test Event"))
-            event_id = event.id
+            spot = EventSpot(event_id=event_id, required_qualifications=[db.session.get(Qualification, rp_qual_id)])
+            db.session.add(spot)
+            db.session.commit()
 
         response = admin_client.post(
             f"/events/{event_id}/spots/add",
@@ -1298,11 +1302,7 @@ class TestEventChangedNotification:
             db.session.add(member)
             db.session.flush()
 
-            spot = EventSpot(event_id=event.id)
-            db.session.add(spot)
-            db.session.flush()
-
-            assignment = Assignment(spot_id=spot.id, user_id=member.id)
+            assignment = Assignment(event_id=event.id, user_id=member.id)
             db.session.add(assignment)
             db.session.commit()
 
@@ -1314,7 +1314,7 @@ class TestEventChangedNotification:
 
         admin_client.post(
             f"/events/{event_id}/edit",
-            data={**_event_form_data(me_id, name="Renamed Event"), "version": str(version)},
+            data={**_event_form_data(me_id, name="Renamed Event", rp_qual_id=rp_qual_id), "version": str(version)},
             follow_redirects=False,
         )
 
@@ -2076,7 +2076,7 @@ class TestEventSpotRpConstraint:
         # No spot data — spot_total defaults to 0
         response = admin_client.post("/events/create", data=data, follow_redirects=True)
         assert response.status_code == 200
-        assert "Akce musí mít alespoň jednu pozici".encode() in response.data
+        assert "Alespoň jedna podmínka".encode() in response.data
         with app.app_context():
             assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
 
@@ -2091,7 +2091,7 @@ class TestEventSpotRpConstraint:
         data["spot_optional_0"] = "1"
         response = admin_client.post("/events/create", data=data, follow_redirects=True)
         assert response.status_code == 200
-        assert "Akce musí mít alespoň jednu povinnou pozici".encode() in response.data
+        assert "Alespoň jedna podmínka".encode() in response.data
         with app.app_context():
             assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
 
@@ -2106,10 +2106,11 @@ class TestEventSpotRpConstraint:
         data = _event_form_data(me_id)
         data["spot_total"] = "1"
         data["spot_desc_0"] = "Povinná pozice"
-        data["spot_cred_0"] = str(qual_id)
+        data["requirement_qualification"] = str(qual_id)
+        data["requirement_count"] = "1"
         response = admin_client.post("/events/create", data=data, follow_redirects=True)
         assert response.status_code == 200
-        assert "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci".encode() in response.data
+        assert "Alespoň jedna podmínka musí vyžadovat kvalifikaci".encode() in response.data
         with app.app_context():
             assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
 
@@ -2208,7 +2209,7 @@ class TestEventSpotRpConstraint:
         # spot_cred_0 is intentionally absent — no qualification at all
         response = admin_client.post("/events/create", data=data, follow_redirects=True)
         assert response.status_code == 200
-        assert "Alespoň jedna povinná pozice musí vyžadovat kvalifikaci".encode() in response.data
+        assert "Alespoň jedna podmínka musí vyžadovat kvalifikaci".encode() in response.data
         with app.app_context():
             assert db.session.scalar(db.select(db.func.count()).select_from(Event)) == 0
 

@@ -38,6 +38,7 @@ from app.queries import (
     user_conflicts_across_events,
 )
 from app.routes.assignments import do_assign_user, do_unassign_user
+from app.routes.events._helpers import copy_spots_with_assignments
 from app.utils import (
     CS_COLLATION,
     audit,
@@ -807,6 +808,9 @@ def table_event_clone(me_id: int, event_id: int) -> Response:
 
     clone = Event(
         name=f"{source.name} kopie",
+        staffing_mode=source.staffing_mode,
+        minimum_participants=source.minimum_participants,
+        maximum_participants=source.maximum_participants,
         master_event_id=source.master_event_id,
         start_datetime=source.start_datetime,
         end_datetime=source.end_datetime,
@@ -818,13 +822,7 @@ def table_event_clone(me_id: int, event_id: int) -> Response:
     db.session.add(clone)
     db.session.flush()
 
-    for spot in source.spots:
-        new_spot = EventSpot(
-            event_id=clone.id,
-            description=spot.description,
-        )
-        new_spot.required_qualifications = list(spot.required_qualifications)
-        db.session.add(new_spot)
+    copy_spots_with_assignments(source, clone, include_assignments=False)
 
     audit("create", "Event", clone.id, f"Klonována akce '{source.name}' → '{clone.name}' (tabulkový manažer)")
     db.session.commit()

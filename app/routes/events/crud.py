@@ -19,7 +19,7 @@ from app.models.equipment import (
     EquipmentType,
     EventEquipmentPlan,
 )
-from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType
+from app.models.event import Event, EventSpot, EventStatus, EventTemplate, EventType, StaffingMode
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.user import UserAccount
@@ -33,6 +33,8 @@ from app.queries import (
     serialize_conflicts_for_template,
     user_fillable_qual_ids,
 )
+from app.routes.assignments import lock_condition_event
+from app.staffing import condition_plan_from_form
 from app.utils import (
     CS_COLLATION,
     audit,
@@ -50,6 +52,7 @@ from ._helpers import (
     STATUS_BADGE_COLORS,
     STATUS_COLORS,
     all_equipment_types,
+    apply_condition_plan,
     apply_equipment_plans,
     build_spots,
     can_view,
@@ -422,6 +425,14 @@ def create() -> str | Response:
             flash(error or "Chyba formuláře.", "danger")
             return _render_create()
 
+        event.staffing_mode = cloned_from.staffing_mode if cloned_from else StaffingMode.CONDITIONS
+        if event.staffing_mode == StaffingMode.CONDITIONS:
+            try:
+                apply_condition_plan(event, condition_plan_from_form(request.form))
+            except ValueError as exc:
+                db.session.rollback()
+                flash(str(exc), "danger")
+                return _render_create()
         quick_publish = request.form.get("action") == "quick_publish"
         if quick_publish:
             if not current_user.has_permission("event.publish") or not current_user.has_permission(
@@ -435,16 +446,14 @@ def create() -> str | Response:
         db.session.add(event)
         db.session.flush()
 
-        # Spots always come from the form — the template pre-fill renders them
-        # into the form on GET, so POST always contains the (possibly adjusted) rows.
-        build_spots(event, request.form)
-
-        db.session.flush()
-        spot_error = validate_event_spots_config(list(event.spots))
-        if spot_error:
-            db.session.rollback()
-            flash(spot_error, "danger")
-            return _render_create()
+        if event.staffing_mode == StaffingMode.SPOTS:
+            build_spots(event, request.form)
+            db.session.flush()
+            spot_error = validate_event_spots_config(list(event.spots))
+            if spot_error:
+                db.session.rollback()
+                flash(spot_error, "danger")
+                return _render_create()
 
         # Parse and validate equipment plans submitted in the form.
         eq_plans = parse_equipment_plans_from_form(request.form)
@@ -654,6 +663,10 @@ def edit(event_id: int) -> str | Response:
     require_permission("event.edit")
 
     event = get_or_404(Event, event_id)
+    if request.method == "POST" and event.staffing_mode == StaffingMode.CONDITIONS:
+        locked_event = lock_condition_event(event_id)
+        assert locked_event is not None
+        event = locked_event
 
     if event.status in (EventStatus.COMPLETED, EventStatus.CANCELLED):
         flash("Dokončené nebo zrušené akce nelze upravovat.", "warning")
@@ -686,6 +699,12 @@ def edit(event_id: int) -> str | Response:
             flash(RECORD_MODIFIED_MSG, "danger")
             return _render_edit()
 
+        if event.staffing_mode == StaffingMode.CONDITIONS:
+            try:
+                plan = condition_plan_from_form(request.form, participant_count=len(event.assignments))
+            except ValueError as exc:
+                flash(str(exc), "danger")
+                return _render_edit()
         # Snapshot before mutation
         before = {
             "name": event.name,
@@ -707,6 +726,8 @@ def edit(event_id: int) -> str | Response:
             flash(error, "danger")
             return _render_edit()
 
+        if event.staffing_mode == StaffingMode.CONDITIONS:
+            apply_condition_plan(event, plan)
         after = {
             "name": event.name,
             "master_event_id": event.master_event_id,
@@ -748,7 +769,7 @@ def edit(event_id: int) -> str | Response:
         apply_equipment_plans(event, eq_plans)
 
         # Rebuild spots only when the user explicitly changed them in the form.
-        if request.form.get("spots_changed") == "1":
+        if event.staffing_mode == StaffingMode.SPOTS and request.form.get("spots_changed") == "1":
             for spot in list(event.spots):
                 db.session.delete(spot)
             db.session.flush()

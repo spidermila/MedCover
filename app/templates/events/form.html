@@ -103,7 +103,7 @@
           <select class="form-select" id="responsible_person_id" name="responsible_person_id">
             <option value="">— Nepřiřazena —</option>
             {% set default_rp = '' if cloned_from else (event.responsible_person_id|string if event and event.responsible_person_id else '') %}
-            {% for user in users %}
+            {% for user in users if mode == 'edit' and user.id in (event.assignments | map(attribute='user_id') | list) %}
               <option value="{{ user.id }}"
                 {{ 'selected' if request.form.get('responsible_person_id', default_rp) == user.id|string }}>
                 {{ user.name }}
@@ -156,6 +156,7 @@
           <div class="form-text">Prázdné = okamžitě po zveřejnění</div>
         </div>
 
+        {% if event and event.staffing_mode == 'SPOTS' %}
         {# ── Spots ────────────────────────────────────────────────────────── #}
         <div class="col-12">
           <div class="d-flex justify-content-between align-items-center mb-2">
@@ -290,6 +291,12 @@
           </template>
         </div>
 
+        {% else %}
+        {% set condition_owner = event if event else template %}
+        {% set condition_qualifications = all_qualifications %}
+        {% include 'conditions/form.html' %}
+        {% endif %}
+
         {# ── Paid ─────────────────────────────────────────────────────────── #}
         <div class="col-12 col-md-3 d-flex align-items-end">
           <div class="form-check form-switch mb-2">
@@ -418,8 +425,9 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/condition-form.js') }}"></script>
 <script src="{{ url_for('static', filename='js/event-form.js') }}?v={{ static_ver }}"></script>
-{% if mode == "edit" %}
+{% if mode == "edit" and event.staffing_mode == 'SPOTS' %}
 <script nonce="{{ g.csp_nonce }}">
 /* Mark spots as changed whenever any spot row is added, removed, or modified. */
 (function () {

@@ -187,6 +187,9 @@ def split_event(event_id: int) -> Response:
     # Create the second part
     part2 = Event(
         name=f"{original_name} 2/2",
+        staffing_mode=event.staffing_mode,
+        minimum_participants=event.minimum_participants,
+        maximum_participants=event.maximum_participants,
         master_event_id=event.master_event_id,
         event_type=event.event_type,
         status=EventStatus.ASSIGNMENTS_OPEN,
