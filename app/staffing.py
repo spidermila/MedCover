@@ -85,9 +85,10 @@ def qualification_graph() -> QualificationGraph:
     if has_app_context() and "staffing_graph" in g:
         return g.staffing_graph
     qualifications = {q.id: q for q in db.session.scalars(db.select(Qualification)).all()}
-    parents: dict[int, set[int]] = {qid: set() for qid in qualifications}
+    parents: dict[int, set[int]] = {qid: set() for qid, q in qualifications.items() if not q.is_deleted}
     for child, parent in db.session.execute(db.select(qualification_parents)).all():
-        parents[child].add(parent)
+        if child in parents and parent in parents:
+            parents[child].add(parent)
     graph = QualificationGraph(qualifications, parents, validate_qualification_graph(parents))
     if has_app_context():
         g.staffing_graph = graph
@@ -172,7 +173,9 @@ def _evaluate(event: Event, participants: list[UserAccount]) -> StaffingSummary:
     ]
     hierarchies: dict[int, list[int]] = defaultdict(list)
     for index, requirement in enumerate(coverage):
-        hierarchies[graph.components[requirement.qualification.id]].append(index)
+        component = graph.components.get(requirement.qualification.id)
+        if component is not None:
+            hierarchies[component].append(index)
     for indexes in hierarchies.values():
         slots = [index for index in indexes for _ in range(min(coverage[index].minimum_count, len(participants)))]
         fillers = {
