@@ -16,6 +16,16 @@
       Tato akce je nevratná. Níže je uveden přehled všech dopadů.
     </div>
 
+    {% if blocking_events or blocking_templates %}
+    <div class="alert alert-danger">
+      <strong>Kvalifikaci nelze smazat. Nejprve upravte podmínky těchto záznamů:</strong>
+      <ul>
+        {% for event in blocking_events %}<li><a href="{{ url_for('events.detail', event_id=event.id) }}">{{ event.name }}</a></li>{% endfor %}
+        {% for template in blocking_templates %}<li><a href="{{ url_for('templates.edit', template_id=template.id) }}">{{ template.name }}</a></li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
     {# ── Active spots — will be unlinked ─────────────────────────────────── #}
     <div class="card mb-3 border-danger">
       <div class="card-header bg-danger text-white fw-semibold">
@@ -110,6 +120,7 @@
       </div>
     </div>
 
+    {% if not blocking_events and not blocking_templates %}
     <form method="POST" action="{{ url_for('qualifications.delete', cred_id=cred.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="d-flex gap-2">
@@ -117,6 +128,7 @@
         <a href="{{ url_for('qualifications.index') }}" class="btn btn-outline-secondary">Zrušit</a>
       </div>
     </form>
+    {% endif %}
 
   </div>
 </div>

@@ -9,9 +9,10 @@ from flask_login import current_user, login_required
 import app.mail as mailer
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event, EventSpot, EventStatus, StaffingMode
 from app.models.qualification import Qualification
 from app.models.user import UserAccount
+from app.routes.assignments import lock_condition_event
 from app.utils import audit, get_or_404, require_permission, safe_next
 
 from . import events_bp
@@ -280,6 +281,8 @@ def set_rp(event_id: int) -> Response:
     require_permission("event.set_responsible_person")
 
     event = get_or_404(Event, event_id)
+    if event.staffing_mode == StaffingMode.CONDITIONS:
+        event = lock_condition_event(event_id) or event
 
     user_id_str = request.form.get("user_id", "").strip()
     if not user_id_str:
@@ -300,12 +303,12 @@ def set_rp(event_id: int) -> Response:
         flash("Tento uživatel nemá potřebnou kvalifikaci pro roli zodpovědné osoby.", "warning")
         return redirect(url_for("events.detail", event_id=event_id))
 
-    # User must currently occupy a spot on this event
+    # The responsible person must currently participate in this event
     assigned = db.session.scalar(
         db.select(Assignment).where(Assignment.event_id == event_id, Assignment.user_id == user_id)
     )
     if assigned is None:
-        flash("Vybraný uživatel nemá obsazenou pozici na této akci.", "warning")
+        flash("Vybraný uživatel není účastníkem této akce.", "warning")
         return redirect(url_for("events.detail", event_id=event_id))
 
     old_rp = event.responsible_person_id

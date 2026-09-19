@@ -16,17 +16,70 @@ from sqlalchemy import collate
 from app.extensions import db
 from app.models.event import (
     Event,
+    EventQualificationRequirement,
     EventSpot,
     EventSpotTemplate,
     EventStatus,
     EventTemplate,
+    EventTemplateQualificationRequirement,
     spot_qualifications,
     spot_template_qualifications,
 )
 from app.models.qualification import Qualification, user_qualifications
+from app.routes.assignments import refresh_responsible_person
+from app.staffing import qualification_graph
 from app.utils import CS_COLLATION, audit, diff_changes, get_or_404, require_permission
 
 qualifications_bp = Blueprint("qualifications", __name__, url_prefix="/qualifications")
+
+
+def _set_parents(cred: Qualification, parent_ids: list[str]) -> None:
+    # ponytail: serialize rare hierarchy edits; use a dedicated graph lock if this table grows large.
+    with db.session.no_autoflush:
+        db.session.execute(db.select(Qualification.id).with_hint(Qualification, "WITH (TABLOCKX, HOLDLOCK)")).all()
+    try:
+        ids = {int(value) for value in parent_ids}
+    except ValueError:
+        raise ValueError("Vyberte platné rodičovské kvalifikace.") from None
+    parents = db.session.scalars(
+        db.select(Qualification).where(Qualification.id.in_(ids), Qualification.is_deleted == sa.false())
+    ).all()
+    if len(parents) != len(ids):
+        raise ValueError("Vyberte aktivní rodičovské kvalifikace.")
+    cred.parents = list(parents)
+    db.session.add(cred)
+    db.session.flush()
+    qualification_graph()  # The flush invalidates the cache; this rejects cycles before commit.
+
+
+def _condition_references(cred_id: int) -> tuple[list[Event], list[EventTemplate]]:
+    events = db.session.scalars(
+        db.select(Event)
+        .join(Event.qualification_requirements)
+        .where(
+            EventQualificationRequirement.qualification_id == cred_id,
+            Event.status.not_in((EventStatus.COMPLETED, EventStatus.CANCELLED)),
+        )
+    ).all()
+    templates = db.session.scalars(
+        db.select(EventTemplate)
+        .join(EventTemplate.qualification_requirements)
+        .where(EventTemplateQualificationRequirement.qualification_id == cred_id)
+    ).all()
+    return list(events), list(templates)
+
+
+def _refresh_responsible_people() -> None:
+    # Batch-load participants and their current qualifications, including after bulk unlinking.
+    db.session.flush()
+    for event in db.session.scalars(
+        db.select(Event)
+        .where(Event.status.not_in((EventStatus.COMPLETED, EventStatus.CANCELLED)))
+        .order_by(Event.id)
+        .with_hint(Event, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+        .execution_options(populate_existing=True)
+    ).all():
+        refresh_responsible_person(event)
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
@@ -74,13 +127,12 @@ def create() -> str | Response:
             return render_template("qualifications/create.html", all_qualifications=all_qualifications)
 
         cred = Qualification(name=name, description=description, can_be_rp="can_be_rp" in request.form)
-        for pid in parent_ids:
-            parent = db.session.get(Qualification, int(pid))
-            if parent:
-                cred.parents.append(parent)
-
-        db.session.add(cred)
-        db.session.flush()
+        try:
+            _set_parents(cred, parent_ids)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return render_template("qualifications/create.html", all_qualifications=all_qualifications)
         audit("create", "Qualification", cred.id, f"Vytvořena kvalifikace '{cred.name}'")
         db.session.commit()
 
@@ -109,7 +161,7 @@ def edit(cred_id: int) -> str | Response:
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip() or None
-        parent_ids = {int(pid) for pid in request.form.getlist("parent_ids")}
+        parent_ids = request.form.getlist("parent_ids")
 
         if not name:
             flash("Název kvalifikace je povinný.", "danger")
@@ -133,8 +185,14 @@ def edit(cred_id: int) -> str | Response:
         cred.name = name
         cred.description = description
         cred.can_be_rp = "can_be_rp" in request.form
-        # Sync parents
-        cred.parents = [c for pid in parent_ids if (c := db.session.get(Qualification, pid)) is not None]
+        try:
+            _set_parents(cred, parent_ids)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return render_template("qualifications/edit.html", cred=cred, all_qualifications=all_qualifications)
+        if before["can_be_rp"] != cred.can_be_rp:
+            _refresh_responsible_people()
 
         audit(
             "edit",
@@ -207,8 +265,11 @@ def delete_confirm(cred_id: int) -> str | Response:
         .all()
     )
 
+    blocking_events, blocking_templates = _condition_references(cred_id)
     return render_template(
         "qualifications/delete_confirm.html",
+        blocking_events=blocking_events,
+        blocking_templates=blocking_templates,
         cred=cred,
         active_spots=active_spots,
         fixed_spots=fixed_spots,
@@ -228,6 +289,10 @@ def delete(cred_id: int) -> Response:
         return redirect(url_for("qualifications.index"))
 
     _FIXED = (EventStatus.COMPLETED, EventStatus.CANCELLED)
+    blocking_events, blocking_templates = _condition_references(cred_id)
+    if blocking_events or blocking_templates:
+        flash("Kvalifikaci používají podmínky aktivních akcí nebo šablon. Nejprve upravte jejich plán.", "danger")
+        return redirect(url_for("qualifications.delete_confirm", cred_id=cred_id))
     qual_name = cred.name
 
     # ── Remove from active event spots ────────────────────────────────────────
@@ -293,6 +358,7 @@ def delete(cred_id: int) -> Response:
 
     # ── Soft-delete (fixed spots keep the FK as tombstone) ────────────────────
     cred.soft_delete()
+    _refresh_responsible_people()
     audit(
         "delete",
         "Qualification",

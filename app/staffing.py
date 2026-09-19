@@ -4,7 +4,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from flask import g, has_request_context
+from flask import g, has_app_context
+from sqlalchemy import event as sa_event
+from sqlalchemy.orm import Session
 from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
@@ -66,16 +68,28 @@ def validate_qualification_graph(parents: dict[int, set[int]]) -> dict[int, int]
     return components
 
 
+@sa_event.listens_for(Session, "after_soft_rollback")
+def _invalidate_graph(_session: Session, _context: object) -> None:
+    if has_app_context():
+        g.pop("staffing_graph", None)
+
+
+@sa_event.listens_for(Session, "after_flush")
+def _invalidate_changed_qualifications(session: Session, context: object) -> None:
+    if any(isinstance(obj, Qualification) for obj in session.new | session.dirty | session.deleted):
+        _invalidate_graph(session, context)
+
+
 def qualification_graph() -> QualificationGraph:
-    """One graph per request; qualification writes explicitly invalidate it."""
-    if has_request_context() and "staffing_graph" in g:
+    """One graph per request or background app context, invalidated after writes."""
+    if has_app_context() and "staffing_graph" in g:
         return g.staffing_graph
     qualifications = {q.id: q for q in db.session.scalars(db.select(Qualification)).all()}
     parents: dict[int, set[int]] = {qid: set() for qid in qualifications}
     for child, parent in db.session.execute(db.select(qualification_parents)).all():
         parents[child].add(parent)
     graph = QualificationGraph(qualifications, parents, validate_qualification_graph(parents))
-    if has_request_context():
+    if has_app_context():
         g.staffing_graph = graph
     return graph
 
