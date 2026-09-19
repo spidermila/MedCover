@@ -1,0 +1,34 @@
+<h5>Podmínky obsazení</h5>
+{% include 'conditions/summary.html' %}
+{% if condition_can_join %}
+<form method="POST" action="{{ url_for('assignments.claim_event', event_id=event.id) }}" class="mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button class="btn btn-success">Přihlásit se na akci</button>
+</form>
+{% endif %}
+{% if can_assign and not event.archived and event.status in [EventStatus.ASSIGNMENTS_OPEN, EventStatus.ASSIGNMENTS_CLOSED] and event.assignments|length < event.maximum_participants %}
+<form method="POST" action="{{ url_for('assignments.assign_event_other', event_id=event.id) }}" class="d-flex gap-2 mb-3 align-items-end">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Přiřadit účastníka
+    <select name="user_id" class="form-select" required>
+      <option value="">— Vyberte uživatele —</option>
+      {% for user in eligible_users if user.id not in assigned_user_ids %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="btn btn-primary">Přiřadit</button>
+</form>
+{% endif %}
+<h5>Účastníci</h5>
+<ul class="list-group mb-4">
+{% for assignment in event.assignments %}
+<li class="list-group-item d-flex justify-content-between align-items-center">
+  <span>{{ assignment.user.name }}</span>
+  {% if not event.archived and event.status not in [EventStatus.COMPLETED, EventStatus.CANCELLED] and (can_assign or (assignment.user_id == current_user.id and not me_coordinated)) %}
+  <form method="POST" action="{{ url_for('assignments.release', assignment_id=assignment.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-outline-danger btn-sm">Odhlásit</button>
+  </form>
+  {% endif %}
+</li>
+{% else %}<li class="list-group-item text-muted">Zatím nejsou přihlášeni žádní účastníci.</li>{% endfor %}
+</ul>

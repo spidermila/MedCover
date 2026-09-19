@@ -1,0 +1,18 @@
+{% set summary = event.staffing_summary %}
+<div class="alert alert-{{ 'success' if summary.is_staffing_sufficient else ('danger' if summary.is_capacity_full else 'warning') }}">
+  <strong>{{ summary.participant_count }} / {{ summary.minimum }} / {{ summary.maximum }} účastníků</strong>
+  <span>(aktuálně / minimum / maximum)</span>
+  {% if summary.people_deficit %}<div>Chybí účastníci: {{ summary.people_deficit }}</div>{% endif %}
+  {% if summary.is_capacity_full and not summary.is_staffing_sufficient %}<div><strong>Kapacita naplněna — nesplněné podmínky.</strong> Upravte účastníky, kapacitu nebo plán.</div>{% endif %}
+  <div>Zodpovědná osoba: {% if summary.rp_valid %}{{ event.responsible_person.name }}{% else %}<strong>Chybí způsobilá zodpovědná osoba</strong>{% endif %}</div>
+</div>
+<h6>Pokrytí kvalifikací (nikoliv pracovní role)</h6>
+<ul>
+  {% for requirement in summary.requirements %}
+  <li class="{{ 'text-danger' if requirement.deficit }}">
+    <strong>{{ requirement.qualification.name }}: {{ requirement.covered }} / {{ requirement.minimum_count }}</strong>
+    {% if requirement.deficit %}— chybí {{ requirement.deficit }}{% endif %}
+    {% if requirement.participants %}<span>({{ requirement.participants | map(attribute='name') | join(', ') }})</span>{% endif %}
+  </li>
+  {% endfor %}
+</ul>

@@ -314,6 +314,19 @@ def _build_table_rows(events: list) -> tuple[list[dict], int]:
 
     rows: list[dict] = []
     for event in events:
+        if event.staffing_mode == "CONDITIONS":
+            rows.append(
+                {
+                    "event": event,
+                    "qual_ids": frozenset(),
+                    "qual_objs": [],
+                    "qual_name": "Podmínky",
+                    "spots": [],
+                    "color": "",
+                    "event_color": event.color,
+                }
+            )
+            continue
         spots_by_qual: dict[frozenset, list] = defaultdict(list)
         for spot in event.spots:
             qual_ids = frozenset(q.id for q in spot.required_qualifications if not q.is_deleted)
@@ -353,7 +366,7 @@ def _build_table_rows(events: list) -> tuple[list[dict], int]:
             color_map[qkey] = _ROW_COLORS[len(color_map) % len(_ROW_COLORS)]
         row["color"] = color_map[qkey]
 
-    max_spot_cols = max((len(r["spots"]) for r in rows), default=0)
+    max_spot_cols = max((max(1, len(r["spots"])) for r in rows), default=0)
     return rows, max_spot_cols
 
 
@@ -742,6 +755,9 @@ def table_spots_update(me_id: int) -> Response:
     event = db.session.get(Event, event_id)
     if event is None or event.master_event_id != me_id:
         return jsonify({"ok": False, "error": "Akce nenalezena."}), 404
+
+    if event.staffing_mode == "CONDITIONS":
+        return jsonify({"ok": False, "error": "Tato akce používá podmínky."}), 400
 
     qual_id_set = frozenset(qual_ids)
     row_spots = [

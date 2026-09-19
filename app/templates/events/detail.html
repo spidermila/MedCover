@@ -247,6 +247,9 @@
   <p class="text-muted">{{ event.description }}</p>
 {% endif %}
 
+{% if event.staffing_mode == 'CONDITIONS' %}
+{% include 'conditions/detail.html' %}
+{% else %}
 {# Spots #}
 <div class="d-flex justify-content-between align-items-center mb-2">
   <h5 class="mb-0">Pozice ({{ event.total_spots }})</h5>
@@ -488,6 +491,8 @@
 <div class="mt-3">
   <a href="{{ url_for('events.index') }}" class="text-decoration-none text-muted small">← Zpět na seznam</a>
 </div>
+
+{% endif %}
 
 {# Equipment section #}
 <div class="mt-4">
