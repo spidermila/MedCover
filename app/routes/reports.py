@@ -224,6 +224,9 @@ def _spot_and_assignment_data(event_ids: list[int], events: list[Event]) -> tupl
     ).all()
     spot_map: dict[int, tuple[int, int]] = {row.event_id: (row.total_spots, row.filled_spots) for row in spot_agg}
 
+    for event in events:
+        if event.staffing_mode == "CONDITIONS":
+            spot_map[event.id] = (event.maximum_participants, len(event.assignments))
     asgn_rows = db.session.execute(
         db.select(Assignment, Assignment.event_id).where(Assignment.event_id.in_(event_ids))
     ).all()
@@ -477,7 +480,17 @@ def me_report(me_id: int) -> str | Response:
 
     if request.args.get("format") == "csv":
         csv_rows: list[list[str]] = [
-            ["Akce", "Začátek", "Konec", "Stav", "Místa celkem", "Obsazená místa", "Odprac. hodin", "Ošetřených"]
+            [
+                "Akce",
+                "Začátek",
+                "Konec",
+                "Stav",
+                "Místa celkem",
+                "Obsazená místa",
+                "Odprac. hodin",
+                "Ošetřených",
+                "Minimum účastníků",
+            ]
         ]
         for r in rows:
             csv_ev = cast(Event, r["event"])
@@ -491,6 +504,7 @@ def me_report(me_id: int) -> str | Response:
                     str(r["filled_spots"]),
                     f"{r['worked_hours']:.1f}",
                     str(r["patients"]),
+                    str(csv_ev.minimum_participants) if csv_ev.staffing_mode == "CONDITIONS" else "",
                 ]
             )
         csv_rows.append([])
@@ -574,6 +588,7 @@ def _date_range_csv(
             "Obsazená místa",
             "Odprac. hodin",
             "Ošetřených",
+            "Minimum účastníků",
         ]
     ]
     for ev in events:
@@ -590,6 +605,7 @@ def _date_range_csv(
                 str(f_s),
                 f"{ev.actual_hours or Decimal('0'):.1f}",
                 str(ev.post_event_count or 0),
+                str(ev.minimum_participants) if ev.staffing_mode == "CONDITIONS" else "",
             ]
         )
     rows.append([])

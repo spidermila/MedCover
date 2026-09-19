@@ -783,6 +783,9 @@ def notify_unarchived(event: Event) -> None:
 
 # Human-readable Czech labels for event fields shown in change notifications.
 _EVENT_FIELD_LABELS: dict[str, str] = {
+    "minimum_participants": "Minimum účastníků",
+    "maximum_participants": "Maximum účastníků",
+    "qualification_requirements": "Kvalifikační minima",
     "name": "Název akce",
     "master_event_id": "Nadřazená akce",
     "start_datetime": "Začátek",
@@ -800,6 +803,11 @@ def _format_event_change_value(field: str, raw: object) -> str:
     """Return a human-readable Czech string for a single change value."""
     if raw is None or str(raw) in ("None", ""):
         return "—"
+    if field == "qualification_requirements" and isinstance(raw, (list, tuple)):
+        return (
+            "; ".join(f"{item[0]}: {item[1]}" for item in raw if isinstance(item, (list, tuple)) and len(item) == 2)
+            or "—"
+        )
     val = str(raw)
     # Format ISO datetime strings to Czech local time.
     if "datetime" in field:
@@ -850,7 +858,8 @@ def send_unfilled_spots_reminder(
     event: Event,
     unfilled: list,
 ) -> None:
-    """Remind coordinator/RP that an event still has unfilled spots."""
+    """Remind coordinator/RP that staffing is still insufficient."""
+    topic = "nesplněné podmínky" if event.staffing_mode == "CONDITIONS" else "volná místa"
     if not _is_notify_enabled("notify_unfilled_reminder"):
         return
     if not user_can_receive_notification(user, "unfilled_reminder"):
@@ -859,7 +868,7 @@ def send_unfilled_spots_reminder(
         user=user,
         event=event,
         notification_type="unfilled_reminder",
-        subject=f"MedCover — Připomínka: volná místa na akci {event.name}",
+        subject=f"MedCover — Připomínka: {topic} na akci {event.name}",
         body=_PLAIN_FALLBACK,
         change_type=_UNFILLED_REMINDER_CHANGE_TYPE,
         change_value={"unfilled_count": len(unfilled)},
@@ -1225,6 +1234,12 @@ def _build_event_section(event: Event, rows: list) -> dict:
         "event_url": external_url_for("events.detail", event_id=event.id),
         "datetime_range_local": _format_event_datetime_range(event),
         "rows": entries,
+        "conditions": event.staffing_mode == "CONDITIONS",
+        "staffing": (
+            event.staffing_summary
+            if event.staffing_mode == "CONDITIONS" and any(e.get("type") in _SPOT_INFO_ENTRY_TYPES for e in entries)
+            else None
+        ),
     }
 
 

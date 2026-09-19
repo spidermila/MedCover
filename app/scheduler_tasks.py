@@ -44,7 +44,10 @@ def run_send_reminders(db_session: Any, now: datetime | None = None) -> int:
 
     events = db_session.scalars(
         sa.select(Event).where(
-            Event.status == EventStatus.ASSIGNMENTS_OPEN,
+            sa.or_(
+                Event.status == EventStatus.ASSIGNMENTS_OPEN,
+                sa.and_(Event.staffing_mode == "CONDITIONS", Event.status == EventStatus.ASSIGNMENTS_CLOSED),
+            ),
             Event.archived == sa.false(),
             Event.start_datetime > now,
         )
@@ -53,7 +56,7 @@ def run_send_reminders(db_session: Any, now: datetime | None = None) -> int:
     total_sent = 0
     for event in events:
         unfilled = event.unfilled_spots
-        if not unfilled:
+        if not event.is_unfilled:
             continue
 
         sent_map: dict = event.reminder_sent_json or {}

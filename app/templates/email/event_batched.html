@@ -36,6 +36,12 @@
     {{ section.datetime_range_local }}
   </div>
 
+  {% if section.staffing %}
+  <p>Účastníci: {{ section.staffing.participant_count }} / {{ section.staffing.minimum }} / {{ section.staffing.maximum }} (aktuálně / minimum / maximum)</p>
+  <p>Pokrytí kvalifikací (nikoliv pracovní role):</p>
+  <ul>{% for requirement in section.staffing.requirements %}<li>{{ requirement.qualification.name }}: {{ requirement.covered }} / {{ requirement.minimum_count }}{% if requirement.deficit %} — chybí {{ requirement.deficit }}{% endif %}</li>{% endfor %}</ul>
+  {% if not section.staffing.rp_valid %}<p>Chybí způsobilá zodpovědná osoba.</p>{% endif %}
+  {% endif %}
   {% for entry in section.rows %}
     {% if entry.type == "event_changed" %}
       <div class="changes">
@@ -49,9 +55,9 @@
         </table>
       </div>
     {% elif entry.type == "assignment_confirmed" %}
-      <p>Byli jste přihlášeni na pozici <strong>{{ entry.spot_description }}</strong>.</p>
+      {% if section.conditions %}<p>Byli jste přihlášeni na akci.</p>{% else %}<p>Byli jste přihlášeni na pozici <strong>{{ entry.spot_description }}</strong>.</p>{% endif %}
     {% elif entry.type == "assignment_released" %}
-      <p>Byli jste odhlášeni z pozice <strong>{{ entry.spot_description }}</strong>.</p>
+      {% if section.conditions %}<p>Byli jste odhlášeni z akce.</p>{% else %}<p>Byli jste odhlášeni z pozice <strong>{{ entry.spot_description }}</strong>.</p>{% endif %}
     {% elif entry.type == "event_published" %}
       <p>Akce byla zveřejněna.</p>
       {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}
@@ -65,6 +71,8 @@
     {% elif entry.type == "event_unarchived" %}
       <p>Akce byla obnovena z archivu.</p>
     {% elif entry.type == "unfilled_reminder" %}
+      {% if section.conditions %}<p>{{ 'Podmínky jsou nyní splněny.' if section.staffing.is_staffing_sufficient else 'Akce má nesplněné podmínky obsazení.' }}</p>
+      {% else %}
       {% set n = entry.unfilled_count %}
       {% if n > 0 %}
         <p>Akce má <strong>{{ n }}</strong>
@@ -76,6 +84,7 @@
       {% if entry.show_spots %}
         {% if entry.spots %}{{ spot_table(entry.spots) }}
         {% else %}<p>Všechna povinná místa jsou nyní obsazená.</p>{% endif %}
+      {% endif %}
       {% endif %}
     {% elif entry.type == "debriefing_invitation" %}
       <p><a href="{{ entry.debriefing_url }}">Vyplňte prosím debriefing.</a></p>

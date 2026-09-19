@@ -156,6 +156,18 @@ def feed_all(token: str) -> Response:
         if event.responsible_person:
             description_parts.append(f"Zodpovědná osoba: {event.responsible_person.name}")
 
+        if event.staffing_mode == "CONDITIONS":
+            summary = event.staffing_summary
+            description_parts.append(
+                f"Účastníci: {summary.participant_count} / {summary.minimum} / {summary.maximum} (min/max)"
+            )
+            description_parts.extend(a.user.name for a in event.assignments)
+            description_parts.append("Pokrytí kvalifikací (nikoliv pracovní role):")
+            description_parts.extend(
+                f"{r.qualification.name}: {r.covered}/{r.minimum_count}" for r in summary.requirements
+            )
+            if not summary.rp_valid:
+                description_parts.append("Chybí způsobilá zodpovědná osoba")
         # Spots summary
         if event.spots:
             description_parts.append("")
