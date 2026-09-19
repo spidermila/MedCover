@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="mb-0">Šablony akcí {{ help_icon("Šablona akce předvyplní novou akci — název, pozice, poznámky atd. Ušetří čas při opakovaně pořádaných akcích stejného typu. Šablonu vyberete při vytváření nové akce.") }}</h2>
+  <h2 class="mb-0">Šablony akcí {{ help_icon("Šablona akce předvyplní novou akci — název, podmínky, poznámky atd. Ušetří čas při opakovaně pořádaných akcích stejného typu. Šablonu vyberete při vytváření nové akce.") }}</h2>
   {% if current_user.has_permission('event_template.create') %}
   <a href="{{ url_for('templates.create') }}" class="btn btn-danger btn-sm">Nová šablona</a>
   {% endif %}
@@ -26,11 +26,11 @@
     <tbody>
       {% for tmpl in templates %}
       <tr data-sv='{"name":{{ tmpl.name | lower | tojson }},"paid":{{ (1 if tmpl.paid else 0) }},"spots":{{ tmpl.qualification_requirements | length }}}'
-          {% if current_user.has_permission('event_template.edit') %}
+          {% if current_user.has_permission('event_template.view') %}
           class="cursor-pointer"
-          data-href="{{ url_for('templates.edit', template_id=tmpl.id) }}"
+          data-href="{{ url_for('templates.detail', template_id=tmpl.id) }}"
           {% endif %}>
-        <td class="fw-semibold">{{ tmpl.name }}</td>
+        <td class="fw-semibold">{{ tmpl.name }}{% if tmpl.is_legacy %} <span class="badge bg-secondary">Původní — pouze ke čtení</span>{% endif %}</td>
         <td class="text-muted small">{{ tmpl.description or '—' }}</td>
         <td class="text-center">
           {% if tmpl.paid %}
@@ -39,9 +39,9 @@
             {{ badge_secondary('Ne') }}
           {% endif %}
         </td>
-        <td class="text-center">{{ tmpl.qualification_requirements | length }}</td>
+        <td class="text-center">{% if tmpl.is_legacy %}{{ tmpl.spot_templates | length }} původních pozic{% else %}{{ tmpl.qualification_requirements | length }}{% endif %}</td>
         <td class="text-end">
-          {% if current_user.has_permission('event.create') %}
+          {% if not tmpl.is_legacy and current_user.has_permission('event.create') %}
           <a href="{{ url_for('events.create_from_template', template_id=tmpl.id) }}"
              class="btn btn-outline-danger btn-sm" >Použít</a>
           {% endif %}

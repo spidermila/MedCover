@@ -28,6 +28,7 @@ _MUTABLE_TABLES_LIST = [
     "event_qualification_requirement",
     "event_template_qualification_requirement",
     "event_equipment_plan",
+    "event_template_equipment_plan",
     "equipment_item",
     "equipment_type",
     "debriefing_record",

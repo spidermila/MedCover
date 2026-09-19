@@ -232,7 +232,7 @@ def create_app(
             if entity_type == "EquipmentType":
                 return url_for("equipment.type_edit", type_id=eid_int)
             if entity_type == "EventTemplate":
-                return url_for("templates.edit", template_id=eid_int)
+                return url_for("templates.detail", template_id=eid_int)
         if entity_type == "AppSettings":
             return url_for("app_settings.index")
         if entity_type == "Qualification":

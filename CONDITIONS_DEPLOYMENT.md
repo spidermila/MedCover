@@ -8,9 +8,10 @@ akce a šablony používají `CONDITIONS`. Klon a rozdělení zachovají režim 
 
 1. Zálohovat databázi a ověřit obnovu. Zastavit zápisy aplikace i plánovače po
    dobu migrace; stará aplikace nezná přímou účast bez pozice.
-2. Zaznamenat obsah starých šablon potřebný pro ruční obnovení. Obsluha musí
-   staré šablony odstranit přes stávající UI **před migrací**. Migrace při
-   zbývajících šablonách bezpečně skončí; sama je nemaže.
+2. Staré šablony **není potřeba před migrací mazat**. Zůstanou v seznamu jako
+   původní šablony pouze ke čtení, včetně popisu, pozic, kvalifikací a vybavení.
+   Po nasazení podle nich ručně vytvořte nové podmínkové šablony; původní pak
+   můžete ručně smazat. Nelze je upravovat ani z nich vytvářet akce.
 3. Ověřit acykličnost kvalifikačního grafu. V prostředí nové aplikace před
    migrací lze použít Python (používá pouze již existující kvalifikační tabulky):
 
@@ -30,6 +31,10 @@ akce a šablony používají `CONDITIONS`. Klon a rozdělení zachovají režim 
    SELECT COUNT(*) AS spots FROM event_spot;
    SELECT COUNT(*) AS assignments FROM assignment;
    SELECT COUNT(*) AS debriefings FROM debriefing_record;
+   SELECT COUNT(*) AS templates FROM event_template;
+   SELECT COUNT(*) AS template_spots FROM event_spot_template;
+   SELECT COUNT(*) AS template_qualifications FROM spot_template_qualifications;
+   SELECT COUNT(*) AS template_equipment FROM event_template_equipment_plan;
    SELECT id, name, status, start_datetime FROM [event]
    WHERE status NOT IN ('COMPLETED', 'CANCELLED') ORDER BY start_datetime;
    SELECT s.event_id, a.user_id, COUNT(*) AS duplicate_count
@@ -45,8 +50,11 @@ akce a šablony používají `CONDITIONS`. Klon a rozdělení zachovají režim 
 
 Spustit běžný migrační postup projektu `flask db upgrade`. Revize
 `9e8f7a6b5c4d` přidává schéma a backfill, `a1b2c3d4e5f6` eviduje automatické
-uzavření kapacitou. Porovnat všechny čtyři počty s uloženými hodnotami:
-počet akcí, pozic, assignmentů ani debriefingů se nemá změnit.
+uzavření kapacitou. Revize `b2c3d4e5f6a7` dovolí prázdné kapacity původních
+šablon také v databázích, kde již byla aplikována původní varianta migrace.
+Existující podmínkové šablony si ponechají celý plán. Prázdná kapacita označuje
+původní šablonu; migrace z pozic nevymýšlí podmínkový plán. Porovnat všechny uložené počty s uloženými hodnotami:
+počet akcí, pozic, assignmentů, debriefingů, šablon ani jejich vazeb se nemá změnit.
 
 ```sql
 SELECT COUNT(*) AS missing_event FROM assignment WHERE event_id IS NULL;
@@ -81,7 +89,9 @@ vyhodnocení bez dalších dotazů pro jednotlivé akce či účastníky.
 ## Návrat a budoucí odstranění legacy schématu
 
 Downgrade základní revize je bezpečný pouze před vytvořením první podmínkové
-akce nebo šablony; jinak jej ochrana odmítne. Ochranu neobcházet a nepouštět
+akce nebo podmínkové šablony; jinak jej ochrana odmítne. Původní šablony
+downgrade neblokují a zachovají si pozice i kvalifikace. Opravná revize při
+sestupu ponechá nullable kapacity, shodně s opravenou základní revizí. Ochranu neobcházet a nepouštět
 starou aplikaci proti podmínkovým datům. Po zahájení provozu upřednostnit opravu
 vpřed, případně koordinovanou obnovu zálohy s vyřešením nových zápisů.
 
