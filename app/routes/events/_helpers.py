@@ -427,10 +427,11 @@ def apply_condition_plan(target: Event | EventTemplate, plan: tuple[int, int, li
         db.session.flush()
     if isinstance(target, Event):
         target.qualification_requirements = [
-            EventQualificationRequirement(qualification_id=qid, minimum_count=count) for qid, count in requirements
+            EventQualificationRequirement(qualification=db.session.get(Qualification, qid), minimum_count=count)
+            for qid, count in requirements
         ]
     else:
         target.qualification_requirements = [
-            EventTemplateQualificationRequirement(qualification_id=qid, minimum_count=count)
+            EventTemplateQualificationRequirement(qualification=db.session.get(Qualification, qid), minimum_count=count)
             for qid, count in requirements
         ]

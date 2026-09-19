@@ -102,7 +102,7 @@
             {{ row.event.status.value }}
           </span>
         </td>
-        <td class="text-end">{{ row.filled_spots }} / {{ row.total_spots }}</td>
+        <td class="text-end">{% if row.event.staffing_mode == 'CONDITIONS' %}{{ row.filled_spots }} / {{ row.event.minimum_participants }} / {{ row.total_spots }}{% else %}{{ row.filled_spots }} / {{ row.total_spots }}{% endif %}</td>
         <td class="text-end">{{ row.worked_hours | cznum }}</td>
         <td class="text-end">{{ row.patients }}</td>
       </tr>

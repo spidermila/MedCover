@@ -49,14 +49,20 @@ class UpcomingEventsBlock(BaseBlock):
 
         rows = []
         for ev in events:
-            unfilled_count = len(ev.unfilled_spots)
+            staffing = ev.staffing_summary if ev.staffing_mode == "CONDITIONS" else None
+            unfilled_count = (
+                (staffing.people_deficit + sum(r.deficit for r in staffing.requirements) + int(not staffing.rp_valid))
+                if staffing
+                else len(ev.unfilled_spots)
+            )
             if unfilled_only and unfilled_count == 0:
                 continue
             rows.append(
                 {
                     "event": ev,
                     "unfilled_count": unfilled_count,
-                    "total_spots": len(ev.spots),
+                    "total_spots": staffing.maximum if staffing else len(ev.spots),
+                    "staffing": staffing,
                 }
             )
 

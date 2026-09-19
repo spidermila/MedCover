@@ -12,7 +12,12 @@
       <td>{{ row.event.name }}</td>
       <td style="white-space:nowrap;">{{ row.event.start_datetime | localdt }}</td>
       <td>
-        {% if row.unfilled_count > 0 %}
+        {% if row.staffing %}
+          <div>{{ row.staffing.participant_count }} / {{ row.staffing.minimum }} / {{ row.staffing.maximum }}</div>
+          <div>{{ row.event.staffing_status }}</div>
+          {% for requirement in row.staffing.requirements %}<div>{{ requirement.qualification.name }}: {{ requirement.covered }} / {{ requirement.minimum_count }}</div>{% endfor %}
+          <div>{{ row.event.assignments | map(attribute='user.name') | join(', ') }}</div>
+        {% elif row.unfilled_count > 0 %}
           <span class="badge badge-warn">{{ row.unfilled_count }} / {{ row.total_spots }}</span>
         {% else %}
           <span class="badge badge-ok">Obsazeno</span>

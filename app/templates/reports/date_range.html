@@ -131,7 +131,7 @@
               {{ ev.status.value }}
             </span>
           </td>
-          <td class="text-end">{{ ev.filled_spots }} / {{ ev.total_spots }}</td>
+          <td class="text-end">{% if ev.staffing_mode == 'CONDITIONS' %}{{ ev.assignments|length }} / {{ ev.minimum_participants }} / {{ ev.maximum_participants }}{% else %}{{ ev.filled_spots }} / {{ ev.total_spots }}{% endif %}</td>
           <td class="text-end">
             {% if ev.actual_hours is not none %}{{ ev.actual_hours | cznum }}{% else %}<span class="text-muted">—</span>{% endif %}
           </td>

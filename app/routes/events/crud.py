@@ -734,6 +734,11 @@ def edit(event_id: int) -> str | Response:
             "responsible_person_id": str(event.responsible_person_id),
             "assignments_open_datetime": str(event.assignments_open_datetime),
             "planned_participants_count": event.planned_participants_count,
+            "minimum_participants": event.minimum_participants,
+            "maximum_participants": event.maximum_participants,
+            "qualification_requirements": sorted(
+                (r.qualification.name, r.minimum_count) for r in event.qualification_requirements
+            ),
         }
 
         updated, error = parse_event_form(request.form, existing=event)
@@ -756,6 +761,11 @@ def edit(event_id: int) -> str | Response:
             "responsible_person_id": str(event.responsible_person_id),
             "assignments_open_datetime": str(event.assignments_open_datetime),
             "planned_participants_count": event.planned_participants_count,
+            "minimum_participants": event.minimum_participants,
+            "maximum_participants": event.maximum_participants,
+            "qualification_requirements": sorted(
+                (r.qualification.name, r.minimum_count) for r in event.qualification_requirements
+            ),
         }
 
         # Validate and apply equipment plans.
