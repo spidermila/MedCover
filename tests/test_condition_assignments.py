@@ -1,9 +1,12 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from threading import Barrier
+from threading import Event as ThreadEvent
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import create_engine
 from sqlalchemy import event as sa_event
+from sqlalchemy import text
 
 from app.extensions import db
 from app.models.assignment import Assignment
@@ -11,6 +14,7 @@ from app.models.event import Event, EventStatus, StaffingMode
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
+from app.routes import assignments, users
 from app.routes.assignments import do_assign_event, do_unassign_user
 from app.routes.users import _apply_qualification_update
 from tests.conftest import _login, _make_event_with_spot, _make_user
@@ -145,3 +149,87 @@ def test_condition_permissions_conflict_warning_and_manual_rp(app, admin_client)
     admin_client.post(f"/assignments/unassign/{assignment_id}")
     with app.app_context():
         assert db.session.get(Event, event_id).status == EventStatus.ASSIGNMENTS_CLOSED
+
+
+def test_qualification_update_serializes_with_release_under_rcsi(app, monkeypatch):
+    event_id = _condition_event(app)
+    with app.app_context():
+        first = _make_user("rcsi-first@test.com", "First RP", Role.MEMBER)
+        second = _make_user("rcsi-second@test.com", "Second RP", Role.MEMBER)
+        qualification = Qualification(name="RCSI RP", can_be_rp=True)
+        first.qualifications = second.qualifications = [qualification]
+        event = db.session.get(Event, event_id)
+        event.assignments = [Assignment(user=first), Assignment(user=second)]
+        event.responsible_person_id = first.id
+        db.session.commit()
+        first_id, second_assignment_id = first.id, event.assignments[1].id
+        engine = db.engine
+        database = engine.url.database
+        assert database.startswith("medcover_test")
+        master = create_engine(engine.url.set(database="master"), isolation_level="AUTOCOMMIT")
+    paused, resume, release_started = ThreadEvent(), ThreadEvent(), ThreadEvent()
+
+    original_refresh = users.refresh_responsible_person
+    original_lock = assignments.lock_condition_event
+
+    def pause_refresh(event):
+        paused.set()
+        assert resume.wait(timeout=15)
+        original_refresh(event)
+
+    def release_lock(event_id):
+        release_started.set()
+        return original_lock(event_id)
+
+    monkeypatch.setattr(users, "refresh_responsible_person", pause_refresh)
+    monkeypatch.setattr(assignments, "lock_condition_event", release_lock)
+    monkeypatch.setattr(users, "audit", lambda *a, **kw: None)
+    monkeypatch.setattr(assignments, "audit", lambda *a, **kw: None)
+    monkeypatch.setattr(assignments.mailer, "send_assignment_released", lambda *a, **kw: None)
+
+    def update():
+        with app.app_context():
+            user = db.session.get(UserAccount, first_id)
+            db.session.get(Event, event_id)  # Force a preloaded identity-map snapshot.
+            assert _apply_qualification_update(user, [])
+            db.session.commit()
+
+    def release():
+        with app.app_context():
+            assignment = db.session.get(Assignment, second_assignment_id)
+            return do_unassign_user(assignment).ok
+
+    engine.dispose()
+    with master.connect() as connection:
+        was_enabled = connection.scalar(
+            text("SELECT is_read_committed_snapshot_on FROM sys.databases WHERE name=:name"), {"name": database}
+        )
+        connection.exec_driver_sql(
+            f"ALTER DATABASE [{database}] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE"
+        )
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            updating = pool.submit(update)
+            try:
+                assert paused.wait(timeout=15)
+                releasing = pool.submit(release)
+                assert release_started.wait(timeout=15)
+                # The qualification writer holds the event until its RP update commits.
+                with pytest.raises(TimeoutError):
+                    releasing.result(timeout=0.5)
+            finally:
+                resume.set()
+            updating.result(timeout=15)
+            assert releasing.result(timeout=15)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            assert len(event.assignments) == 1
+            assert event.responsible_person_id is None
+    finally:
+        engine.dispose()
+        with master.connect() as connection:
+            setting = "ON" if was_enabled else "OFF"
+            connection.exec_driver_sql(
+                f"ALTER DATABASE [{database}] SET READ_COMMITTED_SNAPSHOT {setting} WITH ROLLBACK IMMEDIATE"
+            )
+        master.dispose()

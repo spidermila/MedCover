@@ -2,7 +2,7 @@ import pytest
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventQualificationRequirement, StaffingMode
+from app.models.event import Event, EventQualificationRequirement, EventStatus, StaffingMode
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.staffing import evaluate_staffing, user_helps_staffing, validate_condition_plan, validate_qualification_graph
@@ -93,3 +93,36 @@ def test_graph_cycle_and_weak_components():
         validate_qualification_graph({1: {2}, 2: {1}})
     with pytest.raises(ValueError, match="cyklus"):
         validate_qualification_graph({1: {1}})
+
+
+def test_deleted_bridge_separates_active_condition_hierarchies(app, admin_client):
+    with app.app_context():
+        event, doctor, medic, driver = _plan(app)
+        bridge = Qualification(name="Historical bridge", parents=[doctor])
+        db.session.add(bridge)
+        medic.parents = [bridge]
+        db.session.flush()
+        bridge.soft_delete()
+        db.session.flush()
+        # Independent active nodes can each require one person with minimum one.
+        validate_condition_plan(1, 2, [(doctor.id, 1), (medic.id, 1)])
+        user = _make_user("bridge@test.com", "Bridge participant", Role.MEMBER)
+        user.qualifications = [doctor]
+        event.assignments.append(Assignment(user=user))
+        event.qualification_requirements.clear()
+        db.session.flush()
+        event.qualification_requirements = [
+            EventQualificationRequirement(qualification=q, minimum_count=1) for q in (doctor, medic, bridge)
+        ]
+        db.session.commit()
+        event_id = event.id
+        event.status = EventStatus.COMPLETED
+        db.session.commit()
+        summary = evaluate_staffing(event)
+        assert [r.covered for r in summary.requirements] == [1, 0, 0]
+        user.qualifications.append(medic)
+        db.session.commit()
+        summary = evaluate_staffing(event)
+        assert [r.covered for r in summary.requirements] == [1, 1, 0]
+    html = admin_client.get(f"/events/{event_id}").data.decode()
+    assert "Historical bridge: 0 / 1" in html
