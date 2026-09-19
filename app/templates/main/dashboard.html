@@ -147,7 +147,7 @@
         </div>
         <div class="text-end">
           {{ badge_status(e.status.value, status_colors, extra_classes='mb-1') }}
-          {% if e.status == EventStatus.ASSIGNMENTS_OPEN %}
+          {% if e.status == EventStatus.ASSIGNMENTS_OPEN or e.staffing_mode == "CONDITIONS" %}
           <div class="mt-1">{{ obsazeni_badges(e) }}</div>
           {% endif %}
         </div>
@@ -221,7 +221,9 @@
           {% else %}
           <span class="badge bg-primary">Neplacená</span>
           {% endif %}
-          {% if event.total_spots > 0 %}
+          {% if event.staffing_mode == 'CONDITIONS' %}
+          {{ obsazeni_badges(event) }}
+          {% elif event.total_spots > 0 %}
           <span class="badge bg-{{ 'success' if event.is_sufficiently_staffed else 'warning' }}">
             {{ event.staffing_status }}
           </span>
@@ -249,7 +251,7 @@
   <div class="card-header d-flex justify-content-between align-items-center py-2">
     <span class="fw-semibold">Otevřené přihlášky
       {{ help_icon("Akce, na které se lze přihlásit. Výchozí zobrazení filtruje jen akce, pro které máte potřebnou kvalifikaci. Tlačítkem 'Zobrazit vše' vidíte i ostatní akce — přihlásit se ale půjde jen na pozice odpovídající vaší kvalifikaci.") }}
-      <span class="text-muted fw-normal small" id="open-label">(jen vaše kvalifikace)</span>
+      <span class="text-muted fw-normal small" id="open-label">(kde pomůžete s obsazením)</span>
     </span>
     {% if open_events_all | length > open_events | length %}
     <button class="btn btn-outline-secondary btn-sm py-0" id="btn-show-all"
@@ -288,7 +290,7 @@
       </li>
       {% endfor %}
     {% else %}
-      <li class="list-group-item text-muted small py-2">Žádné otevřené akce pro vaši kvalifikaci.</li>
+      <li class="list-group-item text-muted small py-2">Žádné otevřené akce, kde aktuálně pomůžete s obsazením.</li>
     {% endif %}
   </ul>
 

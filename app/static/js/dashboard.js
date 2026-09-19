@@ -15,8 +15,8 @@
 
     if (openEligible) openEligible.classList.toggle("d-none", showingAll);
     if (openAll)      openAll.classList.toggle("d-none", !showingAll);
-    if (openLabel)    openLabel.textContent = showingAll ? "(všechny)" : "(jen vaše kvalifikace)";
-    if (btn) btn.textContent = showingAll ? "Jen moje kvalifikace" : "Zobrazit vše (" + count + ")";
+    if (openLabel)    openLabel.textContent = showingAll ? "(všechny)" : "(kde pomůžete s obsazením)";
+    if (btn) btn.textContent = showingAll ? "Kde pomůžu" : "Zobrazit vše (" + count + ")";
   }
 
   document.addEventListener("DOMContentLoaded", function () {

@@ -34,7 +34,7 @@ from app.queries import (
     user_fillable_qual_ids,
 )
 from app.routes.assignments import lock_condition_event
-from app.staffing import condition_plan_from_form
+from app.staffing import can_join_event, condition_plan_from_form
 from app.utils import (
     CS_COLLATION,
     audit,
@@ -196,9 +196,13 @@ def _eligible_event_ids_for_user(user: UserAccount) -> list[int]:
     eligible_event_ids = {
         e.id
         for e in events
-        if any(
-            s.assignment is None and s.id not in user_assigned_spot_ids and s.is_eligible_for(fillable_ids)
-            for s in e.spots
+        if (
+            can_join_event(e, user)
+            if e.staffing_mode == StaffingMode.CONDITIONS
+            else any(
+                s.assignment is None and s.id not in user_assigned_spot_ids and s.is_eligible_for(fillable_ids)
+                for s in e.spots
+            )
         )
     }
 
@@ -354,6 +358,8 @@ def feed() -> Response:
                 s.assignment is None and s.id not in user_assigned_spot_ids and s.is_eligible_for(fillable_ids)
                 for s in e.spots
             )
+        if e.staffing_mode == StaffingMode.CONDITIONS:
+            eligible = can_join_event(e, current_user)
         items.append(
             {
                 "id": e.id,
@@ -368,8 +374,14 @@ def feed() -> Response:
                     "status": e.status.value,
                     "status_key": e.status.name,
                     "event_type": e.event_type.name,
-                    "filled": e.mandatory_filled_spots,
-                    "total": e.mandatory_total_spots,
+                    "filled": (
+                        len(e.assignments) if e.staffing_mode == StaffingMode.CONDITIONS else e.mandatory_filled_spots
+                    ),
+                    "total": (
+                        e.minimum_participants
+                        if e.staffing_mode == StaffingMode.CONDITIONS
+                        else e.mandatory_total_spots
+                    ),
                     "rp": e.responsible_person.name if e.responsible_person else None,
                     "start_local": e.start_datetime.astimezone(get_app_tz()).strftime("%d.%m.%Y %H:%M"),
                     "end_local": e.end_datetime.astimezone(get_app_tz()).strftime("%d.%m.%Y %H:%M"),
@@ -651,6 +663,9 @@ def detail(event_id: int) -> str | Response:
         all_qualifications=all_qualifications,
         fillers_map=fillers_map,
         rp_eligible_attendees=rp_eligible_attendees,
+        condition_can_join=(
+            can_join_event(event, current_user) if event.staffing_mode == StaffingMode.CONDITIONS else False
+        ),
     )
 
 

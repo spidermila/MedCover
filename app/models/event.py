@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm import Mapped
 
 from app.extensions import db
+from app.staffing import StaffingSummary, evaluate_staffing
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment
@@ -228,6 +229,10 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     )
     equipment_plans = db.relationship("EventEquipmentPlan", back_populates="event", cascade="all, delete-orphan")
 
+    @property
+    def staffing_summary(self) -> StaffingSummary:
+        return evaluate_staffing(self)
+
     # ── Derived staffing status ─────────────────────────────────────────────
     @property
     def total_spots(self) -> int:
@@ -280,6 +285,8 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     @property
     def is_unfilled(self) -> bool:
         """True when at least one mandatory spot has no assignment."""
+        if self.staffing_mode == StaffingMode.CONDITIONS:
+            return not self.staffing_summary.is_staffing_sufficient
         return bool(self.unfilled_spots)
 
     @property
@@ -290,10 +297,19 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         (mandatory + optional) is filled. See ``auto_close_if_full`` (used by the
         assignments and import routes).
         """
+        if self.staffing_mode == StaffingMode.CONDITIONS:
+            return self.staffing_summary.is_staffing_sufficient
         return self.mandatory_total_spots > 0 and self.mandatory_filled_spots == self.mandatory_total_spots
 
     @property
     def staffing_status(self) -> str:
+        if self.staffing_mode == StaffingMode.CONDITIONS:
+            summary = self.staffing_summary
+            if summary.is_staffing_sufficient:
+                return "Dostatečně obsazena"
+            if summary.is_capacity_full:
+                return "Kapacita naplněna — nesplněné podmínky"
+            return "Nesplněné podmínky"
         if self.mandatory_total_spots == 0:
             return "Žádné pozice"
         if self.mandatory_filled_spots == 0:

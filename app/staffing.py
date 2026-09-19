@@ -2,12 +2,16 @@
 
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from flask import g, has_request_context
 from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
-from app.models.event import Event
+
+if TYPE_CHECKING:
+    from app.models.event import Event
+
 from app.models.qualification import Qualification, qualification_parents
 from app.models.user import UserAccount
 
@@ -221,3 +225,16 @@ def condition_plan_from_form(
         raise ValueError("Zadejte platná celá čísla pro kapacitu a kvalifikační minima.") from None
     validate_condition_plan(minimum, maximum, requirements, participant_count=participant_count)
     return minimum, maximum, requirements
+
+
+def can_join_event(event: Event, user: UserAccount) -> bool:
+    return (
+        user.is_active
+        and not user.is_archived
+        and user.has_permission("event.assign_own")
+        and not event.archived
+        and event.status.name == "ASSIGNMENTS_OPEN"
+        and (not event.is_centrally_coordinated or user.has_permission("event.assign_other"))
+        and len(event.assignments) < event.maximum_participants
+        and not any(a.user_id == user.id for a in event.assignments)
+    )

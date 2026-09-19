@@ -16,6 +16,7 @@ from app.models.equipment import (
 from app.models.event import Event, EventStatus
 from app.models.user import UserAccount
 from app.queries import assignment_conflicts, user_fillable_qual_ids
+from app.staffing import can_join_event, user_helps_staffing
 
 main_bp = Blueprint("main", __name__)
 
@@ -97,8 +98,24 @@ def _open_events_section(
     ).all()
 
     fillable_ids = user_fillable_qual_ids(current_user)
-    eligible = [e for e in candidates if any(s.assignment is None and s.is_eligible_for(fillable_ids) for s in e.spots)]
-    all_open = [e for e in candidates if any(s.assignment is None for s in e.spots)]
+    all_open = [
+        e
+        for e in candidates
+        if (
+            can_join_event(e, current_user)
+            if e.staffing_mode == "CONDITIONS"
+            else any(s.assignment is None for s in e.spots)
+        )
+    ]
+    eligible = [
+        e
+        for e in all_open
+        if (
+            user_helps_staffing(e, current_user)
+            if e.staffing_mode == "CONDITIONS"
+            else any(s.assignment is None and s.is_eligible_for(fillable_ids) for s in e.spots)
+        )
+    ]
     return eligible, all_open
 
 
@@ -112,7 +129,14 @@ def _attention_events_section(now: datetime, horizon: datetime) -> list[Event]:
             db.select(Event)
             .where(
                 Event.archived == sa.false(),
-                Event.status.in_([EventStatus.DRAFT, EventStatus.PUBLISHED, EventStatus.ASSIGNMENTS_OPEN]),
+                Event.status.in_(
+                    [
+                        EventStatus.DRAFT,
+                        EventStatus.PUBLISHED,
+                        EventStatus.ASSIGNMENTS_OPEN,
+                        EventStatus.ASSIGNMENTS_CLOSED,
+                    ]
+                ),
                 Event.start_datetime <= horizon,
                 Event.end_datetime >= now,
             )
@@ -123,6 +147,7 @@ def _attention_events_section(now: datetime, horizon: datetime) -> list[Event]:
         e
         for e in events
         if e.status in (EventStatus.DRAFT, EventStatus.PUBLISHED)
+        or (e.staffing_mode == "CONDITIONS" and not e.is_sufficiently_staffed)
         or (e.status == EventStatus.ASSIGNMENTS_OPEN and e.mandatory_filled_spots < e.mandatory_total_spots)
     ]
 

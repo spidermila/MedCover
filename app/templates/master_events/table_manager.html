@@ -192,6 +192,20 @@
           {{ event.scheduled_hours | cznum }}
         </td>
 
+        {% if event.staffing_mode == 'CONDITIONS' %}
+        <td>{% set summary = event.staffing_summary %}
+          <span class="badge bg-{{ 'success' if summary.is_staffing_sufficient else ('danger' if summary.is_capacity_full else 'warning text-dark') }}">{{ summary.participant_count }} / {{ summary.minimum }} / {{ summary.maximum }}</span>
+          {% if not summary.is_staffing_sufficient %}<div class="text-danger">{{ event.staffing_status }}</div>{% endif %}
+        </td>
+        <td colspan="{{ max_spot_cols }}">
+          <details><summary>Účastníci a pokrytí kvalifikací</summary>
+            {% include 'conditions/summary.html' %}
+            {% for assignment in event.assignments %}<div>{{ assignment.user.name }}</div>{% endfor %}
+            <a href="{{ url_for('events.detail', event_id=event.id) }}">Správa účastníků</a>
+            {% if can_edit_event %}<a href="{{ url_for('events.edit', event_id=event.id) }}">Upravit podmínky</a>{% endif %}
+          </details>
+        </td>
+        {% else %}
         {# ── Pozic ── #}
         <td class="text-nowrap small text-center tm-row-cell"
             data-event-id="{{ event.id }}"
@@ -247,6 +261,7 @@
         {% for _ in range(max_spot_cols - (row.spots | length)) %}
         <td class="tm-spot-data-col" data-tm-bg="{{ row.color }}"></td>
         {% endfor %}
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
