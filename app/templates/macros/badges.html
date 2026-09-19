@@ -60,10 +60,18 @@
   optional_total, optional_filled} once per row and skip five per-macro-call passes
   over event.spots. When omitted, falls back to the Event properties.
 #}
+{% macro condition_capacity_badge(summary, suffix=' účastníků') %}
+<button type="button" class="badge border-0 position-relative z-2 bg-{{ 'success' if summary.is_staffing_sufficient else ('danger' if summary.is_capacity_full else 'warning text-dark') }}"
+        data-bs-toggle="tooltip" data-bs-trigger="hover focus"
+        title="Aktuální počet účastníků / požadované minimum / maximální kapacita">
+  <span class="visually-hidden">Aktuální počet účastníků / požadované minimum / maximální kapacita: </span>{{ summary.participant_count }} / {{ summary.minimum }} / {{ summary.maximum }}{{ suffix }}
+</button>
+{% endmacro %}
+
 {% macro obsazeni_badges(event, verbose=false, counts=None) %}
 {% if event.staffing_mode == 'CONDITIONS' %}
   {% set summary = event.staffing_summary %}
-  <span class="badge bg-{{ 'success' if summary.is_staffing_sufficient else ('danger' if summary.is_capacity_full else 'warning text-dark') }}">{{ summary.participant_count }} / {{ summary.minimum }} / {{ summary.maximum }} účastníků</span>
+  {{ condition_capacity_badge(summary) }}
   {% if not summary.is_staffing_sufficient %}<span class="badge bg-danger">{{ event.staffing_status }}</span>{% endif %}
 {% else %}
   {%- if counts -%}

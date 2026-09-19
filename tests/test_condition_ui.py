@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from bs4 import BeautifulSoup
 from flask_login import login_user
 
 from app.extensions import db
@@ -71,3 +72,25 @@ def test_condition_full_deficit_is_visible_in_list_dashboard_and_table(app, admi
         assert "bg-danger" in html
     html = admin_client.get(f"/master-events/{me_id}/table").data.decode()
     assert "<details>" in html and "Test Admin" in html
+
+
+def test_condition_capacity_badges_explain_counts_accessibly(app, admin_client):
+    event_id = _condition_event(app)
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        event.start_datetime = datetime.now(timezone.utc) + timedelta(days=1)
+        event.end_datetime = event.start_datetime + timedelta(hours=1)
+        db.session.commit()
+        me_id = event.master_event_id
+    explanation = "Aktuální počet účastníků / požadované minimum / maximální kapacita"
+    for url in ("/events/", "/", f"/master-events/{me_id}/table"):
+        page = BeautifulSoup(admin_client.get(url).data, "html.parser")
+        badge = page.find("button", attrs={"data-bs-toggle": "tooltip", "title": explanation})
+        assert badge is not None, url
+        assert badge["type"] == "button"  # Native keyboard focus and tap support; no form submission.
+        assert badge["data-bs-trigger"] == "hover focus"
+        assert badge.find("span", class_="visually-hidden").get_text().strip() == explanation + ":"
+        assert "0 / 1 / 2" in badge.get_text()
+        assert "z-2" in badge["class"]  # Above the dashboard's stretched event link.
+    detail = admin_client.get(f"/events/{event_id}").data.decode()
+    assert "(aktuální počet účastníků / požadované minimum / maximální kapacita)" in detail

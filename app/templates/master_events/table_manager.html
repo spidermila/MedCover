@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'macros/badges.html' import condition_capacity_badge %}
 {% block title %}Tabulkový manažer — {{ me.name }} — MedCover{% endblock %}
 
 {% block extra_head %}
@@ -194,7 +195,7 @@
 
         {% if event.staffing_mode == 'CONDITIONS' %}
         <td>{% set summary = event.staffing_summary %}
-          <span class="badge bg-{{ 'success' if summary.is_staffing_sufficient else ('danger' if summary.is_capacity_full else 'warning text-dark') }}">{{ summary.participant_count }} / {{ summary.minimum }} / {{ summary.maximum }}</span>
+          {{ condition_capacity_badge(summary, suffix='') }}
           {% if not summary.is_staffing_sufficient %}<div class="text-danger">{{ event.staffing_status }}</div>{% endif %}
         </td>
         <td colspan="{{ max_spot_cols }}">
