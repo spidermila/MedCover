@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-20
+
 ### Added
 - New report „Přehled výkazů“ under Přehledy: a date range produces one row per person and event with served, planned, paid and free hours, subtotals per person and a grand total. Downloadable as an xlsx workbook with a flat, auto-filtered detail sheet and a per-person summary sheet, for checking the paper work reports members hand in. Hours are written as real numbers so Excel sums them regardless of the user's decimal separator. (#475)
 - Optional OpenTelemetry export to Azure Monitor. When the environment provides
@@ -34,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic DB backups written by the scheduler are now visible in the web UI and survive container restarts — both containers share the `/backups` volume, so a backup written by one is immediately listable by the other. Previously each container had its own overlay `/app/backups`, so scheduler-written zips never appeared in the web UI and were wiped on the next revision swap. (#497)
 - `export_to_zip` now writes to a `.part` sidecar and atomically renames into place, so a crash mid-write no longer leaves a truncated `medcover_backup_*.zip` visible for download or restore. (#497)
 - A failed scheduled backup is now recorded in the audit log instead of raising: the error entry was created without the required `summary`, so the failure handler itself died with an IntegrityError and the operator got no record of the failed backup. The failed attempt also counts against the one-run-per-local-day guard, so a persistently broken backup target logs one error per day rather than one per scheduler tick. (#497)
+- Pages no longer fail after the database connection is dropped (idle timeout, failover, DB restart): pooled connections are validated before use and recycled after 30 minutes, and a request that hits a database error rolls its session back so the next request starts from a clean one. (#519)
+- Audit-log entries for a deleted assignment link back to the event again. (#508)
+- A page number beyond the end of a list no longer produces a server error on the events list; out-of-range values are clamped. (#517)
+- The „nedokončeno“ note under the work-summary report now matches what the flag means: the event has already started but is not closed yet, and its scheduled hours are counted as served rather than as planned.
 
 ## [1.1.0] - 2026-09-01
 
@@ -457,7 +463,8 @@ První stabilní vydání MedCoveru. Aplikace nahrazuje původní tabulku v Goog
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/spidermila/MedCover/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/spidermila/MedCover/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/spidermila/MedCover/compare/v0.19.1...v1.0.0
 [0.19.1]: https://github.com/spidermila/MedCover/compare/v0.19.0...v0.19.1
