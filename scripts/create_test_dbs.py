@@ -24,18 +24,17 @@ mssql-init/setup.sh.)
 import os
 import sys
 import time
+from multiprocessing import cpu_count
 
 import pyodbc
 
-DEFAULT_DBS = [
-    "medcover_test",
-    "medcover_test_gw0",
-    "medcover_test_gw1",
-    "medcover_test_gw2",
-    "medcover_test_gw3",
-]
-
 COLLATION = "Czech_100_CI_AS_SC_UTF8"
+
+
+def default_databases() -> list[str]:
+    """Create enough worker databases for pytest-xdist's automatic worker count."""
+    workers = max(1, cpu_count() or 1)
+    return ["medcover_test", *(f"medcover_test_gw{i}" for i in range(workers))]
 
 
 def _connect_with_retry(conn_str: str, attempts: int = 30, delay: int = 2) -> pyodbc.Connection:
@@ -59,7 +58,7 @@ def main(argv: list[str]) -> int:
     if not password:
         sys.exit("ERROR: MSSQL_SA_PASSWORD must be set.")
 
-    db_names = argv[1:] or DEFAULT_DBS
+    db_names = argv[1:] or default_databases()
 
     # Brace-wrap UID/PWD so values containing ';' or other ODBC delimiters parse correctly.
     conn_str = (
