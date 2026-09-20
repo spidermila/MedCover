@@ -74,6 +74,8 @@ def downgrade():
                                  "OR maximum_participants IS NOT NULL")) or connection.scalar(
             sa.text("SELECT COUNT(*) FROM event_template_qualification_requirement")):
         raise RuntimeError("Cannot downgrade: condition templates would lose their plan.")
+    if connection.scalar(sa.text("SELECT COUNT(*) FROM assignment WHERE spot_id IS NULL")):
+        raise RuntimeError("Cannot downgrade: assignments without spots would lose their participation.")
     op.drop_table("event_template_qualification_requirement")
     op.drop_table("event_qualification_requirement")
     for column in ("minimum_participants", "maximum_participants"):

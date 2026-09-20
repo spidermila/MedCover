@@ -103,12 +103,18 @@ def test_template_crud_and_audit(app, admin_client):
         {"maximum_participants": "1"},
         {"requirement_count": "0"},
         {"requirement_qualification": ""},
-        {"requirement_qualification": ["1", "1"]},
+        {"requirement_qualification": "duplicate"},
     ],
 )
 def test_invalid_template_does_not_write(app, admin_client, changes):
     qid = _make_rp_qual(app)
-    assert admin_client.post("/templates/create", data=_form(qid, **changes)).status_code == 200
+    duplicate = changes.get("requirement_qualification") == "duplicate"
+    if duplicate:
+        changes = {"requirement_qualification": [str(qid), str(qid)], "requirement_count": ["1", "1"]}
+    response = admin_client.post("/templates/create", data=_form(qid, **changes))
+    assert response.status_code == 200
+    if duplicate:
+        assert "Kvalifikace smí být v plánu pouze jednou." in response.data.decode()
     with app.app_context():
         assert db.session.scalar(db.select(EventTemplate)) is None
 

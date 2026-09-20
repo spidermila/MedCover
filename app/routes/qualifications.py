@@ -22,6 +22,7 @@ from app.models.event import (
     EventStatus,
     EventTemplate,
     EventTemplateQualificationRequirement,
+    StaffingMode,
     spot_qualifications,
 )
 from app.models.qualification import Qualification, user_qualifications
@@ -52,19 +53,31 @@ def _set_parents(cred: Qualification, parent_ids: list[str]) -> None:
 
 
 def _condition_references(cred_id: int) -> tuple[list[Event], list[EventTemplate]]:
-    events = db.session.scalars(
-        db.select(Event)
-        .join(Event.qualification_requirements)
-        .where(
-            EventQualificationRequirement.qualification_id == cred_id,
-            Event.status.not_in((EventStatus.COMPLETED, EventStatus.CANCELLED)),
+    graph = qualification_graph()
+    # Include requirements whose active substitution chain depends on this node.
+    dependent_ids = [qid for qid in graph.parents if cred_id in graph.fillers(qid)]
+    events = (
+        db.session.scalars(
+            db.select(Event)
+            .join(Event.qualification_requirements)
+            .where(
+                EventQualificationRequirement.qualification_id.in_(dependent_ids),
+                Event.staffing_mode == StaffingMode.CONDITIONS,
+                Event.status.not_in((EventStatus.COMPLETED, EventStatus.CANCELLED)),
+            )
         )
-    ).all()
-    templates = db.session.scalars(
-        db.select(EventTemplate)
-        .join(EventTemplate.qualification_requirements)
-        .where(EventTemplateQualificationRequirement.qualification_id == cred_id)
-    ).all()
+        .unique()
+        .all()
+    )
+    templates = (
+        db.session.scalars(
+            db.select(EventTemplate)
+            .join(EventTemplate.qualification_requirements)
+            .where(EventTemplateQualificationRequirement.qualification_id.in_(dependent_ids))
+        )
+        .unique()
+        .all()
+    )
     return list(events), list(templates)
 
 

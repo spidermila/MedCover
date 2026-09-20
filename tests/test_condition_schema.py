@@ -77,62 +77,88 @@ def test_migration_backfills_without_losing_debriefing(app):
         ops = migration().op
         ops.drop_constraint(fk["name"], "assignment", type_="foreignkey")
         ops.create_foreign_key("fk_assignment_event", "assignment", "event", ["event_id"], ["id"])
-        migration().downgrade()
-        duplicate_spot = db.session.scalar(
-            text("INSERT INTO event_spot (event_id, is_optional, version) OUTPUT inserted.id VALUES (:event, 0, 1)"),
-            {"event": event_id},
-        )
-        db.session.execute(
-            text(
-                "INSERT INTO assignment (spot_id, user_id, assigned_at, debriefing_email_sent) "
-                "SELECT :spot, user_id, assigned_at, debriefing_email_sent FROM assignment WHERE id = :assignment"
-            ),
-            {"spot": duplicate_spot, "assignment": assignment_id},
-        )
-        with pytest.raises(RuntimeError, match="Duplicate event/user assignments"):
+        downgraded = False
+        duplicate_spot = None
+        try:
+            migration().downgrade()
+            downgraded = True
+            duplicate_spot = db.session.scalar(
+                text(
+                    "INSERT INTO event_spot (event_id, is_optional, version) OUTPUT inserted.id VALUES (:event, 0, 1)"
+                ),
+                {"event": event_id},
+            )
+            db.session.execute(
+                text(
+                    "INSERT INTO assignment (spot_id, user_id, assigned_at, debriefing_email_sent) "
+                    "SELECT :spot, user_id, assigned_at, debriefing_email_sent FROM assignment WHERE id = :assignment"
+                ),
+                {"spot": duplicate_spot, "assignment": assignment_id},
+            )
+            with pytest.raises(RuntimeError, match="Duplicate event/user assignments"):
+                migration().upgrade()
+                downgraded = False
+            db.session.execute(text("DELETE FROM assignment WHERE spot_id = :spot"), {"spot": duplicate_spot})
+            db.session.execute(text("DELETE FROM event_spot WHERE id = :spot"), {"spot": duplicate_spot})
+            db.session.execute(
+                text(
+                    "INSERT INTO event_template (name, paid, event_type, created_at, updated_at, version) "
+                    "VALUES ('Old template', 0, 'MEDICAL_COVER', GETUTCDATE(), GETUTCDATE(), 1)"
+                )
+            )
+            template_id = db.session.scalar(text("SELECT id FROM event_template WHERE name='Old template'"))
+            legacy_spot = db.session.scalar(
+                text(
+                    "INSERT INTO event_spot_template (template_id, description, is_optional) "
+                    "OUTPUT inserted.id VALUES (:id, 'Old position', 1)"
+                ),
+                {"id": template_id},
+            )
+            qualification_id = db.session.scalar(
+                text(
+                    "INSERT INTO qualification (name, can_be_rp, is_deleted) "
+                    "OUTPUT inserted.id VALUES ('Old qualification', 1, 0)"
+                )
+            )
+            db.session.execute(
+                text(
+                    "INSERT INTO spot_template_qualifications (spot_template_id, qualification_id) "
+                    "VALUES (:spot, :qual)"
+                ),
+                {"spot": legacy_spot, "qual": qualification_id},
+            )
             migration().upgrade()
-        db.session.execute(text("DELETE FROM assignment WHERE spot_id = :spot"), {"spot": duplicate_spot})
-        db.session.execute(text("DELETE FROM event_spot WHERE id = :spot"), {"spot": duplicate_spot})
-        db.session.execute(
-            text(
-                "INSERT INTO event_template (name, paid, event_type, created_at, updated_at, version) "
-                "VALUES ('Old template', 0, 'MEDICAL_COVER', GETUTCDATE(), GETUTCDATE(), 1)"
-            )
-        )
-        template_id = db.session.scalar(text("SELECT id FROM event_template WHERE name='Old template'"))
-        legacy_spot = db.session.scalar(
-            text(
-                "INSERT INTO event_spot_template (template_id, description, is_optional) "
-                "OUTPUT inserted.id VALUES (:id, 'Old position', 1)"
-            ),
-            {"id": template_id},
-        )
-        qualification_id = db.session.scalar(
-            text(
-                "INSERT INTO qualification (name, can_be_rp, is_deleted) "
-                "OUTPUT inserted.id VALUES ('Old qualification', 1, 0)"
-            )
-        )
-        db.session.execute(
-            text("INSERT INTO spot_template_qualifications (spot_template_id, qualification_id) VALUES (:spot, :qual)"),
-            {"spot": legacy_spot, "qual": qualification_id},
-        )
-        migration().upgrade()
-        # A legacy reference can be downgraded and upgraded without losing contents.
-        migration().downgrade()
-        migration().upgrade()
-        db.session.commit()
-        db.session.expire_all()
-        assert db.session.get(Assignment, assignment_id).event_id == event_id
-        assert db.session.get(DebriefingRecord, record_id).assignment_id == assignment_id
-        assert db.session.get(Event, event_id).staffing_mode == StaffingMode.SPOTS
-        assert db.session.get(EventSpot, spot_id) is not None
-        template = db.session.get(EventTemplate, template_id)
-        assert template.is_legacy
-        assert template.spot_templates[0].id == legacy_spot
-        assert template.spot_templates[0].description == "Old position"
-        assert template.spot_templates[0].is_optional
-        assert template.spot_templates[0].required_qualifications[0].id == qualification_id
+            downgraded = False
+            # A legacy reference can be downgraded and upgraded without losing contents.
+            migration().downgrade()
+            downgraded = True
+            migration().upgrade()
+            downgraded = False
+            db.session.commit()
+            db.session.expire_all()
+            assert db.session.get(Assignment, assignment_id).event_id == event_id
+            assert db.session.get(DebriefingRecord, record_id).assignment_id == assignment_id
+            assert db.session.get(Event, event_id).staffing_mode == StaffingMode.SPOTS
+            assert db.session.get(EventSpot, spot_id) is not None
+            template = db.session.get(EventTemplate, template_id)
+            assert template.is_legacy
+            assert template.spot_templates[0].id == legacy_spot
+            assert template.spot_templates[0].description == "Old position"
+            assert template.spot_templates[0].is_optional
+            assert template.spot_templates[0].required_qualifications[0].id == qualification_id
+        finally:
+            try:
+                if downgraded:
+                    if duplicate_spot is not None:
+                        db.session.execute(
+                            text("DELETE FROM assignment WHERE spot_id = :spot"), {"spot": duplicate_spot}
+                        )
+                        db.session.execute(text("DELETE FROM event_spot WHERE id = :spot"), {"spot": duplicate_spot})
+                    migration().upgrade()
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()  # DDL and fixtures share the transaction; restore the original schema.
+                raise
 
 
 def test_template_repair_migration_preserves_already_upgraded_plans(app):
@@ -153,3 +179,20 @@ def test_template_repair_migration_preserves_already_upgraded_plans(app):
         assert columns["minimum_participants"]["nullable"] and columns["maximum_participants"]["nullable"]
         with pytest.raises(RuntimeError, match="condition templates"):
             migration().downgrade()
+
+
+def test_downgrade_rejects_spotless_assignment_on_legacy_event_before_ddl(app):
+    event_id, _ = _make_event_with_spot(app)
+    with app.app_context():
+        user = _make_user("spotless@test.com", "Spotless", Role.MEMBER)
+        db.session.add(Assignment(event_id=event_id, user_id=user.id))
+        db.session.commit()
+        with pytest.raises(RuntimeError, match="assignments without spots"):
+            migration().downgrade()
+        assert inspect(db.session.connection()).has_table("event_qualification_requirement")
+        assert (
+            db.session.scalar(
+                db.select(Assignment).where(Assignment.event_id == event_id, Assignment.user_id == user.id)
+            ).spot_id
+            is None
+        )

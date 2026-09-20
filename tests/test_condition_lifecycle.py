@@ -177,3 +177,31 @@ def test_split_full_condition_event_preserves_capacity_closure(app, admin_client
         assert len(halves) == 2
         assert all(event.status == EventStatus.ASSIGNMENTS_CLOSED and event.capacity_closed for event in halves)
         assert all(len(event.assignments) == 1 for event in halves)
+
+
+@pytest.mark.parametrize("owner", ["event", "template"])
+def test_deletion_blocks_transitive_qualification_bridge(app, admin_client, owner):
+    event_id = _condition_event(app)
+    with app.app_context():
+        top = Qualification(name="Top qualification", can_be_rp=True)
+        bridge = Qualification(name="Intermediate bridge", parents=[top])
+        leaf = Qualification(name="Required leaf", parents=[bridge])
+        if owner == "event":
+            target = db.session.get(Event, event_id)
+            target.qualification_requirements = [EventQualificationRequirement(qualification=leaf, minimum_count=1)]
+        else:
+            target = EventTemplate(
+                name="Transitive template",
+                minimum_participants=1,
+                maximum_participants=2,
+                qualification_requirements=[EventTemplateQualificationRequirement(qualification=leaf, minimum_count=1)],
+            )
+            db.session.add(target)
+        db.session.commit()
+        bridge_id, target_id = bridge.id, target.id
+    html = admin_client.get(f"/qualifications/{bridge_id}/delete").data.decode()
+    link = f"/events/{target_id}" if owner == "event" else f"/templates/{target_id}/edit"
+    assert link in html
+    admin_client.post(f"/qualifications/{bridge_id}/delete")
+    with app.app_context():
+        assert not db.session.get(Qualification, bridge_id).is_deleted
