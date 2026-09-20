@@ -21,10 +21,11 @@ def test_create_event(logged_in_page, base_url):
     me_value = me_option.get_attribute("value")
     page.select_option("#master_event_id", value=me_value)
 
-    # Add a mandatory spot with an RP-capable qualification (required by the spot constraint)
-    page.locator("#addSpotBtn").click()
-    page.locator('input[name="spot_desc_0"]').fill("Zdravotník")
-    page.locator(".spot-creds label", has_text="Zdravotník").first.click()
+    # Create a condition plan with one RP-capable qualification.
+    page.fill('input[name="minimum_participants"]', "1")
+    page.fill('input[name="maximum_participants"]', "1")
+    page.select_option('select[name="requirement_qualification"]', label="Zdravotník zotavovacích akcí")
+    page.fill('input[name="requirement_count"]', "1")
 
     # Wait for flatpickr to initialize before setting dates
     page.wait_for_function(
