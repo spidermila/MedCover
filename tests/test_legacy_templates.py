@@ -1,3 +1,7 @@
+import json
+import re
+from html import unescape
+
 import pytest
 
 from app.extensions import db
@@ -86,6 +90,10 @@ def test_template_selectors_exclude_legacy_but_keep_condition_plans(app, admin_c
     assert admin_client.get(f"/templates/{condition_id}").status_code == 200
     html = admin_client.get("/templates/").data.decode()
     assert "Legacy reference" in html and "New condition template" in html
+    rows = [json.loads(unescape(value)) for value in re.findall(r"data-sv='([^']+)'", html)]
+    counts = {row["name"]: row["spots"] for row in rows}
+    assert counts["legacy reference"] == 2
+    assert counts["new condition template"] == 1
     assert f"/events/create-from-template/{legacy_id}" not in html
 
 

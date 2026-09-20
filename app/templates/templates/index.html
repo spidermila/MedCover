@@ -25,7 +25,7 @@
     </thead>
     <tbody>
       {% for tmpl in templates %}
-      <tr data-sv='{"name":{{ tmpl.name | lower | tojson }},"paid":{{ (1 if tmpl.paid else 0) }},"spots":{{ tmpl.qualification_requirements | length }}}'
+      <tr data-sv='{"name":{{ tmpl.name | lower | tojson }},"paid":{{ (1 if tmpl.paid else 0) }},"spots":{{ (tmpl.spot_templates if tmpl.is_legacy else tmpl.qualification_requirements) | length }}}'
           {% if current_user.has_permission('event_template.view') %}
           class="cursor-pointer"
           data-href="{{ url_for('templates.detail', template_id=tmpl.id) }}"

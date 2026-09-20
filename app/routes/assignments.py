@@ -284,9 +284,18 @@ def do_unassign_user(
         return AssignResult(ok=False, error="Akce nenalezena.")
 
     if event.staffing_mode == StaffingMode.CONDITIONS:
+        assignment_id = assignment.id
         event = lock_condition_event(event.id)
         if event is None:
             return AssignResult(False, "Akce nenalezena.")
+        current_assignment = db.session.scalar(
+            db.select(Assignment)
+            .where(Assignment.id == assignment_id, Assignment.event_id == event.id)
+            .execution_options(populate_existing=True)
+        )
+        if current_assignment is None:
+            return AssignResult(False, "Účastník již byl z akce odhlášen.", event=event)
+        assignment = current_assignment
     if (
         event.status == EventStatus.COMPLETED
         or event.archived

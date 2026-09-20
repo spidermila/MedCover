@@ -233,3 +233,31 @@ def test_qualification_update_serializes_with_release_under_rcsi(app, monkeypatc
                 f"ALTER DATABASE [{database}] SET READ_COMMITTED_SNAPSHOT {setting} WITH ROLLBACK IMMEDIATE"
             )
         master.dispose()
+
+
+def test_release_rechecks_stale_assignment_after_event_lock(app, monkeypatch):
+    event_id = _condition_event(app)
+    with app.app_context():
+        user = _make_user("stale-release@test.com", "Stale release", Role.MEMBER)
+        assignment = Assignment(event_id=event_id, user_id=user.id)
+        db.session.add(assignment)
+        db.session.commit()
+        assignment_id = assignment.id
+        original_lock = assignments.lock_condition_event
+
+        def concurrent_release_then_lock(event_id):
+            with db.engine.begin() as connection:
+                connection.execute(text("DELETE FROM assignment WHERE id=:id"), {"id": assignment_id})
+            return original_lock(event_id)
+
+        monkeypatch.setattr(assignments, "lock_condition_event", concurrent_release_then_lock)
+        with (
+            patch.object(assignments, "audit") as audit,
+            patch.object(assignments.mailer, "send_assignment_released") as mail,
+        ):
+            result = do_unassign_user(assignment)
+            assert not result.ok
+            assert "již" in result.error
+            audit.assert_not_called()
+            mail.assert_not_called()
+        assert not result.event.assignments

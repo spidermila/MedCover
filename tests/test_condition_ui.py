@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 from flask_login import login_user
@@ -65,7 +66,7 @@ def test_condition_full_deficit_is_visible_in_list_dashboard_and_table(app, admi
         db.session.commit()
         me_id = event.master_event_id
     admin_client.post(f"/assignments/event/{event_id}/claim")
-    for url in ("/events/", "/", f"/master-events/{me_id}/table"):
+    for url in ("/events/", "/dashboard", f"/master-events/{me_id}/table"):
         html = admin_client.get(url, follow_redirects=True).data.decode()
         assert "Kapacita naplněna" in html
         assert "bg-danger" in html
@@ -82,7 +83,7 @@ def test_condition_capacity_badges_explain_counts_accessibly(app, admin_client):
         db.session.commit()
         me_id = event.master_event_id
     explanation = "Aktuální počet účastníků / požadované minimum / maximální kapacita"
-    for url in ("/events/", "/", f"/master-events/{me_id}/table"):
+    for url in ("/events/", "/dashboard", f"/master-events/{me_id}/table"):
         page = admin_client.get(url).data.decode()
         assert 'data-bs-toggle="tooltip"' in page, url
         assert 'data-bs-trigger="hover focus"' in page
@@ -92,3 +93,32 @@ def test_condition_capacity_badges_explain_counts_accessibly(app, admin_client):
         assert "z-2" in page  # Above the dashboard's stretched event link.
     detail = admin_client.get(f"/events/{event_id}").data.decode()
     assert "(aktuální počet účastníků / požadované minimum / maximální kapacita)" in detail
+
+
+def test_both_dashboard_open_lists_show_condition_capacity(app, member_client):
+    event_id = _condition_event(app)
+    with app.app_context():
+        participant = _make_user("dashboard-other@test.com", "Other", Role.MEMBER)
+        first = db.session.get(Event, event_id)
+        first.start_datetime = datetime.now(timezone.utc) + timedelta(days=1)
+        first.end_datetime = first.start_datetime + timedelta(hours=1)
+        second = Event(
+            name="Other open condition",
+            master_event_id=first.master_event_id,
+            staffing_mode=first.staffing_mode,
+            minimum_participants=1,
+            maximum_participants=2,
+            status=first.status,
+            start_datetime=first.start_datetime,
+            end_datetime=first.end_datetime,
+            assignments=[Assignment(user=participant)],
+        )
+        db.session.add(second)
+        db.session.commit()
+        page = member_client.get("/dashboard").data.decode()
+    for section_id in ("open-eligible", "open-all"):
+        section = re.search(rf'<ul[^>]*id="{section_id}"[^>]*>(.*?)</ul>', page, re.S).group(1)
+        assert "0 / 1 / 2 účastníků" in section
+        assert 'data-bs-toggle="tooltip"' in section
+        assert "obsazeno" not in section
+    assert "1 / 1 / 2 účastníků" in re.search(r'<ul[^>]*id="open-all"[^>]*>(.*?)</ul>', page, re.S).group(1)

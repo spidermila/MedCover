@@ -277,6 +277,9 @@
             <div class="text-muted small">{{ e.start_datetime | localdt }}</div>
           </div>
           <div class="text-muted small text-end flex-shrink-0">
+            {% if e.staffing_mode == 'CONDITIONS' %}
+            {{ obsazeni_badges(e) }}
+            {% else %}
             {% set free_spots = e.spots | selectattr('assignment', 'none') | list %}
             {% if free_spots %}
               {% for desc, grp in free_spots | groupby_safe('description') %}
@@ -284,6 +287,7 @@
               {% endfor %}
             {% else %}
               <span class="text-muted">obsazeno</span>
+            {% endif %}
             {% endif %}
           </div>
         </div>
@@ -311,13 +315,17 @@
           <div class="text-muted small">{{ e.start_datetime | localdt }}</div>
         </div>
         <div class="text-muted small text-end flex-shrink-0 ms-2">
-          {% set free_spots = e.spots | selectattr('assignment', 'none') | list %}
+          {% if e.staffing_mode == 'CONDITIONS' %}
+            {{ obsazeni_badges(e) }}
+            {% else %}
+            {% set free_spots = e.spots | selectattr('assignment', 'none') | list %}
           {% if free_spots %}
             {% for desc, grp in free_spots | groupby_safe('description') %}
             <div>{{ desc or 'Pozice' }}&nbsp;({{ grp | list | length }}×)</div>
             {% endfor %}
           {% else %}
             <span class="text-muted">obsazeno</span>
+          {% endif %}
           {% endif %}
         </div>
       </div>

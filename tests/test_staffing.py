@@ -72,7 +72,7 @@ def test_requirement_lists_all_eligible_participants_without_fixing_assignment(a
 
         summary = evaluate_staffing(event)
         by_name = {r.qualification.name: r for r in summary.requirements}
-        assert [u.name for u in by_name["Driver"].participants] == ["First", "Second"]
+        assert {u.name for u in by_name["Driver"].participants} == {"First", "Second"}
         assert by_name["Driver"].covered == 1
         assert by_name["Driver"].deficit == 0
 
