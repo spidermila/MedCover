@@ -10,13 +10,14 @@ from sqlalchemy import text
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventStatus, StaffingMode
+from app.models.event import Event, EventQualificationRequirement, EventStatus, StaffingMode
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
 from app.routes import assignments, users
 from app.routes.assignments import do_assign_event, do_unassign_user
 from app.routes.users import _apply_qualification_update
+from app.staffing import can_join_event, condition_join_error, evaluate_staffing
 from tests.conftest import _login, _make_event_with_spot, _make_user
 
 
@@ -74,9 +75,18 @@ def test_capacity_claim_release_rp_and_qualification_change(app, client):
             assert do_assign_event(event_id, third, third, self_claim=True).ok
 
 
-def test_last_seat_is_serialized_on_sql_server(app, monkeypatch):
-    event_id = _condition_event(app, maximum=1)
+@pytest.mark.parametrize("reserved", [False, True])
+def test_last_seat_is_serialized_on_sql_server(app, monkeypatch, reserved):
+    event_id = _condition_event(app, maximum=2 if reserved else 1)
     with app.app_context():
+        if reserved:
+            event = db.session.get(Event, event_id)
+            event.qualification_requirements = [
+                EventQualificationRequirement(
+                    qualification=Qualification(name="Reserved doctor", can_be_rp=True), minimum_count=1
+                )
+            ]
+            db.session.commit()
         ids = [_make_user(f"race{i}@test.com", f"Race {i}", Role.MEMBER).id for i in range(2)]
         engine = db.engine
     barrier = Barrier(2)
@@ -106,6 +116,79 @@ def test_last_seat_is_serialized_on_sql_server(app, monkeypatch):
     assert any("UPDLOCK, HOLDLOCK, ROWLOCK" in statement for statement in captured)
     with app.app_context():
         assert len(db.session.get(Event, event_id).assignments) == 1
+
+
+def test_reservation_claim_ui_manager_and_actual_multiple_qualifications(app, client, admin_client):
+    event_id = _condition_event(app, maximum=3)
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        event.minimum_participants = 2
+        doctor = Qualification(name="Lékař", can_be_rp=True)
+        driver = Qualification(name="Řidič")
+        event.qualification_requirements = [
+            EventQualificationRequirement(qualification=q, minimum_count=1) for q in (doctor, driver)
+        ]
+        first = _make_user("newbie1@test.com", "Newbie 1", Role.MEMBER)
+        second = _make_user("newbie2@test.com", "Newbie 2", Role.MEMBER)
+        qualified = _make_user("both@test.com", "Both", Role.MEMBER)
+        qualified.qualifications = [doctor, driver]
+        db.session.commit()
+        second_id, qualified_id = second.id, qualified.id
+        assert can_join_event(event, first)
+    first_client = app.test_client()
+    _login(first_client, "newbie1@test.com")
+    first_client.post(f"/assignments/event/{event_id}/claim")
+    _login(client, "newbie2@test.com")
+    claim_url = f"/assignments/event/{event_id}/claim"
+    assert claim_url not in client.get(f"/events/{event_id}").data.decode()
+    for response in (
+        client.post(claim_url, follow_redirects=True),
+        admin_client.post(
+            f"/assignments/event/{event_id}/assign", data={"user_id": str(second_id)}, follow_redirects=True
+        ),
+    ):
+        html = response.data.decode()
+        assert "Zbývající místa jsou vyhrazena" in html
+        assert "Lékař: 1" in html and "Řidič: 1" in html
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        assert len(event.assignments) == 1
+        assert not can_join_event(event, db.session.get(UserAccount, second_id))
+    admin_client.post(f"/assignments/event/{event_id}/assign", data={"user_id": str(qualified_id)})
+    assert claim_url in client.get(f"/events/{event_id}").data.decode()
+    client.post(claim_url)
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        assert len(event.assignments) == 3
+        assert evaluate_staffing(event).is_staffing_sufficient
+
+
+@pytest.mark.parametrize("first_coverage", [1, 2])
+def test_reservation_recovery_only_requires_total_deficit_improvement(app, first_coverage):
+    event_id = _condition_event(app, maximum=2)
+    with app.app_context(), patch("app.routes.assignments.audit"):
+        event = db.session.get(Event, event_id)
+        qualifications = [Qualification(name=f"Independent {i}", can_be_rp=i == 0) for i in range(4)]
+        event.qualification_requirements = [
+            EventQualificationRequirement(qualification=q, minimum_count=1) for q in qualifications
+        ]
+        first = _make_user("recovery-first@test.com", "First", Role.MEMBER)
+        second = _make_user("recovery-second@test.com", "Second", Role.MEMBER)
+        unhelpful = _make_user("recovery-no-help@test.com", "No help", Role.MEMBER)
+        first.qualifications = qualifications[:first_coverage]
+        second.qualifications = qualifications[first_coverage:]
+        unhelpful.qualifications = qualifications[:first_coverage]
+        db.session.commit()
+        assert can_join_event(event, first)
+        assert do_assign_event(event_id, first, first, self_claim=True).ok
+        assert not can_join_event(event, unhelpful)
+        assert not do_assign_event(event_id, unhelpful, unhelpful, self_claim=True).ok
+        assert can_join_event(event, second)
+        assert do_assign_event(event_id, second, second, self_claim=True).ok
+        assert evaluate_staffing(event).is_staffing_sufficient
+        unhelpful.qualifications = qualifications
+        assert "kapacita" in condition_join_error(event, unhelpful)
+        assert not do_assign_event(event_id, unhelpful, first).ok
 
 
 @pytest.mark.parametrize("state", [EventStatus.DRAFT, EventStatus.COMPLETED, EventStatus.CANCELLED])

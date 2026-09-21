@@ -255,6 +255,27 @@ def condition_plan_from_form(
     return minimum, maximum, requirements
 
 
+def condition_join_error(event: Event, user: UserAccount) -> str | None:
+    """Reserve one future place per deficit; allow useful joins when already short."""
+    participants = [a.user for a in event.assignments]
+    before = _evaluate(event, participants)
+    if before.is_capacity_full:
+        return "Maximální kapacita akce je naplněna."
+    after = _evaluate(event, [*participants, user])
+    before_deficit = sum(r.deficit for r in before.requirements)
+    after_deficit = sum(r.deficit for r in after.requirements)
+    if after_deficit <= after.free_capacity or (
+        before_deficit > before.free_capacity and after_deficit < before_deficit
+    ):
+        return None
+    missing = ", ".join(f"{r.qualification.name}: {r.deficit}" for r in after.requirements if r.deficit)
+    return (
+        "Zbývající místa jsou vyhrazena pro chybějící kvalifikace "
+        f"({missing}). Po přihlášení by zbývalo míst: {after.free_capacity}, "
+        f"potřebných pro kvalifikace: {after_deficit}."
+    )
+
+
 def can_join_event(event: Event, user: UserAccount) -> bool:
     return (
         user.is_active
@@ -265,4 +286,5 @@ def can_join_event(event: Event, user: UserAccount) -> bool:
         and (not event.is_centrally_coordinated or user.has_permission("event.assign_other"))
         and len(event.assignments) < event.maximum_participants
         and not any(a.user_id == user.id for a in event.assignments)
+        and condition_join_error(event, user) is None
     )

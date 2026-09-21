@@ -32,6 +32,7 @@ from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus, StaffingMode
 from app.models.user import UserAccount
 from app.queries import conflicting_events_for_users
+from app.staffing import condition_join_error
 from app.utils import audit, get_or_404, require_permission
 
 assignments_bp = Blueprint("assignments", __name__, url_prefix="/assignments")
@@ -510,8 +511,8 @@ def do_assign_event(
         return AssignResult(False, "Přiřazení není možné v aktuálním stavu akce.", event=event)
     if any(a.user_id == user.id for a in event.assignments):
         return AssignResult(False, "Uživatel je již přihlášen na tuto akci.", event=event)
-    if len(event.assignments) >= event.maximum_participants:
-        return AssignResult(False, "Maximální kapacita akce je naplněna.", event=event)
+    if error := condition_join_error(event, user):
+        return AssignResult(False, error, event=event)
     now = datetime.now(timezone.utc)
     conflicts = conflicting_events_for_users(
         [user.id], event.start_datetime, event.end_datetime, exclude_event_id=event.id
