@@ -5,7 +5,13 @@ from app.models.assignment import Assignment
 from app.models.event import Event, EventQualificationRequirement, EventStatus, StaffingMode
 from app.models.qualification import Qualification
 from app.models.role import Role
-from app.staffing import evaluate_staffing, user_helps_staffing, validate_condition_plan, validate_qualification_graph
+from app.staffing import (
+    can_join_event,
+    evaluate_staffing,
+    user_helps_staffing,
+    validate_condition_plan,
+    validate_qualification_graph,
+)
 from tests.conftest import _make_event_with_spot, _make_user
 
 
@@ -75,6 +81,25 @@ def test_requirement_lists_all_eligible_participants_without_fixing_assignment(a
         assert {u.name for u in by_name["Driver"].participants} == {"First", "Second"}
         assert by_name["Driver"].covered == 1
         assert by_name["Driver"].deficit == 0
+
+
+def test_reservation_uses_hierarchy_matching_and_requirement_counts(app):
+    with app.app_context():
+        event, doctor, medic, driver = _plan(app)
+        # Two doctors plus a medic need three distinct medical participants.
+        event.minimum_participants = 3
+        event.qualification_requirements[0].minimum_count = 2
+        first = _make_user("reservation-doctor@test.com", "Doctor driver", Role.MEMBER)
+        first.qualifications = [doctor, driver]
+        newbie = _make_user("reservation-newbie@test.com", "Newbie", Role.MEMBER)
+        medic_user = _make_user("reservation-medic@test.com", "Medic", Role.MEMBER)
+        medic_user.qualifications = [medic]
+        db.session.commit()
+        assert can_join_event(event, first)  # Actual independent coverage reduces the deficit by two.
+        event.assignments.append(Assignment(user=first))
+        db.session.commit()
+        assert not can_join_event(event, newbie)  # Doctor cannot also fill a medical slot.
+        assert can_join_event(event, medic_user)
 
 
 @pytest.mark.parametrize("case", ["minimum", "maximum", "count", "duplicate", "hierarchy", "rp", "capacity", "missing"])
