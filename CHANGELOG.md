@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-22
+
 ### Fixed
 - Azure Monitor telemetry no longer exports the Azure SDK's own INFO logs (per-request HTTP logging, "Transmission succeeded", token acquisition), which fed back into App Insights as hundreds of thousands of `AppTraces` rows a day and flooded the container console logs. Warnings and errors from those loggers are still exported. Telemetry now reports the cloud role name `medcover-web` or `medcover-scheduler` instead of `unknown_service`; an `OTEL_SERVICE_NAME` set in the environment takes precedence. (#543)
 - Scheduler logs `Task running: …` on every tick and the admin digest's "skipped" checks at DEBUG instead of INFO, so INFO carries only lines where a task actually did something. (#543)
