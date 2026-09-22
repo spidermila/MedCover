@@ -286,7 +286,7 @@ The embedded summary below reflects the actual file. Key points:
 
 - `web` uses `flask run --debug` (hot reload) in dev; production uses gunicorn via `CMD` in the Dockerfile
 - Both containers mount `.:/app` so local code changes reflect immediately
-- Both containers mount the shared named volume `backups` at `/backups` — see [Backups volume](#backups-volume) below
+- Both containers store DB backups in the bundled Azurite blob emulator — see [Backup storage](#backup-storage) below
 - Both containers have healthchecks; the scheduler checks a heartbeat file written every ~5 s
 - `db` uses **MSSQL 2022 Express** (`mcr.microsoft.com/mssql/server:2022-latest`) with Czech collation and RCSI enabled
 
@@ -301,8 +301,9 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app          # Hot reload: local code changes reflect immediately
-      - backups:/backups   # Shared with scheduler — see "Backups volume" below
     env_file: .env
+    environment:
+      BACKUP_STORAGE_CONNECTION_STRING: "...;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     ports:
       - "5000:5000"
     depends_on:
@@ -321,11 +322,20 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
-      - backups:/backups
     env_file: .env
+    environment:
+      BACKUP_STORAGE_CONNECTION_STRING: "...;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     depends_on:
       web:
         condition: service_healthy
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    command: azurite-blob --blobHost 0.0.0.0 --location /data --skipApiVersionCheck
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data
 
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -358,25 +368,50 @@ services:
 
 volumes:
   mssql_data:
-  backups:
+  azurite_data:
 ```
 
-### Backups volume
+### Backup storage
 
-The web and scheduler containers must share the directory that DB backup
-zips are written to — otherwise the scheduler writes a nightly backup that
-the web UI never sees, and either container losing its overlay filesystem
-wipes the file. Both containers mount the same volume at `/backups`:
+DB backup archives (`medcover_backup_<UTC timestamp>_UTC.zip`) are stored as
+blobs, so the web app and the scheduler — separate containers — see the same
+backups without a shared volume, and backups survive container restarts.
+`app/backup.py` picks the target from the environment; exactly one of these
+must be set (production refuses to start otherwise):
 
-- **Dev + self-hosted prod** (`docker-compose.yml`, `docker-compose.prod.yml`):
-  named volume `backups`. Survives `docker compose down`; wiped only by
-  `docker compose down -v`.
-- **Azure prod**: an Azure Files SMB share mounted at `/backups` on both
-  Container Apps. Provisioned by the `medcover-infra` repo.
+| Variable | Used by | Auth |
+|---|---|---|
+| `BACKUP_CONTAINER_URL` (+ `AZURE_CLIENT_ID`) | Azure prod, self-hosted prod | Entra ID via `DefaultAzureCredential`; the storage account has shared-key access disabled |
+| `BACKUP_STORAGE_CONNECTION_STRING` | Dev, e2e, CI, tests | Azurite development account |
 
-`AppSettings.backup_dir` (configurable at `/admin/backup`) defaults to
-`/backups` and must be an absolute path. The mount point is deliberately
-**outside** `/app` so it never collides with the dev `.:/app` bind mount.
+- **Azure prod**: the storage account, container, *Storage Blob Data
+  Contributor* role assignment for the identity and both variables are
+  provisioned by the `medcover-infra` repo. The app never creates the
+  container there. Soft delete makes pruned backups recoverable.
+- **Self-hosted prod** (`docker-compose.prod.yml`): the managed identity only
+  works on an Azure VM with that identity attached. On any other host, give
+  `DefaultAzureCredential` a service principal instead (`AZURE_TENANT_ID`,
+  `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`) with the same role.
+- **Dev** (`docker-compose.yml`): the `azurite` service, data in the
+  `azurite_data` volume (survives `docker compose down`; wiped only by
+  `docker compose down -v`). In connection-string mode the app creates the
+  container (`BACKUP_CONTAINER_NAME`, default `backups`) on first use. Port
+  10000 is published so Azure Storage Explorer can browse it.
+- **e2e**: in-memory `azurite-e2e`. **CI**: an Azurite service container.
+  `pytest` without `BACKUP_STORAGE_CONNECTION_STRING` starts one through
+  testcontainers; every test gets its own blob container.
+
+The legacy `app_settings.backup_dir` column is no longer used; it stays in
+the database for rollout compatibility and will be dropped in a later
+migration. `migrations/env.py` excludes it from autogenerate so the drop
+never slips into an unrelated migration — remove that filter together with
+the drop migration.
+
+**Upgrading from the file-based backups:** archives already on the old
+`/backups` share are not migrated automatically and disappear from the admin
+list after the upgrade. Copy the ones worth keeping into the container
+beforehand, e.g.
+`azcopy copy '/backups/medcover_backup_*.zip' '<BACKUP_CONTAINER_URL>'`.
 
 ---
 

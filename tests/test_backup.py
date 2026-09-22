@@ -1,15 +1,15 @@
 """Tests for backup/restore engine and backup management routes."""
 
 import json
-import time
 import zipfile
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
 import pytest
+from azure.core.exceptions import HttpResponseError
 
-from app.backup import export_to_zip, list_backups, prune_old_backups, restore_from_zip
+from app.backup import _container, downloaded_backup, export_to_zip, list_backups, prune_old_backups, restore_from_zip
 from app.extensions import db as _db
 from app.models.audit import AuditLogEntry
 from app.models.event import Event
@@ -21,75 +21,77 @@ from app.scheduler_tasks import run_scheduled_backup
 from tests.conftest import _get_csrf, _login, _make_user
 
 
-def _fail_mid_write(self, *args, **kwargs):
-    """Simulate the archive write dying partway through (full disk, lost mount)."""
-    raise OSError("simulated mid-write failure")
+def _blob_names() -> list[str]:
+    """Names of all backup blobs in this test's container, oldest first."""
+    return sorted(b["name"] for b in list_backups())
+
+
+def _blob_bytes(name: str) -> bytes:
+    return _container().download_blob(name).readall()
+
+
+def _restore(name: str) -> None:
+    with downloaded_backup(name) as path:
+        restore_from_zip(path)
 
 
 # ── Core engine tests ─────────────────────────────────────────────────────────
 
 
 class TestExportToZip:
-    def test_creates_zip_file(self, app, tmp_path):
+    def test_creates_zip_file(self, app):
         with app.app_context():
 
-            path = export_to_zip(tmp_path)
-        assert path.exists()
-        assert path.suffix == ".zip"
-        assert path.name.startswith("medcover_backup_")
+            name = export_to_zip()
+        assert _blob_names() == [name]
+        assert name.startswith("medcover_backup_")
+        assert name.endswith(".zip")
 
-    def test_zip_contains_backup_json(self, app, tmp_path):
+    def test_zip_contains_backup_json(self, app):
         with app.app_context():
 
-            path = export_to_zip(tmp_path)
-        with zipfile.ZipFile(path) as zf:
+            name = export_to_zip()
+        with zipfile.ZipFile(BytesIO(_blob_bytes(name))) as zf:
             assert "backup.json" in zf.namelist()
 
-    def test_backup_json_structure(self, app, tmp_path):
+    def test_backup_json_structure(self, app):
         with app.app_context():
 
-            path = export_to_zip(tmp_path)
-        with zipfile.ZipFile(path) as zf:
+            name = export_to_zip()
+        with zipfile.ZipFile(BytesIO(_blob_bytes(name))) as zf:
             payload = json.loads(zf.read("backup.json"))
         assert payload["version"] == "1.0"
         assert "schema_version" in payload
         assert "exported_at" in payload
         assert "tables" in payload
 
-    def test_app_settings_excluded(self, app, tmp_path):
+    def test_app_settings_excluded(self, app):
         with app.app_context():
 
-            path = export_to_zip(tmp_path)
-        with zipfile.ZipFile(path) as zf:
+            name = export_to_zip()
+        with zipfile.ZipFile(BytesIO(_blob_bytes(name))) as zf:
             payload = json.loads(zf.read("backup.json"))
         assert "app_settings" not in payload["tables"]
         assert "alembic_version" not in payload["tables"]
 
-    def test_user_table_included(self, app, tmp_path):
+    def test_user_table_included(self, app):
         with app.app_context():
             _make_user("backup_test@example.com", "Backup User", Role.MEMBER)
 
-            path = export_to_zip(tmp_path)
-        with zipfile.ZipFile(path) as zf:
+            name = export_to_zip()
+        with zipfile.ZipFile(BytesIO(_blob_bytes(name))) as zf:
             payload = json.loads(zf.read("backup.json"))
         assert "user_account" in payload["tables"]
         emails = [row["email"] for row in payload["tables"]["user_account"]]
         assert "backup_test@example.com" in emails
 
-    def test_creates_backup_dir_if_missing(self, app, tmp_path):
-        new_dir = tmp_path / "nested" / "backups"
-        with app.app_context():
-
-            path = export_to_zip(new_dir)
-        assert path.exists()
-
 
 class TestRestoreFromZip:
-    def test_restore_reloads_user(self, app, tmp_path):
+    def test_restore_reloads_user(self, app):
         with app.app_context():
             _make_user("restore_target@example.com", "Restore Target", Role.MEMBER)
 
-            zip_path = export_to_zip(tmp_path)
+            name = export_to_zip()
 
             # Delete the user and verify they're gone
 
@@ -107,7 +109,7 @@ class TestRestoreFromZip:
 
             # Restore and verify user is back
 
-            restore_from_zip(zip_path)
+            _restore(name)
             restored = _db.session.scalars(
                 _db.select(UserAccount).where(UserAccount.email == "restore_target@example.com")
             ).first()
@@ -123,25 +125,25 @@ class TestRestoreFromZip:
             with pytest.raises(ValueError, match="backup.json"):
                 restore_from_zip(zip_path)
 
-    def test_restore_preserves_app_settings(self, app, tmp_path):
+    def test_restore_preserves_app_settings(self, app):
         """AppSettings must survive a restore (it is excluded from backup)."""
         with app.app_context():
             settings = get_settings()
             settings.org_name = "Pre-restore org"
             _db.session.commit()
 
-            zip_path = export_to_zip(tmp_path)
+            name = export_to_zip()
             settings.org_name = "Changed after backup"
             _db.session.commit()
 
-            restore_from_zip(zip_path)
+            _restore(name)
 
             # AppSettings should retain "Changed after backup" (not wiped by restore)
             _db.session.expire_all()
             settings_after = get_settings()
             assert settings_after.org_name == "Changed after backup"
 
-    def test_restore_handles_json_columns(self, app, tmp_path):
+    def test_restore_handles_json_columns(self, app):
         """Rows with dict/list JSON columns (e.g. reminder_sent_json) must restore without error."""
 
         with app.app_context():
@@ -160,8 +162,8 @@ class TestRestoreFromZip:
             _db.session.commit()
             event_id = event.id
 
-            zip_path = export_to_zip(tmp_path)
-            restore_from_zip(zip_path)
+            name = export_to_zip()
+            _restore(name)
 
             _db.session.expire_all()
             restored = _db.session.get(Event, event_id)
@@ -169,7 +171,7 @@ class TestRestoreFromZip:
             assert isinstance(restored.reminder_sent_json, dict)
             assert "24" in restored.reminder_sent_json
 
-    def test_restore_roundtrips_binary_column(self, app, tmp_path):
+    def test_restore_roundtrips_binary_column(self, app):
         """LargeBinary columns (e.g. signature_image) are hex-encoded on export by
         _serialize_value; restore must decode them back to bytes, not leave them as
         hex strings (which pyodbc would reject as VARBINARY params)."""
@@ -181,13 +183,13 @@ class TestRestoreFromZip:
             _db.session.commit()
             user_id = user.id
 
-            zip_path = export_to_zip(tmp_path)
+            name = export_to_zip()
 
             user.signature_image = None
             user.signature_mimetype = None
             _db.session.commit()
 
-            restore_from_zip(zip_path)
+            _restore(name)
 
             _db.session.expire_all()
             restored = _db.session.get(UserAccount, user_id)
@@ -197,60 +199,66 @@ class TestRestoreFromZip:
 
 
 class TestPruneOldBackups:
-    def test_prune_keeps_n_files(self, app, tmp_path):
+    def test_prune_keeps_n_files(self, app):
         with app.app_context():
 
-            # Create 5 backup files
-            for i in range(5):
-                export_to_zip(tmp_path)
-            files_before = list(tmp_path.glob("medcover_backup_*.zip"))
-            assert len(files_before) == 5
+            # Create 5 backups, one per day, oldest first
+            names = [export_to_zip(now=datetime(2026, 1, day, tzinfo=timezone.utc)) for day in range(1, 6)]
+            assert len(_blob_names()) == 5
 
-            deleted = prune_old_backups(tmp_path, keep_count=3)
-            files_after = list(tmp_path.glob("medcover_backup_*.zip"))
-            assert len(files_after) == 3
-            assert len(deleted) == 2
+            deleted = prune_old_backups(keep_count=3)
+            assert deleted == names[:2]
+            assert _blob_names() == names[2:]
 
-    def test_prune_does_nothing_when_within_limit(self, app, tmp_path):
+    def test_prune_does_nothing_when_within_limit(self, app):
         with app.app_context():
 
-            export_to_zip(tmp_path)
-            deleted = prune_old_backups(tmp_path, keep_count=7)
+            export_to_zip()
+            deleted = prune_old_backups(keep_count=7)
             assert deleted == []
 
-    def test_prune_nonexistent_dir_is_safe(self, app, tmp_path):
+    def test_prune_tolerates_concurrent_delete(self, app):
+        """Another worker or the scheduler may prune the same blob first."""
         with app.app_context():
+            names = [export_to_zip(now=datetime(2026, 1, day, tzinfo=timezone.utc)) for day in range(1, 4)]
+            real_list = type(_container()).list_blobs
 
-            deleted = prune_old_backups(tmp_path / "missing", keep_count=3)
-            assert deleted == []
+            def list_then_race(self, *args, **kwargs):
+                blobs = list(real_list(self, *args, **kwargs))
+                self.delete_blob(names[0])  # the concurrent prune wins
+                return blobs
+
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(type(_container()), "list_blobs", list_then_race)
+                deleted = prune_old_backups(keep_count=1)
+            assert deleted == [names[1]]
+            assert _blob_names() == [names[2]]
 
 
 class TestListBackups:
-    def test_list_returns_newest_first(self, app, tmp_path):
+    def test_list_returns_newest_first(self, app):
 
         with app.app_context():
 
-            p1 = export_to_zip(tmp_path)
-            time.sleep(0.05)
-            p2 = export_to_zip(tmp_path)
-            listing = list_backups(tmp_path)
-            assert listing[0]["name"] == p2.name
-            assert listing[1]["name"] == p1.name
+            n1 = export_to_zip(now=datetime(2026, 1, 1, tzinfo=timezone.utc))
+            n2 = export_to_zip(now=datetime(2026, 1, 2, tzinfo=timezone.utc))
+            listing = list_backups()
+            assert [b["name"] for b in listing] == [n2, n1]
 
-    def test_list_includes_size_and_date(self, app, tmp_path):
+    def test_list_includes_size_and_date(self, app):
         with app.app_context():
 
-            export_to_zip(tmp_path)
-            listing = list_backups(tmp_path)
+            export_to_zip()
+            listing = list_backups()
             assert listing[0]["size_bytes"] > 0
-            assert isinstance(listing[0]["created_at"], datetime)
+            assert listing[0]["created_at"].tzinfo is not None
 
 
 # ── Scheduled backup task tests ───────────────────────────────────────────────
 
 
 class TestRunScheduledBackup:
-    def test_returns_false_when_disabled(self, app, tmp_path):
+    def test_returns_false_when_disabled(self, app):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = False
@@ -259,13 +267,12 @@ class TestRunScheduledBackup:
             result = run_scheduled_backup(_db.session)
             assert result is False
 
-    def test_returns_false_before_scheduled_time(self, app, tmp_path):
+    def test_returns_false_before_scheduled_time(self, app):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 3
             settings.backup_schedule_minute = 30
-            settings.backup_dir = str(tmp_path)
             _db.session.commit()
 
             # January: Europe/Prague = UTC+1, so 02:00 UTC = 03:00 local (before 03:30).
@@ -273,13 +280,12 @@ class TestRunScheduledBackup:
             result = run_scheduled_backup(_db.session, now=fake_now)
             assert result is False
 
-    def test_creates_backup_at_exact_scheduled_minute(self, app, tmp_path):
+    def test_creates_backup_at_exact_scheduled_minute(self, app):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 2
             settings.backup_schedule_minute = 30
-            settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
 
@@ -287,9 +293,9 @@ class TestRunScheduledBackup:
             fake_now = datetime(2026, 1, 1, 1, 30, 0, tzinfo=timezone.utc)
             result = run_scheduled_backup(_db.session, now=fake_now)
             assert result is True
-            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+            assert len(_blob_names()) == 1
 
-    def test_creates_backup_on_late_tick_after_missed_window(self, app, tmp_path):
+    def test_creates_backup_on_late_tick_after_missed_window(self, app):
         """If the scheduler is delayed past the scheduled minute, the next tick
         should still fire the backup (tolerant window), rather than skip the day."""
         with app.app_context():
@@ -297,22 +303,20 @@ class TestRunScheduledBackup:
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 2
             settings.backup_schedule_minute = 30
-            settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
 
             # Local 04:15 — well past scheduled 02:30, no backup yet today.
             fake_now = datetime(2026, 1, 1, 3, 15, 0, tzinfo=timezone.utc)
             assert run_scheduled_backup(_db.session, now=fake_now) is True
-            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+            assert len(_blob_names()) == 1
 
-    def test_second_tick_same_day_is_deduped(self, app, tmp_path):
+    def test_second_tick_same_day_is_deduped(self, app):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 2
             settings.backup_schedule_minute = 0
-            settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
 
@@ -320,9 +324,9 @@ class TestRunScheduledBackup:
             fake_now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc)
             assert run_scheduled_backup(_db.session, now=fake_now) is True
             assert run_scheduled_backup(_db.session, now=fake_now) is False
-            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+            assert len(_blob_names()) == 1
 
-    def test_dedupe_uses_local_date_not_utc(self, app, tmp_path):
+    def test_dedupe_uses_local_date_not_utc(self, app):
         """A scheduled run late on local day N (early UTC day N+1) must count
         as today's *scheduled* run for the next tick on local day N."""
         with app.app_context():
@@ -330,7 +334,6 @@ class TestRunScheduledBackup:
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 23
             settings.backup_schedule_minute = 45
-            settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
 
@@ -340,9 +343,9 @@ class TestRunScheduledBackup:
             # Ten minutes later: local 23:55 (same local day), UTC 22:55.
             second_tick = datetime(2026, 1, 1, 22, 55, 0, tzinfo=timezone.utc)
             assert run_scheduled_backup(_db.session, now=second_tick) is False
-            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+            assert len(_blob_names()) == 1
 
-    def test_ad_hoc_backup_does_not_suppress_scheduled_run(self, app, tmp_path):
+    def test_ad_hoc_backup_does_not_suppress_scheduled_run(self, app):
         """An ad-hoc backup in the same directory must not block the scheduled
         run. The dedupe key is the DB-stored last-scheduled-run date, not the
         presence of any file on disk."""
@@ -351,33 +354,31 @@ class TestRunScheduledBackup:
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 13
             settings.backup_schedule_minute = 30
-            settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
 
             # Simulate an ad-hoc backup an admin ran earlier today, before the
             # scheduled time. Local 2026-01-01 10:00 = UTC 09:00.
             ad_hoc_time = datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
-            export_to_zip(tmp_path, now=ad_hoc_time)
-            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+            export_to_zip(now=ad_hoc_time)
+            assert len(_blob_names()) == 1
 
             # Scheduled tick at local 13:30 = UTC 12:30. Must still fire.
             fake_now = datetime(2026, 1, 1, 12, 30, 0, tzinfo=timezone.utc)
             assert run_scheduled_backup(_db.session, now=fake_now) is True
-            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 2
+            assert len(_blob_names()) == 2
 
             # And a second scheduled tick the same day is still deduped.
             fake_now_later = datetime(2026, 1, 1, 12, 31, 0, tzinfo=timezone.utc)
             assert run_scheduled_backup(_db.session, now=fake_now_later) is False
-            assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 2
+            assert len(_blob_names()) == 2
 
-    def test_scheduled_run_stamps_last_run_date(self, app, tmp_path):
+    def test_scheduled_run_stamps_last_run_date(self, app):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 2
             settings.backup_schedule_minute = 0
-            settings.backup_dir = str(tmp_path)
             settings.backup_last_scheduled_run_date = None
             _db.session.commit()
 
@@ -405,32 +406,78 @@ class TestBackupRoutes:
         assert resp.status_code == 200
         assert "Zálohy".encode() in resp.data or "záloh".encode() in resp.data
 
-    def test_run_backup_creates_file(self, app, client, tmp_path):
+    def test_run_backup_creates_file(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         resp = client.post("/admin/backup/run", data={"csrf_token": csrf}, follow_redirects=True)
         assert resp.status_code == 200
-        assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
+        assert len(_blob_names()) == 1
 
-    def test_download_serves_zip(self, app, client, tmp_path):
+    def test_download_serves_zip(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         client.post("/admin/backup/run", data={"csrf_token": csrf})
-        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        files = _blob_names()
         assert files
-        resp = client.get(f"/admin/backup/download/{files[0].name}")
+        resp = client.get(f"/admin/backup/download/{files[0]}")
         assert resp.status_code == 200
         assert resp.content_type == "application/zip"
+
+    def test_download_streams_blob_content(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+            name = export_to_zip()
+        _login(client, "admin@test.com")
+        resp = client.get(f"/admin/backup/download/{name}")
+        assert resp.status_code == 200
+        assert resp.data == _blob_bytes(name)
+        assert name in resp.headers["Content-Disposition"]
+
+    def test_download_missing_blob_returns_404(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        resp = client.get("/admin/backup/download/medcover_backup_20260101_000000_000000_UTC.zip")
+        assert resp.status_code == 404
+
+    def test_restore_missing_blob_returns_404(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        resp = client.post(
+            "/admin/backup/restore/medcover_backup_20260101_000000_000000_UTC.zip",
+            data={"csrf_token": csrf, "confirmation": "RESTORE"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.parametrize(
+        "method,url,confirmation",
+        [
+            ("get", "/admin/backup/download/other.zip", ""),
+            ("get", "/admin/backup/download/medcover_backup_20260101_000000_1.zip%0A", ""),
+            ("post", "/admin/backup/restore/other.zip", "RESTORE"),
+            ("post", "/admin/backup/delete/other.zip", "SMAZAT"),
+        ],
+    )
+    def test_invalid_name_rejected_before_storage_call(self, app, client, monkeypatch, method, url, confirmation):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+
+        def no_storage():
+            raise AssertionError("storage must not be touched for an invalid name")
+
+        monkeypatch.setattr("app.routes.backup._container", no_storage)
+        monkeypatch.setattr("app.routes.backup.downloaded_backup", no_storage)
+        monkeypatch.setattr("app.routes.backup.delete_backup", no_storage)
+        resp = getattr(client, method)(url, data={"csrf_token": csrf, "confirmation": confirmation})
+        assert resp.status_code == 404
 
     def test_download_rejects_path_traversal(self, app, client):
         with app.app_context():
@@ -439,45 +486,100 @@ class TestBackupRoutes:
         resp = client.get("/admin/backup/download/../../etc/passwd")
         assert resp.status_code == 404
 
-    def test_restore_requires_confirmation_word(self, app, client, tmp_path):
+    def test_restore_requires_confirmation_word(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         # Create a backup first
         client.post("/admin/backup/run", data={"csrf_token": csrf})
-        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        files = _blob_names()
         # Wrong confirmation word
         resp = client.post(
-            f"/admin/backup/restore/{files[0].name}",
+            f"/admin/backup/restore/{files[0]}",
             data={"csrf_token": csrf, "confirmation": "WRONG"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
         assert "Obnovení selhalo: pro potvrzení zadejte RESTORE.".encode() in resp.data
 
-    def test_restore_succeeds_with_correct_confirmation(self, app, client, tmp_path):
+    def test_restore_succeeds_with_correct_confirmation(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
             settings = get_settings()
-            settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         client.post("/admin/backup/run", data={"csrf_token": csrf})
-        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        files = _blob_names()
         resp = client.post(
-            f"/admin/backup/restore/{files[0].name}",
+            f"/admin/backup/restore/{files[0]}",
             data={"csrf_token": csrf, "confirmation": "RESTORE"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
         # Should show success flash, not error
         assert b"selhala" not in resp.data
+
+    def test_index_survives_storage_outage(self, app, client, monkeypatch):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+
+        def outage():
+            raise HttpResponseError("simulated storage outage")
+
+        monkeypatch.setattr("app.routes.backup.list_backups", outage)
+        resp = client.get("/admin/backup/")
+        assert resp.status_code == 200
+        assert "Nepodařilo se načíst seznam záloh".encode() in resp.data
+
+    def test_run_backup_prune_failure_still_reports_success(self, app, client, monkeypatch):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+
+        def fail_prune(*args, **kwargs):
+            raise HttpResponseError("simulated storage outage")
+
+        monkeypatch.setattr("app.routes.backup.prune_old_backups", fail_prune)
+        resp = client.post("/admin/backup/run", data={"csrf_token": csrf}, follow_redirects=True)
+        assert "Záloha byla vytvořena".encode() in resp.data
+        assert len(_blob_names()) == 1
+        with app.app_context():
+            assert _db.session.query(AuditLogEntry).filter_by(entity_type="Backup", action_type="create").count() == 1
+
+    def test_download_storage_outage_redirects_with_error(self, app, client, monkeypatch):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+
+        def outage():
+            raise HttpResponseError("simulated storage outage")
+
+        monkeypatch.setattr("app.routes.backup._container", outage)
+        resp = client.get("/admin/backup/download/medcover_backup_20260101_000000_000000_UTC.zip")
+        assert resp.status_code == 302
+
+    def test_restore_storage_outage_redirects_with_error(self, app, client, monkeypatch):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+
+        def outage(name):
+            raise HttpResponseError("simulated storage outage")
+
+        monkeypatch.setattr("app.routes.backup.downloaded_backup", outage)
+        resp = client.post(
+            "/admin/backup/restore/medcover_backup_20260101_000000_000000_UTC.zip",
+            data={"csrf_token": csrf, "confirmation": "RESTORE"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert "Obnovení selhalo".encode() in resp.data
 
     def test_member_cannot_access_backup(self, app, client):
         with app.app_context():
@@ -486,41 +588,35 @@ class TestBackupRoutes:
         resp = client.get("/admin/backup/")
         assert resp.status_code == 403
 
-    def test_delete_requires_confirmation_word(self, app, client, tmp_path):
+    def test_delete_requires_confirmation_word(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         client.post("/admin/backup/run", data={"csrf_token": csrf})
-        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        files = _blob_names()
         resp = client.post(
-            f"/admin/backup/delete/{files[0].name}",
+            f"/admin/backup/delete/{files[0]}",
             data={"csrf_token": csrf, "confirmation": "wrong"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        assert files[0].exists(), "File should NOT be deleted on wrong confirmation"
+        assert files[0] in _blob_names(), "File should NOT be deleted on wrong confirmation"
 
-    def test_delete_removes_file_with_correct_confirmation(self, app, client, tmp_path):
+    def test_delete_removes_file_with_correct_confirmation(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         client.post("/admin/backup/run", data={"csrf_token": csrf})
-        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        files = _blob_names()
         resp = client.post(
-            f"/admin/backup/delete/{files[0].name}",
+            f"/admin/backup/delete/{files[0]}",
             data={"csrf_token": csrf, "confirmation": "SMAZAT"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        assert not files[0].exists(), "File should be deleted on correct confirmation"
+        assert files[0] not in _blob_names(), "File should be deleted on correct confirmation"
 
     def test_delete_rejects_path_traversal(self, app, client):
         with app.app_context():
@@ -535,12 +631,9 @@ class TestBackupRoutes:
 
     # ── Upload-restore route ──────────────────────────────────────────────────
 
-    def test_upload_restore_wrong_confirmation_rejected(self, app, client, tmp_path):
+    def test_upload_restore_wrong_confirmation_rejected(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         client.post("/admin/backup/run", data={"csrf_token": csrf})
@@ -553,12 +646,9 @@ class TestBackupRoutes:
         assert resp.status_code == 200
         assert "Obnovení selhalo: pro potvrzení zadejte RESTORE.".encode() in resp.data
 
-    def test_upload_restore_no_file_rejected(self, app, client, tmp_path):
+    def test_upload_restore_no_file_rejected(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         resp = client.post(
@@ -570,12 +660,9 @@ class TestBackupRoutes:
         assert resp.status_code == 200
         assert "Nebyl vybrán žádný soubor.".encode() in resp.data
 
-    def test_upload_restore_non_zip_rejected(self, app, client, tmp_path):
+    def test_upload_restore_non_zip_rejected(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            _db.session.commit()
         _login(client, "admin@test.com")
         csrf = _get_csrf(client, "/admin/backup/")
         resp = client.post(
@@ -591,12 +678,11 @@ class TestBackupRoutes:
         assert resp.status_code == 200
         assert "Soubor musí být ve formátu .zip.".encode() in resp.data
 
-    def test_upload_restore_succeeds_and_restores_data(self, app, client, tmp_path):
+    def test_upload_restore_succeeds_and_restores_data(self, app, client):
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
             _make_user("upload_target@example.com", "Upload Target", Role.MEMBER)
             settings = get_settings()
-            settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
         _login(client, "admin@test.com")
@@ -604,9 +690,9 @@ class TestBackupRoutes:
 
         # Create backup that includes upload_target
         client.post("/admin/backup/run", data={"csrf_token": csrf})
-        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        files = _blob_names()
         assert files
-        zip_bytes = files[0].read_bytes()
+        zip_bytes = _blob_bytes(files[0])
 
         # Delete the user so we can verify restoration
         with app.app_context():
@@ -637,7 +723,7 @@ class TestBackupRoutes:
             assert restored is not None
             assert restored.name == "Upload Target"
 
-    def test_restore_route_actually_restores_deleted_data(self, app, client, tmp_path):
+    def test_restore_route_actually_restores_deleted_data(self, app, client):
         """Restoring from a stored backup brings back data deleted after the backup."""
         with app.app_context():
             _make_user("admin@test.com", "Admin", Role.ADMIN)
@@ -646,7 +732,6 @@ class TestBackupRoutes:
             _db.session.commit()
             me_id = me.id
             settings = get_settings()
-            settings.backup_dir = str(tmp_path)
             settings.backup_keep_count = 7
             _db.session.commit()
         _login(client, "admin@test.com")
@@ -654,7 +739,7 @@ class TestBackupRoutes:
 
         # Backup includes the ME
         client.post("/admin/backup/run", data={"csrf_token": csrf})
-        files = list(tmp_path.glob("medcover_backup_*.zip"))
+        files = _blob_names()
         assert files
 
         # Delete the ME after backup
@@ -666,7 +751,7 @@ class TestBackupRoutes:
 
         # Restore — ME should come back
         resp = client.post(
-            f"/admin/backup/restore/{files[0].name}",
+            f"/admin/backup/restore/{files[0]}",
             data={"csrf_token": csrf, "confirmation": "RESTORE"},
             follow_redirects=True,
         )
@@ -676,111 +761,19 @@ class TestBackupRoutes:
             assert _db.session.get(MasterEvent, me_id) is not None
 
 
-class TestExportToZipAtomicWrite:
-    """The zip must appear in the target directory only after it is fully written.
-
-    On a shared SMB mount (Azure Files in prod) or any other mount, a crash
-    mid-write must never leave a truncated medcover_backup_*.zip that the
-    web UI would then list and offer for download or restore.
-    """
-
-    def test_partial_file_not_visible_on_write_failure(self, app, tmp_path, monkeypatch):
-        with app.app_context():
-            monkeypatch.setattr(zipfile.ZipFile, "writestr", _fail_mid_write)
-
-            with pytest.raises(OSError, match="simulated"):
-                export_to_zip(tmp_path)
-
-        visible = list(tmp_path.glob("medcover_backup_*.zip"))
-        assert visible == [], "no half-written zip should be listed"
-
-    def test_no_part_file_left_after_successful_write(self, app, tmp_path):
-        with app.app_context():
-            export_to_zip(tmp_path)
-        assert list(tmp_path.glob("*.part")) == []
-        assert len(list(tmp_path.glob("medcover_backup_*.zip"))) == 1
-
-
-class TestBackupSettingsRoute:
-    """save_settings must enforce the absolute-path invariant on backup_dir."""
-
-    def test_absolute_path_accepted(self, app, client):
-        with app.app_context():
-            _make_user("admin@test.com", "Admin", Role.ADMIN)
-        _login(client, "admin@test.com")
-        csrf = _get_csrf(client, "/admin/backup/")
-        resp = client.post(
-            "/admin/backup/settings",
-            data={
-                "csrf_token": csrf,
-                "backup_dir": "/backups",
-                "backup_keep_count": "5",
-                "backup_schedule_hour": "2",
-            },
-            follow_redirects=True,
-        )
-        assert resp.status_code == 200
-        with app.app_context():
-            assert get_settings().backup_dir == "/backups"
-
-    def test_relative_path_rejected_previous_value_kept(self, app, client):
-        with app.app_context():
-            _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = "/backups"
-            _db.session.commit()
-        _login(client, "admin@test.com")
-        csrf = _get_csrf(client, "/admin/backup/")
-        resp = client.post(
-            "/admin/backup/settings",
-            data={
-                "csrf_token": csrf,
-                "backup_dir": "relative/dir",
-                "backup_keep_count": "5",
-                "backup_schedule_hour": "2",
-            },
-            follow_redirects=True,
-        )
-        assert resp.status_code == 200
-        assert "absolutní cesta".encode() in resp.data
-        with app.app_context():
-            assert get_settings().backup_dir == "/backups"
-
-    def test_empty_path_rejected_previous_value_kept(self, app, client):
-        with app.app_context():
-            _make_user("admin@test.com", "Admin", Role.ADMIN)
-            settings = get_settings()
-            settings.backup_dir = "/backups"
-            _db.session.commit()
-        _login(client, "admin@test.com")
-        csrf = _get_csrf(client, "/admin/backup/")
-        client.post(
-            "/admin/backup/settings",
-            data={
-                "csrf_token": csrf,
-                "backup_dir": "   ",
-                "backup_keep_count": "5",
-                "backup_schedule_hour": "2",
-            },
-            follow_redirects=True,
-        )
-        with app.app_context():
-            assert get_settings().backup_dir == "/backups"
-
-
 class TestExportToZipFilename:
-    def test_filename_contains_utc_suffix(self, app, tmp_path):
+    def test_filename_contains_utc_suffix(self, app):
         with app.app_context():
-            path = export_to_zip(tmp_path)
-        assert path.name.endswith("_UTC.zip")
-        assert path.name.startswith("medcover_backup_")
+            name = export_to_zip()
+        assert name.endswith("_UTC.zip")
+        assert name.startswith("medcover_backup_")
 
-    def test_filename_uses_utc_timestamp_regardless_of_input_tz(self, app, tmp_path):
+    def test_filename_uses_utc_timestamp_regardless_of_input_tz(self, app):
         # 03:00 in a UTC+3 zone is 00:00 UTC — the filename must reflect UTC.
         local = datetime(2026, 6, 15, 3, 0, 0, tzinfo=ZoneInfo("Europe/Moscow"))
         with app.app_context():
-            path = export_to_zip(tmp_path, now=local)
-        assert "20260615_000000" in path.name
+            name = export_to_zip(now=local)
+        assert "20260615_000000" in name
 
 
 class TestBackupScheduleTimeFormField:
@@ -793,7 +786,6 @@ class TestBackupScheduleTimeFormField:
             "/admin/backup/settings",
             data={
                 "csrf_token": csrf,
-                "backup_dir": "/backups",
                 "backup_keep_count": "5",
                 "backup_schedule_time": "04:37",
             },
@@ -814,7 +806,6 @@ class TestBackupScheduleTimeFormField:
             "/admin/backup/settings",
             data={
                 "csrf_token": csrf,
-                "backup_dir": "/backups",
                 "backup_keep_count": "5",
                 "backup_schedule_hour": "9",
                 "backup_schedule_minute": "15",
@@ -835,7 +826,6 @@ class TestBackupScheduleTimeFormField:
             "/admin/backup/settings",
             data={
                 "csrf_token": csrf,
-                "backup_dir": "/backups",
                 "backup_keep_count": "5",
                 "backup_schedule_time": "not:a:time",
             },
@@ -855,7 +845,6 @@ class TestBackupScheduleTimeFormField:
             "/admin/backup/settings",
             data={
                 "csrf_token": csrf,
-                "backup_dir": "/backups",
                 "backup_keep_count": "5",
                 "backup_schedule_time": "99:99",
             },
@@ -876,7 +865,6 @@ class TestBackupScheduleTimeFormField:
             "/admin/backup/settings",
             data={
                 "csrf_token": csrf,
-                "backup_dir": "/backups",
                 "backup_keep_count": "5",
                 "backup_schedule_time": "04:37:00",
             },
@@ -892,13 +880,12 @@ class TestScheduledBackupFailureHandling:
     """A failing backup target must not turn the every-minute poll into a
     per-minute retry storm of audit rows and tracebacks."""
 
-    def test_failed_attempt_is_not_retried_the_same_day(self, app, tmp_path, monkeypatch):
+    def test_failed_attempt_is_not_retried_the_same_day(self, app, monkeypatch):
         with app.app_context():
             settings = get_settings()
             settings.backup_schedule_enabled = True
             settings.backup_schedule_hour = 2
             settings.backup_schedule_minute = 0
-            settings.backup_dir = str(tmp_path)
             settings.backup_last_scheduled_run_date = None
             _db.session.commit()
 
@@ -925,25 +912,39 @@ class TestScheduledBackupFailureHandling:
             assert len(errors) == 2
             assert all(e.summary for e in errors)
 
-    def test_part_sidecar_removed_on_write_failure(self, app, tmp_path, monkeypatch):
-        """Orphaned .part files are invisible to prune_old_backups(), so a
-        repeatedly failing write must not leak them into the backup share."""
+    def test_upload_failure_is_recorded_as_failed_backup(self, app, monkeypatch):
+        """A storage error during upload goes through the normal failure path."""
         with app.app_context():
-            monkeypatch.setattr(zipfile.ZipFile, "writestr", _fail_mid_write)
-            with pytest.raises(OSError, match="simulated"):
-                export_to_zip(tmp_path)
+            settings = get_settings()
+            settings.backup_schedule_enabled = True
+            settings.backup_schedule_hour = 2
+            settings.backup_schedule_minute = 0
+            settings.backup_last_scheduled_run_date = None
+            _db.session.commit()
 
-        assert list(tmp_path.glob("*.part")) == []
-        assert list(tmp_path.glob("medcover_backup_*.zip")) == []
+            def fail_upload(*args, **kwargs):
+                raise HttpResponseError("simulated storage outage")
 
-    def test_part_sidecar_removed_on_non_oserror_failure(self, app, tmp_path, monkeypatch):
-        def _fail_serialise(*args, **kwargs):
-            raise TypeError("simulated non-serialisable value")
+            monkeypatch.setattr(type(_container()), "upload_blob", fail_upload)
+            assert run_scheduled_backup(_db.session, now=datetime(2026, 1, 1, 1, 0, tzinfo=timezone.utc)) is False
+            assert _blob_names() == []
+            errors = _db.session.query(AuditLogEntry).filter_by(entity_type="Backup", action_type="error").all()
+            assert len(errors) == 1
 
+    def test_prune_failure_does_not_fail_backup(self, app, monkeypatch):
         with app.app_context():
-            monkeypatch.setattr(zipfile.ZipFile, "writestr", _fail_serialise)
-            with pytest.raises(TypeError, match="simulated"):
-                export_to_zip(tmp_path)
+            settings = get_settings()
+            settings.backup_schedule_enabled = True
+            settings.backup_schedule_hour = 2
+            settings.backup_schedule_minute = 0
+            settings.backup_last_scheduled_run_date = None
+            _db.session.commit()
 
-        assert list(tmp_path.glob("*.part")) == []
-        assert list(tmp_path.glob("medcover_backup_*.zip")) == []
+            def fail_prune(*args, **kwargs):
+                raise HttpResponseError("simulated storage outage")
+
+            monkeypatch.setattr("app.scheduler_tasks.prune_old_backups", fail_prune)
+            assert run_scheduled_backup(_db.session, now=datetime(2026, 1, 1, 1, 0, tzinfo=timezone.utc)) is True
+            assert len(_blob_names()) == 1
+            _db.session.expire_all()
+            assert get_settings().backup_last_scheduled_run_date == date(2026, 1, 1)

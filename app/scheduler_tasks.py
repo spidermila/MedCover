@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+from azure.core.exceptions import AzureError
 
 from app.backup import export_to_zip, prune_old_backups
 from app.digest.renderer import render_digest
@@ -274,22 +275,22 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
         return False
 
     try:
-        zip_path = export_to_zip(settings.backup_dir, now=now)
+        name = export_to_zip(now=now)
     except Exception as exc:
         return _record_failed_scheduled_backup(db_session, exc, today_local)
 
-    # Pruning is housekeeping, not part of the backup: a failure here (a file
-    # locked by another process, a read-only share) must not report the
-    # already-written archive as a failed backup, nor leave the run unstamped
+    # Pruning is housekeeping, not part of the backup: a failure here (a
+    # storage hiccup while listing or deleting) must not report the
+    # already-uploaded archive as a failed backup, nor leave the run unstamped
     # and so re-exported on the next minute's tick.
     try:
-        pruned = prune_old_backups(settings.backup_dir, settings.backup_keep_count)
-    except OSError as exc:
-        log.warning("Scheduled backup: pruning old files failed: %s", exc, exc_info=True)
+        pruned = prune_old_backups(settings.backup_keep_count)
+    except AzureError as exc:
+        log.warning("Scheduled backup: pruning old backups failed: %s", exc, exc_info=True)
         pruned = []
 
     try:
-        log.info("Scheduled backup created: %s (pruned %d old files)", zip_path.name, len(pruned))
+        log.info("Scheduled backup created: %s (pruned %d old backups)", name, len(pruned))
 
         settings.backup_last_scheduled_run_date = today_local
         db_session.add(
@@ -297,9 +298,9 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
                 actor_id=None,
                 action_type="create",
                 entity_type="Backup",
-                entity_id=zip_path.name,
-                summary=f"Automatická záloha vytvořena: {zip_path.name}",
-                changes_json={"file": zip_path.name, "pruned": [p.name for p in pruned]},
+                entity_id=name,
+                summary=f"Automatická záloha vytvořena: {name}",
+                changes_json={"file": name, "pruned": pruned},
             )
         )
         db_session.commit()

@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
@@ -11,6 +12,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 
 from app import create_app
+from app.backup import _container
 from app.extensions import db as _db
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
@@ -60,16 +62,47 @@ _MUTABLE_TABLES_LIST = [
 # the container is skipped entirely.
 
 _tc_mssql: object | None = None
+_tc_azurite: object | None = None
+
+# Azurite's fixed, publicly documented development account key.
+_AZURITE_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+
+def _start_azurite() -> None:
+    """Start an Azurite blob container when BACKUP_STORAGE_CONNECTION_STRING is not pre-set."""
+    global _tc_azurite
+    from testcontainers.core.container import DockerContainer  # pylint: disable=import-outside-toplevel
+    from testcontainers.core.waiting_utils import wait_for_logs  # pylint: disable=import-outside-toplevel
+
+    container = (
+        DockerContainer("mcr.microsoft.com/azure-storage/azurite")
+        .with_command("azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck")
+        .with_exposed_ports(10000)
+    )
+    container.start()
+    wait_for_logs(container, "Azurite Blob service successfully listens")
+    host = container.get_container_host_ip()
+    port = container.get_exposed_port(10000)
+    os.environ["BACKUP_STORAGE_CONNECTION_STRING"] = (
+        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey={_AZURITE_KEY};"
+        f"BlobEndpoint=http://{host}:{port}/devstoreaccount1;"
+    )
+    _tc_azurite = container
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Start an MSSQL container when TEST_DATABASE_URL is not pre-set."""
+    """Start MSSQL / Azurite containers when their env vars are not pre-set."""
     global _tc_mssql
     worker_input = getattr(config, "workerinput", None)
     if worker_input is not None:
         if "test_db_url" in worker_input:
             os.environ["TEST_DATABASE_URL"] = worker_input["test_db_url"]
+        if "backup_conn_str" in worker_input:
+            os.environ["BACKUP_STORAGE_CONNECTION_STRING"] = worker_input["backup_conn_str"]
         return
+
+    if not os.environ.get("BACKUP_STORAGE_CONNECTION_STRING"):
+        _start_azurite()
 
     if os.environ.get("TEST_DATABASE_URL"):
         url = os.environ["TEST_DATABASE_URL"]
@@ -135,14 +168,29 @@ def pytest_configure_node(node: object) -> None:  # type: ignore[type-arg]
     )
     if url:
         node.workerinput["test_db_url"] = url  # type: ignore[attr-defined]
+    node.workerinput["backup_conn_str"] = os.environ["BACKUP_STORAGE_CONNECTION_STRING"]  # type: ignore[attr-defined]
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
-    """Stop the MSSQL container once all tests have finished."""
-    global _tc_mssql
+    """Stop the MSSQL / Azurite containers once all tests have finished."""
+    global _tc_mssql, _tc_azurite
     if _tc_mssql is not None:
         _tc_mssql.stop()  # type: ignore[attr-defined]
         _tc_mssql = None
+    if _tc_azurite is not None:
+        _tc_azurite.stop()  # type: ignore[attr-defined]
+        _tc_azurite = None
+
+
+@pytest.fixture(autouse=True)
+def backup_container(monkeypatch: pytest.MonkeyPatch):
+    """Give every test its own blob container, created lazily on first use."""
+    monkeypatch.setenv("BACKUP_CONTAINER_NAME", f"test-{uuid.uuid4().hex}")
+    _container.cache_clear()
+    yield
+    if _container.cache_info().currsize:
+        _container().delete_container()
+        _container.cache_clear()
 
 
 # ── DB URL helpers ─────────────────────────────────────────────────────────────

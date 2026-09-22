@@ -4,7 +4,10 @@ Backup and restore engine for MedCover.
 Exports all application data (except app_settings and alembic_version) to a
 JSON-in-zip archive, and restores from such an archive.
 
-Backup file layout:
+Archives are stored as blobs in Azure Blob Storage (Azurite locally), so the
+web app and the scheduler — separate containers — see the same backups.
+
+Backup blob layout:
     medcover_backup_<YYYYMMDD>_<HHMMSS>_<micros>_UTC.zip
         └── backup.json
               {
@@ -28,16 +31,22 @@ extra columns from an older or newer backup.  This means:
   fail at the DB level — the restore routine surfaces this as an error.
 """
 
+import functools
 import json
 import logging
 import os
+import tempfile
 import uuid
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+from azure.storage.blob import ContainerClient
 
 from app.extensions import db
 
@@ -82,6 +91,51 @@ _RESTORE_ORDER: list[str] = [
 ]
 
 
+_BACKUP_PREFIX = "medcover_backup_"
+
+# Small single-shot sizes keep uploads/downloads chunked (the SDK reads a
+# single-put body fully into memory), and bounded timeouts/retries stop a
+# hanging storage endpoint from stalling the single-threaded scheduler loop.
+_CLIENT_OPTIONS: dict[str, Any] = {
+    "max_single_put_size": 4 * 1024 * 1024,
+    "max_single_get_size": 4 * 1024 * 1024,
+    "connection_timeout": 10,
+    "read_timeout": 60,
+    "retry_total": 2,
+}
+
+
+@functools.cache
+def _container() -> ContainerClient:
+    """Return the blob container holding the backups.
+
+    Production authenticates with the managed identity (``BACKUP_CONTAINER_URL``
+    + ``AZURE_CLIENT_ID``, picked up by DefaultAzureCredential). Local dev, CI
+    and e2e point ``BACKUP_STORAGE_CONNECTION_STRING`` at Azurite. Credential
+    selection is the only difference between the two; everything else shares
+    one code path.
+    """
+    conn_str = os.environ.get("BACKUP_STORAGE_CONNECTION_STRING")
+    url = os.environ.get("BACKUP_CONTAINER_URL")
+    if bool(conn_str) == bool(url):
+        raise RuntimeError("Set exactly one of BACKUP_CONTAINER_URL or BACKUP_STORAGE_CONNECTION_STRING.")
+    if url:
+        from azure.identity import DefaultAzureCredential  # pylint: disable=import-outside-toplevel
+
+        return ContainerClient.from_container_url(url, credential=DefaultAzureCredential(), **_CLIENT_OPTIONS)
+
+    client = ContainerClient.from_connection_string(
+        conn_str, os.environ.get("BACKUP_CONTAINER_NAME", "backups"), **_CLIENT_OPTIONS
+    )
+    # Only in connection-string (Azurite) mode: the production container is
+    # provisioned by infrastructure and the identity may not create containers.
+    try:
+        client.create_container()
+    except ResourceExistsError:
+        pass
+    return client
+
+
 def _get_alembic_head() -> str:
     """Return the current alembic revision stored in the DB.
 
@@ -113,20 +167,17 @@ def _serialize_value(val: Any) -> Any:
     return val
 
 
-def export_to_zip(backup_dir: str | Path, now: datetime | None = None) -> Path:
-    """Export all application data to a timestamped zip file.
+def export_to_zip(now: datetime | None = None) -> str:
+    """Export all application data to a timestamped backup blob.
 
     Args:
-        backup_dir: Directory where the zip will be written (created if absent).
-        now:        Reference timestamp for the filename (default: current UTC time).
+        now: Reference timestamp for the blob name (default: current UTC time).
 
     Returns:
-        Path to the created zip file.
+        Name of the created blob.
     """
     if now is None:
         now = datetime.now(timezone.utc)
-    backup_path = Path(backup_dir)
-    backup_path.mkdir(parents=True, exist_ok=True)
 
     inspector = sa.inspect(db.engine)
     all_tables = [t for t in inspector.get_table_names() if t not in _EXCLUDED_TABLES]
@@ -144,35 +195,45 @@ def export_to_zip(backup_dir: str | Path, now: datetime | None = None) -> Path:
         "tables": tables_data,
     }
 
-    # Timestamp is always UTC so filenames sort chronologically regardless of
-    # the app's configured timezone. The explicit ``_UTC`` suffix makes the
-    # zone unambiguous when files are copied off the server for archival.
+    # Timestamp is always UTC so names sort chronologically regardless of the
+    # app's configured timezone. The explicit ``_UTC`` suffix makes the zone
+    # unambiguous when archives are copied elsewhere.
     ts = now.astimezone(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-    zip_path = backup_path / f"medcover_backup_{ts}_UTC.zip"
+    name = f"{_BACKUP_PREFIX}{ts}_UTC.zip"
 
-    # Write to a sibling .part file and rename into place so a crash mid-write
-    # never leaves a half-written medcover_backup_*.zip visible in the UI. The
-    # rename stays inside backup_path, which matters when the directory is a
-    # shared SMB mount (Azure Files) where cross-device renames raise EXDEV.
-    # Compressing straight into the file keeps one archive-sized copy out of
-    # memory, which matters for a large export in the gunicorn worker.
-    tmp_path = zip_path.with_suffix(".zip.part")
-    try:
-        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    # Compress into a temp file rather than memory so a large export stays out
+    # of the gunicorn worker's RAM. The upload is a single commit, so a failure
+    # never leaves a half-written blob visible; overwrite=False turns a name
+    # collision into an error instead of silently replacing a backup.
+    with tempfile.TemporaryFile() as f:
+        with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("backup.json", json.dumps(payload, ensure_ascii=False, indent=2))
-        os.replace(tmp_path, zip_path)
-    except Exception:
-        # Don't leave the sidecar behind: it is invisible to list_backups() and
-        # prune_old_backups() (both glob "*.zip"), so orphans would accumulate
-        # forever on a repeatedly failing write and fill the share. Not just
-        # OSError: a non-serialisable value (TypeError) or a zipfile error must
-        # clean up too.
-        tmp_path.unlink(missing_ok=True)
-        raise
+        f.seek(0)
+        _container().upload_blob(name, f, overwrite=False)
 
     total_rows = sum(len(v) for v in tables_data.values())
-    log.info("Backup written to %s (%d tables, %d rows)", zip_path, len(all_tables), total_rows)
-    return zip_path
+    log.info("Backup written to %s (%d tables, %d rows)", name, len(all_tables), total_rows)
+    return name
+
+
+@contextmanager
+def downloaded_backup(name: str) -> Iterator[Path]:
+    """Download backup blob *name* to a temp file and yield its path.
+
+    Raises azure.core.exceptions.ResourceNotFoundError when the blob is missing.
+    """
+    fd, tmp = tempfile.mkstemp(suffix=".zip")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            _container().download_blob(name).readinto(f)
+        yield Path(tmp)
+    finally:
+        os.unlink(tmp)
+
+
+def delete_backup(name: str) -> None:
+    """Delete backup blob *name*."""
+    _container().delete_blob(name)
 
 
 def restore_from_zip(zip_path: str | Path) -> None:
@@ -348,45 +409,39 @@ def restore_from_zip(zip_path: str | Path) -> None:
     log.info("Restore from %s complete", zip_path.name)
 
 
-def prune_old_backups(backup_dir: str | Path, keep_count: int) -> list[Path]:
-    """Delete oldest backup zip files, keeping at most *keep_count* files.
-
-    Args:
-        backup_dir: Directory containing backup zip files.
-        keep_count: Maximum number of files to keep.
+def prune_old_backups(keep_count: int) -> list[str]:
+    """Delete the oldest backup blobs, keeping at most *keep_count*.
 
     Returns:
-        List of deleted file paths.
+        Names of the deleted blobs.
     """
-    backup_path = Path(backup_dir)
-    if not backup_path.exists():
-        return []
-    files = sorted(backup_path.glob("medcover_backup_*.zip"), key=lambda p: p.stat().st_mtime)
-    to_delete = files[: max(0, len(files) - keep_count)]
-    for f in to_delete:
-        f.unlink()
-        log.info("Pruned old backup: %s", f.name)
-    return to_delete
+    # Names embed a UTC timestamp, so name order is creation order — stable
+    # even if a blob is re-uploaded (which would reset creation_time).
+    names = sorted(b.name for b in _container().list_blobs(name_starts_with=_BACKUP_PREFIX))
+    deleted = []
+    for name in names[: max(0, len(names) - keep_count)]:
+        # Web workers and the scheduler prune the same container; a concurrent
+        # prune may already have removed this one.
+        try:
+            delete_backup(name)
+        except ResourceNotFoundError:
+            continue
+        deleted.append(name)
+        log.info("Pruned old backup: %s", name)
+    return deleted
 
 
-def list_backups(backup_dir: str | Path) -> list[dict]:
-    """Return metadata for all backup files in *backup_dir*, newest first.
+def list_backups() -> list[dict]:
+    """Return metadata for all backup blobs, newest first.
 
-    Each entry: {name, path, size_bytes, created_at (datetime UTC)}
+    Each entry: {name, size_bytes, created_at (datetime UTC)}
     """
-    backup_path = Path(backup_dir)
-    if not backup_path.exists():
-        return []
-    files = sorted(backup_path.glob("medcover_backup_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
-    result = []
-    for f in files:
-        stat = f.stat()
-        result.append(
-            {
-                "name": f.name,
-                "path": f,
-                "size_bytes": stat.st_size,
-                "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-            }
-        )
-    return result
+    blobs = sorted(_container().list_blobs(name_starts_with=_BACKUP_PREFIX), key=lambda b: b.name, reverse=True)
+    return [
+        {
+            "name": b.name,
+            "size_bytes": b.size,
+            "created_at": b.creation_time.astimezone(timezone.utc),
+        }
+        for b in blobs
+    ]
