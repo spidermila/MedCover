@@ -37,8 +37,11 @@ def configure_telemetry() -> bool:
     """Start OpenTelemetry export to Azure Monitor when configured.
 
     Enabled only when ``APPLICATIONINSIGHTS_CONNECTION_STRING`` is set in the
-    environment, so local development, tests and CI are a no-op. Returns True
-    when the exporter was started by this call.
+    environment, so local development, tests and CI are a no-op. When the
+    deployment provides a managed identity (``AZURE_CLIENT_ID`` without
+    ``AZURE_CLIENT_SECRET``), ingestion is
+    authenticated with it (Entra ID) instead of the connection string's
+    instrumentation key. Returns True when the exporter was started by this call.
     """
     global _telemetry_configured  # pylint: disable=global-statement
 
@@ -48,6 +51,7 @@ def configure_telemetry() -> bool:
     # Imported lazily: the OpenTelemetry stack ships in requirements-telemetry.txt,
     # which only the container image installs, and importing the SDK is not free.
     try:
+        from azure.identity import ManagedIdentityCredential  # pylint: disable=import-outside-toplevel
         from azure.monitor.opentelemetry import (  # pylint: disable=import-outside-toplevel
             configure_azure_monitor,
         )
@@ -55,12 +59,24 @@ def configure_telemetry() -> bool:
         # Connection string set in an environment without the telemetry deps
         # (a local venv, CI): run without telemetry rather than refusing to start.
         logging.getLogger(__name__).warning(
-            "APPLICATIONINSIGHTS_CONNECTION_STRING is set but "
-            "azure-monitor-opentelemetry is not installed; telemetry is disabled."
+            "APPLICATIONINSIGHTS_CONNECTION_STRING is set but the telemetry "
+            "dependencies (azure-monitor-opentelemetry, azure-identity) are not "
+            "installed; telemetry is disabled."
         )
         return False
 
-    configure_azure_monitor()  # reads the connection string from the environment
+    # The connection string (read from the environment) still identifies the
+    # resource and ingestion endpoint; the credential only replaces key auth.
+    # AZURE_CLIENT_ID together with AZURE_CLIENT_SECRET means a service principal
+    # (self-hosted), not a managed identity, so that host keeps key auth.
+    client_id = os.getenv("AZURE_CLIENT_ID", "").strip()
+    if client_id and not os.getenv("AZURE_CLIENT_SECRET"):
+        configure_azure_monitor(credential=ManagedIdentityCredential(client_id=client_id))
+        auth_mode = "Entra ID (managed identity)"
+    else:
+        configure_azure_monitor()
+        auth_mode = "instrumentation key"
+    logging.getLogger(__name__).info("Azure Monitor telemetry export started, auth: %s.", auth_mode)
     _telemetry_configured = True
     return True
 

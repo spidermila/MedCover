@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Azure Monitor telemetry export authenticates with the managed identity (Microsoft Entra ID) when `AZURE_CLIENT_ID` is set without `AZURE_CLIENT_SECRET`, instead of the instrumentation key in the connection string. `APPLICATIONINSIGHTS_CONNECTION_STRING` is still required to identify the resource; without `AZURE_CLIENT_ID` behaviour is unchanged. (#539)
+
 ## [1.2.0] - 2026-09-20
 
 ### Added
