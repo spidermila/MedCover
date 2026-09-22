@@ -129,7 +129,7 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
     local_tz = get_app_tz()
 
     if not schedule.enabled:
-        log.info("Admin digest: skipped — digest disabled.")
+        log.debug("Admin digest: skipped — digest disabled.")
         return False
 
     local_now = now.astimezone(local_tz)
@@ -145,7 +145,7 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
             return False
         if schedule.last_sent_at is not None:
             if schedule.last_sent_at.astimezone(local_tz).date() >= local_now.date():
-                log.info(
+                log.debug(
                     "Admin digest: skipped — already sent today (last_sent=%s).",
                     schedule.last_sent_at.astimezone(local_tz).date(),
                 )

@@ -48,10 +48,14 @@ HEARTBEAT_INTERVAL_SECONDS: int = 5
 
 
 def _logged_task(name: str, fn: Callable[[], None]) -> Callable[[], None]:
-    """Wrap a scheduled task to emit an INFO log line each time it fires."""
+    """Wrap a scheduled task to emit a DEBUG log line each time it fires.
+
+    DEBUG, not INFO: tasks fire every minute whether or not there is work, and
+    INFO is reserved for lines where something actually happened.
+    """
 
     def _wrapper() -> None:
-        log.info("Task running: %s", name)
+        log.debug("Task running: %s", name)
         fn()
 
     _wrapper.__name__ = fn.__name__
