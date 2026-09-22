@@ -65,6 +65,19 @@ def configure_telemetry() -> bool:
         )
         return False
 
+    # The Azure SDK logs every export request/response at INFO; with the root
+    # handler exporting INFO, that loops back into App Insights as AppTraces.
+    for name in (
+        "azure.core.pipeline.policies.http_logging_policy",
+        "azure.monitor.opentelemetry.exporter",
+        "azure.identity",
+    ):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    # Becomes the cloud role name in App Insights; the scheduler sets its own
+    # before creating the app, and a value from the environment always wins.
+    os.environ.setdefault("OTEL_SERVICE_NAME", "medcover-web")
+
     # The connection string (read from the environment) still identifies the
     # resource and ingestion endpoint; the credential only replaces key auth.
     # AZURE_CLIENT_ID together with AZURE_CLIENT_SECRET means a service principal

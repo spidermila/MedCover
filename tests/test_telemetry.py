@@ -1,5 +1,7 @@
 """Tests for the optional Azure Monitor telemetry hook in the app factory."""
 
+import logging
+import os
 import sys
 import types
 
@@ -7,6 +9,11 @@ import app as app_package
 from app import configure_telemetry
 
 ENV_VAR = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+SDK_LOGGERS = (
+    "azure.core.pipeline.policies.http_logging_policy",
+    "azure.monitor.opentelemetry.exporter",
+    "azure.identity",
+)
 
 
 def _fake_azure_module(calls: list) -> types.ModuleType:
@@ -31,6 +38,10 @@ def _install_fake(monkeypatch, calls: list) -> None:
     monkeypatch.setattr(app_package, "_telemetry_configured", False)
     monkeypatch.delenv("AZURE_CLIENT_ID", raising=False)
     monkeypatch.delenv("AZURE_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
+    # configure_telemetry() changes process-global logger levels; restore them.
+    for name in SDK_LOGGERS:
+        monkeypatch.setattr(logging.getLogger(name), "level", logging.NOTSET)
 
 
 def test_no_connection_string_is_a_noop(monkeypatch):
@@ -40,6 +51,43 @@ def test_no_connection_string_is_a_noop(monkeypatch):
 
     assert configure_telemetry() is False
     assert calls == []
+
+
+def test_no_connection_string_leaves_logging_alone(monkeypatch):
+    _install_fake(monkeypatch, [])
+    monkeypatch.delenv(ENV_VAR, raising=False)
+
+    configure_telemetry()
+    assert all(logging.getLogger(name).level == logging.NOTSET for name in SDK_LOGGERS)
+    assert "OTEL_SERVICE_NAME" not in os.environ
+
+
+def test_sdk_loggers_are_quieted(monkeypatch):
+    """The SDK's INFO logs about its own exports must not be exported themselves."""
+    _install_fake(monkeypatch, [])
+    monkeypatch.setenv(ENV_VAR, "InstrumentationKey=00000000-0000-0000-0000-000000000000")
+    monkeypatch.setattr(logging.getLogger(), "level", logging.INFO)
+
+    assert configure_telemetry() is True
+    for name in SDK_LOGGERS:
+        assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING
+
+
+def test_service_name_defaults_to_web(monkeypatch):
+    _install_fake(monkeypatch, [])
+    monkeypatch.setenv(ENV_VAR, "InstrumentationKey=00000000-0000-0000-0000-000000000000")
+
+    assert configure_telemetry() is True
+    assert os.environ["OTEL_SERVICE_NAME"] == "medcover-web"
+
+
+def test_service_name_from_environment_wins(monkeypatch):
+    _install_fake(monkeypatch, [])
+    monkeypatch.setenv(ENV_VAR, "InstrumentationKey=00000000-0000-0000-0000-000000000000")
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "medcover-scheduler")
+
+    assert configure_telemetry() is True
+    assert os.environ["OTEL_SERVICE_NAME"] == "medcover-scheduler"
 
 
 def test_connection_string_starts_the_exporter(monkeypatch):
