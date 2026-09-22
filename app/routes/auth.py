@@ -76,10 +76,10 @@ def login() -> str | Response:
             if user.check_password(password):
                 if user.is_archived:
                     flash("Váš účet byl archivován. Kontaktujte administrátora.", "danger")
-                    return redirect(url_for("auth.login"))
+                    return redirect(url_for("auth.login", next=request.args.get("next")))
                 if not user.is_active:
                     flash("Váš účet čeká na aktivaci administrátorem.", "warning")
-                    return redirect(url_for("auth.login"))
+                    return redirect(url_for("auth.login", next=request.args.get("next")))
                 # Successful login — reset lockout state
                 user.failed_login_attempts = 0
                 user.login_locked_until = None

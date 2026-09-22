@@ -34,6 +34,16 @@ class TestSafeNext:
             "//evil.example.com/path",
             "ftp://evil.example.com",
             "javascript:alert(1)",
+            "///evil.example.com",
+            "/\\evil.example.com",
+            "\\\\evil.example.com",
+            "/\tevil.example.com",
+            "/\n/evil.example.com",
+            "/\r/evil.example.com",
+            "/\x00/evil.example.com",
+            "/\x7f/evil.example.com",
+            "//[invalid",
+            "events/",
         ],
     )
     def test_external_urls_rejected(self, app, url):
