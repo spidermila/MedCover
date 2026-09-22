@@ -28,6 +28,8 @@ from app.scheduler_tasks import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
+# Cloud role name in App Insights; the web app defaults to "medcover-web".
+os.environ.setdefault("OTEL_SERVICE_NAME", "medcover-scheduler")
 app = create_app("production")
 
 # Sentinel user ID used in audit log rows written by the scheduler (no human actor)
