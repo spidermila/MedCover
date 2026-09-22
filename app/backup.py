@@ -35,6 +35,7 @@ import functools
 import json
 import logging
 import os
+import re
 import tempfile
 import uuid
 import zipfile
@@ -46,8 +47,9 @@ from typing import Any
 
 import sqlalchemy as sa
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
-from azure.storage.blob import ContainerClient
+from azure.storage.blob import ContainerClient, StorageStreamDownloader
 
+from app.config import check_backup_storage_env
 from app.extensions import db
 
 log = logging.getLogger(__name__)
@@ -92,6 +94,9 @@ _RESTORE_ORDER: list[str] = [
 
 
 _BACKUP_PREFIX = "medcover_backup_"
+# Names we create (see export_to_zip). The ``_UTC`` suffix is optional so
+# archives from before the switch to explicit UTC timestamps stay usable.
+_BACKUP_NAME_RE = re.compile(r"medcover_backup_\d{8}_\d{6}_\d+(?:_UTC)?\.zip")
 
 # Small single-shot sizes keep uploads/downloads chunked (the SDK reads a
 # single-put body fully into memory), and bounded timeouts/retries stop a
@@ -115,10 +120,9 @@ def _container() -> ContainerClient:
     selection is the only difference between the two; everything else shares
     one code path.
     """
+    check_backup_storage_env()
     conn_str = os.environ.get("BACKUP_STORAGE_CONNECTION_STRING")
     url = os.environ.get("BACKUP_CONTAINER_URL")
-    if bool(conn_str) == bool(url):
-        raise RuntimeError("Set exactly one of BACKUP_CONTAINER_URL or BACKUP_STORAGE_CONNECTION_STRING.")
     if url:
         from azure.identity import DefaultAzureCredential  # pylint: disable=import-outside-toplevel
 
@@ -134,6 +138,35 @@ def _container() -> ContainerClient:
     except ResourceExistsError:
         pass
     return client
+
+
+def is_backup_name(name: str) -> bool:
+    """True if *name* is a backup blob name this module creates."""
+    return _BACKUP_NAME_RE.fullmatch(name) is not None
+
+
+def backup_location() -> str:
+    """URL of the backup container, for display."""
+    return _container().url
+
+
+def _backup_blobs() -> list:
+    """Backup blobs in the container, oldest first; foreign blobs are ignored."""
+    blobs = _container().list_blobs(name_starts_with=_BACKUP_PREFIX)
+    # Names embed a UTC timestamp, so name order is creation order — stable
+    # even if a blob is re-uploaded (which would reset creation_time).
+    return sorted((b for b in blobs if is_backup_name(b.name)), key=lambda b: b.name)
+
+
+@contextmanager
+def temp_zip() -> Iterator[Path]:
+    """Yield a path for a temporary .zip file, removed on exit."""
+    fd, tmp = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    try:
+        yield Path(tmp)
+    finally:
+        os.unlink(tmp)
 
 
 def _get_alembic_head() -> str:
@@ -222,13 +255,18 @@ def downloaded_backup(name: str) -> Iterator[Path]:
 
     Raises azure.core.exceptions.ResourceNotFoundError when the blob is missing.
     """
-    fd, tmp = tempfile.mkstemp(suffix=".zip")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            _container().download_blob(name).readinto(f)
-        yield Path(tmp)
-    finally:
-        os.unlink(tmp)
+    with temp_zip() as path:
+        with path.open("wb") as f:
+            open_backup(name).readinto(f)
+        yield path
+
+
+def open_backup(name: str) -> StorageStreamDownloader:
+    """Start downloading backup blob *name*; stream it with ``.chunks()``.
+
+    Raises azure.core.exceptions.ResourceNotFoundError when the blob is missing.
+    """
+    return _container().download_blob(name)
 
 
 def delete_backup(name: str) -> None:
@@ -415,9 +453,7 @@ def prune_old_backups(keep_count: int) -> list[str]:
     Returns:
         Names of the deleted blobs.
     """
-    # Names embed a UTC timestamp, so name order is creation order — stable
-    # even if a blob is re-uploaded (which would reset creation_time).
-    names = sorted(b.name for b in _container().list_blobs(name_starts_with=_BACKUP_PREFIX))
+    names = [b.name for b in _backup_blobs()]
     deleted = []
     for name in names[: max(0, len(names) - keep_count)]:
         # Web workers and the scheduler prune the same container; a concurrent
@@ -436,12 +472,11 @@ def list_backups() -> list[dict]:
 
     Each entry: {name, size_bytes, created_at (datetime UTC)}
     """
-    blobs = sorted(_container().list_blobs(name_starts_with=_BACKUP_PREFIX), key=lambda b: b.name, reverse=True)
     return [
         {
             "name": b.name,
             "size_bytes": b.size,
             "created_at": b.creation_time.astimezone(timezone.utc),
         }
-        for b in blobs
+        for b in reversed(_backup_blobs())
     ]

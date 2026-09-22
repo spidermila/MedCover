@@ -5,25 +5,25 @@ baseline, with more specific backup.* permissions per action.
 """
 
 import logging
-import os
-import re
-import tempfile
 from pathlib import Path
 
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import AzureError, ResourceNotFoundError
 from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
 from app.backup import (
-    _container,
+    backup_location,
     delete_backup,
     downloaded_backup,
     export_to_zip,
+    is_backup_name,
     list_backups,
+    open_backup,
     prune_old_backups,
     restore_from_zip,
+    temp_zip,
 )
 from app.extensions import db
 from app.models.audit import AuditLogEntry
@@ -35,17 +35,13 @@ log = logging.getLogger(__name__)
 
 backup_bp = Blueprint("backup", __name__, url_prefix="/admin/backup")
 
-# Blob name pattern — only allow backups we created; rejects anything else
-# (path separators included) before any storage call.
-# The ``_UTC`` suffix is present on files created after the switch to explicit
-# UTC timestamps; older files (produced before that change) lack it, so the
-# suffix is optional to keep pre-existing backups downloadable / restorable.
-_BACKUP_FILENAME_RE = re.compile(r"^medcover_backup_\d{8}_\d{6}_\d+(?:_UTC)?\.zip$")
-
 
 def _validate_name(filename: str) -> None:
-    """Abort with 404 unless *filename* is a backup blob name we create."""
-    if not _BACKUP_FILENAME_RE.fullmatch(filename):
+    """Abort with 404 unless *filename* is a backup name we create.
+
+    Rejects anything else (path separators included) before any storage call.
+    """
+    if not is_backup_name(filename):
         abort(404)
 
 
@@ -60,7 +56,7 @@ def index() -> str:
     # A storage outage must not take the whole page (and its settings form) down.
     try:
         backups = list_backups()
-        backup_container = _container().url
+        backup_container = backup_location()
     except Exception as exc:
         log.error("Listing backups failed: %s", exc, exc_info=True)
         flash(f"Nepodařilo se načíst seznam záloh: {exc}", "danger")
@@ -94,7 +90,7 @@ def run_backup() -> Response:
     # as failed nor skip the audit entry (same rule as the scheduled backup).
     try:
         pruned = prune_old_backups(settings.backup_keep_count)
-    except Exception as exc:
+    except AzureError as exc:
         log.warning("Ad-hoc backup: pruning old backups failed: %s", exc, exc_info=True)
         flash(f"Staré zálohy se nepodařilo promazat: {exc}", "warning")
         pruned = []
@@ -124,7 +120,7 @@ def download(filename: str) -> Response:
     require_permission("backup.download")
     _validate_name(filename)
     try:
-        downloader = _container().download_blob(filename)
+        downloader = open_backup(filename)
     except ResourceNotFoundError:
         abort(404)
     except Exception as exc:
@@ -190,13 +186,9 @@ def upload_restore() -> Response:
         flash("Soubor musí být ve formátu .zip.", "danger")
         return redirect(url_for("backup.index"))
 
-    fd, tmp = tempfile.mkstemp(suffix=".zip")
-    os.close(fd)
-    try:
+    with temp_zip() as tmp:
         file.save(tmp)
-        _do_restore(Path(tmp), secure_filename(file.filename), actor_id=current_user.id)
-    finally:
-        os.unlink(tmp)
+        _do_restore(tmp, secure_filename(file.filename), actor_id=current_user.id)
 
     return redirect(url_for("backup.index"))
 
@@ -264,12 +256,19 @@ def delete(filename: str) -> Response:
     _validate_name(filename)
     try:
         delete_backup(filename)
+    except ResourceNotFoundError:
+        abort(404)
+    except Exception as exc:
+        log.error("Delete backup %s failed: %s", filename, exc, exc_info=True)
+        flash(f"Smazání selhalo: {exc}", "danger")
+        return redirect(url_for("backup.index"))
+    try:
         audit("delete", "Backup", filename, f"Záloha smazána: {filename}", {"file": filename})
         db.session.commit()
         flash(f"Záloha {filename} byla smazána.", "success")
     except Exception as exc:
-        log.error("Delete backup %s failed: %s", filename, exc, exc_info=True)
-        flash(f"Smazání selhalo: {exc}", "danger")
+        log.error("Delete backup %s: audit failed: %s", filename, exc, exc_info=True)
+        flash(f"Záloha {filename} byla smazána, ale zápis do auditu selhal: {exc}", "warning")
     return redirect(url_for("backup.index"))
 
 

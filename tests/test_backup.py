@@ -234,6 +234,41 @@ class TestPruneOldBackups:
             assert deleted == [names[1]]
             assert _blob_names() == [names[2]]
 
+    def test_foreign_blob_neither_listed_nor_pruned(self, app):
+        """A hand-uploaded blob sharing the prefix must not occupy a keep slot."""
+        with app.app_context():
+            _container().upload_blob("medcover_backup_manual.zip", b"x")
+            names = [export_to_zip(now=datetime(2026, 1, day, tzinfo=timezone.utc)) for day in range(1, 4)]
+            assert [b["name"] for b in list_backups()] == names[::-1]
+            assert prune_old_backups(keep_count=2) == names[:1]
+            remaining = sorted(b.name for b in _container().list_blobs())
+            assert remaining == sorted(names[1:] + ["medcover_backup_manual.zip"])
+
+
+class TestContainerClient:
+    def test_container_url_uses_managed_identity_without_creating_container(self, monkeypatch):
+        """Production path: Entra ID credential, no key, and no create_container
+        (the identity has no rights to create containers). No network calls."""
+        from azure.identity import DefaultAzureCredential  # pylint: disable=import-outside-toplevel
+        from azure.storage.blob import ContainerClient  # pylint: disable=import-outside-toplevel
+
+        def no_create(*args, **kwargs):
+            raise AssertionError("must not create the container in managed-identity mode")
+
+        monkeypatch.delenv("BACKUP_STORAGE_CONNECTION_STRING")
+        monkeypatch.setenv("BACKUP_CONTAINER_URL", "https://acct.blob.core.windows.net/backups")
+        monkeypatch.setenv("AZURE_CLIENT_ID", "00000000-0000-0000-0000-000000000000")
+        monkeypatch.setattr(ContainerClient, "create_container", no_create)
+        _container.cache_clear()
+        try:
+            client = _container()
+            assert client.url == "https://acct.blob.core.windows.net/backups"
+            assert client.container_name == "backups"
+            assert isinstance(client.credential, DefaultAzureCredential)
+        finally:
+            # Don't let the autouse fixture's teardown talk to the fake account.
+            _container.cache_clear()
+
 
 class TestListBackups:
     def test_list_returns_newest_first(self, app):
@@ -473,10 +508,19 @@ class TestBackupRoutes:
         def no_storage():
             raise AssertionError("storage must not be touched for an invalid name")
 
-        monkeypatch.setattr("app.routes.backup._container", no_storage)
-        monkeypatch.setattr("app.routes.backup.downloaded_backup", no_storage)
-        monkeypatch.setattr("app.routes.backup.delete_backup", no_storage)
+        monkeypatch.setattr("app.backup._container", no_storage)
         resp = getattr(client, method)(url, data={"csrf_token": csrf, "confirmation": confirmation})
+        assert resp.status_code == 404
+
+    def test_delete_missing_blob_returns_404(self, app, client):
+        with app.app_context():
+            _make_user("admin@test.com", "Admin", Role.ADMIN)
+        _login(client, "admin@test.com")
+        csrf = _get_csrf(client, "/admin/backup/")
+        resp = client.post(
+            "/admin/backup/delete/medcover_backup_20260101_000000_000000_UTC.zip",
+            data={"csrf_token": csrf, "confirmation": "SMAZAT"},
+        )
         assert resp.status_code == 404
 
     def test_download_rejects_path_traversal(self, app, client):
@@ -556,10 +600,10 @@ class TestBackupRoutes:
             _make_user("admin@test.com", "Admin", Role.ADMIN)
         _login(client, "admin@test.com")
 
-        def outage():
+        def outage(name):
             raise HttpResponseError("simulated storage outage")
 
-        monkeypatch.setattr("app.routes.backup._container", outage)
+        monkeypatch.setattr("app.routes.backup.open_backup", outage)
         resp = client.get("/admin/backup/download/medcover_backup_20260101_000000_000000_UTC.zip")
         assert resp.status_code == 302
 
