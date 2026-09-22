@@ -93,6 +93,9 @@ def _start_azurite() -> None:
 def pytest_configure(config: pytest.Config) -> None:
     """Start MSSQL / Azurite containers when their env vars are not pre-set."""
     global _tc_mssql
+    # Tests always use Azurite; a real Azure URL in the shell would clash with
+    # the connection string (the app requires exactly one storage target).
+    os.environ.pop("BACKUP_CONTAINER_URL", None)
     worker_input = getattr(config, "workerinput", None)
     if worker_input is not None:
         if "test_db_url" in worker_input:

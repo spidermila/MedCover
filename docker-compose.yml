@@ -25,7 +25,7 @@ services:
       db-init:
         condition: service_completed_successfully
       azurite:
-        condition: service_started
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
@@ -62,7 +62,7 @@ services:
       web:
         condition: service_healthy
       azurite:
-        condition: service_started
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
@@ -86,6 +86,11 @@ services:
       - "10000:10000"
     volumes:
       - azurite_data:/data:z
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:10000/devstoreaccount1?comp=list', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest

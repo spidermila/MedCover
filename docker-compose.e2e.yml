@@ -20,6 +20,11 @@ services:
   azurite-e2e:
     image: mcr.microsoft.com/azure-storage/azurite
     command: azurite-blob --blobHost 0.0.0.0 --inMemoryPersistence --skipApiVersionCheck
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:10000/devstoreaccount1?comp=list', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   web-e2e:
     build:
@@ -43,7 +48,7 @@ services:
       db-e2e:
         condition: service_healthy
       azurite-e2e:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
