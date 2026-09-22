@@ -1,6 +1,11 @@
 """Tests for authentication routes: login, logout, forgot-password, register."""
 
+import re
 import secrets
+from html import unescape
+from urllib.parse import parse_qs, urlencode, urlsplit
+
+import pytest
 
 from app.config import LOGIN_MAX_ATTEMPTS, RESET_TOKEN_MINUTES
 from app.constants import MIN_PASSWORD_LENGTH
@@ -10,6 +15,65 @@ from app.models.role import Role
 from app.models.user import UserAccount
 from app.routes.auth import _RESET_SALT, _make_signed_token
 from tests.conftest import _login, _make_user
+
+
+def _login_form_action(response):
+    return unescape(re.search(r'<form method="POST" action="([^"]+)"', response.text)[1])
+
+
+class TestLoginReturnDestination:
+    @pytest.mark.parametrize(
+        ("destination", "status"),
+        [("/events/?statuses=DRAFT&page=2", 200), ("/dashboard", 200), ("/admin/", 403)],
+    )
+    def test_protected_page_survives_login_and_password_retry(self, app, client, destination, status):
+        with app.app_context():
+            _make_user("test@example.com", "Test User", Role.MEMBER)
+
+        response = client.get(destination)
+        assert response.status_code == 302
+        response = client.get(response.location)
+        action = _login_form_action(response)
+        assert parse_qs(urlsplit(action).query)["next"] == [destination]
+
+        response = client.post(action, data={"email": "test@example.com", "password": "wrong"})
+        assert "Nesprávný e-mail nebo heslo" in response.text
+        assert _login_form_action(response) == action
+
+        response = client.post(
+            _login_form_action(response), data={"email": "test@example.com", "password": "testpass123"}
+        )
+        assert response.status_code == 302
+        assert response.location == destination
+        assert client.get(response.location).status_code == status
+
+    @pytest.mark.parametrize("blocked_field", ["is_archived", "is_active"])
+    def test_rejected_account_preserves_destination(self, app, client, blocked_field):
+        with app.app_context():
+            user = _make_user("test@example.com", "Test User", Role.MEMBER)
+            setattr(user, blocked_field, blocked_field == "is_archived")
+            _db.session.commit()
+
+        response = client.get("/events/", follow_redirects=True)
+        action = _login_form_action(response)
+        response = client.post(
+            action, data={"email": "test@example.com", "password": "testpass123"}, follow_redirects=True
+        )
+        assert response.request.path == "/auth/login"
+        assert _login_form_action(response) == action
+
+    @pytest.mark.parametrize(
+        "destination", ["https://evil.example.com", "//evil.example.com", "/\\evil.example.com", "///evil.example.com"]
+    )
+    def test_rendered_login_form_rejects_external_destinations(self, app, client, destination):
+        with app.app_context():
+            _make_user("test@example.com", "Test User", Role.MEMBER)
+        response = client.get("/auth/login?" + urlencode({"next": destination}))
+        response = client.post(
+            _login_form_action(response), data={"email": "test@example.com", "password": "testpass123"}
+        )
+        assert response.status_code == 302
+        assert response.location == "/dashboard"
 
 
 class TestLoginPage:

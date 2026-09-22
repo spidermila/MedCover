@@ -12,7 +12,7 @@
                alt="MedCover logo" class="img-fluid logo-max-h">
         </div>
         <h4 class="card-title mb-4 text-center">Přihlášení</h4>
-        <form method="POST" action="{{ url_for('auth.login') }}" novalidate>
+        <form method="POST" action="{{ url_for('auth.login', next=request.args.get('next')) }}" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
             <label for="email" class="form-label">E-mail</label>

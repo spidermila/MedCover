@@ -3,7 +3,6 @@
 from calendar import monthrange
 from datetime import date
 from typing import Any, TypeVar
-from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
@@ -128,17 +127,20 @@ def czech_sort_key(text: str) -> list[int]:
 def safe_next(next_url: str | None, fallback: str | None = None) -> str:
     """Return *next_url* only if it is a same-origin relative path.
 
-    Rejects absolute URLs, scheme-relative URLs (``//evil.example``),
-    and empty/``None`` values.  Falls back to *fallback* if provided,
+    Only accepts paths starting with a single slash, without backslashes
+    or control characters. Falls back to *fallback* if provided,
     otherwise to the main dashboard.
 
     Use this **everywhere** the app redirects to a user-supplied URL.
     """
     _fallback = fallback or url_for("main.dashboard")
-    if not next_url:
-        return _fallback
-    parsed = urlsplit(next_url)
-    if parsed.scheme or parsed.netloc:
+    if (
+        not next_url
+        or not next_url.startswith("/")
+        or next_url.startswith("//")
+        or "\\" in next_url
+        or any(ord(char) < 32 or ord(char) == 127 for char in next_url)
+    ):
         return _fallback
     return next_url
 
