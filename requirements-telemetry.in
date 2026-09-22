@@ -7,3 +7,5 @@
 # entirely when APPLICATIONINSIGHTS_CONNECTION_STRING is unset.
 
 azure-monitor-opentelemetry
+# Explicit: Entra ID auth for ingestion uses ManagedIdentityCredential.
+azure-identity
