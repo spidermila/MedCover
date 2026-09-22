@@ -4,17 +4,27 @@ All routes are under /admin/backup and require the admin.view permission as a
 baseline, with more specific backup.* permissions per action.
 """
 
-import io
 import logging
+import os
 import re
+import tempfile
 from pathlib import Path
 
-from flask import Blueprint, Response, abort, flash, redirect, render_template, request, send_file, url_for
+from azure.core.exceptions import ResourceNotFoundError
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
-from app.backup import export_to_zip, list_backups, prune_old_backups, restore_from_zip
+from app.backup import (
+    _container,
+    delete_backup,
+    downloaded_backup,
+    export_to_zip,
+    list_backups,
+    prune_old_backups,
+    restore_from_zip,
+)
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.settings import get_settings
@@ -25,25 +35,18 @@ log = logging.getLogger(__name__)
 
 backup_bp = Blueprint("backup", __name__, url_prefix="/admin/backup")
 
-# Filename pattern — only allow files we created to prevent path traversal.
+# Blob name pattern — only allow backups we created; rejects anything else
+# (path separators included) before any storage call.
 # The ``_UTC`` suffix is present on files created after the switch to explicit
 # UTC timestamps; older files (produced before that change) lack it, so the
 # suffix is optional to keep pre-existing backups downloadable / restorable.
 _BACKUP_FILENAME_RE = re.compile(r"^medcover_backup_\d{8}_\d{6}_\d+(?:_UTC)?\.zip$")
 
 
-def _backup_dir() -> Path:
-    return Path(get_settings().backup_dir)
-
-
-def _safe_backup_path(filename: str) -> Path:
-    """Return absolute path for *filename*, raising 404 on invalid/traversal names."""
-    if not _BACKUP_FILENAME_RE.match(filename):
+def _validate_name(filename: str) -> None:
+    """Abort with 404 unless *filename* is a backup blob name we create."""
+    if not _BACKUP_FILENAME_RE.fullmatch(filename):
         abort(404)
-    path = _backup_dir() / filename
-    if not path.exists():
-        abort(404)
-    return path
 
 
 # ── List & management page ────────────────────────────────────────────────────
@@ -54,14 +57,20 @@ def _safe_backup_path(filename: str) -> Path:
 def index() -> str:
     require_permission("admin.view")
 
-    backup_dir = _backup_dir()
-    backups = list_backups(backup_dir)
+    # A storage outage must not take the whole page (and its settings form) down.
+    try:
+        backups = list_backups()
+        backup_container = _container().url
+    except Exception as exc:
+        log.error("Listing backups failed: %s", exc, exc_info=True)
+        flash(f"Nepodařilo se načíst seznam záloh: {exc}", "danger")
+        backups, backup_container = [], None
     settings = get_settings()
     return render_template(
         "admin/backup.html",
         backups=backups,
         settings=settings,
-        backup_dir=str(backup_dir),
+        backup_container=backup_container,
     )
 
 
@@ -73,23 +82,36 @@ def index() -> str:
 def run_backup() -> Response:
     require_permission("backup.run")
 
-    backup_dir = _backup_dir()
     settings = get_settings()
     try:
-        zip_path = export_to_zip(backup_dir)
-        pruned = prune_old_backups(backup_dir, settings.backup_keep_count)
-        audit(
-            "create",
-            "Backup",
-            zip_path.name,
-            f"Ruční záloha vytvořena: {zip_path.name}",
-            {"file": zip_path.name, "pruned": [p.name for p in pruned]},
-        )
-        db.session.commit()
-        flash(f"Záloha byla vytvořena: {zip_path.name}", "success")
+        name = export_to_zip()
     except Exception as exc:
         log.error("Ad-hoc backup failed: %s", exc, exc_info=True)
         flash(f"Záloha selhala: {exc}", "danger")
+        return redirect(url_for("backup.index"))
+
+    # Pruning is housekeeping: its failure must not report the uploaded backup
+    # as failed nor skip the audit entry (same rule as the scheduled backup).
+    try:
+        pruned = prune_old_backups(settings.backup_keep_count)
+    except Exception as exc:
+        log.warning("Ad-hoc backup: pruning old backups failed: %s", exc, exc_info=True)
+        flash(f"Staré zálohy se nepodařilo promazat: {exc}", "warning")
+        pruned = []
+
+    try:
+        audit(
+            "create",
+            "Backup",
+            name,
+            f"Ruční záloha vytvořena: {name}",
+            {"file": name, "pruned": pruned},
+        )
+        db.session.commit()
+        flash(f"Záloha byla vytvořena: {name}", "success")
+    except Exception as exc:
+        log.error("Ad-hoc backup audit failed: %s", exc, exc_info=True)
+        flash(f"Záloha {name} byla vytvořena, ale zápis do auditu selhal: {exc}", "warning")
     return redirect(url_for("backup.index"))
 
 
@@ -100,12 +122,23 @@ def run_backup() -> Response:
 @login_required
 def download(filename: str) -> Response:
     require_permission("backup.download")
-    path = _safe_backup_path(filename)
-    return send_file(
-        io.BytesIO(path.read_bytes()),
-        download_name=filename,
-        as_attachment=True,
+    _validate_name(filename)
+    try:
+        downloader = _container().download_blob(filename)
+    except ResourceNotFoundError:
+        abort(404)
+    except Exception as exc:
+        log.error("Download of %s failed: %s", filename, exc, exc_info=True)
+        flash(f"Stažení zálohy selhalo: {exc}", "danger")
+        return redirect(url_for("backup.index"))
+    # Stream chunk by chunk so the archive is never held in memory.
+    return Response(
+        downloader.chunks(),
         mimetype="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(downloader.size),
+        },
     )
 
 
@@ -122,8 +155,16 @@ def restore(filename: str) -> Response:
         flash("Obnovení selhalo: pro potvrzení zadejte RESTORE.", "danger")
         return redirect(url_for("backup.index"))
 
-    path = _safe_backup_path(filename)
-    _do_restore(path, actor_id=current_user.id)
+    _validate_name(filename)
+    try:
+        with downloaded_backup(filename) as path:
+            _do_restore(path, filename, actor_id=current_user.id)
+    except ResourceNotFoundError:
+        abort(404)
+    except Exception as exc:
+        # _do_restore handles its own errors; this is the download failing.
+        log.error("Fetching backup %s for restore failed: %s", filename, exc, exc_info=True)
+        flash(f"Obnovení selhalo: {exc}", "danger")
     return redirect(url_for("backup.index"))
 
 
@@ -149,16 +190,13 @@ def upload_restore() -> Response:
         flash("Soubor musí být ve formátu .zip.", "danger")
         return redirect(url_for("backup.index"))
 
-    # Save uploaded file to a temp location inside backup_dir then restore.
-    backup_dir = _backup_dir()
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    tmp_path = backup_dir / f"_upload_{secure_filename(file.filename)}"
+    fd, tmp = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
     try:
-        file.save(str(tmp_path))
-        _do_restore(tmp_path, actor_id=current_user.id)
+        file.save(tmp)
+        _do_restore(Path(tmp), secure_filename(file.filename), actor_id=current_user.id)
     finally:
-        if tmp_path.exists():
-            tmp_path.unlink()
+        os.unlink(tmp)
 
     return redirect(url_for("backup.index"))
 
@@ -166,8 +204,12 @@ def upload_restore() -> Response:
 # ── Shared restore helper ─────────────────────────────────────────────────────
 
 
-def _do_restore(zip_path: Path, actor_id: int | None) -> None:
-    """Run restore_from_zip and flash success/error."""
+def _do_restore(zip_path: Path, name: str, actor_id: int | None) -> None:
+    """Run restore_from_zip on local *zip_path* and flash success/error.
+
+    *name* is the backup's user-facing name for audit and messages; the local
+    file is a temp copy with a random name.
+    """
     try:
         restore_from_zip(zip_path)
         # AuditLogEntry written *after* restore — session was wiped and reloaded.
@@ -180,13 +222,13 @@ def _do_restore(zip_path: Path, actor_id: int | None) -> None:
                 actor_id=actor_id,
                 action_type="restore",
                 entity_type="Backup",
-                entity_id=zip_path.name,
-                summary=f"Databáze obnovena ze zálohy: {zip_path.name}",
-                changes_json={"file": zip_path.name},
+                entity_id=name,
+                summary=f"Databáze obnovena ze zálohy: {name}",
+                changes_json={"file": name},
             )
         )
         db.session.commit()
-        flash(f"Databáze byla úspěšně obnovena ze zálohy {zip_path.name}.", "success")
+        flash(f"Databáze byla úspěšně obnovena ze zálohy {name}.", "success")
         flash(
             Markup(
                 "Následující nastavení <strong>nebyla obnovena</strong> ze zálohy "
@@ -196,13 +238,13 @@ def _do_restore(zip_path: Path, actor_id: int | None) -> None:
                 " — název organizace, časová zóna, URL aplikace, SMTP&nbsp;/&nbsp;e-mail</li>"
                 f"<li><a href='{url_for('notifications.index')}'>Oznámení</a>"
                 " — zapnutí/vypnutí e-mailových upozornění</li>"
-                "<li>Nastavení zálohování — adresář, počet uchovávaných záloh, plánování</li>"
+                "<li>Nastavení zálohování — počet uchovávaných záloh, plánování</li>"
                 "</ul>"
             ),
             "info",
         )
     except Exception as exc:
-        log.error("Restore from %s failed: %s", zip_path.name, exc, exc_info=True)
+        log.error("Restore from %s failed: %s", name, exc, exc_info=True)
         flash(f"Obnovení selhalo: {exc}", "danger")
 
 
@@ -219,9 +261,9 @@ def delete(filename: str) -> Response:
         flash("Smazání selhalo: pro potvrzení zadejte SMAZAT.", "danger")
         return redirect(url_for("backup.index"))
 
-    path = _safe_backup_path(filename)
+    _validate_name(filename)
     try:
-        path.unlink()
+        delete_backup(filename)
         audit("delete", "Backup", filename, f"Záloha smazána: {filename}", {"file": filename})
         db.session.commit()
         flash(f"Záloha {filename} byla smazána.", "success")
@@ -241,21 +283,11 @@ def save_settings() -> Response:
 
     settings = get_settings()
     old = {
-        "backup_dir": settings.backup_dir,
         "backup_keep_count": settings.backup_keep_count,
         "backup_schedule_enabled": settings.backup_schedule_enabled,
         "backup_schedule_hour": settings.backup_schedule_hour,
         "backup_schedule_minute": settings.backup_schedule_minute,
     }
-
-    submitted_dir = request.form.get("backup_dir", "").strip()
-    if submitted_dir and Path(submitted_dir).is_absolute():
-        settings.backup_dir = submitted_dir
-    else:
-        flash(
-            "Adresář zálohy musí být zadán jako absolutní cesta (např. „/backups“). " "Zadaná hodnota byla ignorována.",
-            "warning",
-        )
 
     try:
         keep = int(request.form.get("backup_keep_count", "7"))
@@ -285,7 +317,6 @@ def save_settings() -> Response:
         settings.backup_schedule_minute = 0
 
     new = {
-        "backup_dir": settings.backup_dir,
         "backup_keep_count": settings.backup_keep_count,
         "backup_schedule_enabled": settings.backup_schedule_enabled,
         "backup_schedule_hour": settings.backup_schedule_hour,

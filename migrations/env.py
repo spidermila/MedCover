@@ -89,9 +89,16 @@ def run_migrations_online():
                 directives[:] = []
                 logger.info('No changes in schema detected.')
 
+    # app_settings.backup_dir is deliberately unmapped (backups moved to blob
+    # storage) but kept in the DB for rollout compatibility; don't let
+    # autogenerate sneak a drop_column into an unrelated migration.
+    def include_object(obj, name, type_, reflected, compare_to):
+        return not (type_ == "column" and name == "backup_dir" and obj.table.name == "app_settings")
+
     conf_args = current_app.extensions['migrate'].configure_args
     if conf_args.get("process_revision_directives") is None:
         conf_args["process_revision_directives"] = process_revision_directives
+    conf_args.setdefault("include_object", include_object)
 
     connectable = get_engine()
 

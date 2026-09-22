@@ -76,6 +76,15 @@ class ProductionConfig(Config):
             )
 
 
+def check_backup_storage_env() -> None:
+    """Fail fast unless exactly one backup storage target is configured."""
+    if bool(os.environ.get("BACKUP_CONTAINER_URL")) == bool(os.environ.get("BACKUP_STORAGE_CONNECTION_STRING")):
+        raise RuntimeError(
+            "Set exactly one of BACKUP_CONTAINER_URL (Azure, managed identity) "
+            "or BACKUP_STORAGE_CONNECTION_STRING (Azurite)."
+        )
+
+
 config_by_name = {
     "development": DevelopmentConfig,
     "testing": TestingConfig,

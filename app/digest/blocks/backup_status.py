@@ -1,7 +1,6 @@
 """Backup status digest block."""
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from app.backup import list_backups
@@ -23,7 +22,6 @@ class BackupStatusBlock(BaseBlock):
 
     def collect(self, db_session: Any, config: dict[str, Any]) -> dict[str, Any]:
         settings = get_settings()
-        backup_dir = Path(settings.backup_dir)
 
         data: dict[str, Any] = {
             "title": config.get("title", self.default_config["title"]),
@@ -32,10 +30,15 @@ class BackupStatusBlock(BaseBlock):
             "backup_schedule_minute": settings.backup_schedule_minute,
             "backup_schedule_tz": settings.timezone,
             "backup_keep_count": settings.backup_keep_count,
-            "backup_dir": str(backup_dir),
         }
 
-        backups = list_backups(backup_dir)
+        # A storage outage is exactly what this block must surface, so report
+        # it rather than letting the renderer drop the block.
+        try:
+            backups = list_backups()
+        except Exception as exc:  # noqa: BLE001
+            data["storage_error"] = str(exc)
+            backups = []
         data["backup_count"] = len(backups)
         data["total_size_bytes"] = sum(b["size_bytes"] for b in backups)
         data["last_backup_at"] = backups[0]["created_at"] if backups else None
