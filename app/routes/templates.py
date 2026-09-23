@@ -111,8 +111,9 @@ def create() -> str | Response:
                 EventType=EventType,
             )
 
+        capacity_warnings: list[str] = []
         try:
-            plan = condition_plan_from_form(request.form)
+            plan = condition_plan_from_form(request.form, warnings=capacity_warnings)
         except ValueError as exc:
             flash(str(exc), "danger")
             return render_template(
@@ -136,6 +137,8 @@ def create() -> str | Response:
 
         audit("create", "EventTemplate", tmpl.id, f"Vytvořena šablona akce '{tmpl.name}'")
         db.session.commit()
+        for warning in capacity_warnings:
+            flash(warning, "warning")
 
         flash(f"Šablona „{tmpl.name}“ byla vytvořena.", "success")
         return redirect(url_for("templates.index"))
@@ -218,8 +221,9 @@ def edit(template_id: int) -> str | Response:
             "requirements": [(r.qualification_id, r.minimum_count) for r in tmpl.qualification_requirements],
         }
 
+        capacity_warnings: list[str] = []
         try:
-            plan = condition_plan_from_form(request.form)
+            plan = condition_plan_from_form(request.form, warnings=capacity_warnings)
         except ValueError as exc:
             flash(str(exc), "danger")
             return render_template(
@@ -256,6 +260,8 @@ def edit(template_id: int) -> str | Response:
         )
         db.session.commit()
 
+        for warning in capacity_warnings:
+            flash(warning, "warning")
         flash(f"Šablona „{tmpl.name}“ byla uložena.", "success")
         return redirect(url_for("templates.index"))
 

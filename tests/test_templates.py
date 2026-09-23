@@ -99,8 +99,8 @@ def test_template_crud_and_audit(app, admin_client):
     "changes",
     [
         {"name": ""},
-        {"minimum_participants": "0"},
-        {"maximum_participants": "1"},
+        {"minimum_participants": ""},
+        {"maximum_participants": "1.5"},
         {"requirement_count": "0"},
         {"requirement_qualification": ""},
         {"requirement_qualification": "duplicate"},

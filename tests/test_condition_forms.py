@@ -117,7 +117,7 @@ def test_condition_create_edit_clone_split(app, admin_client, event_type):
         assert all(e.maximum_participants == 2 and len(e.qualification_requirements) == 1 for e in halves)
 
 
-def test_condition_edit_cannot_reduce_capacity_below_participation(app, admin_client):
+def test_condition_edit_corrects_capacity_below_participation(app, admin_client):
     data = _form(app)
     admin_client.post("/events/create", data=data)
     with app.app_context():
@@ -127,11 +127,116 @@ def test_condition_edit_cannot_reduce_capacity_below_participation(app, admin_cl
         second = _make_user("capacity@test.com", "Second", Role.MEMBER)
         event.assignments.clear()
         event.assignments = [Assignment(user=user), Assignment(user=second)]
+        event.status = EventStatus.ASSIGNMENTS_OPEN
         db.session.commit()
-    response = admin_client.post(f"/events/{event_id}/edit", data={**data, "maximum_participants": "1"})
-    assert response.status_code == 200
+        version = event.version
+    response = admin_client.post(
+        f"/events/{event_id}/edit",
+        data={**data, "maximum_participants": "1", "version": str(version)},
+        follow_redirects=True,
+    )
+    assert "Maximum účastníků bylo zvýšeno z 1 na 2" in response.text
+    assert "na akci je již přihlášeno 2 účastníků" in response.text
     with app.app_context():
-        assert db.session.get(Event, event_id).maximum_participants == 3
+        event = db.session.get(Event, event_id)
+        assert event.maximum_participants == 2
+        assert len(event.assignments) == 2
+        assert event.staffing_summary.is_capacity_full
+
+
+@pytest.mark.parametrize("is_template", [False, True])
+@pytest.mark.parametrize("shared_hierarchy", [False, True])
+def test_condition_forms_correct_capacity_for_hierarchies(app, admin_client, is_template, shared_hierarchy):
+    data = _form(app, minimum_participants="0", maximum_participants="-1")
+    with app.app_context():
+        rp = db.session.get(Qualification, int(data["requirement_qualification"]))
+        other = Qualification(name="Additional", parents=[rp] if shared_hierarchy else [])
+        db.session.add(other)
+        db.session.commit()
+        data.update(requirement_qualification=[str(rp.id), str(other.id)], requirement_count=["2", "3"])
+    required = 5 if shared_hierarchy else 3
+    prefix, model = ("/templates", EventTemplate) if is_template else ("/events", Event)
+    html = admin_client.get(f"{prefix}/create").text
+    for field in ("minimum_participants", "maximum_participants"):
+        input_tag = re.search(rf'<input[^>]*name="{field}"[^>]*>', html).group()
+        assert 'type="number"' in input_tag and "required" in input_tag
+        assert " min=" not in input_tag
+    response = admin_client.post(f"{prefix}/create", data=data, follow_redirects=True)
+    assert f"Minimum účastníků bylo zvýšeno z 0 na {required}" in response.text
+    assert f"Maximum účastníků bylo zvýšeno z -1 na {required}" in response.text
+    assert "minimum musí být alespoň 1" in response.text
+    assert f"kvalifikační podmínky v jedné hierarchii vyžadují alespoň {required} účastníků" in response.text
+    assert "maximum musí být nejméně rovné minimu" in response.text
+    with app.app_context():
+        owner = db.session.scalar(db.select(model))
+        owner_id, version = owner.id, owner.version
+        assert (owner.minimum_participants, owner.maximum_participants) == (required, required)
+        assert [r.minimum_count for r in owner.qualification_requirements] == [2, 3]
+    response = admin_client.post(
+        f"{prefix}/{owner_id}/edit",
+        data={**data, "minimum_participants": "7", "maximum_participants": "2", "version": str(version)},
+        follow_redirects=True,
+    )
+    assert "Minimum účastníků bylo zvýšeno" not in response.text
+    assert "Maximum účastníků bylo zvýšeno z 2 na 7" in response.text
+    with app.app_context():
+        owner = db.session.get(model, owner_id)
+        assert (owner.minimum_participants, owner.maximum_participants) == (7, 7)
+        version = owner.version
+    # A valid resubmission neither adjusts capacity nor emits another warning.
+    response = admin_client.post(
+        f"{prefix}/{owner_id}/edit",
+        data={**data, "minimum_participants": "7", "maximum_participants": "8", "version": str(version)},
+        follow_redirects=True,
+    )
+    assert "bylo zvýšeno" not in response.text
+    with app.app_context():
+        owner = db.session.get(model, owner_id)
+        assert (owner.minimum_participants, owner.maximum_participants) == (7, 8)
+
+
+@pytest.mark.parametrize("is_template", [False, True])
+@pytest.mark.parametrize("invalid", ["missing", "noninteger", "count", "qualification", "duplicate", "rp"])
+def test_condition_capacity_correction_does_not_accept_invalid_form(app, admin_client, is_template, invalid):
+    data = _form(app, minimum_participants="0", maximum_participants="0")
+    if invalid == "missing":
+        del data["minimum_participants"]
+    elif invalid == "noninteger":
+        data["maximum_participants"] = "1.5"
+    elif invalid == "count":
+        data["requirement_count"] = "0"
+    elif invalid == "qualification":
+        data["requirement_qualification"] = "-1"
+    elif invalid == "duplicate":
+        data["requirement_qualification"] = [data["requirement_qualification"]] * 2
+        data["requirement_count"] = ["1", "1"]
+    else:
+        with app.app_context():
+            db.session.get(Qualification, int(data["requirement_qualification"])).can_be_rp = False
+            db.session.commit()
+    prefix, model = ("/templates", EventTemplate) if is_template else ("/events", Event)
+    response = admin_client.post(f"{prefix}/create", data=data)
+    assert response.status_code == 200
+    assert "bylo zvýšeno" not in response.text
+    with app.app_context():
+        assert not db.session.scalar(db.select(model))
+
+
+def test_condition_edit_does_not_warn_about_unsaved_capacity(app, admin_client):
+    data = _form(app)
+    admin_client.post("/events/create", data=data, follow_redirects=True)
+    with app.app_context():
+        event = db.session.scalar(db.select(Event))
+        event_id, version = event.id, event.version
+    response = admin_client.post(
+        f"/events/{event_id}/edit",
+        data={**data, "minimum_participants": "0", "maximum_participants": "0", "name": "", "version": str(version)},
+    )
+    assert response.status_code == 200
+    assert "bylo zvýšeno" not in response.text
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        assert (event.minimum_participants, event.maximum_participants) == (1, 3)
 
 
 def test_condition_create_rejects_forged_rp_and_plan(app, admin_client):

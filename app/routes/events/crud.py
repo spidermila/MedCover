@@ -451,9 +451,10 @@ def create() -> str | Response:
             return _render_create()
 
         event.staffing_mode = cloned_from.staffing_mode if cloned_from else StaffingMode.CONDITIONS
+        capacity_warnings: list[str] = []
         if event.staffing_mode == StaffingMode.CONDITIONS:
             try:
-                apply_condition_plan(event, condition_plan_from_form(request.form))
+                apply_condition_plan(event, condition_plan_from_form(request.form, warnings=capacity_warnings))
             except ValueError as exc:
                 db.session.rollback()
                 flash(str(exc), "danger")
@@ -505,6 +506,8 @@ def create() -> str | Response:
 
         audit("create", "Event", event.id, f"Vytvořena akce '{event.name}'")
         db.session.commit()
+        for warning in capacity_warnings:
+            flash(warning, "warning")
 
         if quick_publish:
             flash("Akce byla vytvořena a přihlášky okamžitě otevřeny.", "success")
@@ -729,9 +732,12 @@ def edit(event_id: int) -> str | Response:
             flash(RECORD_MODIFIED_MSG, "danger")
             return _render_edit()
 
+        capacity_warnings: list[str] = []
         if event.staffing_mode == StaffingMode.CONDITIONS:
             try:
-                plan = condition_plan_from_form(request.form, participant_count=len(event.assignments))
+                plan = condition_plan_from_form(
+                    request.form, participant_count=len(event.assignments), warnings=capacity_warnings
+                )
             except ValueError as exc:
                 flash(str(exc), "danger")
                 return _render_edit()
@@ -825,6 +831,8 @@ def edit(event_id: int) -> str | Response:
         event.version += 1
         audit("edit", "Event", event.id, f"Upravena akce '{event.name}'", diff_changes(before, after))
         db.session.commit()
+        for warning in capacity_warnings:
+            flash(warning, "warning")
 
         # Notify assigned users about the change (only if something actually changed).
         actual_changes = diff_changes(before, after)
