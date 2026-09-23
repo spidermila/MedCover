@@ -1221,8 +1221,7 @@ def _build_event_section(event: Event, rows: list, time_format: int) -> dict:
         "event_name": event.name,
         "event_url": external_url_for("events.detail", event_id=event.id),
         "datetime_range_local": (
-            f"{to_local(event.start_datetime):%d.%m.%Y} "
-            f"{format_event_time(event.start_datetime, event.end_datetime, time_format)}"
+            f"{to_local(event.start_datetime):%d.%m.%Y} " f"{format_event_time(event, time_format)}"
         ),
         "rows": entries,
         "conditions": event.staffing_mode == "CONDITIONS",

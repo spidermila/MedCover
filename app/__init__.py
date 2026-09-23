@@ -187,9 +187,12 @@ def create_app(
 
     @app.template_filter("event_time")
     def event_time_filter(event: Event) -> str:
-        """Event time window (weekday, time, duration or end) in the viewer's chosen format."""
+        """Event time window (weekday, time, duration or end) in the viewer's chosen format.
+
+        Request-only: reads current_user. Emails call format_event_time with the recipient's format.
+        """
         fmt = current_user.event_time_format if current_user.is_authenticated else EventTimeFormat.START_DURATION
-        return format_event_time(event.start_datetime, event.end_datetime, fmt)
+        return format_event_time(event, fmt)
 
     @app.template_filter("groupby_safe")
     def groupby_safe_filter(value: list, attribute: str) -> list:

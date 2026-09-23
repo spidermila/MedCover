@@ -108,13 +108,28 @@ class TestEventTimeFormat:
             (2, EventTimeFormat.START_DURATION, "čt 20:00 (2 h)"),
             (5.5, EventTimeFormat.START_END, "čt 20:00–01:30"),
             (2, EventTimeFormat.START_END, "čt 20:00–22:00"),
+            (23.5, EventTimeFormat.START_END, "čt 20:00–19:30"),
+            (24, EventTimeFormat.START_END, "čt 20:00 – pá 22.05. 20:00"),
+            (34, EventTimeFormat.START_END, "čt 20:00 – so 23.05. 06:00"),
             (36, EventTimeFormat.START_END, "čt 20:00 – so 23.05. 08:00"),
             (5.5, 99, "čt 20:00 (5,5 h)"),
         ],
     )
     def test_format_event_time(self, app, hours, fmt, expected):
+        event = Event(start_datetime=self.START, end_datetime=self.START + timedelta(hours=hours))
         with app.app_context():
-            assert format_event_time(self.START, self.START + timedelta(hours=hours), fmt) == expected
+            assert format_event_time(event, fmt) == expected
+
+    @pytest.mark.parametrize(
+        ("fmt", "expected"),
+        [(EventTimeFormat.START_DURATION, "so 20:00 (13 h)"), (EventTimeFormat.START_END, "so 20:00–08:00")],
+    )
+    def test_format_event_time_across_dst_end(self, app, fmt, expected):
+        # 24./25.10.2026: CEST → CET, the night has 13 real hours
+        start = datetime(2026, 10, 24, 18, 0, tzinfo=timezone.utc)
+        event = Event(start_datetime=start, end_datetime=start + timedelta(hours=13))
+        with app.app_context():
+            assert format_event_time(event, fmt) == expected
 
     @pytest.mark.parametrize("fmt", list(EventTimeFormat))
     def test_event_list_uses_viewer_format(self, app, admin_client, fmt):
@@ -122,12 +137,12 @@ class TestEventTimeFormat:
         with app.app_context():
             admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
             admin.event_time_format = fmt
-            event = db.session.get(Event, event_id)
-            expected = format_event_time(event.start_datetime, event.end_datetime, fmt)
+            expected = format_event_time(db.session.get(Event, event_id), fmt)
             db.session.commit()
         html = admin_client.get("/events/?statuses=ASSIGNMENTS_OPEN").data.decode()
         assert f'<span class="text-muted">{expected}</span>' in html
-        assert "Čas" in html
+        assert 'text-reset">Čas ' in html
+        assert 'text-reset">Začátek ' not in html
 
 
 class TestObsazeniBadges:
