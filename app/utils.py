@@ -16,6 +16,7 @@ from werkzeug.wrappers import Response
 from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.audit import AuditLogEntry
+from app.models.event import Event
 from app.models.settings import get_settings
 from app.models.user import EventTimeFormat
 
@@ -69,20 +70,20 @@ def cznum(value: object, decimals: int = 1, strip: bool = False) -> str:
     return formatted.replace(".", ",")
 
 
-def format_event_time(start: datetime, end: datetime, fmt: int) -> str:
+def format_event_time(event: Event, fmt: int) -> str:
     """Format an event's time window (without the start date) in the user's format.
 
     START_DURATION: ``čt 20:00 (5,5 h)``
-    START_END:      ``čt 20:00–01:30``; when the event ends later than the next
-                    day the end gets its own weekday and date so it isn't
-                    mistaken for an overnight end: ``čt 20:00 – so 23.05. 08:00``.
+    START_END:      ``čt 20:00–01:30``; an event lasting 24 h or more gets the
+                    end's weekday and date so it can't be misread as a shorter
+                    one: ``čt 20:00 – so 23.05. 08:00``.
     Unknown values fall back to START_DURATION.
     """
-    ls, le = to_local(start), to_local(end)
+    ls, le = to_local(event.start_datetime), to_local(event.end_datetime)
     head = f"{CZECH_DAY_ABBR[ls.weekday()]} {ls:%H:%M}"
     if fmt != EventTimeFormat.START_END:
-        return f"{head} ({cznum(round((end - start).total_seconds() / 3600, 1), strip=True)} h)"
-    if le.date() - ls.date() <= timedelta(days=1):
+        return f"{head} ({cznum(event.scheduled_hours, strip=True)} h)"
+    if event.end_datetime - event.start_datetime < timedelta(days=1):
         return f"{head}–{le:%H:%M}"
     return f"{head} – {CZECH_DAY_ABBR[le.weekday()]} {le:%d.%m. %H:%M}"
 

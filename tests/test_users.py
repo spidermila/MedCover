@@ -9,7 +9,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm.exc import StaleDataError
 
-from app.constants import MIN_PASSWORD_LENGTH
+from app.constants import MIN_PASSWORD_LENGTH, RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
@@ -175,7 +175,7 @@ class TestUserProfile:
             data={"action": "preferences", "event_time_format": "2", "version": "9999"},
             follow_redirects=True,
         )
-        assert "Nastavení bylo uloženo".encode() not in resp.data
+        assert RECORD_MODIFIED_MSG.encode() in resp.data
         with app.app_context():
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             assert user.event_time_format == EventTimeFormat.START_DURATION
