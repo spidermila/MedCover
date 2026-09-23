@@ -23,7 +23,7 @@ from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
 from app.models.role import Role
-from app.models.user import CalendarView, UserAccount
+from app.models.user import CalendarView, EventTimeFormat, UserAccount
 from app.models.user import user_roles as user_roles_table
 from app.routes.assignments import lock_condition_event, refresh_responsible_person
 from app.signature import (
@@ -75,6 +75,8 @@ def profile() -> str | Response:
         action = request.form.get("action", "profile")
         if action == "profile":
             return _update_profile(user)
+        if action == "preferences":
+            return _update_preferences(user)
         if action == "password":
             return _change_password(user)
         if action == "signature_upload":
@@ -117,6 +119,7 @@ def profile() -> str | Response:
         "users/profile.html",
         user=user,
         calendar_views=CalendarView,
+        event_time_formats=EventTimeFormat,
         issued_items=issued_items,
         upcoming=upcoming,
         ical_url=ical_url,
@@ -132,13 +135,7 @@ def _update_profile(user: UserAccount) -> Response:
         flash(RECORD_MODIFIED_MSG, "danger")
         return redirect(url_for("users.profile"))
     bind_form_version(user, request.form.get("version"))
-    before: dict[str, Any] = {
-        "name": user.name,
-        "phone": user.phone,
-        "preferred_calendar_view": user.preferred_calendar_view.value if user.preferred_calendar_view else None,
-        "dashboard_horizon_days": user.dashboard_horizon_days,
-        "dark_mode": user.dark_mode,
-    }
+    before: dict[str, Any] = {"name": user.name, "phone": user.phone}
     if current_user.has_permission("user.edit_name"):
         name = request.form.get("name", "").strip()
         if not name:
@@ -150,6 +147,24 @@ def _update_profile(user: UserAccount) -> Response:
         flash("Neplatný formát telefonního čísla.", "danger")
         return redirect(url_for("users.profile"))
     user.phone = phone_raw or None
+    return _commit_profile_change(user, before, {"name": user.name, "phone": user.phone}, "Profil byl uložen.")
+
+
+def _preferences_snapshot(user: UserAccount) -> dict[str, Any]:
+    return {
+        "preferred_calendar_view": user.preferred_calendar_view.value if user.preferred_calendar_view else None,
+        "dashboard_horizon_days": user.dashboard_horizon_days,
+        "dark_mode": user.dark_mode,
+        "event_time_format": user.event_time_format,
+    }
+
+
+def _update_preferences(user: UserAccount) -> Response:
+    if check_version_conflict(user, request.form.get("version")):
+        flash(RECORD_MODIFIED_MSG, "danger")
+        return redirect(url_for("users.profile"))
+    bind_form_version(user, request.form.get("version"))
+    before = _preferences_snapshot(user)
     cv = request.form.get("preferred_calendar_view", CalendarView.LIST.value)
     try:
         user.preferred_calendar_view = CalendarView(cv)
@@ -160,20 +175,23 @@ def _update_profile(user: UserAccount) -> Response:
     except ValueError:
         user.dashboard_horizon_days = 30
     user.dark_mode = request.form.get("dark_mode") == "1"
-    after: dict[str, Any] = {
-        "name": user.name,
-        "phone": user.phone,
-        "preferred_calendar_view": user.preferred_calendar_view.value,
-        "dashboard_horizon_days": user.dashboard_horizon_days,
-        "dark_mode": user.dark_mode,
-    }
+    try:
+        user.event_time_format = EventTimeFormat(int(request.form.get("event_time_format", 0))).value
+    except ValueError:
+        user.event_time_format = EventTimeFormat.START_DURATION.value
+    return _commit_profile_change(user, before, _preferences_snapshot(user), "Nastavení bylo uloženo.")
+
+
+def _commit_profile_change(
+    user: UserAccount, before: dict[str, Any], after: dict[str, Any], success_msg: str
+) -> Response:
     diff = diff_changes(before, after)
     if diff:
         user.version += 1
         audit("edit", "UserAccount", user.id, f"Uživatel {user.name} upravil svůj profil", diff)
     if (resp := commit_or_stale(url_for("users.profile"))) is not None:
         return resp
-    flash("Profil byl uložen.", "success")
+    flash(success_msg, "success")
     return redirect(url_for("users.profile"))
 
 

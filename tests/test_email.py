@@ -44,7 +44,7 @@ from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
-from app.models.user import UserAccount
+from app.models.user import EventTimeFormat, UserAccount
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -2076,14 +2076,32 @@ class TestBatchedAllSpotsListed:
 
 
 class TestBatchedEventDatetimeRange:
-    """Every event section header must show the start–end window in local
-    time so recipients can gauge availability without opening the app."""
+    """Every event section header must show the event's date and time window in
+    the recipient's chosen format so they can gauge availability without
+    opening the app."""
 
-    def test_datetime_range_rendered_in_section_header(self, app):
+    @pytest.mark.parametrize(
+        ("fmt", "end", "expected"),
+        [
+            (
+                EventTimeFormat.START_DURATION,
+                datetime(2026, 8, 1, 18, 30, tzinfo=timezone.utc),
+                "01.08.2026 so 10:00 (10,5 h)",
+            ),
+            (EventTimeFormat.START_END, datetime(2026, 8, 1, 18, 30, tzinfo=timezone.utc), "01.08.2026 so 10:00–20:30"),
+            (
+                EventTimeFormat.START_END,
+                datetime(2026, 8, 3, 16, 0, tzinfo=timezone.utc),
+                "01.08.2026 so 10:00 – po 03.08. 18:00",
+            ),
+        ],
+    )
+    def test_section_header_uses_recipient_format(self, app, fmt, end, expected):
         with app.app_context():
             user, event = _make_ed_event(delta_hours=72)
+            user.event_time_format = fmt
             event.start_datetime = datetime(2026, 8, 1, 8, 0, tzinfo=timezone.utc)
-            event.end_datetime = datetime(2026, 8, 1, 18, 30, tzinfo=timezone.utc)
+            event.end_datetime = end
             past = datetime.now(timezone.utc) - timedelta(minutes=1)
             _make_batched_row(user, event, "event_published", send_after=past)
             db.session.commit()
@@ -2093,25 +2111,8 @@ class TestBatchedEventDatetimeRange:
             with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
                 drain_batched_outbox()
 
-        html = html_captured[0]
         # Local time is UTC+2 in August (CEST) in the default app TZ (Europe/Prague).
-        assert "01.08.2026 10:00 – 01.08.2026 20:30" in html
-
-    def test_datetime_range_spans_multiple_days(self, app):
-        with app.app_context():
-            user, event = _make_ed_event(delta_hours=72)
-            event.start_datetime = datetime(2026, 8, 1, 8, 0, tzinfo=timezone.utc)
-            event.end_datetime = datetime(2026, 8, 3, 16, 0, tzinfo=timezone.utc)
-            past = datetime.now(timezone.utc) - timedelta(minutes=1)
-            _make_batched_row(user, event, "event_published", send_after=past)
-            db.session.commit()
-
-        html_captured: list[str] = []
-        with app.app_context():
-            with patch("flask_mail.Mail.send", side_effect=lambda m: html_captured.append(m.html or "")):
-                drain_batched_outbox()
-
-        assert "01.08.2026 10:00 – 03.08.2026 18:00" in html_captured[0]
+        assert expected in html_captured[0]
 
 
 class TestUnfilledReminderSpotTable:
