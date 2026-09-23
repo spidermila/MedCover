@@ -13,6 +13,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from azure.core.exceptions import AzureError
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.backup import export_to_zip, prune_old_backups
 from app.digest.renderer import render_digest
@@ -62,6 +63,7 @@ def run_send_reminders(db_session: Any, now: datetime | None = None) -> int:
 
         sent_map: dict = event.reminder_sent_json or {}
         changed = False
+        event_sent = 0
 
         for hours in event.reminder_hours():
             key = str(hours)
@@ -81,14 +83,23 @@ def run_send_reminders(db_session: Any, now: datetime | None = None) -> int:
             for user in recipients:
                 send_unfilled_spots_reminder(user, event, unfilled)
                 log.info("Reminder sent for event id=%s (%sh before) to %s", event.id, hours, user.email)
-                total_sent += 1
+                event_sent += 1
 
             sent_map[key] = now.isoformat()
             changed = True
 
         if changed:
+            event_id = event.id
             event.reminder_sent_json = sent_map
-            db_session.commit()
+            try:
+                db_session.commit()
+            except StaleDataError:
+                # Event edited concurrently: the rollback also drops the enqueued
+                # emails, so the next run re-sends them against the fresh row.
+                db_session.rollback()
+                log.warning("Reminders for event id=%s skipped: concurrent modification, retrying next run", event_id)
+                continue
+            total_sent += event_sent
 
     return total_sent
 
