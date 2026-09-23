@@ -333,3 +333,52 @@ class TestStaleCommittedValueGuard:
                     sess.commit()
             finally:
                 sess.close()
+
+
+class TestStaleDataErrorHandler:
+    """Writes not wrapped in commit_or_stale fall back to the app-wide handler."""
+
+    @staticmethod
+    def _post_with_stale_commit(client, url: str, headers: dict[str, str]):
+        def _raise() -> None:
+            raise StaleDataError("simulated concurrent modification")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(db.session, "commit", _raise)
+            return client.post(url, headers=headers)
+
+    def test_form_post_redirects_back_with_flash(self, app, admin_client) -> None:
+        me_id = _make_master_event_id(app)
+        resp = self._post_with_stale_commit(
+            admin_client,
+            f"/master-events/{me_id}/archive",
+            {"Referer": f"http://localhost/master-events/{me_id}?tab=x"},
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == f"/master-events/{me_id}?tab=x"
+        page = admin_client.get(f"/master-events/{me_id}")
+        assert "Záznam byl mezitím změněn".encode() in page.data
+        with app.app_context():
+            assert db.session.get(MasterEvent, me_id).archived is False
+
+    def test_foreign_referrer_falls_back_to_dashboard(self, app, admin_client) -> None:
+        me_id = _make_master_event_id(app)
+        resp = self._post_with_stale_commit(
+            admin_client, f"/master-events/{me_id}/archive", {"Referer": "https://evil.example/phish"}
+        )
+        assert resp.status_code == 302
+        assert "evil.example" not in resp.headers["Location"]
+
+    def test_xhr_gets_json_409(self, app, admin_client) -> None:
+        me_id = _make_master_event_id(app)
+        resp = self._post_with_stale_commit(admin_client, f"/master-events/{me_id}/archive", {"X-CSRFToken": "t"})
+        assert resp.status_code == 409
+        assert resp.get_json() == {"ok": False, "error": "Záznam byl mezitím změněn, načtěte stránku znovu."}
+
+
+def _make_master_event_id(app) -> int:
+    with app.app_context():
+        me = MasterEvent(name="Stale Handler ME")
+        db.session.add(me)
+        db.session.commit()
+        return me.id
