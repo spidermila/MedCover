@@ -96,6 +96,26 @@ def test_send_reminders_sends_when_window_open(app):
     assert len(outbox) >= 1
 
 
+def test_send_reminders_skips_event_edited_concurrently(app):
+    """A concurrent version bump rolls the event back; the next run sends the reminder."""
+
+    now = datetime(2030, 6, 1, 10, 0, tzinfo=timezone.utc)
+    event_id = _make_open_event_with_rp(app, now + timedelta(hours=71))
+
+    def _bump_in_other_connection(session, _flush_context, _instances) -> None:
+        with db.engine.begin() as conn:
+            conn.execute(sa.update(Event).where(Event.id == event_id).values(version=Event.version + 1))
+
+    with app.app_context():
+        sa.event.listen(db.session(), "before_flush", _bump_in_other_connection, once=True)
+        assert run_send_reminders(db.session, now=now) == 0
+        assert db.session.scalars(sa.select(OutboxEmail)).all() == []
+        assert db.session.get(Event, event_id).reminder_sent_json in (None, {})
+
+        assert run_send_reminders(db.session, now=now) == 1
+        assert len(db.session.scalars(sa.select(OutboxEmail)).all()) >= 1
+
+
 def test_send_reminders_skips_already_sent(app):
     """Reminder already recorded in reminder_sent_json → not sent again."""
 
