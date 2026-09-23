@@ -102,6 +102,11 @@ def validate_condition_plan(
         raise ValueError("Minimum musí být alespoň 1 a maximum nejméně rovné minimu.")
     if maximum < participant_count:
         raise ValueError("Maximum nelze snížit pod současný počet účastníků.")
+    if minimum < _minimum_for_requirements(requirements):
+        raise ValueError("Minimum účastníků musí pokrýt součet minim v každé kvalifikační hierarchii.")
+
+
+def _minimum_for_requirements(requirements: list[tuple[int, int]]) -> int:
     graph = qualification_graph()
     seen: set[int] = set()
     totals: dict[int, int] = defaultdict(int)
@@ -112,15 +117,14 @@ def validate_condition_plan(
             raise ValueError("Podmínka musí používat aktivní kvalifikaci.")
         if qualification_id in seen:
             raise ValueError("Kvalifikace smí být v plánu pouze jednou.")
-        if count < 1 or count > maximum:
-            raise ValueError("Kvalifikační minimum musí být kladné a nejvýše rovné kapacitě.")
+        if count < 1:
+            raise ValueError("Kvalifikační minimum musí být kladné.")
         seen.add(qualification_id)
         totals[graph.components[qualification_id]] += count
         has_rp |= qualification.can_be_rp
     if not has_rp:
         raise ValueError("Alespoň jedna podmínka musí vyžadovat kvalifikaci umožňující roli zodpovědné osoby.")
-    if minimum < max(totals.values(), default=0):
-        raise ValueError("Minimum účastníků musí pokrýt součet minim v každé kvalifikační hierarchii.")
+    return max(totals.values(), default=1)
 
 
 @dataclass
@@ -239,8 +243,9 @@ def user_helps_staffing(event: Event, user: UserAccount) -> bool:
 
 
 def condition_plan_from_form(
-    form: MultiDict[str, str], *, participant_count: int = 0
+    form: MultiDict[str, str], *, participant_count: int = 0, warnings: list[str] | None = None
 ) -> tuple[int, int, list[tuple[int, int]]]:
+    """Validate requirements and raise capacity bounds, reporting corrections after save."""
     try:
         minimum = int(form.get("minimum_participants", ""))
         maximum = int(form.get("maximum_participants", ""))
@@ -251,8 +256,27 @@ def condition_plan_from_form(
         requirements = [(int(qid), int(count)) for qid, count in zip(qualification_ids, counts)]
     except TypeError, ValueError:
         raise ValueError("Zadejte platná celá čísla pro kapacitu a kvalifikační minima.") from None
-    validate_condition_plan(minimum, maximum, requirements, participant_count=participant_count)
-    return minimum, maximum, requirements
+    required_minimum = _minimum_for_requirements(requirements)
+    corrected_minimum = max(1, minimum, required_minimum)
+    corrected_maximum = max(maximum, corrected_minimum, participant_count)
+    if warnings is not None:
+        if minimum != corrected_minimum:
+            reasons = []
+            if minimum < 1:
+                reasons.append("minimum musí být alespoň 1")
+            if minimum < required_minimum:
+                reasons.append(
+                    f"kvalifikační podmínky v jedné hierarchii vyžadují alespoň {required_minimum} účastníků"
+                )
+            warnings.append(f"Minimum účastníků bylo zvýšeno z {minimum} na {corrected_minimum}: {'; '.join(reasons)}.")
+        if maximum != corrected_maximum:
+            reasons = []
+            if maximum < corrected_minimum:
+                reasons.append(f"maximum musí být nejméně rovné minimu ({corrected_minimum})")
+            if maximum < participant_count:
+                reasons.append(f"na akci je již přihlášeno {participant_count} účastníků")
+            warnings.append(f"Maximum účastníků bylo zvýšeno z {maximum} na {corrected_maximum}: {'; '.join(reasons)}.")
+    return corrected_minimum, corrected_maximum, requirements
 
 
 def condition_join_error(event: Event, user: UserAccount) -> str | None:

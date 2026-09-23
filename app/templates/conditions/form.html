@@ -18,11 +18,11 @@
   <legend>Podmínky obsazení</legend>
   <div class="d-flex gap-3 mb-3">
     <label>Minimum účastníků
-      <input type="number" name="minimum_participants" class="form-control" min="1" required
+      <input type="number" name="minimum_participants" class="form-control" required
              value="{{ request.form.get('minimum_participants', condition_owner.minimum_participants if condition_owner else 1) }}">
     </label>
     <label>Maximum účastníků
-      <input type="number" name="maximum_participants" class="form-control" min="1" required
+      <input type="number" name="maximum_participants" class="form-control" required
              value="{{ request.form.get('maximum_participants', condition_owner.maximum_participants if condition_owner else 1) }}">
     </label>
   </div>
