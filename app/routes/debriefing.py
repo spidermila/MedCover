@@ -29,6 +29,7 @@ from app.utils import (
     diff_changes,
     get_app_tz,
     get_or_404,
+    last_page_redirect,
     page_arg,
     quick_date_ranges,
     require_permission,
@@ -276,17 +277,8 @@ def manage() -> str | Response:
             to_date_str = ""
 
     pagination = db.paginate(query, page=page_arg(), per_page=PER_PAGE, error_out=False)
-    # A page past the end (stale link, or a filter that now matches fewer events)
-    # would render an empty list with no pager; send the user to the last page.
-    if not pagination.items and pagination.page > 1:
-        return redirect(
-            url_for(
-                "debriefing.manage",
-                page=pagination.pages if pagination.pages > 1 else None,
-                from_date=from_date_str or None,
-                to_date=to_date_str or None,
-            )
-        )
+    if redirect_resp := last_page_redirect(pagination.page, pagination.pages):
+        return redirect_resp
 
     return render_template(
         "debriefing/manage.html",

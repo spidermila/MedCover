@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
-from flask import Blueprint, render_template, request
+from flask import Blueprint, Response, render_template, request
 from flask_login import login_required
 from sqlalchemy import collate
 
@@ -15,7 +15,7 @@ from app.models.outbox import OutboxEmail
 from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS
 from app.models.settings import get_settings
 from app.models.user import UserAccount
-from app.utils import CS_COLLATION, get_or_404, require_permission
+from app.utils import CS_COLLATION, get_or_404, last_page_redirect, page_arg, require_permission
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -190,10 +190,10 @@ def permissions() -> str:
 
 @admin_bp.route("/audit-log/")
 @login_required
-def audit_log_list() -> str:
+def audit_log_list() -> str | Response:
     require_permission("admin.view")
 
-    page = request.args.get("page", 1, type=int)
+    page = page_arg()
     f_entity_type = request.args.get("entity_type", "").strip()
     f_actor_id = request.args.get("actor_id", "").strip()
     f_action_type = request.args.get("action_type", "").strip()
@@ -231,8 +231,10 @@ def audit_log_list() -> str:
 
     # Paginate manually: count + offset/limit
     total = db.session.scalar(db.select(db.func.count()).select_from(query.subquery()))
-    entries = db.session.scalars(query.offset((page - 1) * _PAGE_SIZE).limit(_PAGE_SIZE)).all()
     total_pages = max(1, (total + _PAGE_SIZE - 1) // _PAGE_SIZE)
+    if redirect_resp := last_page_redirect(page, total_pages):
+        return redirect_resp
+    entries = db.session.scalars(query.offset((page - 1) * _PAGE_SIZE).limit(_PAGE_SIZE)).all()
 
     # Distinct values for filter dropdowns
     entity_types = db.session.scalars(

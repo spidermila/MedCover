@@ -37,7 +37,9 @@ from app.utils import (
     diff_changes,
     external_url_for,
     get_or_404,
+    last_page_redirect,
     order_by_nulls_last,
+    page_arg,
     require_permission,
 )
 
@@ -265,9 +267,9 @@ def ical_guide_google() -> str:
 
 @users_bp.route("/")
 @login_required
-def index() -> str:
+def index() -> str | Response:
     require_permission("user.view")
-    page = request.args.get("page", 1, type=int)
+    page = page_arg()
     q = request.args.get("q", "").strip()
     sort = request.args.get("sort", "name")
     sort_dir = request.args.get("dir", "asc")
@@ -317,8 +319,10 @@ def index() -> str:
         )
 
     total = db.session.scalar(db.select(db.func.count()).select_from(query.subquery()))
-    users = db.session.scalars(query.offset((page - 1) * _PAGE_SIZE).limit(_PAGE_SIZE)).all()
     total_pages = max(1, (total + _PAGE_SIZE - 1) // _PAGE_SIZE)
+    if redirect_resp := last_page_redirect(page, total_pages):
+        return redirect_resp
+    users = db.session.scalars(query.offset((page - 1) * _PAGE_SIZE).limit(_PAGE_SIZE)).all()
     roles = db.session.scalars(db.select(Role).order_by(collate(Role.name, CS_COLLATION))).all()
     return render_template(
         "users/index.html",
