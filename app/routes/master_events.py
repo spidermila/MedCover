@@ -17,7 +17,6 @@ import json
 import re
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 
 import sqlalchemy as sa
 from flask import Blueprint, Response, abort, flash, jsonify, redirect, render_template, request, url_for
@@ -41,6 +40,7 @@ from app.routes.assignments import do_assign_user, do_unassign_user
 from app.routes.events._helpers import copy_spots_with_assignments
 from app.utils import (
     CS_COLLATION,
+    CZECH_DAY_ABBR,
     audit,
     bind_form_version,
     check_version_conflict,
@@ -50,6 +50,7 @@ from app.utils import (
     get_app_tz,
     get_or_404,
     require_permission,
+    to_local,
 )
 
 master_events_bp = Blueprint("master_events", __name__, url_prefix="/master-events")
@@ -666,13 +667,11 @@ def _handle_datetime_field(event: Event, field: str, value: str) -> Response:
     audit("edit", "Event", event.id, f"Upraven čas akce '{event.name}' (tabulkový manažer)", changes)
     db.session.commit()
 
-    display_time = dt.astimezone(get_app_tz()).strftime("%H:%M")
-    display_date = dt.astimezone(get_app_tz()).strftime("%d.%m.")
-    _CZECH_DAYS = ["po", "út", "st", "čt", "pá", "so", "ne"]
-    display_day = _CZECH_DAYS[dt.astimezone(get_app_tz()).weekday()]
-
-    delta = event.end_datetime - event.start_datetime
-    hours = Decimal(str(round(delta.total_seconds() / 3600, 1)))
+    local = to_local(dt)
+    display_time = local.strftime("%H:%M")
+    display_date = local.strftime("%d.%m.")
+    display_day = CZECH_DAY_ABBR[local.weekday()]
+    hours = event.scheduled_hours
 
     return jsonify(
         {
