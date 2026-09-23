@@ -18,6 +18,7 @@
       <h6 class="text-danger">✦ Opraveno</h6>
       <ul class="small mb-0">
         <li>Seznamy „Uživatelé“ a „Audit log“ už nehlásí chybu serveru, když odkaz obsahuje neplatné číslo stránky (nulu, záporné nebo příliš velké číslo). Odkaz na stránku za koncem seznamu teď v seznamech „Uživatelé“, „Audit log“ i „Akce“ přesměruje na poslední stránku a zachová nastavené filtry. Dosud „Akce“ v takovém případě zobrazily prázdný seznam bez stránkování.</li>
+        <li>Když dva lidé současně upravují stejný záznam (uživatele, akci, nadřazenou akci, šablonu akce, typ nebo položku vybavení, nastavení přehledového e-mailu), druhé uložení už tiše nepřepíše to první. Druhý uživatel uvidí upozornění „Záznam byl mezitím změněn, načtěte stránku znovu.“ a formulář se načte s aktuálními údaji.</li>
       </ul>
     </div>
   </div>
