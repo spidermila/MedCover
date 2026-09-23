@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - The „Uživatelé“ list and the „Audit log“ no longer fail with a server error on a `?page=` value of zero, a negative number or a very large number. On those two lists and on „Akce“, a page number past the last page now redirects to the last page and keeps the active filters, the same way the debriefing view already did. Before this, „Akce“ showed an empty list with no pager. (#529)
-- Two people saving the same record at once (user, event, master event, event template, equipment type or item, digest settings) no longer silently overwrite each other: the second save is rejected with „Záznam byl mezitím změněn, načtěte stránku znovu.“ and the form reloads with the current data. Scheduler auto-transitions retry once on such a race and skip the event if it still conflicts. (#461)
+- Two people saving the same record at once (user, event, master event, event template, equipment type or item, digest settings) no longer silently overwrite each other: the second save is rejected with „Záznam byl mezitím změněn, načtěte stránku znovu.“ and the form reloads with the current data. Other actions that hit the same race (the master-event table view, status changes, spot edits, equipment issue/return) show the same message instead of a server error, and scheduler auto-transitions and unfilled-spot reminders retry instead of failing. (#461)
 
 ## [1.2.0] - 2026-09-20
 
