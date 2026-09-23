@@ -1,8 +1,11 @@
+import re
+
 import pytest
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventStatus, EventType, StaffingMode
+from app.models.event import Event, EventStatus, EventTemplate, EventType, StaffingMode
+from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
 from tests.conftest import _make_master_event, _make_rp_qual, _make_user
@@ -20,6 +23,53 @@ def _form(app, **extra):
         "requirement_count": "1",
         **extra,
     }
+
+
+@pytest.mark.parametrize("is_template", [False, True])
+def test_condition_requirement_order_survives_create_edit_and_copy(app, admin_client, is_template):
+    data = _form(app)
+    with app.app_context():
+        qualifications = [Qualification(name=f"Ordered {i}", can_be_rp=True) for i in range(3)]
+        db.session.add_all(qualifications)
+        db.session.commit()
+        order = [qualifications[i].id for i in (2, 0, 1)]
+    data.update(requirement_qualification=[str(qid) for qid in order], requirement_count=["1"] * 3)
+    prefix, model = ("/templates", EventTemplate) if is_template else ("/events", Event)
+    assert admin_client.post(f"{prefix}/create", data=data).status_code == 302
+    with app.app_context():
+        owner = db.session.scalar(db.select(model))
+        owner_id, version = owner.id, owner.version
+        assert [r.qualification_id for r in owner.qualification_requirements] == order
+    for expected_order in (order, list(reversed(order))):
+        if expected_order != order:
+            data["requirement_qualification"] = [str(qid) for qid in expected_order]
+            assert (
+                admin_client.post(f"{prefix}/{owner_id}/edit", data={**data, "version": str(version)}).status_code
+                == 302
+            )
+        html = admin_client.get(f"{prefix}/{owner_id}/edit").data.decode()
+        assert [int(qid) for qid in re.findall(r'<option value="(\d+)" selected>', html)] == expected_order
+        with app.app_context():
+            owner = db.session.get(model, owner_id)
+            assert [r.qualification_id for r in owner.qualification_requirements] == expected_order
+            names = [r.qualification.name for r in owner.qualification_requirements]
+            if not is_template:
+                assert [r.qualification.id for r in owner.staffing_summary.requirements] == expected_order
+        html = admin_client.get(f"{prefix}/{owner_id}").data.decode()
+        assert [html.index(f"{name}:") for name in names] == sorted(html.index(f"{name}:") for name in names)
+    if is_template:
+        html = admin_client.get(f"/events/create-from-template/{owner_id}").data.decode()
+        assert [int(qid) for qid in re.findall(r'<option value="(\d+)" selected>', html)] == expected_order
+        assert admin_client.post("/events/create", data={**data, "template_id": str(owner_id)}).status_code == 302
+        with app.app_context():
+            copied = db.session.scalar(db.select(Event))
+            assert [r.qualification_id for r in copied.qualification_requirements] == expected_order
+    else:
+        response = admin_client.post(f"/master-events/{data['master_event_id']}/table/event/{owner_id}/clone")
+        assert response.status_code == 200
+        with app.app_context():
+            copied = db.session.get(Event, response.json["new_event_id"])
+            assert [r.qualification_id for r in copied.qualification_requirements] == expected_order
 
 
 @pytest.mark.parametrize("event_type", list(EventType))

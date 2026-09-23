@@ -169,17 +169,13 @@ def _evaluate(event: Event, participants: list[UserAccount]) -> StaffingSummary:
     graph = qualification_graph()
     participants = sorted(participants, key=lambda u: str(u.id))
     held = [{q.id for q in user.qualifications if not q.is_deleted} for user in participants]
-    coverage = [
-        RequirementCoverage(r.qualification, r.minimum_count, [])
-        for r in sorted(event.qualification_requirements, key=lambda r: r.qualification_id)
-    ]
+    coverage = [RequirementCoverage(r.qualification, r.minimum_count, []) for r in event.qualification_requirements]
     hierarchies: dict[int, list[int]] = defaultdict(list)
     for index, requirement in enumerate(coverage):
         component = graph.components.get(requirement.qualification.id)
         if component is not None:
             hierarchies[component].append(index)
     for indexes in hierarchies.values():
-        slots = [index for index in indexes for _ in range(min(coverage[index].minimum_count, len(participants)))]
         fillers = {
             index: (
                 graph.fillers(coverage[index].qualification.id)
@@ -188,22 +184,26 @@ def _evaluate(event: Event, participants: list[UserAccount]) -> StaffingSummary:
             )
             for index in indexes
         }
+        # Ancestors have fewer fillers than their descendants, regardless of IDs.
+        indexes = sorted(indexes, key=lambda index: (len(fillers[index]), coverage[index].qualification.id))
+        slots = [index for index in indexes for _ in range(min(coverage[index].minimum_count, len(participants)))]
         owners: dict[int, int] = {}
 
-        def match(user_index: int, visited: set[int]) -> bool:
-            for slot, requirement_index in enumerate(slots):
-                if slot in visited or not held[user_index] & fillers[requirement_index]:
+        def match(slot: int, visited: set[int]) -> bool:
+            for user_index, qualifications in enumerate(held):
+                if user_index in visited or not qualifications & fillers[slots[slot]]:
                     continue
-                visited.add(slot)
-                if slot not in owners or match(owners[slot], visited):
-                    owners[slot] = user_index
+                visited.add(user_index)
+                if user_index not in owners or match(owners[user_index], visited):
+                    owners[user_index] = slot
                     return True
             return False
 
-        for user_index in range(len(participants)):
-            match(user_index, set())
+        # Reassign people as needed, but never displace a covered higher slot.
+        for slot in range(len(slots)):
+            match(slot, set())
         allocated: defaultdict[int, int] = defaultdict(int)
-        for slot, user_index in sorted(owners.items()):
+        for slot in owners.values():
             allocated[slots[slot]] += 1
         for index in indexes:
             fillers_for_requirement = fillers[index]

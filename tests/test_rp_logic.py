@@ -2,11 +2,12 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 import sqlalchemy as sa
 
 from app.extensions import db
 from app.models.assignment import Assignment
-from app.models.event import Event, EventSpot, EventStatus
+from app.models.event import Event, EventSpot, EventStatus, StaffingMode
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
@@ -328,6 +329,55 @@ class TestSetRpRoute:
 
 
 class TestDashboardRpWarning:
+    @pytest.mark.parametrize(
+        "rp_state,status,days,archived,expected",
+        [
+            ("none", EventStatus.PUBLISHED, 3, False, True),
+            ("unqualified", EventStatus.ASSIGNMENTS_OPEN, 3, False, True),
+            ("absent", EventStatus.ASSIGNMENTS_CLOSED, 3, False, True),
+            ("valid", EventStatus.ASSIGNMENTS_OPEN, 3, False, False),
+            ("unqualified", EventStatus.DRAFT, 3, False, False),
+            ("unqualified", EventStatus.CANCELLED, 3, False, False),
+            ("unqualified", EventStatus.ASSIGNMENTS_OPEN, 3, True, False),
+            ("unqualified", EventStatus.ASSIGNMENTS_OPEN, 8, False, False),
+            ("unqualified", EventStatus.COMPLETED, -1, False, False),
+        ],
+    )
+    def test_condition_rp_warning_matches_staffing_validity(
+        self, app, admin_client, rp_state, status, days, archived, expected
+    ):
+        event_id = self._make_event_soon_no_rp(app)
+        with app.app_context():
+            event = db.session.get(Event, event_id)
+            event.staffing_mode = StaffingMode.CONDITIONS
+            event.minimum_participants, event.maximum_participants = 1, 2
+            event.status, event.archived = status, archived
+            event.start_datetime = datetime.now(timezone.utc) + timedelta(days=days)
+            event.end_datetime = event.start_datetime + timedelta(hours=2)
+            if rp_state != "none":
+                person = _make_user("dashboard-rp@test.com", "Dashboard RP", Role.MEMBER)
+                if rp_state != "unqualified":
+                    person.qualifications = [Qualification(name="Dashboard RP qualification", can_be_rp=True)]
+                event.responsible_person = person
+                if rp_state != "absent":
+                    db.session.add(Assignment(event=event, user=person))
+            db.session.commit()
+            assert event.staffing_summary.rp_valid == (rp_state == "valid")
+
+        response = admin_client.get("/dashboard")
+        assert response.status_code == 200
+        html = response.data.decode()
+        assert ("bez zodpovědné osoby" in html) == expected
+        if expected:
+            section = html.split("bez zodpovědné osoby", 1)[1].split("</ul>", 1)[0]
+            assert f'href="/events/{event_id}"' in section
+        with app.app_context():
+            _make_user("dashboard-member@test.com", "Dashboard Member", Role.MEMBER)
+            db.session.commit()
+        member_client = app.test_client()
+        _login(member_client, "dashboard-member@test.com")
+        assert "bez zodpovědné osoby" not in member_client.get("/dashboard").data.decode()
+
     def _make_event_soon_no_rp(self, app) -> int:
 
         with app.app_context():

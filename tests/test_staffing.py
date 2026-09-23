@@ -83,6 +83,77 @@ def test_requirement_lists_all_eligible_participants_without_fixing_assignment(a
         assert by_name["Driver"].deficit == 0
 
 
+@pytest.mark.parametrize("depth", [2, 3])
+@pytest.mark.parametrize("highest_count", [1, 2])
+def test_matching_covers_highest_requirements_first(app, depth, highest_count):
+    with app.app_context():
+        event, _, _, _ = _plan(app)
+        # Create lower qualifications first so ID order opposes hierarchy order.
+        qualifications = []
+        for level in range(depth):
+            qualification = Qualification(name=f"Level {level}", can_be_rp=True)
+            db.session.add(qualification)
+            db.session.flush()
+            if qualifications:
+                qualifications[-1].parents = [qualification]
+            qualifications.append(qualification)
+        event.qualification_requirements = [
+            EventQualificationRequirement(
+                qualification=q, minimum_count=highest_count if q == qualifications[-1] else 1
+            )
+            for q in qualifications
+        ]
+        event.minimum_participants = event.maximum_participants = depth + highest_count - 1
+        for number in range(depth + highest_count - 1):
+            user = _make_user(f"hierarchy-{number}@test.com", f"Participant {number}", Role.MEMBER)
+            user.qualifications = qualifications
+            event.assignments.append(Assignment(user=user))
+            db.session.commit()
+            coverage = {r.qualification.id: r for r in evaluate_staffing(event).requirements}
+            remaining = number + 1
+            for qualification in reversed(qualifications):
+                requirement = coverage[qualification.id]
+                expected = min(requirement.minimum_count, remaining)
+                assert requirement.covered == expected
+                remaining -= expected
+                # Coverage priority must not hide other eligible participants.
+                assert len(requirement.participants) == number + 1
+
+
+@pytest.mark.parametrize("flexible_first", [False, True])
+def test_matching_reassigns_participants_to_cover_multiple_parents(app, flexible_first):
+    with app.app_context():
+        event, _, _, _ = _plan(app)
+        lower = Qualification(name="Shared lower qualification")
+        first_parent = Qualification(name="First parent", can_be_rp=True)
+        second_parent = Qualification(name="Second parent", can_be_rp=True)
+        for qualification in (lower, first_parent, second_parent):
+            db.session.add(qualification)
+            db.session.flush()
+        lower.parents = [first_parent, second_parent]
+        event.qualification_requirements = [
+            EventQualificationRequirement(qualification=q, minimum_count=1)
+            for q in (lower, first_parent, second_parent)
+        ]
+        event.minimum_participants = 3
+        users = sorted(
+            [
+                _make_user("first-parent@test.com", "First", Role.MEMBER),
+                _make_user("second-parent@test.com", "Second", Role.MEMBER),
+            ],
+            key=lambda user: str(user.id),
+        )
+        flexible, constrained = users if flexible_first else reversed(users)
+        flexible.qualifications = [first_parent, second_parent]
+        constrained.qualifications = [first_parent]
+        event.assignments.extend([Assignment(user=constrained), Assignment(user=flexible)])
+        db.session.commit()
+        coverage = {r.qualification.id: r for r in evaluate_staffing(event).requirements}
+        assert coverage[first_parent.id].covered == 1
+        assert coverage[second_parent.id].covered == 1
+        assert coverage[lower.id].covered == 0
+
+
 def test_reservation_uses_hierarchy_matching_and_requirement_counts(app):
     with app.app_context():
         event, doctor, medic, driver = _plan(app)
