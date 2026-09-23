@@ -58,7 +58,7 @@ class TestUserProfile:
         """Members lack user.edit_name; a POSTed name field must be silently ignored (#457)."""
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "Hacker Name", "dashboard_horizon_days": "30"},
+            data={"action": "profile", "name": "Hacker Name", "dashboard_horizon_days": "30", "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -81,7 +81,7 @@ class TestUserProfile:
         """Empty name from Member is ignored, not treated as an error (#457)."""
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "", "phone": "123456789", "dashboard_horizon_days": "30"},
+            data={"action": "profile", "name": "", "phone": "123456789", "dashboard_horizon_days": "30", "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -96,7 +96,7 @@ class TestUserProfile:
         """Phone remains editable by Members (#457)."""
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "phone": "+420123456789", "dashboard_horizon_days": "30"},
+            data={"action": "profile", "phone": "+420123456789", "dashboard_horizon_days": "30", "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
