@@ -3,12 +3,13 @@
 from calendar import monthrange
 from datetime import date
 from typing import Any, TypeVar
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
-from flask import abort, request, url_for
+from flask import abort, redirect, request, url_for
 from flask_login import current_user
+from werkzeug.wrappers import Response
 
 from app.extensions import db
 from app.models.audit import AuditLogEntry
@@ -263,6 +264,24 @@ def page_arg() -> int:
     Missing or non-integer values fall back to 1.
     """
     return max(1, min(request.args.get("page", 1, type=int), MAX_PAGE))
+
+
+def last_page_redirect(page: int, pages: int) -> Response | None:
+    """Redirect a past-the-end ?page= to the last page, keeping every other query arg.
+
+    A stale link, or a filter that now matches fewer rows, would otherwise render an
+    empty list with no pager. Returns None when *page* is in range.
+    """
+    if page <= max(1, pages):
+        return None
+    # Rebuilt from the current path rather than url_for(): query keys such as
+    # _anchor or _method would otherwise be read as url_for's own arguments.
+    args = request.args.copy()
+    args.pop("page", None)
+    if pages > 1:
+        args["page"] = str(pages)
+    qs = urlencode(list(args.items(multi=True)))
+    return redirect(f"{request.path}?{qs}" if qs else request.path)
 
 
 # ── Date-range quick-fill buttons ─────────────────────────────────────────────
