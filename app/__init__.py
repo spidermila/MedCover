@@ -7,14 +7,17 @@ import time as _time
 from datetime import datetime, timedelta, timezone
 from itertools import groupby as itertools_groupby
 from operator import attrgetter
+from urllib.parse import urlsplit, urlunsplit
 
 import click
-from flask import Flask, g, redirect, render_template, request, url_for
+from flask import Flask, flash, g, jsonify, redirect, render_template, request, url_for
 from flask_mail import Message
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.orm.exc import StaleDataError
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from .config import check_backup_storage_env, config_by_name
+from .constants import RECORD_MODIFIED_MSG
 from .db_auth import attach_msi_token_auth, prepare_msi_auth
 from .extensions import csrf, db, login_manager
 from .extensions import mail as _flask_mail
@@ -22,7 +25,7 @@ from .extensions import migrate
 from .models.assignment import Assignment
 from .models.event import Event
 from .models.settings import get_settings
-from .utils import get_app_tz
+from .utils import get_app_tz, safe_next
 
 # Computed once at import/startup; used as a cache-busting version for static files.
 _STARTUP_TS: str = str(int(_time.time()))
@@ -340,6 +343,19 @@ def create_app(
     @app.errorhandler(404)
     def _not_found(_err: Exception) -> tuple[str, int]:
         return render_template("errors/404.html"), 404
+
+    @app.errorhandler(StaleDataError)
+    def _stale_data(_err: StaleDataError) -> WerkzeugResponse | tuple[WerkzeugResponse, int]:
+        # Backstop for writes not wrapped in commit_or_stale: a concurrent
+        # version bump between load and commit. Form routes handle this
+        # themselves with a targeted redirect; everything else lands here.
+        db.session.rollback()
+        if request.headers.get("X-CSRFToken"):  # csrfFetch() XHR caller expects JSON
+            return jsonify({"ok": False, "error": RECORD_MODIFIED_MSG}), 409
+        flash(RECORD_MODIFIED_MSG, "danger")
+        ref = urlsplit(request.referrer or "")
+        back = urlunsplit(("", "", ref.path, ref.query, "")) if ref.netloc == request.host else None
+        return redirect(safe_next(back))
 
     return app
 
