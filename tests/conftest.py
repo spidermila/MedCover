@@ -602,9 +602,10 @@ def _make_rp_qual(app, name: str = "RP Qualification") -> int:
 
 
 def _login(client, email: str, password: str = "testpass123") -> None:
-    """Log in via the auth endpoint."""
-    client.post(
+    """Log in via the auth endpoint; fail loudly if the login did not stick."""
+    resp = client.post(
         "/auth/login",
         data={"email": email, "password": password},
         follow_redirects=True,
     )
+    assert resp.request.path != "/auth/login", f"login as {email} failed (HTTP {resp.status_code})"
