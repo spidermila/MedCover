@@ -3,7 +3,7 @@
 from calendar import monthrange
 from datetime import date
 from typing import Any, TypeVar
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
@@ -274,9 +274,14 @@ def last_page_redirect(page: int, pages: int) -> Response | None:
     """
     if page <= max(1, pages):
         return None
-    args: dict[str, Any] = {**(request.view_args or {}), **request.args.to_dict(flat=False)}
-    args["page"] = pages if pages > 1 else None
-    return redirect(url_for(request.endpoint or "", **args))
+    # Rebuilt from the current path rather than url_for(): query keys such as
+    # _anchor or _method would otherwise be read as url_for's own arguments.
+    args = request.args.copy()
+    args.pop("page", None)
+    if pages > 1:
+        args["page"] = str(pages)
+    qs = urlencode(list(args.items(multi=True)))
+    return redirect(f"{request.path}?{qs}" if qs else request.path)
 
 
 # ── Date-range quick-fill buttons ─────────────────────────────────────────────

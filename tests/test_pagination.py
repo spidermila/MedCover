@@ -45,15 +45,34 @@ def test_page_beyond_last_redirect_keeps_filters(admin_client, url, filters):
     assert _query(resp) == filters
 
 
-def test_users_page_beyond_last_lands_on_last_page(app, admin_client):
+def _fill_two_user_pages(app) -> None:
+    # One full page plus admin_client's own user ("Test Admin", sorts first)
+    # spills the last seeded user, "User NNN", onto a second page.
     with app.app_context():
-        # One full page plus admin_client's own user spills onto a second page.
         db.session.add_all(
             UserAccount(email=f"u{i:03}@test.com", name=f"User {i:03}", password_hash="x", is_active=True)
             for i in range(USERS_PAGE_SIZE)
         )
         db.session.commit()
+
+
+def test_users_page_below_one_shows_first_slice(app, admin_client):
+    _fill_two_user_pages(app)
+    html = admin_client.get("/users/?page=0").get_data(as_text=True)
+    assert "User 000" in html
+    assert f"User {USERS_PAGE_SIZE - 1:03}" not in html
+
+
+def test_users_page_beyond_last_lands_on_last_page(app, admin_client):
+    _fill_two_user_pages(app)
     resp = admin_client.get("/users/?page=99")
     assert resp.status_code == 302
     assert _query(resp) == {"page": ["2"]}
     assert admin_client.get(resp.headers["Location"]).status_code == 200
+
+
+def test_redirect_keeps_url_for_reserved_and_repeated_keys_as_plain_query(admin_client):
+    resp = admin_client.get("/users/?page=5&_anchor=x&_method=GET&_external=1&a=1&a=2")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].startswith("/users/?")
+    assert _query(resp) == {"_anchor": ["x"], "_method": ["GET"], "_external": ["1"], "a": ["1", "2"]}
