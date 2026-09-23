@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import click
 from flask import Flask, flash, g, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user
 from flask_mail import Message
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm.exc import StaleDataError
@@ -25,7 +26,8 @@ from .extensions import migrate
 from .models.assignment import Assignment
 from .models.event import Event
 from .models.settings import get_settings
-from .utils import get_app_tz, safe_next
+from .models.user import EventTimeFormat
+from .utils import CZECH_DAY_ABBR, cznum, format_event_time, get_app_tz, safe_next, to_local
 
 # Computed once at import/startup; used as a cache-busting version for static files.
 _STARTUP_TS: str = str(int(_time.time()))
@@ -147,9 +149,7 @@ def create_app(
         """Convert a UTC datetime to app-configured local time and format it."""
         if dt is None:
             return "—"
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(get_app_tz()).strftime(fmt)
+        return to_local(dt).strftime(fmt)
 
     @app.template_filter("localdate")
     def localdate_filter(dt: datetime | None) -> str:
@@ -176,31 +176,20 @@ def create_app(
         mid = start + (end - start) / 2
         return mid.astimezone(get_app_tz()).strftime("%Y-%m-%dT%H:%M")
 
-    _CZECH_DAY_ABBR = ["po", "út", "st", "čt", "pá", "so", "ne"]
-
     @app.template_filter("czechday")
     def czechday_filter(dt: datetime | None) -> str:
         """Return Czech two-letter weekday abbreviation (po/út/st/čt/pá/so/ne)."""
         if dt is None:
             return ""
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return _CZECH_DAY_ABBR[dt.astimezone(get_app_tz()).weekday()]
+        return CZECH_DAY_ABBR[to_local(dt).weekday()]
 
-    @app.template_filter("cznum")
-    def cznum_filter(value: object, decimals: int = 1, strip: bool = False) -> str:
-        """Format a number using Czech locale: comma as decimal separator.
+    app.add_template_filter(cznum, "cznum")
 
-        strip=True removes trailing zeros after the decimal point
-        (e.g. 2.0 → '2', 2.5 → '2,5').
-        """
-        try:
-            formatted = f"{float(value):.{decimals}f}"  # type: ignore[arg-type]
-        except TypeError, ValueError:
-            return "—"
-        if strip:
-            formatted = formatted.rstrip("0").rstrip(".")
-        return formatted.replace(".", ",")
+    @app.template_filter("event_time")
+    def event_time_filter(event: Event) -> str:
+        """Event time window (weekday, time, duration or end) in the viewer's chosen format."""
+        fmt = current_user.event_time_format if current_user.is_authenticated else EventTimeFormat.START_DURATION
+        return format_event_time(event.start_datetime, event.end_datetime, fmt)
 
     @app.template_filter("groupby_safe")
     def groupby_safe_filter(value: list, attribute: str) -> list:

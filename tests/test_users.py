@@ -16,7 +16,7 @@ from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
 from app.models.role import Role
-from app.models.user import UserAccount
+from app.models.user import EventTimeFormat, UserAccount
 from app.queries import active_users_list
 
 # ── Profile ───────────────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ class TestUserProfile:
     def test_coordinator_can_update_own_name(self, app: object, coordinator_client: object) -> None:
         resp = coordinator_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "Nové Jméno", "dashboard_horizon_days": "30", "version": "1"},
+            data={"action": "profile", "name": "Nové Jméno", "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -49,7 +49,7 @@ class TestUserProfile:
     def test_coordinator_empty_name_rejected(self, coordinator_client: object) -> None:
         resp = coordinator_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "", "dashboard_horizon_days": "30", "version": "1"},
+            data={"action": "profile", "name": "", "version": "1"},
             follow_redirects=True,
         )
         assert "Jméno nesmí být prázdné".encode() in resp.data
@@ -58,7 +58,7 @@ class TestUserProfile:
         """Members lack user.edit_name; a POSTed name field must be silently ignored (#457)."""
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "Hacker Name", "dashboard_horizon_days": "30", "version": "1"},
+            data={"action": "profile", "name": "Hacker Name", "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -81,7 +81,7 @@ class TestUserProfile:
         """Empty name from Member is ignored, not treated as an error (#457)."""
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "", "phone": "123456789", "dashboard_horizon_days": "30", "version": "1"},
+            data={"action": "profile", "name": "", "phone": "123456789", "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -96,7 +96,7 @@ class TestUserProfile:
         """Phone remains editable by Members (#457)."""
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "phone": "+420123456789", "dashboard_horizon_days": "30", "version": "1"},
+            data={"action": "profile", "phone": "+420123456789", "version": "1"},
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -131,8 +131,7 @@ class TestUserProfile:
         resp = member_client.post(
             "/users/profile",
             data={
-                "action": "profile",
-                "name": "Test Member",
+                "action": "preferences",
                 "dashboard_horizon_days": "30",
                 "dark_mode": "1",
                 "version": "1",
@@ -144,6 +143,42 @@ class TestUserProfile:
             user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
             assert user is not None
             assert user.dark_mode is True
+
+    @pytest.mark.parametrize(
+        ("posted", "stored"),
+        [
+            ("2", EventTimeFormat.START_END),
+            ("1", EventTimeFormat.START_DURATION),
+            ("9", EventTimeFormat.START_DURATION),
+            ("x", EventTimeFormat.START_DURATION),
+        ],
+    )
+    def test_event_time_format_saved(self, app: object, member_client: object, posted: str, stored: int) -> None:
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user.event_time_format == EventTimeFormat.START_DURATION
+            user.event_time_format = 3 - stored  # start from the other format so the save is observable
+            db.session.commit()
+        resp = member_client.post(
+            "/users/profile",
+            data={"action": "preferences", "event_time_format": posted, "version": "1"},
+            follow_redirects=True,
+        )
+        assert "Nastavení bylo uloženo".encode() in resp.data
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user.event_time_format == stored
+
+    def test_preferences_stale_version_rejected(self, app: object, member_client: object) -> None:
+        resp = member_client.post(
+            "/users/profile",
+            data={"action": "preferences", "event_time_format": "2", "version": "9999"},
+            follow_redirects=True,
+        )
+        assert "Nastavení bylo uloženo".encode() not in resp.data
+        with app.app_context():
+            user = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "member@test.com"))
+            assert user.event_time_format == EventTimeFormat.START_DURATION
 
     def test_dark_mode_off_by_default(self, app: object, member_client: object) -> None:
         with app.app_context():
@@ -805,7 +840,6 @@ class TestPhoneValidationProfile:
             data={
                 "action": "profile",
                 "name": "Test Member",
-                "dashboard_horizon_days": "30",
                 "phone": phone,
                 "version": "1",
             },
@@ -821,7 +855,6 @@ class TestPhoneValidationProfile:
             data={
                 "action": "profile",
                 "name": "Test Member",
-                "dashboard_horizon_days": "30",
                 "phone": phone,
                 "version": "1",
             },
@@ -1438,7 +1471,7 @@ class TestUserOptimisticLocking:
     def test_update_profile_stale_version_flashes(self, app: object, member_client: object) -> None:
         resp = member_client.post(
             "/users/profile",
-            data={"action": "profile", "name": "New Name", "dashboard_horizon_days": "30", "version": "9999"},
+            data={"action": "profile", "name": "New Name", "version": "9999"},
             follow_redirects=True,
         )
         assert resp.status_code == 200

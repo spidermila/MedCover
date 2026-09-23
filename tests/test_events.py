@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -20,7 +20,8 @@ from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
-from app.models.user import UserAccount
+from app.models.user import EventTimeFormat, UserAccount
+from app.utils import format_event_time
 from tests.conftest import _get_csrf, _login, _make_event_in_status, _make_master_event, _make_rp_qual, _make_user
 
 
@@ -94,6 +95,39 @@ class TestEventListPermissions:
         assert "Vybavení" in html
         assert "Nadřazená<br>akce" not in html
         assert 'title="Event list AED — 2 ks">🩺</span><small class="text-muted">×2</small>' in html
+
+
+class TestEventTimeFormat:
+    # 20:00 CEST on Thursday 21.05.2026
+    START = datetime(2026, 5, 21, 18, 0, tzinfo=timezone.utc)
+
+    @pytest.mark.parametrize(
+        ("hours", "fmt", "expected"),
+        [
+            (5.5, EventTimeFormat.START_DURATION, "čt 20:00 (5,5 h)"),
+            (2, EventTimeFormat.START_DURATION, "čt 20:00 (2 h)"),
+            (5.5, EventTimeFormat.START_END, "čt 20:00–01:30"),
+            (2, EventTimeFormat.START_END, "čt 20:00–22:00"),
+            (36, EventTimeFormat.START_END, "čt 20:00 – so 23.05. 08:00"),
+            (5.5, 99, "čt 20:00 (5,5 h)"),
+        ],
+    )
+    def test_format_event_time(self, app, hours, fmt, expected):
+        with app.app_context():
+            assert format_event_time(self.START, self.START + timedelta(hours=hours), fmt) == expected
+
+    @pytest.mark.parametrize("fmt", list(EventTimeFormat))
+    def test_event_list_uses_viewer_format(self, app, admin_client, fmt):
+        event_id = _make_event_in_status(app, status=EventStatus.ASSIGNMENTS_OPEN)
+        with app.app_context():
+            admin = db.session.scalar(db.select(UserAccount).where(UserAccount.email == "admin@test.com"))
+            admin.event_time_format = fmt
+            event = db.session.get(Event, event_id)
+            expected = format_event_time(event.start_datetime, event.end_datetime, fmt)
+            db.session.commit()
+        html = admin_client.get("/events/?statuses=ASSIGNMENTS_OPEN").data.decode()
+        assert f'<span class="text-muted">{expected}</span>' in html
+        assert "Čas" in html
 
 
 class TestObsazeniBadges:

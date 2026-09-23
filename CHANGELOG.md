@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- „Formát zobrazení času akce“ setting in the profile: each user picks whether event times show as start + duration (`čt 20:00 (5,5 h)`, the default) or start–end (`čt 20:00–01:30`). The choice applies to the „Akce“ list, whose „Začátek“ column is now „Čas“, and to the event header in notification emails, which previously always showed start–end. The calendar view, dashboard horizon and dark mode settings moved with it into a new „Nastavení“ card below „Osobní údaje“. (#275)
+
 ### Changed
 - Backups are stored in Azure Blob Storage instead of a local `backup_dir`, so backups made by the scheduler show up in the web admin (and vice versa) and survive container restarts. Production authenticates with the managed identity (`BACKUP_CONTAINER_URL` + `AZURE_CLIENT_ID`, no key); local development, e2e and CI use the Azurite emulator (`BACKUP_STORAGE_CONNECTION_STRING`). The shared `backups` volume and the „Adresář zálohy“ setting are gone. Existing archives on the old `/backups` share are not migrated; copy them into the container before upgrading if they are still needed (see DEVOPS.md → Backup storage). (#538)
 

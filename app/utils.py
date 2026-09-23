@@ -1,7 +1,7 @@
 """Shared utility helpers for the MedCover application."""
 
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, TypeVar
 from urllib.parse import urlencode, urlsplit
 from zoneinfo import ZoneInfo
@@ -17,6 +17,7 @@ from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.audit import AuditLogEntry
 from app.models.settings import get_settings
+from app.models.user import EventTimeFormat
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -39,6 +40,51 @@ def get_app_tz() -> ZoneInfo:
     except Exception:  # noqa: BLE001
         pass
     return ZoneInfo(_DEFAULT_TZ)
+
+
+# ── Czech date/number formatting ─────────────────────────────────────────────
+
+CZECH_DAY_ABBR = ["po", "út", "st", "čt", "pá", "so", "ne"]
+
+
+def to_local(dt: datetime) -> datetime:
+    """Convert a (naive = UTC) datetime to the app timezone."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(get_app_tz())
+
+
+def cznum(value: object, decimals: int = 1, strip: bool = False) -> str:
+    """Format a number using Czech locale: comma as decimal separator.
+
+    strip=True removes trailing zeros after the decimal point
+    (e.g. 2.0 → '2', 2.5 → '2,5').
+    """
+    try:
+        formatted = f"{float(value):.{decimals}f}"  # type: ignore[arg-type]
+    except TypeError, ValueError:
+        return "—"
+    if strip:
+        formatted = formatted.rstrip("0").rstrip(".")
+    return formatted.replace(".", ",")
+
+
+def format_event_time(start: datetime, end: datetime, fmt: int) -> str:
+    """Format an event's time window (without the start date) in the user's format.
+
+    START_DURATION: ``čt 20:00 (5,5 h)``
+    START_END:      ``čt 20:00–01:30``; when the event ends later than the next
+                    day the end gets its own weekday and date so it isn't
+                    mistaken for an overnight end: ``čt 20:00 – so 23.05. 08:00``.
+    Unknown values fall back to START_DURATION.
+    """
+    ls, le = to_local(start), to_local(end)
+    head = f"{CZECH_DAY_ABBR[ls.weekday()]} {ls:%H:%M}"
+    if fmt != EventTimeFormat.START_END:
+        return f"{head} ({cznum(round((end - start).total_seconds() / 3600, 1), strip=True)} h)"
+    if le.date() - ls.date() <= timedelta(days=1):
+        return f"{head}–{le:%H:%M}"
+    return f"{head} – {CZECH_DAY_ABBR[le.weekday()]} {le:%d.%m. %H:%M}"
 
 
 # ── Czech locale-aware sorting ────────────────────────────────────────────────
