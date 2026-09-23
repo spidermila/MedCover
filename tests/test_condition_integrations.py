@@ -11,6 +11,7 @@ from app.models.event import Event, EventQualificationRequirement, EventStatus
 from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
 from app.models.role import Role
+from app.models.user import EventTimeFormat
 from app.printout_generator import generate_printout
 from app.routes.reports import _spot_and_assignment_data
 from app.scheduler_tasks import run_send_reminders
@@ -64,7 +65,7 @@ def test_condition_notification_language_and_live_deficit(app):
             OutboxEmail(notification_type=kind, change_value="{}")
             for kind in ("assignment_confirmed", "assignment_released", "unfilled_reminder")
         ]
-        section = _build_event_section(event, rows)
+        section = _build_event_section(event, rows, EventTimeFormat.START_DURATION)
         html = render_template("email/event_batched.html", user_name="Member", event_sections=[section])
         assert "přihlášeni na akci" in html
         assert "odhlášeni z akce" in html
