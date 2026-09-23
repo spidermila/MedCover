@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Backups are stored in Azure Blob Storage instead of a local `backup_dir`, so backups made by the scheduler show up in the web admin (and vice versa) and survive container restarts. Production authenticates with the managed identity (`BACKUP_CONTAINER_URL` + `AZURE_CLIENT_ID`, no key); local development, e2e and CI use the Azurite emulator (`BACKUP_STORAGE_CONNECTION_STRING`). The shared `backups` volume and the „Adresář zálohy“ setting are gone. Existing archives on the old `/backups` share are not migrated; copy them into the container before upgrading if they are still needed (see DEVOPS.md → Backup storage). (#538)
 
+### Fixed
+- The „Uživatelé“ list and the „Audit log“ no longer fail with a server error on a `?page=` value of zero, a negative number or a very large number. On those two lists and on „Akce“, a page number past the last page now redirects to the last page and keeps the active filters, the same way the debriefing view already did. Before this, „Akce“ showed an empty list with no pager. (#529)
+
 ## [1.2.0] - 2026-09-20
 
 ### Added

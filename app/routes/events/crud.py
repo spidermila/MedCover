@@ -42,7 +42,9 @@ from app.utils import (
     diff_changes,
     get_app_tz,
     get_or_404,
+    last_page_redirect,
     order_by_nulls_last,
+    page_arg,
     require_permission,
 )
 
@@ -75,7 +77,7 @@ _VALID_SORT_COLS = {"start", "name", "status", "total", "rp"}
 def _parse_index_filters() -> dict:
     """Extract and validate all filter/sort params from the request query string."""
     show_archived = request.args.get("archived") == "1"
-    page = min(request.args.get("page", 1, type=int), 1_000_000)
+    page = page_arg()
 
     if "statuses" not in request.args:
         active_statuses = list(_DEFAULT_STATUSES)
@@ -214,7 +216,7 @@ def _eligible_event_ids_for_user(user: UserAccount) -> list[int]:
 
 @events_bp.get("/")
 @login_required
-def index() -> str:
+def index() -> str | Response:
     require_permission("event.view", "event.view_draft")
 
     f = _parse_index_filters()
@@ -257,6 +259,8 @@ def index() -> str:
 
     query = _apply_index_order(query, f["sort_col"], f["sort_dir"])
     pagination = db.paginate(query, page=f["page"], per_page=PER_PAGE, error_out=False)
+    if redirect_resp := last_page_redirect(pagination.page, pagination.pages):
+        return redirect_resp
     events = pagination.items
 
     active_named_mes = db.session.scalars(

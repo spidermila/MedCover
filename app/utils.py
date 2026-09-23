@@ -7,8 +7,9 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
-from flask import abort, request, url_for
+from flask import abort, redirect, request, url_for
 from flask_login import current_user
+from werkzeug.wrappers import Response
 
 from app.extensions import db
 from app.models.audit import AuditLogEntry
@@ -263,6 +264,19 @@ def page_arg() -> int:
     Missing or non-integer values fall back to 1.
     """
     return max(1, min(request.args.get("page", 1, type=int), MAX_PAGE))
+
+
+def last_page_redirect(page: int, pages: int) -> Response | None:
+    """Redirect a past-the-end ?page= to the last page, keeping every other query arg.
+
+    A stale link, or a filter that now matches fewer rows, would otherwise render an
+    empty list with no pager. Returns None when *page* is in range.
+    """
+    if page <= max(1, pages):
+        return None
+    args: dict[str, Any] = {**(request.view_args or {}), **request.args.to_dict(flat=False)}
+    args["page"] = pages if pages > 1 else None
+    return redirect(url_for(request.endpoint or "", **args))
 
 
 # ── Date-range quick-fill buttons ─────────────────────────────────────────────
