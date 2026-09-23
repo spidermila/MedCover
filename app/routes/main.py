@@ -13,7 +13,7 @@ from app.models.equipment import (
     EquipmentItem,
     EventEquipmentPlan,
 )
-from app.models.event import Event, EventStatus
+from app.models.event import Event, EventStatus, StaffingMode
 from app.models.user import UserAccount
 from app.queries import assignment_conflicts, user_fillable_qual_ids
 from app.staffing import can_join_event, user_helps_staffing
@@ -269,23 +269,26 @@ def _equipment_shortage_events(now: datetime, horizon: datetime) -> list[tuple[E
 
 
 def _missing_rp_events_section(now: datetime) -> list[Event]:
-    """Events in the next 7 days without a responsible person."""
+    """Events in the next 7 days without a valid responsible person."""
     if not current_user.has_any_permission("event.publish", "event.assignments.open"):
         return []
     rp_horizon = now + timedelta(days=7)
-    return list(
-        db.session.scalars(
-            db.select(Event)
-            .where(
-                Event.archived == sa.false(),
-                Event.status.notin_([EventStatus.DRAFT, EventStatus.CANCELLED]),
-                Event.responsible_person_id == None,  # noqa: E711
-                Event.start_datetime >= now,
-                Event.start_datetime <= rp_horizon,
-            )
-            .order_by(Event.start_datetime)
-        ).all()
-    )
+    events = db.session.scalars(
+        db.select(Event)
+        .where(
+            Event.archived == sa.false(),
+            Event.status.notin_([EventStatus.DRAFT, EventStatus.CANCELLED]),
+            or_(Event.responsible_person_id.is_(None), Event.staffing_mode == StaffingMode.CONDITIONS),
+            Event.start_datetime >= now,
+            Event.start_datetime <= rp_horizon,
+        )
+        .order_by(Event.start_datetime)
+    ).all()
+    return [
+        event
+        for event in events
+        if event.staffing_mode != StaffingMode.CONDITIONS or not event.staffing_summary.rp_valid
+    ]
 
 
 def _pending_debriefings_section() -> list[Assignment]:

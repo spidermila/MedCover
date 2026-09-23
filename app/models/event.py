@@ -94,6 +94,7 @@ class EventTemplate(db.Model):  # type: ignore[misc]
         back_populates="template",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by="EventTemplateQualificationRequirement.id",
     )
 
     spot_templates = db.relationship(
@@ -163,6 +164,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         back_populates="event",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by="EventQualificationRequirement.id",
     )
 
     id = db.Column(db.Integer, primary_key=True)

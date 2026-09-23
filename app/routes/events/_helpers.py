@@ -421,6 +421,7 @@ def validate_event_spots_config(spots: list[EventSpot]) -> str | None:
 
 
 def apply_condition_plan(target: Event | EventTemplate, plan: tuple[int, int, list[tuple[int, int]]]) -> None:
+    # Recreate rows in form order; relationships preserve that order by row ID.
     target.minimum_participants, target.maximum_participants, requirements = plan
     target.qualification_requirements.clear()
     if target.id is not None:
