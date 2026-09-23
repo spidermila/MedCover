@@ -106,9 +106,150 @@ services:
     entrypoint: ["/bin/bash", "/mssql-init/setup.sh"]
     restart: "no"
 
+  # ── MemberBase („Evidence členů“) ──────────────────────────────────────────
+  # Shared member directory (OpenLDAP), single sign-on (Keycloak) and the
+  # MemberBase admin app, built from a MemberBase checkout next to this repo
+  # (MEMBERBASE_DIR, default ../MemberBase). Off unless the profile is on:
+  #   COMPOSE_PROFILES=memberbase docker compose up -d
+  # URLs on any host name of this machine: MemberBase :5100, Keycloak :8180
+  # (admin console /admin), Mailpit (all dev email) :8025. Passkeys need
+  # localhost or HTTPS.
+  openldap:
+    profiles: [memberbase]
+    build: ${MEMBERBASE_DIR:-../MemberBase}/deploy/openldap
+    image: localhost/memberbase_openldap:latest
+    restart: unless-stopped
+    environment:
+      LDAP_KEYCLOAK_PASSWORD: ${MB_LDAP_KEYCLOAK_PASSWORD:-dev-keycloak-ldap}
+      LDAP_MEDCOVER_SYNC_PASSWORD: ${MB_LDAP_MEDCOVER_SYNC_PASSWORD:-dev-medcover-sync}
+      LDAP_MEMBERBASE_PASSWORD: ${MB_LDAP_MEMBERBASE_PASSWORD:-dev-memberbase-ldap}
+      BOOTSTRAP_ADMIN_EMAIL: ${MB_BOOTSTRAP_ADMIN_EMAIL:-admin@example.org}
+      BOOTSTRAP_ADMIN_NAME: ${MB_BOOTSTRAP_ADMIN_NAME:-Správce Evidence}
+      BOOTSTRAP_ADMIN_PASSWORD: ${MB_BOOTSTRAP_ADMIN_PASSWORD:-admin-heslo-123}
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_certs:/certs
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-Q", "-Y", "EXTERNAL", "-H", "ldapi://%2Fvar%2Frun%2Fslapd%2Fldapi/", "-b", "", "-s", "base"]
+      interval: 5s
+      retries: 20
+
+  # One-shot: Keycloak's database on the dev MSSQL server (idempotent).
+  keycloak-db-init:
+    profiles: [memberbase]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MSSQL_HOST: db
+      MSSQL_SA_PASSWORD: "DevPassword123!"
+      KEYCLOAK_DB_PASSWORD: ${MB_KEYCLOAK_DB_PASSWORD:-Dev_Idp_Passw0rd!}
+    volumes:
+      - ${MEMBERBASE_DIR:-../MemberBase}/deploy/keycloak/mssql-create-db.sh:/mssql-create-db.sh:ro
+    entrypoint: ["/bin/bash", "/mssql-create-db.sh"]
+    restart: "no"
+
+  keycloak:
+    profiles: [memberbase]
+    image: quay.io/keycloak/keycloak:26.7.4
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MB_KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: mssql
+      KC_DB_URL: jdbc:sqlserver://db:1433;databaseName=keycloak;encrypt=true;trustServerCertificate=true
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${MB_KEYCLOAK_DB_PASSWORD:-Dev_Idp_Passw0rd!}
+      KC_TRANSACTION_XA_ENABLED: "false"
+      # Empty MB_KEYCLOAK_HOSTNAME: Keycloak answers under whatever host the
+      # browser uses (MemberBase links to port 8180 of the same host). Behind
+      # an HTTPS proxy set it to e.g. https://sso.example.org (needed for
+      # passkeys / Face ID), and MB_KEYCLOAK_PUBLIC_URL to the same value.
+      KC_HOSTNAME: ${MB_KEYCLOAK_HOSTNAME:-}
+      # With a fixed host name, MemberBase still reaches Keycloak internally
+      # (tokens, keys, admin API): set MB_KEYCLOAK_BACKCHANNEL_DYNAMIC=true.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: ${MB_KEYCLOAK_BACKCHANNEL_DYNAMIC:-false}
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_TRUSTSTORE_PATHS: /certs/ca.crt
+      LDAP_BASE_DN: dc=oscckfm,dc=cz
+      LDAP_KEYCLOAK_PASSWORD: ${MB_LDAP_KEYCLOAK_PASSWORD:-dev-keycloak-ldap}
+      MEMBERBASE_CLIENT_SECRET: ${MB_MEMBERBASE_CLIENT_SECRET:-dev-memberbase-client}
+      MEDCOVER_CLIENT_SECRET: ${MB_MEDCOVER_CLIENT_SECRET:-dev-medcover-client}
+      MEMBERBASE_URL: ${MB_MEMBERBASE_URL:-http://localhost:5100}
+      MEDCOVER_URL: ${MB_MEDCOVER_URL:-http://localhost:5000}
+      MEMBERBASE_EXTRA_REDIRECT_URI: "*"
+      MEDCOVER_EXTRA_REDIRECT_URI: "*"
+      KC_SMTP_HOST: mailpit
+      KC_SMTP_PORT: "1025"
+      KC_SMTP_FROM: evidence@example.org
+    ports:
+      - "8180:8080"
+    volumes:
+      - ${MEMBERBASE_DIR:-../MemberBase}/deploy/keycloak/realm-crc.json:/opt/keycloak/data/import/realm-crc.json:ro
+      - ${MEMBERBASE_DIR:-../MemberBase}/deploy/keycloak/themes/crc:/opt/keycloak/themes/crc:ro
+      - ldap_certs:/certs:ro
+    depends_on:
+      openldap:
+        condition: service_healthy
+      keycloak-db-init:
+        condition: service_completed_successfully
+
+  mailpit:
+    profiles: [memberbase]
+    image: axllent/mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+
+  memberbase:
+    profiles: [memberbase]
+    build: ${MEMBERBASE_DIR:-../MemberBase}
+    image: localhost/memberbase:latest
+    restart: unless-stopped
+    command: ["flask", "--app", "memberbase:create_app()", "run", "--host=0.0.0.0", "--debug"]
+    environment: &memberbase-env
+      SECRET_KEY: ${MB_SECRET_KEY:-dev-memberbase-secret}
+      SESSION_COOKIE_SECURE: ${MB_SESSION_COOKIE_SECURE:-false}
+      KEYCLOAK_PUBLIC_URL: ${MB_KEYCLOAK_PUBLIC_URL:-}
+      LDAP_BIND_PASSWORD: ${MB_LDAP_MEMBERBASE_PASSWORD:-dev-memberbase-ldap}
+      OIDC_CLIENT_SECRET: ${MB_MEMBERBASE_CLIENT_SECRET:-dev-memberbase-client}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_STARTTLS: "false"
+      MAIL_FROM: evidence@example.org
+    ports:
+      - "5100:5000"
+    volumes:
+      - ${MEMBERBASE_DIR:-../MemberBase}:/app:ro
+      - ldap_certs:/certs:ro
+    depends_on:
+      openldap:
+        condition: service_healthy
+
+  # Grant expiry and members-group repair every 15 minutes.
+  memberbase-jobs:
+    profiles: [memberbase]
+    image: localhost/memberbase:latest
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do flask --app 'memberbase:create_app()' expire-grants; flask --app 'memberbase:create_app()' repair-members; sleep 900; done"]
+    environment: *memberbase-env
+    volumes:
+      - ldap_certs:/certs:ro
+    depends_on:
+      memberbase:
+        condition: service_started
+
 volumes:
   mssql_data:
   # Shared persistent volume for DB backups — mirrors the Azure Files share
   # mounted at /backups in prod so both web and scheduler containers see the
   # same files. Survives `compose down`; wiped only by `compose down -v`.
   backups:
+  # MemberBase directory data and its TLS certificate (profile memberbase).
+  ldap_data:
+  ldap_certs:

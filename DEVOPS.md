@@ -361,6 +361,54 @@ volumes:
   backups:
 ```
 
+### MemberBase services (optional)
+
+`docker-compose.yml` also defines the MemberBase stack under the compose
+profile `memberbase`: `openldap` (member directory), `keycloak` (single
+sign-on, database `keycloak` on the dev MSSQL, created by the one-shot
+`keycloak-db-init`), `mailpit` (catches all dev email) and `memberbase` +
+`memberbase-jobs` (the „Evidence členů“ admin app and its 15-minute jobs).
+They build from a [MemberBase](https://github.com/spidermila/MemberBase)
+checkout at `MEMBERBASE_DIR` (default `../MemberBase`) and stay off unless
+the profile is enabled:
+
+```bash
+COMPOSE_PROFILES=memberbase docker compose up --build -d
+```
+
+Any host name of the dev machine works (`localhost`, its LAN name or IP):
+Keycloak has no fixed host name in dev and MemberBase sends the browser to
+port 8180 of the host it was opened on.
+
+| URL | What |
+| --- | --- |
+| http://localhost:5100 | MemberBase (bootstrap admin `admin@example.org` / `admin-heslo-123`; an authenticator app is required at first login) |
+| http://localhost:8180/admin | Keycloak admin console (`admin` / `admin`) |
+| http://localhost:8025 | Mailpit (invitations, password resets) |
+
+Behind an HTTPS reverse proxy (needed for passkeys / Face ID on anything
+but `localhost`), give each app its own host name, e.g. `evidence.example.org`
+→ port 5100 and `sso.example.org` → port 8180, and set in `.env`:
+
+```bash
+MB_KEYCLOAK_HOSTNAME=https://sso.example.org
+MB_KEYCLOAK_BACKCHANNEL_DYNAMIC=true
+MB_KEYCLOAK_PUBLIC_URL=https://sso.example.org
+MB_MEMBERBASE_URL=https://evidence.example.org
+MB_SESSION_COOKIE_SECURE=true
+```
+
+The proxy must pass `X-Forwarded-Proto/Host/Port` and should block
+`/admin` on the Keycloak host for anyone but you. Passkeys are bound to
+the Keycloak host name: changing it later invalidates them. Keycloak reads
+`MB_MEMBERBASE_URL` only when it first imports the realm, so after changing it
+drop the `keycloak` database and restart `keycloak`.
+
+Dev secrets have defaults; override any of them with the `MB_*` variables
+in `.env`. Keycloak imports the realm only when it does not exist yet, so
+after changing `realm-crc.json` drop the `keycloak` database (or edit the
+realm in the admin console). MedCover itself does not use the directory yet.
+
 ### Backups volume
 
 The web and scheduler containers must share the directory that DB backup
