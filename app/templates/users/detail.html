@@ -96,7 +96,7 @@
         </div>
       </div>
 
-      {% if current_user.has_permission('user.edit_any') %}
+      {% if current_user.has_permission('user.edit_any') and config.AUTH_MODE != "oidc" %}
       <div class="card mb-4">
         <div class="card-header fw-semibold">Nastavit heslo <span class="text-muted fw-normal fs-6">(volitelné)</span></div>
         <div class="card-body">

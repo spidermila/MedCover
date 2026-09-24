@@ -3,10 +3,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+from app import oidc
 from app.config import LOGIN_LOCKOUT_MINUTES, LOGIN_MAX_ATTEMPTS, RESET_TOKEN_MINUTES
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
@@ -18,6 +19,9 @@ from app.models.user import UserAccount
 from app.utils import external_url_for, safe_next
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+# MedCover's own password handling, off while Keycloak does the login.
+_LOCAL_ONLY_ENDPOINTS = {"auth.forgot_password", "auth.reset_password", "auth.register"}
 
 _RESET_SALT = "pw-reset"
 _INVITE_SALT = "invite"
@@ -47,10 +51,18 @@ def _load_signed_token(token: str, salt: str, max_age_seconds: int) -> str | Non
         return None
 
 
+@auth_bp.before_request
+def _local_only() -> None:
+    if request.endpoint in _LOCAL_ONLY_ENDPOINTS and oidc.enabled():
+        abort(404)
+
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login() -> str | Response:
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
+    if oidc.enabled():
+        return oidc.login_redirect(request.args.get("next"))
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -103,7 +115,10 @@ def login() -> str | Response:
 @auth_bp.route("/logout")
 @login_required
 def logout() -> Response:
+    id_token = session.pop("oidc_id_token", None)
     logout_user()
+    if oidc.enabled():
+        return redirect(oidc.end_session_url(id_token))
     flash("Byli jste odhlášeni.", "info")
     return redirect(url_for("auth.login"))
 

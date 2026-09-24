@@ -6,11 +6,13 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2>Uživatelé</h2>
   <div class="d-flex gap-2">
-    {% if current_user.has_permission('user.create') %}
+    {% if current_user.has_permission('user.create') and config.AUTH_MODE != "oidc" %}
     <a href="{{ url_for('users.create_user') }}" class="btn btn-danger btn-sm">+ Manuálně vytvořit uživatele</a>
     {% endif %}
     {% if current_user.has_permission('invite.create') %}
+    {% if config.AUTH_MODE != "oidc" %}
     <a href="{{ url_for('users.invites') }}" class="btn btn-outline-danger btn-sm">Pozvánky</a>
+    {% endif %}
     {% endif %}
   </div>
 </div>

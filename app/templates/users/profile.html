@@ -120,6 +120,18 @@
     </div>
     {% endif %}
 
+    {% if config.AUTH_MODE == "oidc" %}
+    <!-- ── Account security (Keycloak) ── -->
+    <div class="card mb-4">
+      <div class="card-header fw-semibold">Zabezpečení účtu</div>
+      <div class="list-group list-group-flush">
+        <a class="list-group-item list-group-item-action" href="{{ url_for('oidc.account_action', action='UPDATE_PASSWORD') }}">Změnit heslo</a>
+        <a class="list-group-item list-group-item-action" href="{{ url_for('oidc.account_action', action='CONFIGURE_TOTP') }}">Nastavit ověřovací aplikaci (Google / Microsoft Authenticator)</a>
+        <a class="list-group-item list-group-item-action" href="{{ url_for('oidc.account_action', action='webauthn-register-passwordless') }}">Přidat přístupový klíč (Touch ID, Windows Hello, telefon)</a>
+        <a class="list-group-item list-group-item-action" href="{{ url_for('oidc.account_action', action='webauthn-register') }}">Přidat bezpečnostní klíč jako druhý faktor</a>
+      </div>
+    </div>
+    {% else %}
     <!-- ── Change password ── -->
     <div class="card mb-4">
       <div class="card-header fw-semibold">Změna hesla</div>
@@ -149,6 +161,7 @@
         </form>
       </div>
     </div>
+    {% endif %}
 
     <!-- ── Credentials ── -->
     <div class="card mb-4">

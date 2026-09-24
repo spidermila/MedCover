@@ -11,6 +11,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import collate
 from sqlalchemy.orm import selectinload
 
+from app import oidc
 from app.config import INVITE_TOKEN_HOURS
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
@@ -43,6 +44,24 @@ from app.utils import (
 
 users_bp = Blueprint("users", __name__, url_prefix="/users")
 
+# Local accounts that could never log in while Keycloak does the login:
+# invitations lead to local registration, and a manually created account has
+# no directory counterpart.
+_LOCAL_ACCOUNT_ENDPOINTS = {
+    "users.invites",
+    "users.create_invite",
+    "users.resend_invite",
+    "users.cancel_invite",
+    "users.create_user",
+}
+
+
+@users_bp.before_request
+def _no_local_accounts_with_oidc() -> None:
+    if request.endpoint in _LOCAL_ACCOUNT_ENDPOINTS and oidc.enabled():
+        abort(404)
+
+
 _PAGE_SIZE = 30
 
 # Phone: 9 bare digits, OR +/00 followed by 10-15 digits (spaces stripped before check)
@@ -69,7 +88,7 @@ def profile() -> str | Response:
         action = request.form.get("action", "profile")
         if action == "profile":
             return _update_profile(user)
-        if action == "password":
+        if action == "password" and not oidc.enabled():
             return _change_password(user)
         if action == "signature_upload":
             require_permission("work_report.generate")
@@ -538,7 +557,7 @@ def save_user(user_id: uuid.UUID) -> Response:
     # ── Admin password set (optional) ───────────────────────────────────────
     password_changed = False
     new_password = request.form.get("new_password", "").strip()
-    if new_password:
+    if new_password and not oidc.enabled():
         if len(new_password) < MIN_PASSWORD_LENGTH:
             flash(f"Heslo musí mít alespoň {MIN_PASSWORD_LENGTH} znaků.", "warning")
             return redirect(url_for("users.detail", user_id=user_id))
@@ -579,6 +598,8 @@ def deactivate(user_id: uuid.UUID) -> Response:
         flash("Nelze deaktivovat vlastní účet.", "danger")
         return redirect(url_for("users.detail", user_id=user_id))
     user.is_active = False
+    # In SQL, so a concurrent back-channel logout's increment is not lost.
+    user.session_epoch = UserAccount.session_epoch + 1  # end their open sessions
     user.version += 1
     purged = db.session.execute(
         sa.delete(OutboxEmail).where(
@@ -612,6 +633,8 @@ def archive(user_id: uuid.UUID) -> Response:
         return redirect(url_for("users.detail", user_id=user_id))
     user.is_archived = True
     user.is_active = False
+    # In SQL, so a concurrent back-channel logout's increment is not lost.
+    user.session_epoch = UserAccount.session_epoch + 1  # end their open sessions
     user.version += 1
     purged = db.session.execute(
         sa.delete(OutboxEmail).where(
