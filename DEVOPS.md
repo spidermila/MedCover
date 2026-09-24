@@ -4,6 +4,8 @@ This document covers the development environment setup, repository structure, CI
 
 For architectural decisions behind these choices, see `architecture.md` (AD09, AD10, Deployment Model).
 
+How MedCover is developed and deployed together with MemberBase (member directory and single sign-on) is in [MemberBase](#memberbase-member-directory-and-single-sign-on).
+
 ---
 
 ## Repository Structure
@@ -377,6 +379,119 @@ wipes the file. Both containers mount the same volume at `/backups`:
 `AppSettings.backup_dir` (configurable at `/admin/backup`) defaults to
 `/backups` and must be an absolute path. The mount point is deliberately
 **outside** `/app` so it never collides with the dev `.:/app` bind mount.
+
+---
+
+## MemberBase (member directory and single sign-on)
+
+[MemberBase](https://github.com/spidermila/MemberBase) („Evidence členů“)
+is the member directory that MedCover will use for identities, passwords,
+roles and qualifications: OpenLDAP holds the data, Keycloak is the only
+login (OIDC, TOTP, passkeys), and the MemberBase app administers it.
+MedCover does not use it yet. This section is MedCover's side of how the two
+repositories are developed and deployed together; MemberBase's side,
+including the exact contract between the apps, is in
+[MemberBase's `DEVOPS.md`](https://github.com/spidermila/MemberBase/blob/main/DEVOPS.md).
+
+### Who owns what
+
+| Repository | Compose project | Services | Owns |
+|---|---|---|---|
+| MedCover (this repo) | `medcover` | `web`, `scheduler`, `db`, `azurite` | MedCover code; its OIDC login and directory sync settings |
+| MemberBase | `memberbase` | `openldap`, `keycloak`, `keycloak-db`, `mailpit`, `memberbase`, `memberbase-jobs` | Directory schema and access rules, Keycloak realm and login theme, the MemberBase app |
+| Infrastructure (private) | — (Bicep) | the production stack | Host names, secrets, pinned image versions, Azure resources |
+
+Rules:
+
+- **No cross-repository paths.** MedCover never builds, mounts or reads files
+  from a MemberBase checkout, and the other way round. Checkouts can live
+  anywhere.
+- **Each service is defined once**, in the repository that owns it. MedCover's
+  compose files never define directory, Keycloak or MemberBase services.
+- **Dev stacks connect over one Docker network**, `crc-dev`, created by the
+  MemberBase stack. Production connects the same services inside one Azure
+  Container Apps environment.
+- **Production runs images, never source.** MemberBase publishes its own
+  images to `ghcr.io/spidermila/`; the infrastructure repository pins which
+  versions run.
+- **Real deployment details stay out of both public repositories:** host
+  names, the directory base DN, secrets and Azure resource names belong in
+  untracked `.env` files or the infrastructure repository.
+
+### Running MedCover with MemberBase in dev
+
+A MedCover-only contributor needs none of this: `docker compose up` works as
+described above. To run both apps:
+
+1. In a MemberBase checkout, `cp .env.example .env && docker compose up --build -d`.
+   This starts the directory, Keycloak (http://localhost:8180), Mailpit
+   (http://localhost:8025) and MemberBase (http://localhost:5100), and
+   creates the network `crc-dev` and the volume `memberbase-ldap-certs`
+   (the directory's CA certificate).
+2. In this repository, enable the MemberBase overlay in `.env`:
+   ```bash
+   COMPOSE_FILE=docker-compose.yml:docker-compose.memberbase.yml
+   ```
+   `docker-compose.memberbase.yml` only attaches `web` and `scheduler` to
+   `crc-dev`, mounts `memberbase-ldap-certs` read-only and sets the OIDC and
+   directory variables. It defines no services of its own.
+3. `docker compose up -d`. MedCover reaches Keycloak at `http://keycloak:8080`
+   and the directory at `ldaps://openldap:1636`; the browser uses port 8180
+   of the dev host for the login pages.
+
+The dev secrets shared by both apps (the `medcover` OIDC client secret and
+the `medcover-sync` directory password) have the same defaults in both
+`.env.example` files, so they match without editing.
+
+Stop MedCover before taking the MemberBase stack down; otherwise Docker
+cannot remove the `crc-dev` network. Ports don't overlap: MedCover keeps 5000
+and 1433; MemberBase uses 5100, 8180 and 8025.
+
+### Tests and CI
+
+- Unit tests never need MemberBase: OIDC login uses a test helper that logs a
+  seeded local user in, and the directory is mocked.
+- Tests that need the real directory or Keycloak (the directory sync, OIDC
+  login, back-channel logout, Playwright E2E across both apps) run against
+  **published MemberBase images at a version pinned in this repository**,
+  never against a MemberBase checkout. Dependabot proposes version bumps.
+- CI in this repository never checks out MemberBase, and MemberBase's CI
+  never checks out this repository.
+
+### Changing the contract between the apps
+
+The contract (service names, OIDC client and claims, the sync account's
+attributes, `GET /api/roles`, shared secrets) is listed in MemberBase's
+`DEVOPS.md`. When it changes:
+
+1. MemberBase changes first, backward-compatibly (add before remove), and is
+   released.
+2. MedCover follows and bumps its pinned MemberBase version in the same PR.
+3. Production deploys MemberBase first, then MedCover.
+4. MemberBase removes the old form in a later release.
+
+### Production
+
+MemberBase runs in the same Container Apps environment as MedCover:
+`openldap` (internal only, one replica, Azure Files share), `keycloak`
+(database `keycloak` on the existing Azure SQL server), `memberbase` and a
+Container Apps job for its 15-minute tasks. MedCover's `web` and `scheduler`
+reach `keycloak` and `openldap` over the environment's internal network. The
+deployment is defined in the infrastructure repository; MemberBase's
+`DEVOPS.md` describes its storage, backups and update procedure.
+
+### Moving from the `memberbase` compose profile
+
+An earlier branch put the MemberBase services into this repository's
+`docker-compose.yml` under a compose profile, built from a sibling checkout.
+That approach is replaced by the layout above. Remaining steps:
+
+- [ ] MemberBase: its own stack with `keycloak-db`, the `crc-dev` network and
+      the `memberbase-ldap-certs` volume; published images.
+- [ ] MedCover: `docker-compose.memberbase.yml` and the matching
+      `.env.example` entries, added together with the OIDC login.
+- [ ] Dev instance: remove the MemberBase containers from the `medcover`
+      project and run them as the `memberbase` project.
 
 ---
 
