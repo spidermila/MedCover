@@ -74,7 +74,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - Flask
-          - SQLAlchemy
+          - SQLAlchemy==2.0.51  # match requirements.txt; 2.1 changes Row typing
           - Flask-SQLAlchemy
           - Flask-Login
           - Flask-WTF
