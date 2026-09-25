@@ -2402,7 +2402,7 @@ class TestSchedulerRequestContextBoundary:
             # scheduler_main.app points at the test DB. process_email_queue wraps the
             # drain in app.test_request_context, so it must NOT raise.
             with patch("app.create_app", return_value=app):
-                scheduler_main = importlib.import_module("scheduler.main")
+                scheduler_main = importlib.reload(importlib.import_module("scheduler.main"))
 
             with patch("flask_mail.Mail.send"):
                 scheduler_main.process_email_queue()  # must not raise
