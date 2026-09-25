@@ -1,6 +1,9 @@
 """Tests for authentication routes: login, logout, forgot-password, register."""
 
 import secrets
+from unittest.mock import patch
+
+from sqlalchemy.orm import sessionmaker
 
 from app.config import LOGIN_MAX_ATTEMPTS, RESET_TOKEN_MINUTES
 from app.constants import MIN_PASSWORD_LENGTH
@@ -365,6 +368,49 @@ class TestResetPassword:
         response = client.get(f"/auth/reset-password/{token}")
         assert response.status_code == 400
         assert "Neplatný odkaz".encode() in response.data
+
+    def test_reset_bumps_version(self, app, client):
+        token = self._make_reset_token(app)
+        with app.app_context():
+            before = _db.session.scalar(_db.select(UserAccount.version).where(UserAccount.email == "reset@example.com"))
+        client.post(
+            f"/auth/reset-password/{token}",
+            data={"password": "NewPassword99", "password2": "NewPassword99"},
+        )
+        with app.app_context():
+            after = _db.session.scalar(_db.select(UserAccount.version).where(UserAccount.email == "reset@example.com"))
+        assert after == before + 1
+
+    def test_concurrent_reset_with_same_link_loses(self, app, client):
+        """A second submit of the same link racing the first must not overwrite it."""
+        token = self._make_reset_token(app)
+        original_set_password = UserAccount.set_password
+
+        def _race_then_set(self_user, password):
+            # The other submit completes between our nonce check and our commit.
+            other = sessionmaker(bind=_db.engine)()
+            try:
+                row = other.get(UserAccount, self_user.id)
+                original_set_password(row, "WinnerPassword99")
+                row.password_reset_nonce = None
+                row.version += 1
+                other.commit()
+            finally:
+                other.close()
+            original_set_password(self_user, password)
+
+        with patch.object(UserAccount, "set_password", _race_then_set):
+            response = client.post(
+                f"/auth/reset-password/{token}",
+                data={"password": "LoserPassword99", "password2": "LoserPassword99"},
+            )
+        assert response.status_code == 302
+        assert response.headers["Location"] == f"/auth/reset-password/{token}"
+        # The link is already used, so following the redirect shows the invalid page.
+        assert client.get(response.headers["Location"]).status_code == 400
+        with app.app_context():
+            user = _db.session.scalar(_db.select(UserAccount).where(UserAccount.email == "reset@example.com"))
+            assert user.check_password("WinnerPassword99") is True
 
     def test_reset_short_password_rejected(self, app, client):
         token = self._make_reset_token(app)
