@@ -1,9 +1,11 @@
 """Tests for scheduler auto-transition functions with retry on concurrent modification."""
 
+import importlib
 import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -46,13 +48,23 @@ def _make_event(app, status: EventStatus, end_offset_hours: int = -1) -> int:
         return event.id
 
 
-class TestOpenAssignments:
-    def test_transitions_published_event(self, app) -> None:
-        event_id = _make_event(app, EventStatus.PUBLISHED)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
+@pytest.fixture
+def sm(app):
+    """Import scheduler.main bound to the test app.
 
-        with patch.object(sm, "app", app):
-            sm.open_assignments()
+    The module runs ``create_app("production")`` at import time, which would
+    bind to ``DATABASE_URL`` instead of this worker's test DB. Patch it and
+    reload so a copy imported earlier in the worker is not reused.
+    """
+    with patch("app.create_app", return_value=app):
+        return importlib.reload(importlib.import_module("scheduler.main"))
+
+
+class TestOpenAssignments:
+    def test_transitions_published_event(self, app, sm) -> None:
+        event_id = _make_event(app, EventStatus.PUBLISHED)
+
+        sm.open_assignments()
 
         with app.app_context():
             event = db.session.get(Event, event_id)
@@ -68,9 +80,8 @@ class TestOpenAssignments:
             assert entry is not None
             assert "Přihlašování" in entry.summary
 
-    def test_retries_once_on_stale_version(self, app, caplog) -> None:
+    def test_retries_once_on_stale_version(self, app, sm, caplog) -> None:
         event_id = _make_event(app, EventStatus.PUBLISHED)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
         call_count = 0
         original_commit = db.session.commit
@@ -82,7 +93,7 @@ class TestOpenAssignments:
                 raise StaleDataError("simulated concurrent modification")
             return original_commit()
 
-        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.WARNING, logger="scheduler.main"):
+        with app.app_context(), caplog.at_level(logging.WARNING, logger="scheduler.main"):
             with patch.object(db.session, "commit", side_effect=_flaky_commit):
                 sm._apply_event_transition_with_retry(event_id, sm._open_assignments_mutator, "open_assignments")
 
@@ -92,14 +103,13 @@ class TestOpenAssignments:
             assert event is not None
             assert event.status == EventStatus.ASSIGNMENTS_OPEN
 
-    def test_skips_after_two_stale_errors(self, app, caplog) -> None:
+    def test_skips_after_two_stale_errors(self, app, sm, caplog) -> None:
         event_id = _make_event(app, EventStatus.PUBLISHED)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
         def _always_stale():
             raise StaleDataError("simulated concurrent modification")
 
-        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.ERROR, logger="scheduler.main"):
+        with app.app_context(), caplog.at_level(logging.ERROR, logger="scheduler.main"):
             with patch.object(db.session, "commit", side_effect=_always_stale):
                 sm._apply_event_transition_with_retry(event_id, sm._open_assignments_mutator, "open_assignments")
 
@@ -111,21 +121,18 @@ class TestOpenAssignments:
 
 
 class TestCloseCompletedEvents:
-    def test_transitions_open_event_to_completed(self, app) -> None:
+    def test_transitions_open_event_to_completed(self, app, sm) -> None:
         event_id = _make_event(app, EventStatus.ASSIGNMENTS_OPEN, end_offset_hours=-1)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
-        with patch.object(sm, "app", app):
-            sm.close_completed_events()
+        sm.close_completed_events()
 
         with app.app_context():
             event = db.session.get(Event, event_id)
             assert event is not None
             assert event.status == EventStatus.COMPLETED
 
-    def test_retries_once_on_stale_version(self, app, caplog) -> None:
+    def test_retries_once_on_stale_version(self, app, sm, caplog) -> None:
         event_id = _make_event(app, EventStatus.ASSIGNMENTS_OPEN, end_offset_hours=-1)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
         call_count = 0
         original_commit = db.session.commit
@@ -137,7 +144,7 @@ class TestCloseCompletedEvents:
                 raise StaleDataError("simulated concurrent modification")
             return original_commit()
 
-        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.WARNING, logger="scheduler.main"):
+        with app.app_context(), caplog.at_level(logging.WARNING, logger="scheduler.main"):
             with patch.object(db.session, "commit", side_effect=_flaky_commit):
                 sm._apply_event_transition_with_retry(event_id, sm._close_completed_mutator, "close_completed_events")
 
@@ -147,15 +154,13 @@ class TestCloseCompletedEvents:
             assert event is not None
             assert event.status == EventStatus.COMPLETED
 
-    def test_skips_after_two_stale_errors(self, app, caplog) -> None:
+    def test_skips_after_two_stale_errors(self, app, sm, caplog) -> None:
         event_id = _make_event(app, EventStatus.ASSIGNMENTS_OPEN, end_offset_hours=-1)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
         def _always_stale():
             raise StaleDataError("simulated concurrent modification")
 
         with (
-            patch.object(sm, "app", app),
             app.app_context(),
             caplog.at_level(logging.ERROR, logger="scheduler.main"),
         ):
@@ -168,9 +173,7 @@ class TestCloseCompletedEvents:
             assert event is not None
             assert event.status == EventStatus.ASSIGNMENTS_OPEN
 
-    def test_skips_missing_event(self, app, caplog) -> None:
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
-
+    def test_skips_missing_event(self, app, sm, caplog) -> None:
         with app.app_context(), caplog.at_level(logging.WARNING, logger="scheduler.main"):
             sm._apply_event_transition_with_retry(999999, sm._close_completed_mutator, "close_completed_events")
 
@@ -182,9 +185,8 @@ class TestPredicateRevalidation:
     the row so it no longer qualifies for the transition. The retry helper must
     skip such rows instead of blindly applying the mutator."""
 
-    def test_open_skips_cancelled_event(self, app, caplog) -> None:
+    def test_open_skips_cancelled_event(self, app, sm, caplog) -> None:
         event_id = _make_event(app, EventStatus.PUBLISHED)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
         # Simulate a concurrent user cancelling the event between id scan and load.
         with app.app_context():
@@ -193,7 +195,7 @@ class TestPredicateRevalidation:
             event.version += 1
             db.session.commit()
 
-        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
+        with app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
             sm._apply_event_transition_with_retry(
                 event_id,
                 sm._open_assignments_mutator,
@@ -216,9 +218,8 @@ class TestPredicateRevalidation:
             )
             assert entry is None
 
-    def test_open_skips_when_open_datetime_moved_to_future(self, app, caplog) -> None:
+    def test_open_skips_when_open_datetime_moved_to_future(self, app, sm, caplog) -> None:
         event_id = _make_event(app, EventStatus.PUBLISHED)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
         with app.app_context():
             event = db.session.get(Event, event_id)
@@ -226,7 +227,7 @@ class TestPredicateRevalidation:
             event.version += 1
             db.session.commit()
 
-        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
+        with app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
             sm._apply_event_transition_with_retry(
                 event_id,
                 sm._open_assignments_mutator,
@@ -240,9 +241,8 @@ class TestPredicateRevalidation:
             assert event is not None
             assert event.status == EventStatus.PUBLISHED
 
-    def test_close_skips_archived_event(self, app, caplog) -> None:
+    def test_close_skips_archived_event(self, app, sm, caplog) -> None:
         event_id = _make_event(app, EventStatus.ASSIGNMENTS_OPEN, end_offset_hours=-1)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
         with app.app_context():
             event = db.session.get(Event, event_id)
@@ -250,7 +250,7 @@ class TestPredicateRevalidation:
             event.version += 1
             db.session.commit()
 
-        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
+        with app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
             sm._apply_event_transition_with_retry(
                 event_id,
                 sm._close_completed_mutator,
@@ -265,9 +265,8 @@ class TestPredicateRevalidation:
             assert event.status == EventStatus.ASSIGNMENTS_OPEN
             assert event.archived is True
 
-    def test_close_skips_when_status_reverted(self, app, caplog) -> None:
+    def test_close_skips_when_status_reverted(self, app, sm, caplog) -> None:
         event_id = _make_event(app, EventStatus.ASSIGNMENTS_OPEN, end_offset_hours=-1)
-        import scheduler.main as sm  # pylint: disable=import-outside-toplevel
 
         # Somebody cancelled the event before scheduler's close pass.
         with app.app_context():
@@ -276,7 +275,7 @@ class TestPredicateRevalidation:
             event.version += 1
             db.session.commit()
 
-        with patch.object(sm, "app", app), app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
+        with app.app_context(), caplog.at_level(logging.INFO, logger="scheduler.main"):
             sm._apply_event_transition_with_retry(
                 event_id,
                 sm._close_completed_mutator,
