@@ -15,7 +15,7 @@ from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.utils import external_url_for, safe_next
+from app.utils import commit_or_stale, external_url_for, safe_next
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -166,6 +166,9 @@ def reset_password(token: str) -> str | Response:
         else:
             user.set_password(password)
             user.password_reset_nonce = None  # invalidate link immediately
+            # Bump so a concurrent submit of the same link fails the version check
+            # instead of both passing the nonce check and overwriting each other.
+            user.version += 1
             db.session.add(
                 AuditLogEntry(
                     actor_id=user.id,
@@ -176,7 +179,8 @@ def reset_password(token: str) -> str | Response:
                     changes_json={},
                 )
             )
-            db.session.commit()
+            if (resp := commit_or_stale(url_for("auth.reset_password", token=token))) is not None:
+                return resp
             flash("Heslo bylo změněno. Přihlaste se.", "success")
             return redirect(url_for("auth.login"))
 
