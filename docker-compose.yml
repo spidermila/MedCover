@@ -11,6 +11,8 @@ services:
     volumes:
       - .:/app:z
       - backups:/backups
+      # CA of the MemberBase directory (compose profile memberbase), for LDAP_CA_CERT.
+      - ldap_certs:/certs:ro
     env_file: .env
     ports:
       - "5000:5000"
@@ -48,6 +50,8 @@ services:
     volumes:
       - .:/app:z
       - backups:/backups
+      # CA of the MemberBase directory (compose profile memberbase), for LDAP_CA_CERT.
+      - ldap_certs:/certs:ro
     env_file: .env
     dns:
       - 8.8.8.8
@@ -114,3 +118,5 @@ volumes:
   # mounted at /backups in prod so both web and scheduler containers see the
   # same files. Survives `compose down`; wiped only by `compose down -v`.
   backups:
+  # Written by the MemberBase directory (openldap); empty without it.
+  ldap_certs:
