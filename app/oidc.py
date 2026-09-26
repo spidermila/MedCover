@@ -5,7 +5,8 @@ default ``"local"`` MedCover keeps its own password login.
 Keycloak decides who may log in (password, second factor, account status).
 The ID token names the person by ``crc_member_id``, which is the UUID of
 their ``user_account`` row, and lists their MedCover roles in
-``medcover_roles``. The roles in the token replace the local ones at login.
+``medcover_roles``. With the directory sync on, the person is first copied
+from the directory; the roles in the token then replace the local ones.
 """
 
 import time
@@ -13,6 +14,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlencode
 from uuid import UUID
 
+import ldap
 import requests
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.flask_client import OAuth
@@ -22,8 +24,10 @@ from joserfc import jws, jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import KeySet
 from sqlalchemy import ColumnElement
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.wrappers import Response
 
+from app import directory_sync
 from app.extensions import csrf, db
 from app.models.audit import AuditLogEntry
 from app.models.role import Role
@@ -119,11 +123,6 @@ def end_session_url(id_token: str | None = None) -> str:
     return f"{_public_realm_url()}/protocol/openid-connect/logout?{urlencode(params)}"
 
 
-def role_slug(name: str) -> str:
-    """Directory name of a MedCover role, e.g. "Debriefing Manager" → "debriefing-manager"."""
-    return name.lower().replace(" ", "-")
-
-
 @oidc_bp.route("/callback")
 def callback() -> Response | tuple[str, int]:
     next_url = session.pop("oidc_next", None)
@@ -146,9 +145,17 @@ def callback() -> Response | tuple[str, int]:
         return render_template("auth/login_refused.html", failed=True), 400
     claims = token["userinfo"]
     member_id = _uuid_or_none(claims.get("crc_member_id"))
+    synced = bool(member_id) and directory_sync.enabled()
+    if synced:
+        _sync_person(member_id)
     user = db.session.get(UserAccount, member_id) if member_id else None
     wanted = set(claims.get("medcover_roles") or [])
-    roles = [r for r in db.session.scalars(db.select(Role)) if role_slug(r.name) in wanted]
+    roles = [r for r in db.session.scalars(db.select(Role)) if r.slug in wanted]
+    if synced and user is not None and roles and not user.is_active and not user.is_archived:
+        # Only the status stands in the way: activate the person if they are
+        # still invited (their first login), and copy them again.
+        _sync_person(member_id, activate=True)
+        db.session.refresh(user)
     if user is None or user.is_archived or not user.is_active or not roles:
         current_app.logger.info("OIDC login refused for crc_member_id=%s", claims.get("crc_member_id"))
         # A refused re-login (e.g. from an account action) must not leave the
@@ -181,6 +188,19 @@ def callback() -> Response | tuple[str, int]:
     login_user(user)
     session["oidc_id_token"] = token.get("id_token", "")
     return redirect(safe_next(next_url))
+
+
+def _sync_person(member_id: UUID, activate: bool = False) -> None:
+    """Copy the person logging in from the directory, first activating them if
+    ``activate`` and they are invited. On failure they log in with the last
+    copy; the scheduler catches up."""
+    try:
+        if activate:
+            directory_sync.activate_invited(member_id)
+        directory_sync.sync(member_id)
+    except ldap.LDAPError, SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.warning("Directory sync at login failed for %s", member_id, exc_info=True)
 
 
 def _uuid_or_none(value: object) -> UUID | None:

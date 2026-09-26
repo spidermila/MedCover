@@ -32,6 +32,7 @@ from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus, StaffingMode
 from app.models.user import UserAccount
 from app.queries import conflicting_events_for_users
+from app.responsible_person import refresh_responsible_person
 from app.staffing import condition_join_error
 from app.utils import audit, get_or_404, require_permission
 
@@ -471,17 +472,6 @@ def lock_condition_event(event_id: int) -> Event | None:
         .with_hint(Event, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
         .execution_options(populate_existing=True)
     )
-
-
-def refresh_responsible_person(event: Event) -> None:
-    eligible = [a.user for a in event.assignments if a.user.is_rp_eligible()]
-    if any(u.id == event.responsible_person_id for u in eligible):
-        return
-    person_id = eligible[0].id if eligible else None
-    if event.responsible_person_id != person_id:
-        event.responsible_person_id = person_id
-        event.version += 1
-        audit("edit", "Event", event.id, "Zodpovědná osoba přepočtena podle účasti a aktivních kvalifikací")
 
 
 def do_assign_event(

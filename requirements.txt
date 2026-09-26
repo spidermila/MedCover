@@ -768,6 +768,16 @@ pillow-heif==1.7.0 \
     --hash=sha256:f79143e66081c5e4433330ddb0908f494d7aab0034b7809b9d51ec4598583793 \
     --hash=sha256:f7af31a970c620b25dd144e3094ebf74162e72e08d367a1901a80ccb321859b2
     # via -r requirements.in
+pyasn1==0.6.4 \
+    --hash=sha256:9c447d8431c947fe4c8febc4ed9e760bc29011a5b01e5c74b67025bd9fb8ce81 \
+    --hash=sha256:deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b
+    # via
+    #   pyasn1-modules
+    #   python-ldap
+pyasn1-modules==0.4.2 \
+    --hash=sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a \
+    --hash=sha256:677091de870a80aae844b1ca6134f54652fa2c8c5a52aa396440ac3106e941e6
+    # via python-ldap
 pycparser==3.0 \
     --hash=sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29 \
     --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
@@ -844,6 +854,9 @@ python-dateutil==2.9.0.post0 \
     # via
     #   holidays
     #   icalendar
+python-ldap==3.4.8 \
+    --hash=sha256:18dc7460470c6ff64ed5c04ee21c56dbfee7ab433a53213ba91e407eea44c34c
+    # via -r requirements.in
 pytz==2026.3.post1 \
     --hash=sha256:2211d3fcf9a797d3405cac96ac7f61d80e6a644f72a3309607282fe8a2010c5d \
     --hash=sha256:dd95840dd199baea12d9cc096a1d452caa6596a1c1e4b5f3dbd1541855d5e815

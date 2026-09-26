@@ -37,7 +37,7 @@
               <label for="phone" class="form-label">Telefon
                 {{ help_icon("Nepovinné. Povolené formáty: +420 123 456 789, 00420 123 456 789, 123 456 789 (mezery jsou volitelné).") }}
               </label>
-              <input type="tel" class="form-control" id="phone" name="phone" value="{{ user.phone or '' }}">
+              <input type="tel" class="form-control" id="phone" {% if synced %}disabled{% else %}name="phone"{% endif %} value="{{ user.phone or '' }}">
               <div class="invalid-feedback">Neplatný formát. Povolené formáty: +420 123 456 789, 00420 123 456 789, 123 456 789 (mezery jsou volitelné).</div>
             </div>
             <div class="col-12 col-md-4">

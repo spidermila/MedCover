@@ -14,7 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import collate
 
@@ -23,7 +23,7 @@ from app.models.assignment import Assignment, DebriefingRecord
 from app.models.event import Event, EventSpot, EventStatus, EventType
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
-from app.models.role import Role
+from app.models.role import Role, directory_synced
 from app.models.user import UserAccount
 from app.routes.assignments import auto_close_if_full
 from app.utils import CS_COLLATION, audit, get_app_tz, require_permission
@@ -34,7 +34,11 @@ import_bp = Blueprint("import_events", __name__, url_prefix="/import")
 
 
 def _require_import_permission() -> None:
-    """Abort 403 unless the current user may import events."""
+    """Abort 403 unless the current user may import events. With the directory
+    sync on the import is off: it creates and changes users, which the
+    directory owns."""
+    if directory_synced():
+        abort(404)
     require_permission("admin.manage_settings")
 
 

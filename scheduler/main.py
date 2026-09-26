@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from collections.abc import Callable
 
-from app import create_app
+from app import create_app, directory_sync
 from app.extensions import db
 from app.mail import drain_batched_outbox, drain_one_outbox_email
 from app.models.audit import AuditLogEntry
@@ -181,6 +181,18 @@ def cleanup_work_report() -> None:
         cleanup_work_report_files(app.instance_path)
 
 
+def sync_directory() -> None:
+    """Copy MedCover's users from the MemberBase directory (AUTH_MODE=oidc with LDAP_URI)."""
+    with app.app_context():
+        if not directory_sync.enabled():
+            return
+        try:
+            directory_sync.sync()
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            log.error("sync_directory failed: %s", exc, exc_info=True)
+
+
 if __name__ == "__main__":
     schedule.every(MAIL_QUEUE_INTERVAL_SECONDS).seconds.do(process_email_queue)
     schedule.every(1).minutes.do(_logged_task("open_assignments", open_assignments))
@@ -192,6 +204,8 @@ if __name__ == "__main__":
     schedule.every(1).minutes.do(_logged_task("scheduled_backup", scheduled_backup_task))
     schedule.every(15).minutes.do(_logged_task("record_metrics", record_metrics))
     schedule.every(1).hours.do(_logged_task("cleanup_work_report", cleanup_work_report))
+    schedule.every(15).minutes.do(_logged_task("sync_directory", sync_directory))
+    sync_directory()
 
     log.info(
         "Scheduler started (instance=%s pid=%d mail_queue_interval=%ds)",

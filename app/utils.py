@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
-from flask import abort, request, url_for
+from flask import abort, has_request_context, request, url_for
 from flask_login import current_user
 
 from app.extensions import db
@@ -195,7 +195,8 @@ def audit(
     """
     db.session.add(
         AuditLogEntry(
-            actor_id=current_user.id,
+            # None outside a request (scheduler) or before login (directory sync at login).
+            actor_id=current_user.id if has_request_context() and current_user.is_authenticated else None,
             action_type=action,
             entity_type=entity_type,
             entity_id=str(entity_id),
