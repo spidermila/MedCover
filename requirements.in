@@ -19,3 +19,5 @@ openpyxl
 icalendar
 Pillow
 pillow-heif
+azure-identity
+azure-storage-blob

@@ -3,7 +3,10 @@
 import os
 from unittest.mock import patch
 
-from app.config import Config, DevelopmentConfig, ProductionConfig
+import pytest
+
+from app import create_app
+from app.config import Config, DevelopmentConfig, ProductionConfig, check_backup_storage_env
 
 
 def test_database_pool_liveness_options():
@@ -79,3 +82,25 @@ class TestProductionConfigInitApp:
 
         with patch.dict(os.environ, {"DATABASE_URL": ""}):
             ProductionConfig.init_app(object())  # must not raise
+
+
+class TestBackupStorageEnv:
+    def test_raises_when_no_backup_storage_configured(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("BACKUP_")}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(RuntimeError, match="BACKUP_CONTAINER_URL"):
+                check_backup_storage_env()
+
+    def test_raises_when_both_backup_storage_options_set(self):
+        with patch.dict(
+            os.environ,
+            {"BACKUP_CONTAINER_URL": "https://a.blob.core.windows.net/b", "BACKUP_STORAGE_CONNECTION_STRING": "x"},
+        ):
+            with pytest.raises(RuntimeError, match="exactly one"):
+                check_backup_storage_env()
+
+    def test_production_app_refuses_to_start_without_backup_storage(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("BACKUP_")}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(RuntimeError, match="BACKUP_CONTAINER_URL"):
+                create_app("production")

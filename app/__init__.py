@@ -14,7 +14,7 @@ from flask_mail import Message
 from sqlalchemy import inspect as sa_inspect
 from werkzeug.wrappers import Response as WerkzeugResponse
 
-from .config import config_by_name
+from .config import check_backup_storage_env, config_by_name
 from .db_auth import attach_msi_token_auth, prepare_msi_auth
 from .extensions import csrf, db, login_manager
 from .extensions import mail as _flask_mail
@@ -105,6 +105,9 @@ def create_app(
     # Must run before the Flask object exists: auto-instrumentation patches the
     # Flask class, so only apps created afterwards are traced.
     configure_telemetry()
+
+    if config_name == "production":
+        check_backup_storage_env()
 
     app = Flask(__name__)
     app.config.from_object(config_by_name[config_name])

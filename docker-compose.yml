@@ -10,8 +10,10 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app:z
-      - backups:/backups
     env_file: .env
+    environment:
+      # Azurite's public development key — not a secret.
+      BACKUP_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     ports:
       - "5000:5000"
     dns:
@@ -22,6 +24,8 @@ services:
         condition: service_healthy
       db-init:
         condition: service_completed_successfully
+      azurite:
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
@@ -47,13 +51,17 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app:z
-      - backups:/backups
     env_file: .env
+    environment:
+      # Azurite's public development key — not a secret.
+      BACKUP_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     dns:
       - 8.8.8.8
       - 1.1.1.1
     depends_on:
       web:
+        condition: service_healthy
+      azurite:
         condition: service_healthy
     logging:
       driver: "json-file"
@@ -67,6 +75,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # Azure Blob Storage emulator holding the DB backup archives, so web and
+  # scheduler see the same backups (Azure prod uses a real storage account).
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    command: azurite-blob --blobHost 0.0.0.0 --location /data --skipApiVersionCheck
+    restart: unless-stopped
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data:z
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:10000/devstoreaccount1?comp=list', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -110,7 +134,6 @@ services:
 
 volumes:
   mssql_data:
-  # Shared persistent volume for DB backups — mirrors the Azure Files share
-  # mounted at /backups in prod so both web and scheduler containers see the
-  # same files. Survives `compose down`; wiped only by `compose down -v`.
-  backups:
+  # Azurite blob data (DB backups). Survives `compose down`; wiped only by
+  # `compose down -v`.
+  azurite_data:
