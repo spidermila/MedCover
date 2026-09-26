@@ -246,6 +246,66 @@ def build_spots(event: Event, form: dict) -> None:
         db.session.add(spot)
 
 
+def update_spots(event: Event, form: dict) -> None:
+    """Reconcile submitted rows by identity without replacing occupied spots.
+
+    The caller must roll back on ValueError. Lock before inspecting assignments,
+    using the same spot locks as the signup path.
+    """
+    existing = {
+        spot.id: spot
+        for spot in db.session.scalars(
+            db.select(EventSpot)
+            .where(EventSpot.event_id == event.id)
+            .order_by(EventSpot.id)
+            .with_hint(EventSpot, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+            .execution_options(populate_existing=True)
+        ).all()
+    }
+    try:
+        total = int(form.get("spot_total", ""))
+        if total < 0:
+            raise ValueError
+        ids = [int(form[f"spot_id_{i}"]) if form[f"spot_id_{i}"] else None for i in range(total)]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Neplatné údaje pozic. Obnovte formulář a zkuste to znovu.") from exc
+    retained = [spot_id for spot_id in ids if spot_id is not None]
+    if len(retained) != len(set(retained)) or any(spot_id not in existing for spot_id in retained):
+        raise ValueError("Neplatné údaje pozic. Obnovte formulář a zkuste to znovu.")
+
+    removed = [spot for spot_id, spot in existing.items() if spot_id not in retained]
+    if any(spot.assignment for spot in removed):
+        raise ValueError("Obsazenou pozici lze odstranit pouze s potvrzením v detailu akce.")
+
+    spots = []
+    for i, spot_id in enumerate(ids):
+        spot = existing[spot_id] if spot_id is not None else EventSpot(event_id=event.id)
+        qual_ids = [int(c) for c in form.getlist(f"spot_cred_{i}") if str(c).isdigit()]
+        qualifications = list(
+            db.session.scalars(
+                db.select(Qualification).where(Qualification.id.in_(qual_ids), Qualification.is_deleted == sa.false())
+            ).all()
+        )
+        old_qual_ids = {q.id for q in spot.required_qualifications}
+        spot.required_qualifications = qualifications
+        if (
+            spot.assignment
+            and old_qual_ids != {q.id for q in qualifications}
+            and not spot.is_eligible(spot.assignment.user)
+        ):
+            raise ValueError("Změnu kvalifikací vyžadující odhlášení účastníka potvrďte v detailu akce.")
+        spot.description = (form.get(f"spot_desc_{i}") or "").strip() or None
+        spot.is_optional = form.get(f"spot_optional_{i}") == "1"
+        spots.append(spot)
+
+    error = validate_event_spots_config(spots)
+    if error:
+        raise ValueError(error)
+    db.session.add_all(spots)
+    for spot in removed:
+        db.session.delete(spot)
+
+
 def copy_spots_with_assignments(source: Event, target: Event, *, include_assignments: bool = True) -> None:
     """Copy the source staffing mode and plan; split also copies participation."""
     target.staffing_mode = source.staffing_mode
