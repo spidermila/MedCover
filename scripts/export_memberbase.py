@@ -78,9 +78,9 @@ def holding_id(member_id: str, qual_id: str) -> str:
 
 
 def split_name(full_name: str) -> tuple[str, str]:
-    """Same rule as MemberBase: the surname is the last word."""
-    parts = full_name.split()
-    return " ".join(parts[:-1]), parts[-1]
+    """MedCover names are "Surname Given": the first word is the surname, the rest the given name."""
+    surname, _, given = full_name.strip().partition(" ")
+    return surname, given.strip()
 
 
 def read_existing(path: str) -> dict[str, tuple[str, str]]:
@@ -146,7 +146,7 @@ def export(base_dn: str, unit: str, existing: dict[str, tuple[str, str]]) -> tup
                 rekeyed.append(user.email)
         else:
             dn = f"uid={member_id},{unit_dn}"
-            given, surname = split_name(user.name)
+            surname, given = split_name(user.name)
             records.append(
                 _add(
                     dn,
