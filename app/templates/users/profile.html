@@ -34,13 +34,30 @@
               </label>
               <input type="email" class="form-control" id="email" value="{{ user.email }}" disabled>
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-6">
               <label for="phone" class="form-label">Telefon
                 {{ help_icon("Nepovinné. Povolené formáty: +420 123 456 789, 00420 123 456 789, 123 456 789 (mezery jsou volitelné).") }}
               </label>
               <input type="tel" class="form-control" id="phone" name="phone" value="{{ user.phone or '' }}">
               <div class="invalid-feedback">Neplatný formát. Povolené formáty: +420 123 456 789, 00420 123 456 789, 123 456 789 (mezery jsou volitelné).</div>
             </div>
+          </div>
+          <div class="mt-3">
+            <button type="submit" class="btn btn-danger">Uložit profil</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Preferences ── -->
+    <div class="card mb-4">
+      <div class="card-header fw-semibold">Nastavení</div>
+      <div class="card-body">
+        <form method="POST" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="preferences">
+          <input type="hidden" name="version" value="{{ user.version }}">
+          <div class="row g-3">
             <div class="col-12 col-md-4">
               <label for="preferred_calendar_view" class="form-label">Výchozí zobrazení kalendáře
                 {{ help_icon("Vyberte, ve kterém zobrazení se vám kalendář otevře po přihlášení.") }}
@@ -60,6 +77,18 @@
               <input type="number" class="form-control" id="dashboard_horizon_days" name="dashboard_horizon_days"
                      min="1" max="365" value="{{ user.dashboard_horizon_days }}">
             </div>
+            <div class="col-12 col-md-4">
+              <label for="event_time_format" class="form-label">Formát zobrazení času akce
+                {{ help_icon("Jak se zobrazuje čas akce v přehledu akcí a v e-mailových upozorněních.") }}
+              </label>
+              <select class="form-select" id="event_time_format" name="event_time_format">
+                {% for tf in event_time_formats %}
+                <option value="{{ tf.value }}" {{ 'selected' if user.event_time_format == tf.value }}>
+                  {{ {1: '21.05.2026 čt 20:00 (5,5 h)', 2: '21.05.2026 čt 20:00–01:30'}[tf.value] }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
             <div class="col-12">
               <div class="form-check form-switch">
                 <input class="form-check-input dark-toggle" type="checkbox" role="switch"
@@ -69,7 +98,7 @@
             </div>
           </div>
           <div class="mt-3">
-            <button type="submit" class="btn btn-danger">Uložit profil</button>
+            <button type="submit" class="btn btn-danger">Uložit nastavení</button>
           </div>
         </form>
       </div>

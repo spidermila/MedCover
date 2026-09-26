@@ -421,6 +421,8 @@ class TestTableManager:
         data = response.get_json()
         assert data["ok"] is True
         assert data["display"] == "09:00"
+        assert data["display_date"] == "01.07. po"
+        assert data["hours"] == "9,0"  # 07:00–16:00 UTC
 
     def test_event_time_update_rejects_invalid_order(self, app, admin_client):
         me_id, event_id, _ = _setup_table_manager(app)

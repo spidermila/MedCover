@@ -30,6 +30,13 @@ class CalendarView(str, enum.Enum):
     LIST = "list"
 
 
+class EventTimeFormat(enum.IntEnum):
+    """How an event's time window is shown to the user; stored as its number."""
+
+    START_DURATION = 1  # čt 20:00 (5,5 h)
+    START_END = 2  # čt 20:00–01:30
+
+
 # Many-to-many: UserAccount ↔ Role
 user_roles = db.Table(
     "user_roles",
@@ -55,6 +62,9 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     )
     dashboard_horizon_days = db.Column(db.Integer, default=30, nullable=False, server_default="30")
     dark_mode = db.Column(db.Boolean, default=False, nullable=False, server_default="false")
+    event_time_format = db.Column(
+        db.SmallInteger, default=EventTimeFormat.START_DURATION, nullable=False, server_default="1"
+    )
     # Handwritten-signature image (PNG bytes, mode L, ≤ 50 KB) embedded into the
     # user's work-report xlsx. Deferred so it never rides along with normal
     # UserAccount selects; loaded only when explicitly accessed.

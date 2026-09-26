@@ -53,8 +53,8 @@ from app.models.audit import AuditLogEntry
 from app.models.event import Event
 from app.models.outbox import OutboxEmail
 from app.models.settings import AppSettings, get_settings
-from app.models.user import UserAccount
-from app.utils import external_url_for, get_app_tz
+from app.models.user import EventTimeFormat, UserAccount
+from app.utils import external_url_for, format_event_time, get_app_tz, to_local
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment
@@ -1184,19 +1184,7 @@ def _summarise_spots(spots: Any) -> list[dict[str, Any]]:
     return summaries
 
 
-def _format_event_datetime_range(event: Event) -> str:
-    """Return the event's start–end window in local time.
-
-    Format: ``dd.mm.yyyy HH:MM – dd.mm.yyyy HH:MM`` (en-dash separator, both
-    dates always spelled out so multi-day events read naturally).
-    """
-    tz = get_app_tz()
-    start = event.start_datetime.astimezone(tz).strftime("%d.%m.%Y %H:%M")
-    end = event.end_datetime.astimezone(tz).strftime("%d.%m.%Y %H:%M")
-    return f"{start} – {end}"
-
-
-def _build_event_section(event: Event, rows: list) -> dict:
+def _build_event_section(event: Event, rows: list, time_format: int) -> dict:
     """Build one event section dict for the batched email template.
 
     Entries whose type benefits from listing spot qualification requirements
@@ -1232,7 +1220,7 @@ def _build_event_section(event: Event, rows: list) -> dict:
     return {
         "event_name": event.name,
         "event_url": external_url_for("events.detail", event_id=event.id),
-        "datetime_range_local": _format_event_datetime_range(event),
+        "datetime_range_local": f"{to_local(event.start_datetime):%d.%m.%Y} {format_event_time(event, time_format)}",
         "rows": entries,
         "conditions": event.staffing_mode == "CONDITIONS",
         "staffing": (
@@ -1311,6 +1299,7 @@ def drain_batched_outbox() -> bool:
 
     user_obj = db.session.get(UserAccount, user_id)
     user_name = user_obj.name if user_obj is not None else ""
+    time_format = user_obj.event_time_format if user_obj is not None else EventTimeFormat.START_DURATION
 
     # dev email block.
     settings = get_settings()
@@ -1349,7 +1338,7 @@ def drain_batched_outbox() -> bool:
 
     # Sort event sections by event.start_datetime ASC.
     ordered_events = sorted(events_by_id.values(), key=lambda e: e.start_datetime)
-    event_sections = [_build_event_section(e, grouped[e.id]) for e in ordered_events if e.id in grouped]
+    event_sections = [_build_event_section(e, grouped[e.id], time_format) for e in ordered_events if e.id in grouped]
 
     # Subject line.
     if len(event_sections) == 1:
