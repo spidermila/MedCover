@@ -59,6 +59,7 @@ from ._helpers import (
     check_equipment_conflicts,
     parse_equipment_plans_from_form,
     parse_event_form,
+    update_spots,
     validate_event_spots_config,
 )
 
@@ -733,6 +734,14 @@ def edit(event_id: int) -> str | Response:
             return _render_edit()
 
         capacity_warnings: list[str] = []
+        if event.staffing_mode == StaffingMode.SPOTS and request.form.get("spots_changed") == "1":
+            try:
+                with db.session.no_autoflush:
+                    update_spots(event, request.form)
+            except ValueError as exc:
+                db.session.rollback()
+                flash(str(exc), "danger")
+                return _render_edit()
         if event.staffing_mode == StaffingMode.CONDITIONS:
             try:
                 plan = condition_plan_from_form(
@@ -764,6 +773,7 @@ def edit(event_id: int) -> str | Response:
 
         updated, error = parse_event_form(request.form, existing=event)
         if error:
+            db.session.rollback()
             flash(error, "danger")
             return _render_edit()
 
@@ -813,20 +823,6 @@ def edit(event_id: int) -> str | Response:
             return _render_edit()
 
         apply_equipment_plans(event, eq_plans)
-
-        # Rebuild spots only when the user explicitly changed them in the form.
-        if event.staffing_mode == StaffingMode.SPOTS and request.form.get("spots_changed") == "1":
-            for spot in list(event.spots):
-                db.session.delete(spot)
-            db.session.flush()
-            build_spots(event, request.form)
-            db.session.flush()
-            spot_error = validate_event_spots_config(list(event.spots))
-            if spot_error:
-                db.session.rollback()
-                db.session.refresh(event)
-                flash(spot_error, "danger")
-                return _render_edit()
 
         event.version += 1
         audit("edit", "Event", event.id, f"Upravena akce '{event.name}'", diff_changes(before, after))
