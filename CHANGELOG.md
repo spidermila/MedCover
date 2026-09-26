@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Login through Keycloak, the shared login of MemberBase, behind the new `AUTH_MODE=oidc` setting (default `local` keeps today's password login). Roles come from the Keycloak token at each login; people without a MedCover role, or deactivated or archived in MedCover, are refused. Password, authenticator app and passkeys are managed from the profile's „Zabezpečení účtu“ card. Keycloak's back-channel logout ends the person's MedCover sessions. (#555)
+
 ## [1.2.2] - 2026-09-22
 
 ### Fixed

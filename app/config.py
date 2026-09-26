@@ -21,6 +21,16 @@ class Config:
         None  # disable timestamp expiry; tokens are still cryptographically bound to SECRET_KEY
     )
     DEV_LOGIN_ENABLED = False
+    # "local": MedCover's own password login. "oidc": log in through Keycloak.
+    AUTH_MODE = os.environ.get("AUTH_MODE", "local")
+    OIDC_CLIENT_ID = os.environ.get("OIDC_CLIENT_ID", "medcover")
+    OIDC_CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")
+    # Where this container reaches Keycloak (tokens, keys).
+    KEYCLOAK_INTERNAL_URL = os.environ.get("KEYCLOAK_INTERNAL_URL", "")
+    # Where browsers reach Keycloak. "{scheme}" and "{hostname}" are taken
+    # from the current request, so one dev instance works under any host name.
+    KEYCLOAK_PUBLIC_URL = os.environ.get("KEYCLOAK_PUBLIC_URL", "") or "{scheme}://{hostname}:8180"
+    KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "crc")
     # Short git commit hash injected at Docker build time via ARG GIT_COMMIT.
     # Falls back to "dev" when running outside of Docker (local dev, tests).
     GIT_COMMIT: str = os.environ.get("GIT_COMMIT", "dev")
@@ -54,6 +64,7 @@ class TestingConfig(Config):
         "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes",
     )
     WTF_CSRF_ENABLED = False
+    AUTH_MODE = "local"
     # Required so url_for() works outside an active request context (e.g. in
     # unit tests that call send_* functions directly with app_context only).
     SERVER_NAME = "localhost"

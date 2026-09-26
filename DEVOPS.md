@@ -457,7 +457,14 @@ Copy `.env.example` to `.env` for local development. Never commit `.env`.
 | `FLASK_ENV` | `development` or `production` | `development` |
 | `SECRET_KEY` | Flask session secret — generate a strong random value | `openssl rand -hex 32` |
 | `DATABASE_URL` | MSSQL connection string | `mssql+pyodbc://medcover:Dev_Password1!@db:1433/medcover_dev?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=no&TrustServerCertificate=yes` |
+| `AUTH_MODE` | `local` (default): MedCover's own password login. `oidc`: log in through Keycloak; local password login, reset and registration pages are off | `local` |
+| `OIDC_CLIENT_SECRET` | Secret of the Keycloak client `medcover`; required with `AUTH_MODE=oidc` | `dev-medcover-client` |
+| `KEYCLOAK_INTERNAL_URL` | Where the app reaches Keycloak (tokens, keys); required with `AUTH_MODE=oidc` | `http://keycloak:8080` |
+| `KEYCLOAK_PUBLIC_URL` | Where browsers reach Keycloak; `{scheme}` and `{hostname}` come from the request (dev). Production must set an absolute `https://` URL: behind the TLS proxy the request scheme is `http`, and the ID token's issuer must match exactly. Set the app base URL in the settings too, so the callback address matches the Keycloak client's redirect URI | `{scheme}://{hostname}:8180` (default) |
+| `OIDC_CLIENT_ID`, `KEYCLOAK_REALM` | Keycloak client and realm | `medcover`, `crc` (defaults) |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional. When set, the app exports OpenTelemetry traces/metrics to Azure Monitor. Unset (local, CI) means no telemetry. When `AZURE_CLIENT_ID` is also set (and `AZURE_CLIENT_SECRET` is not), ingestion authenticates with that managed identity (Entra ID) instead of the instrumentation key; the identity needs the *Monitoring Metrics Publisher* role on the Application Insights resource. The chosen auth mode is logged at startup. | supplied by the hosting environment |
+
+The `AUTH_MODE` and Keycloak variables apply to both the `web` and the `scheduler` container: both build the app, and `AUTH_MODE=oidc` without `OIDC_CLIENT_SECRET` or `KEYCLOAK_INTERNAL_URL` stops them at startup.
 
 > **Email / SMTP:** SMTP credentials are configured through the web UI setup wizard on first run and stored Fernet-encrypted in the `app_settings` database table. No `MAIL_*` environment variables are required.
 

@@ -103,7 +103,9 @@
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Administrace</a>
             <ul class="dropdown-menu">
               <li><a class="dropdown-item" href="{{ url_for('admin.index') }}">Dashboard</a></li>
+              {% if config.AUTH_MODE != "oidc" %}
               <li><a class="dropdown-item" href="{{ url_for('users.invites') }}">Pozvánky</a></li>
+              {% endif %}
               <li><a class="dropdown-item" href="{{ url_for('admin.audit_log_list') }}">Audit log</a></li>
               {% if current_user.has_permission('admin.manage_settings') %}
               <li><a class="dropdown-item" href="{{ url_for('import_events.events_paste') }}">Import</a></li>

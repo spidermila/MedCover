@@ -8,6 +8,8 @@ Flask-Migrate
 Flask-Login
 Flask-Mail
 Flask-WTF
+Authlib
+requests
 gunicorn
 pyodbc
 schedule

@@ -78,6 +78,10 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False, server_default="0")
     login_locked_until = db.Column(db.DateTime(timezone=True), nullable=True)
     last_login_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Keycloak's user id ("sub"), which back-channel logout tokens name.
+    oidc_sub = db.Column(db.String(64), nullable=True, index=True)
+    # Sessions store the epoch at login; incrementing it ends them all.
+    session_epoch = db.Column(db.Integer, default=0, nullable=False, server_default="0")
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
