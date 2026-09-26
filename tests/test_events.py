@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.extensions import db
-from app.models.assignment import Assignment
+from app.models.assignment import Assignment, DebriefingRecord
 from app.models.audit import AuditLogEntry
 from app.models.equipment import (
     EquipmentItem,
@@ -41,6 +41,161 @@ def _event_form_data(master_event_id: int, name: str = "Test Event", rp_qual_id:
         data["requirement_qualification"] = str(rp_qual_id)
         data["requirement_count"] = "1"
     return data
+
+
+@pytest.fixture
+def occupied_spot_edit(app):
+    """An occupied RP spot with feedback and an unoccupied optional spot."""
+    event_id = _make_event_in_status(app)
+    qual_id = _make_rp_qual(app)
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        user = _make_user("spot-edit@example.com", "Spot participant", Role.MEMBER)
+        user.qualifications = [db.session.get(Qualification, qual_id)]
+        occupied = EventSpot(event=event, description="Occupied", required_qualifications=user.qualifications)
+        free = EventSpot(event=event, description="Free", is_optional=True)
+        db.session.add_all([occupied, free])
+        db.session.flush()
+        assignment = Assignment(spot=occupied, user=user, assigned_by=user, debriefing_email_sent=True)
+        db.session.add(assignment)
+        db.session.flush()
+        feedback = DebriefingRecord(
+            assignment=assignment, submitted_by=user, event_note_status=2, feedback_event="Keep this feedback"
+        )
+        db.session.add(feedback)
+        db.session.commit()
+        data = {
+            **_event_form_data(event.master_event_id, name=event.name, rp_qual_id=qual_id),
+            "version": str(event.version),
+            "spots_changed": "1",
+            "spot_total": "2",
+            "spot_id_0": str(occupied.id),
+            "spot_desc_0": occupied.description,
+            "spot_id_1": str(free.id),
+            "spot_desc_1": free.description,
+            "spot_optional_1": "1",
+        }
+        snapshot = (assignment.id, assignment.user_id, assignment.assigned_by_id, assignment.assigned_at, feedback.id)
+        return event.id, data, snapshot
+
+
+def test_edit_add_spot_preserves_assignment_and_feedback(app, admin_client, occupied_spot_edit):
+    event_id, data, snapshot = occupied_spot_edit
+    data.update(spot_total="3", spot_id_2="", spot_desc_2="New spot")
+    response = admin_client.post(f"/events/{event_id}/edit", data=data)
+    assert response.status_code == 302
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        assert len(event.spots) == 3
+        assignment = db.session.get(EventSpot, int(data["spot_id_0"])).assignment
+        assert (
+            assignment.id,
+            assignment.user_id,
+            assignment.assigned_by_id,
+            assignment.assigned_at,
+            assignment.debriefing.id,
+        ) == snapshot
+        assert assignment.debriefing_email_sent
+        assert assignment.debriefing.feedback_event == "Keep this feedback"
+        assert len(event.assignments) == 1
+
+
+def test_edit_remove_free_spot_and_change_occupied_description(app, admin_client, occupied_spot_edit):
+    event_id, data, snapshot = occupied_spot_edit
+    data.update(spot_total="1", spot_desc_0="Renamed")
+    response = admin_client.post(f"/events/{event_id}/edit", data=data)
+    assert response.status_code == 302
+    with app.app_context():
+        assert db.session.get(EventSpot, int(data["spot_id_1"])) is None
+        spot = db.session.get(EventSpot, int(data["spot_id_0"]))
+        assert spot.description == "Renamed"
+        assert spot.assignment.id == snapshot[0]
+
+
+def test_edit_reordered_rows_keep_spot_identity(app, admin_client, occupied_spot_edit):
+    event_id, data, snapshot = occupied_spot_edit
+    response = admin_client.get(f"/events/{event_id}/edit")
+    assert f'name="spot_id_0" value="{data["spot_id_0"]}"' in response.get_data(as_text=True)
+    reordered = {
+        **data,
+        "spot_id_0": data["spot_id_1"],
+        "spot_desc_0": "Still free",
+        "spot_optional_0": "1",
+        "spot_id_1": data["spot_id_0"],
+        "spot_desc_1": "Still occupied",
+        "spot_optional_1": "",
+        "spot_cred_0": [],
+        "spot_cred_1": data["spot_cred_0"],
+    }
+    response = admin_client.post(f"/events/{event_id}/edit", data=reordered)
+    assert response.status_code == 302
+    with app.app_context():
+        occupied = db.session.get(EventSpot, int(data["spot_id_0"]))
+        free = db.session.get(EventSpot, int(data["spot_id_1"]))
+        assert occupied.description == "Still occupied"
+        assert not occupied.is_optional
+        assert occupied.assignment.id == snapshot[0]
+        assert free.description == "Still free"
+        assert free.is_optional
+        assert free.assignment is None
+
+
+@pytest.mark.parametrize(
+    "invalid", ["occupied_removal", "ineligible", "duplicate", "foreign", "malformed", "missing", "optional"]
+)
+def test_edit_invalid_spot_changes_are_atomic(app, admin_client, occupied_spot_edit, invalid):
+    event_id, data, snapshot = occupied_spot_edit
+    occupied_id = int(data["spot_id_0"])
+    if invalid == "occupied_removal":
+        data["spot_id_0"] = ""
+    elif invalid == "ineligible":
+        with app.app_context():
+            other = Qualification(name="Additional qualification")
+            db.session.add(other)
+            db.session.commit()
+            data["spot_cred_0"] = [data["spot_cred_0"], str(other.id)]
+    elif invalid == "duplicate":
+        data["spot_id_1"] = data["spot_id_0"]
+    elif invalid == "foreign":
+        other_id = _make_event_in_status(app, name="Other event")
+        with app.app_context():
+            foreign = EventSpot(event_id=other_id)
+            db.session.add(foreign)
+            db.session.commit()
+            data["spot_id_1"] = str(foreign.id)
+    elif invalid == "malformed":
+        data["spot_id_1"] = "not-an-id"
+    elif invalid == "missing":
+        del data["spot_id_0"]
+    else:
+        data["spot_optional_0"] = "1"
+    data["name"] = "Must not save"
+    response = admin_client.post(f"/events/{event_id}/edit", data=data)
+    assert response.status_code == 200
+    with app.app_context():
+        event = db.session.get(Event, event_id)
+        assert event.name == "Test Event"
+        assert event.version == int(data["version"])
+        assert len(event.spots) == 2
+        assignment = db.session.get(EventSpot, occupied_id).assignment
+        assert assignment.id == snapshot[0]
+        assert assignment.debriefing.id == snapshot[4]
+
+
+def test_edit_spot_identity_survives_validation_error(app, admin_client, occupied_spot_edit):
+    event_id, data, snapshot = occupied_spot_edit
+    data.update(spot_total="3", spot_id_2="", spot_desc_2="New spot", end_datetime="2029-01-01T10:00")
+    response = admin_client.post(f"/events/{event_id}/edit", data=data)
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert f'name="spot_id_0" value="{data["spot_id_0"]}"' in html
+    assert 'name="spots_changed" id="spots_changed" value="1"' in html
+    data["end_datetime"] = "2030-06-01T18:00"
+    response = admin_client.post(f"/events/{event_id}/edit", data=data)
+    assert response.status_code == 302
+    with app.app_context():
+        assert len(db.session.get(Event, event_id).spots) == 3
+        assert db.session.get(EventSpot, int(data["spot_id_0"])).assignment.id == snapshot[0]
 
 
 class TestEventListPermissions:

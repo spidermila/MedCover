@@ -34,7 +34,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% if mode == "edit" %}
         <input type="hidden" name="version" value="{{ event.version }}">
-        <input type="hidden" name="spots_changed" id="spots_changed" value="0">
+        <input type="hidden" name="spots_changed" id="spots_changed" value="{{ request.form.get('spots_changed', '0') }}">
       {% elif template %}
         <input type="hidden" name="template_id" value="{{ template.id }}">
       {% endif %}
@@ -167,8 +167,8 @@
           </div>
           {% if mode == "edit" %}
           <p class="text-muted small mb-2">
-            Změna pozic v tomto formuláři odstraní stávající přiřazení.
-            Pro jemnou úpravu jednotlivých pozic použijte <a href="{{ url_for('events.detail', event_id=event.id) }}">detail akce</a>.
+            Stávající přiřazení zůstávají zachována. Odstranění obsazené pozice nebo změnu kvalifikací
+            vyžadující odhlášení účastníka potvrďte v <a href="{{ url_for('events.detail', event_id=event.id) }}">detailu akce</a>.
           </p>
           {% endif %}
           <div id="spotRows"
@@ -181,6 +181,7 @@
             {% if spot_total_raw %}
               {% for i in range(spot_total_raw | int) %}
               <div class="card card-body mb-2 p-2 spot-row-item">
+                <input type="hidden" name="spot_id_{{ i }}" value="{{ request.form.get('spot_id_' ~ i, '') }}">
                 <div class="d-flex gap-2 align-items-start">
                   <input type="text" class="form-control form-control-sm" name="spot_desc_{{ i }}"
                          value="{{ request.form.get('spot_desc_' ~ i, '') }}"
@@ -210,6 +211,7 @@
               {% for spot in event.spots %}
               {% set i = loop.index0 %}
               <div class="card card-body mb-2 p-2 spot-row-item">
+                <input type="hidden" name="spot_id_{{ i }}" value="{{ spot.id if mode == 'edit' else '' }}">
                 <div class="d-flex gap-2 align-items-start">
                   <input type="text" class="form-control form-control-sm" name="spot_desc_{{ i }}"
                          value="{{ spot.description or '' }}"
@@ -269,6 +271,7 @@
                            else ((template_spot_prefill | length) if (template_spot_prefill is defined and template_spot_prefill) else 0)) }}">
           <template id="spotRowTpl">
             <div class="card card-body mb-2 p-2 spot-row-item">
+              <input type="hidden" name="__SPOT_ID__" value="">
               <div class="d-flex gap-2 align-items-start">
                 <input type="text" class="form-control form-control-sm" name="__SPOT_DESC__"
                        placeholder="Popis pozice (např. Záchranář — stanoviště 1)">

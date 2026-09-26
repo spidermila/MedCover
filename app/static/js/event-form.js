@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", function () {
   sel.addEventListener('change', function () { toggleEventTypeFields(sel.value); });
 });
 
-/* Dynamic spot rows — event create form only. */
+/* Dynamic spot rows — event create/edit forms. */
 (function () {
   var addBtn    = document.getElementById('addSpotBtn');
   var container = document.getElementById('spotRows');
@@ -53,6 +53,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var frag = tpl.content.cloneNode(true);
     var row  = frag.querySelector('.spot-row-item');
     row.innerHTML = row.innerHTML
+      .replaceAll('__SPOT_ID__',          'spot_id_'       + idx)
       .replaceAll('__SPOT_DESC__',        'spot_desc_'     + idx)
       .replaceAll('__SPOT_OPTIONAL__',    'spot_optional_' + idx)
       .replaceAll('__SPOT_OPTIONAL_ID__', 'spot_optional_id_' + idx)
@@ -70,8 +71,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function reindex() {
     container.querySelectorAll('.spot-row-item').forEach(function (row, i) {
+      row.querySelectorAll('[name^="spot_id_"]').forEach(function (el) { el.name = 'spot_id_' + i; });
+      row.querySelectorAll('[name^="spot_optional_"]').forEach(function (el) {
+        var label = row.querySelector('label[for="' + el.id + '"]');
+        el.name = 'spot_optional_' + i;
+        el.id = 'spot_optional_id_' + i;
+        if (label) label.htmlFor = el.id;
+      });
       row.querySelectorAll('[name^="spot_desc_"]').forEach(function (el) { el.name = 'spot_desc_' + i; });
-      row.querySelectorAll('[name^="spot_cred_"]').forEach(function (el) { el.name = 'spot_cred_' + i; });
+      row.querySelectorAll('[name^="spot_cred_"]').forEach(function (el) {
+        var label = row.querySelector('label[for="' + el.id + '"]');
+        el.name = 'spot_cred_' + i;
+        el.id = 'spot_cred_id_' + i + '_' + el.value;
+        if (label) label.htmlFor = el.id;
+      });
     });
     idx = container.querySelectorAll('.spot-row-item').length;
     totalInp.value = idx;
