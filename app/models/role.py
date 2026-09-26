@@ -1,4 +1,32 @@
+from flask import current_app, has_app_context
+
 from app.extensions import db
+
+# What the MemberBase directory owns once the user sync is on: people, their
+# status, roles and qualifications, and the qualification definitions. Editing
+# them in MedCover would be undone by the next sync, so no role has them then.
+DIRECTORY_OWNED_PERMISSIONS = {
+    "user.create",
+    "user.edit_any",
+    "user.edit_name",
+    "user.activate",
+    "user.deactivate",
+    "user.archive",
+    "user.assign_role",
+    "user.assign_qualification",
+    "invite.create",
+    "qualification.create",
+    "qualification.edit",
+    "qualification.delete",
+}
+
+
+def directory_synced() -> bool:
+    """MedCover's users are copied from the MemberBase directory (AUTH_MODE=oidc with LDAP_URI)."""
+    if not has_app_context():
+        return False
+    cfg = current_app.config
+    return cfg["AUTH_MODE"] == "oidc" and bool(cfg["LDAP_URI"])
 
 
 class Role(db.Model):  # type: ignore[misc]
@@ -30,6 +58,11 @@ class Role(db.Model):  # type: ignore[misc]
         back_populates="roles",
         lazy="dynamic",
     )
+
+    @property
+    def slug(self) -> str:
+        """Directory name of the role, e.g. "Debriefing Manager" → "debriefing-manager"."""
+        return str(self.name).lower().replace(" ", "-")
 
     def __repr__(self) -> str:
         return f"<Role {self.name}>"

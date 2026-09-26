@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
-from flask import abort, flash, redirect, request, url_for
+from flask import abort, flash, has_request_context, redirect, request, url_for
 from flask_login import current_user
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.orm.exc import StaleDataError
@@ -259,7 +259,8 @@ def audit(
     the audit row is rolled back together with the business change on failure.
     """
     entry = AuditLogEntry(
-        actor_id=current_user.id,
+        # None outside a request (scheduler) or before login (directory sync at login).
+        actor_id=current_user.id if has_request_context() and current_user.is_authenticated else None,
         action_type=action,
         entity_type=entity_type,
         entity_id=str(entity_id),

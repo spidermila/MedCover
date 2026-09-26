@@ -32,6 +32,12 @@ class Qualification(db.Model):  # type: ignore[misc]
             unique=True,
             mssql_where=db.text("is_deleted = 0"),
         ),
+        db.Index(
+            "ix_qualification_crc_qualification_id",
+            "crc_qualification_id",
+            unique=True,
+            mssql_where=db.text("crc_qualification_id IS NOT NULL"),
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -40,6 +46,8 @@ class Qualification(db.Model):  # type: ignore[misc]
     can_be_rp = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
     is_deleted = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
     deleted_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # The qualification's crcQualificationId in the MemberBase directory.
+    crc_qualification_id = db.Column(db.String(36), nullable=True)
 
     # Qualifications that can substitute for this one (e.g. Doctor is a parent of First Aider)
     parents: Mapped[list[Qualification]] = db.relationship(
