@@ -74,8 +74,9 @@ def format_event_time(event: Event, fmt: int) -> str:
     """Format an event's time window (without the start date) in the user's format.
 
     START_DURATION: ``čt 20:00 (5,5 h)``
-    START_END:      ``čt 20:00–01:30``; an event lasting 24 h or more gets the
-                    end's weekday and date so it can't be misread as a shorter
+    START_END:      ``čt 20:00–01:30``; an event spanning 24 h or more in elapsed
+                    or local wall-clock time gets the end's weekday and date
+                    so it can't be misread as a shorter
                     one: ``čt 20:00 – so 23.05. 08:00``.
     Unknown values fall back to START_DURATION.
     """
@@ -83,7 +84,9 @@ def format_event_time(event: Event, fmt: int) -> str:
     head = f"{CZECH_DAY_ABBR[ls.weekday()]} {ls:%H:%M}"
     if fmt != EventTimeFormat.START_END:
         return f"{head} ({cznum(event.scheduled_hours, strip=True)} h)"
-    if event.end_datetime - event.start_datetime < timedelta(days=1):
+    # Spring DST can make a full local day shorter than 24 elapsed hours.
+    local_span = le.replace(tzinfo=None) - ls.replace(tzinfo=None)
+    if event.end_datetime - event.start_datetime < timedelta(days=1) and local_span < timedelta(days=1):
         return f"{head}–{le:%H:%M}"
     return f"{head} – {CZECH_DAY_ABBR[le.weekday()]} {le:%d.%m. %H:%M}"
 
