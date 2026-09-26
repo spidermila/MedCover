@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
+from sqlalchemy.engine import CursorResult
 
 from app.extensions import db
 
@@ -89,3 +90,12 @@ class OutboxEmail(db.Model):  # type: ignore[misc]
 
     def __repr__(self) -> str:
         return f"<OutboxEmail id={self.id} to={self.to_email!r} status={self.status}>"
+
+
+def drop_pending_emails(user_id: object) -> int:
+    """Delete the emails still queued for a user who may no longer be contacted
+    (deactivated or archived); returns how many."""
+    result: CursorResult = db.session.execute(  # type: ignore[assignment]  # a DELETE returns a CursorResult
+        sa.delete(OutboxEmail).where(OutboxEmail.user_id == user_id, OutboxEmail.status == "pending")
+    )
+    return result.rowcount

@@ -11,7 +11,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import collate
 from sqlalchemy.orm import selectinload
 
-from app import oidc
+from app import directory_sync, oidc
 from app.config import INVITE_TOKEN_HOURS
 from app.constants import MIN_PASSWORD_LENGTH
 from app.extensions import db
@@ -20,12 +20,13 @@ from app.models.assignment import Assignment
 from app.models.equipment import EquipmentItem
 from app.models.event import Event, EventStatus
 from app.models.invite import RegistrationInvite
-from app.models.outbox import OutboxEmail
+from app.models.outbox import OutboxEmail, drop_pending_emails
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import CalendarView, UserAccount
 from app.models.user import user_roles as user_roles_table
-from app.routes.assignments import lock_condition_event, refresh_responsible_person
+from app.responsible_person import refresh_responsible_person
+from app.routes.assignments import lock_condition_event
 from app.signature import (
     MAX_UPLOAD_BYTES,
     SignatureError,
@@ -60,6 +61,11 @@ _LOCAL_ACCOUNT_ENDPOINTS = {
 def _no_local_accounts_with_oidc() -> None:
     if request.endpoint in _LOCAL_ACCOUNT_ENDPOINTS and oidc.enabled():
         abort(404)
+
+
+@users_bp.context_processor
+def _directory_synced() -> dict[str, bool]:
+    return {"synced": directory_sync.enabled()}
 
 
 _PAGE_SIZE = 30
@@ -141,17 +147,19 @@ def _update_profile(user: UserAccount) -> Response:
         "dashboard_horizon_days": user.dashboard_horizon_days,
         "dark_mode": user.dark_mode,
     }
+    synced = directory_sync.enabled()  # name and phone are then edited in MemberBase
     if current_user.has_permission("user.edit_name"):
         name = request.form.get("name", "").strip()
         if not name:
             flash("Jméno nesmí být prázdné.", "danger")
             return redirect(url_for("users.profile"))
         user.name = name
-    phone_raw = request.form.get("phone", "").strip()
-    if not _validate_phone(phone_raw):
-        flash("Neplatný formát telefonního čísla.", "danger")
-        return redirect(url_for("users.profile"))
-    user.phone = phone_raw or None
+    if not synced:
+        phone_raw = request.form.get("phone", "").strip()
+        if not _validate_phone(phone_raw):
+            flash("Neplatný formát telefonního čísla.", "danger")
+            return redirect(url_for("users.profile"))
+        user.phone = phone_raw or None
     cv = request.form.get("preferred_calendar_view", CalendarView.LIST.value)
     try:
         user.preferred_calendar_view = CalendarView(cv)
@@ -598,15 +606,9 @@ def deactivate(user_id: uuid.UUID) -> Response:
         flash("Nelze deaktivovat vlastní účet.", "danger")
         return redirect(url_for("users.detail", user_id=user_id))
     user.is_active = False
-    # In SQL, so a concurrent back-channel logout's increment is not lost.
-    user.session_epoch = UserAccount.session_epoch + 1  # end their open sessions
+    user.end_sessions()
     user.version += 1
-    purged = db.session.execute(
-        sa.delete(OutboxEmail).where(
-            OutboxEmail.user_id == user.id,
-            OutboxEmail.status == "pending",
-        )
-    ).rowcount
+    purged = drop_pending_emails(user.id)
     audit(
         "edit",
         "UserAccount",
@@ -633,15 +635,9 @@ def archive(user_id: uuid.UUID) -> Response:
         return redirect(url_for("users.detail", user_id=user_id))
     user.is_archived = True
     user.is_active = False
-    # In SQL, so a concurrent back-channel logout's increment is not lost.
-    user.session_epoch = UserAccount.session_epoch + 1  # end their open sessions
+    user.end_sessions()
     user.version += 1
-    purged = db.session.execute(
-        sa.delete(OutboxEmail).where(
-            OutboxEmail.user_id == user.id,
-            OutboxEmail.status == "pending",
-        )
-    ).rowcount
+    purged = drop_pending_emails(user.id)
     audit(
         "edit",
         "UserAccount",

@@ -43,6 +43,9 @@
   </div>
 </div>
 
+{% if synced %}
+<div class="alert alert-info small">Údaje, stav, role a kvalifikace se spravují v Evidenci členů a odtud se sem přebírají.</div>
+{% endif %}
 <form method="POST" action="{{ url_for('users.save_user', user_id=user.id) }}" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 

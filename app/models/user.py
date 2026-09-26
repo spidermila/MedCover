@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, deferred
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
-from app.models.role import ROLE_PERMISSIONS
+from app.models.role import DIRECTORY_OWNED_PERMISSIONS, ROLE_PERMISSIONS, directory_synced
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment, DebriefingRecord
@@ -82,6 +82,11 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     oidc_sub = db.Column(db.String(64), nullable=True, index=True)
     # Sessions store the epoch at login; incrementing it ends them all.
     session_epoch = db.Column(db.Integer, default=0, nullable=False, server_default="0")
+    # Místní skupina (crcUnitId and name; "external" for external users) and
+    # kind ("member" or "external"), copied from the MemberBase directory.
+    crc_unit_id = db.Column(db.String(64), nullable=True)
+    unit_name = db.Column(db.String(255), nullable=True)
+    kind = db.Column(db.String(16), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -170,6 +175,11 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         lazy="noload",
     )
 
+    def end_sessions(self) -> None:
+        """End all open sessions (in SQL, so a concurrent back-channel logout's
+        increment is not lost)."""
+        self.session_epoch = UserAccount.session_epoch + 1
+
     def regenerate_ical_token(self) -> str:
         """Generate a new iCal subscription token, invalidating the previous one."""
         self.ical_token = secrets.token_hex(32)
@@ -186,12 +196,15 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
+    def _permissions(self) -> set[str]:
+        owned = {c for role in self.roles for c in ROLE_PERMISSIONS.get(role.name, [])}
+        return owned - DIRECTORY_OWNED_PERMISSIONS if directory_synced() else owned
+
     def has_permission(self, code: str) -> bool:
-        return any(code in ROLE_PERMISSIONS.get(role.name, []) for role in self.roles)
+        return code in self._permissions()
 
     def has_any_permission(self, *codes: str) -> bool:
-        owned = {c for role in self.roles for c in ROLE_PERMISSIONS.get(role.name, [])}
-        return bool(owned & set(codes))
+        return bool(self._permissions() & set(codes))
 
     def is_rp_eligible(self) -> bool:
         """Return True if the user can be a responsible person.

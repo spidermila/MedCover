@@ -9,6 +9,7 @@ Flask-Login
 Flask-Mail
 Flask-WTF
 Authlib
+python-ldap
 requests
 gunicorn
 pyodbc
