@@ -131,6 +131,17 @@ class TestEventTimeFormat:
         with app.app_context():
             assert format_event_time(event, fmt) == expected
 
+    def test_start_end_keeps_end_date_across_dst_start(self, app):
+        # Prague: 28.03.2026 20:00 CET → 29.03.2026 20:30 CEST.
+        # Only 23.5 hours elapse, but omitting the end date suggests 30 minutes.
+        event = Event(
+            start_datetime=datetime(2026, 3, 28, 19, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 3, 29, 18, 30, tzinfo=timezone.utc),
+        )
+        with app.app_context():
+            assert format_event_time(event, EventTimeFormat.START_END) == "so 20:00 – ne 29.03. 20:30"
+            assert format_event_time(event, EventTimeFormat.START_DURATION) == "so 20:00 (23,5 h)"
+
     @pytest.mark.parametrize("fmt", list(EventTimeFormat))
     def test_event_list_uses_viewer_format(self, app, admin_client, fmt):
         event_id = _make_event_in_status(app, status=EventStatus.ASSIGNMENTS_OPEN)
