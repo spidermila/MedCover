@@ -25,10 +25,14 @@ def _login_form_action(response):
 
 class TestLoginReturnDestination:
     @pytest.mark.parametrize(
-        ("destination", "status"),
-        [("/events/?statuses=DRAFT&page=2", 200), ("/dashboard", 200), ("/admin/", 403)],
+        ("destination", "status", "page_redirect"),
+        [
+            ("/events/?statuses=DRAFT&page=2", 200, "/events/?statuses=DRAFT"),
+            ("/dashboard", 200, None),
+            ("/admin/", 403, None),
+        ],
     )
-    def test_protected_page_survives_login_and_password_retry(self, app, client, destination, status):
+    def test_protected_page_survives_login_and_password_retry(self, app, client, destination, status, page_redirect):
         with app.app_context():
             _make_user("test@example.com", "Test User", Role.MEMBER)
 
@@ -47,7 +51,13 @@ class TestLoginReturnDestination:
         )
         assert response.status_code == 302
         assert response.location == destination
-        assert client.get(response.location).status_code == status
+        response = client.get(response.location)
+        if page_redirect is not None:
+            # Login preserves page=2; the empty event list then redirects to page 1.
+            assert response.status_code == 302
+            assert response.location == page_redirect
+            response = client.get(response.location)
+        assert response.status_code == status
 
     @pytest.mark.parametrize("blocked_field", ["is_archived", "is_active"])
     def test_rejected_account_preserves_destination(self, app, client, blocked_field):
