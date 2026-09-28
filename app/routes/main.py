@@ -14,7 +14,6 @@ from app.models.equipment import (
     EventEquipmentPlan,
 )
 from app.models.event import Event, EventStatus, StaffingMode
-from app.models.user import UserAccount
 from app.queries import assignment_conflicts, user_fillable_qual_ids
 from app.staffing import can_join_event, user_helps_staffing
 
@@ -320,17 +319,6 @@ def dashboard() -> str:
     my_events, assigned_ids = _my_events_section(now, horizon)
     open_events, open_events_all = _open_events_section(now, horizon, assigned_ids)
 
-    pending_activations: list[UserAccount] = []
-    if current_user.has_permission("user.activate"):
-        pending_activations = list(
-            db.session.scalars(
-                db.select(UserAccount)
-                .where(UserAccount.is_active == sa.false())
-                .where(UserAccount.is_archived == sa.false())
-                .order_by(UserAccount.created_at)
-            ).all()
-        )
-
     return render_template(
         "main/dashboard.html",
         my_events=my_events,
@@ -338,7 +326,6 @@ def dashboard() -> str:
         open_events_all=open_events_all,
         attention_events=_attention_events_section(now, horizon),
         equipment_shortage_events=_equipment_shortage_events(now, horizon),
-        pending_activations=pending_activations,
         missing_rp_events=_missing_rp_events_section(now),
         pending_debriefings=_pending_debriefings_section(),
         assignment_conflicts=assignment_conflicts(

@@ -76,30 +76,6 @@
 </div>
 {% endif %}
 
-{# ── Pending activations (admin) ──────────────────────────────────────────── #}
-{% if pending_activations %}
-<div class="card border-warning mb-3">
-  <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center py-2">
-    <span class="fw-semibold">⚠ Čekající aktivace účtů ({{ pending_activations|length }})</span>
-    <a href="{{ url_for('users.index') }}" class="btn btn-warning btn-sm py-0">Spravovat</a>
-  </div>
-  <ul class="list-group list-group-flush">
-    {% for u in pending_activations %}
-    <li class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-2">
-      <div>
-        <div class="fw-semibold"><a href="{{ url_for('users.detail', user_id=u.id) }}" class="text-decoration-none text-body">{{ u.name }}</a></div>
-        <div class="text-muted small">{{ u.email }}</div>
-      </div>
-      <form method="POST" action="{{ url_for('users.activate', user_id=u.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-success btn-sm py-0">Aktivovat</button>
-      </form>
-    </li>
-    {% endfor %}
-  </ul>
-</div>
-{% endif %}
-
 {# ── Missing RP warning (coordinator / admin) ─────────────────────────────── #}
 {% if missing_rp_events %}
 <div class="card border-danger mb-3">
