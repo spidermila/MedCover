@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- The „Čekající aktivace účtů“ panel on the dashboard. Pending accounts are still activated from the user list. (#PR)
+- The „Čekající aktivace účtů“ panel on the dashboard. Pending accounts are still activated from the user list. (#566)
 
 ## [1.2.2] - 2026-09-22
 
