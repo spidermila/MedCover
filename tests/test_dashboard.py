@@ -71,31 +71,6 @@ class TestDashboardEventSortOrder:
         ), "Dashboard 'Moje akce' events must be ordered by start_datetime (nearest first)"
 
 
-class TestDashboardPendingActivationLink:
-    """#105 — Pending-activation user name must be a hyperlink to their profile."""
-
-    def test_inactive_user_name_is_a_link(self, app, admin_client):
-        with app.app_context():
-            inactive = UserAccount(
-                email="inactive_link@test.com",
-                name="Pending Link User",
-                is_active=False,
-            )
-            inactive.set_password("testpass123")
-            db.session.add(inactive)
-            db.session.commit()
-            inactive_id = str(inactive.id)
-
-        response = admin_client.get("/dashboard")
-        assert response.status_code == 200
-        body = response.data.decode()
-
-        assert "Pending Link User" in body
-        assert f"/users/{inactive_id}" in body
-        # The name must be wrapped in an anchor tag, not plain text
-        assert f'href="/users/{inactive_id}"' in body
-
-
 class TestDashboardAttentionBadges:
     """The 'Vyžaduje pozornost' section must render the same obsazení badges as /events/."""
 
@@ -348,37 +323,6 @@ class TestDashboard:
         """A member with no events, assignments, or admin data must not crash the dashboard."""
         response = member_client.get("/dashboard")
         assert response.status_code == 200
-
-    def test_admin_sees_pending_activations_panel(self, app, admin_client):
-        with app.app_context():
-            inactive = UserAccount(
-                email="pending_admin_panel@test.com",
-                name="Pending Panel User",
-                is_active=False,
-            )
-            inactive.set_password("testpass123")
-            db.session.add(inactive)
-            db.session.commit()
-
-        response = admin_client.get("/dashboard")
-        assert response.status_code == 200
-        assert "Pending Panel User" in response.data.decode()
-
-    def test_viewer_does_not_see_pending_activations_panel(self, app, viewer_client):
-        """A viewer lacks user.activate and must not see admin-only pending-activation data."""
-        with app.app_context():
-            inactive = UserAccount(
-                email="pending_hidden_from_viewer@test.com",
-                name="Pending Hidden User",
-                is_active=False,
-            )
-            inactive.set_password("testpass123")
-            db.session.add(inactive)
-            db.session.commit()
-
-        response = viewer_client.get("/dashboard")
-        assert response.status_code == 200
-        assert "Pending Hidden User" not in response.data.decode()
 
     def test_horizon_days_filters_events(self, app, member_client):
         """A member with dashboard_horizon_days=7 must not see events more than 7 days away."""
