@@ -17,6 +17,15 @@ services:
       retries: 20
       start_period: 20s
 
+  azurite-e2e:
+    image: mcr.microsoft.com/azure-storage/azurite
+    command: azurite-blob --blobHost 0.0.0.0 --inMemoryPersistence --skipApiVersionCheck
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:10000/devstoreaccount1?comp=list', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   web-e2e:
     build:
       context: .
@@ -26,7 +35,6 @@ services:
     command: ["flask", "run", "--debug", "--host=0.0.0.0"]
     volumes:
       - ./scripts:/app/scripts:ro
-      - backups:/backups
     environment:
       FLASK_ENV: development
       FLASK_DEBUG: "1"
@@ -35,8 +43,11 @@ services:
       MSSQL_SA_PASSWORD: "E2e_Password1!"
       DEV_LOGIN_ENABLED: "true"
       INSTANCE_ID: e2e
+      BACKUP_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite-e2e:10000/devstoreaccount1;"
     depends_on:
       db-e2e:
+        condition: service_healthy
+      azurite-e2e:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c",
@@ -76,8 +87,3 @@ services:
     depends_on:
       web-e2e:
         condition: service_healthy
-
-volumes:
-  # Mirrors the shared /backups mount from dev and prod so any e2e code path
-  # that touches the backup directory sees the same layout as production.
-  backups:

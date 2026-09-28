@@ -1,6 +1,12 @@
 <div class="block">
   <h2>{{ title }}</h2>
   <table class="data-table" role="presentation">
+    {% if storage_error %}
+    <tr>
+      <td>Úložiště záloh</td>
+      <td><span class="badge badge-err">Nedostupné</span> {{ storage_error }}</td>
+    </tr>
+    {% endif %}
     <tr>
       <td>Počet záložních souborů</td>
       <td><strong>{{ backup_count }}</strong> / max {{ backup_keep_count }}</td>
