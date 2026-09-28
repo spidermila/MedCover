@@ -15,7 +15,6 @@ from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
-from app.models.settings import get_settings
 from tests.conftest import _make_user
 
 
@@ -220,12 +219,8 @@ class TestFeedbackSummaryBlock:
 
 
 class TestBackupStatusBlock:
-    def test_collect_returns_backup_info(self, app, tmp_path):
+    def test_collect_returns_backup_info(self, app):
         with app.app_context():
-            settings = get_settings()
-            settings.backup_dir = str(tmp_path)
-            db.session.commit()
-
             block = BackupStatusBlock()
             result = block.collect(db.session, block.default_config)
             assert result["title"] == "Stav zálohování"
@@ -233,3 +228,14 @@ class TestBackupStatusBlock:
             assert result["total_size_bytes"] == 0
             assert result["last_backup_at"] is None
             assert result["last_backup_age_hours"] is None
+
+    def test_collect_reports_storage_outage(self, app, monkeypatch):
+        def outage():
+            raise RuntimeError("storage unreachable")
+
+        monkeypatch.setattr("app.digest.blocks.backup_status.list_backups", outage)
+        with app.app_context():
+            block = BackupStatusBlock()
+            result = block.collect(db.session, block.default_config)
+            assert result["storage_error"] == "storage unreachable"
+            assert result["backup_count"] == 0
