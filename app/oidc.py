@@ -200,6 +200,14 @@ def account_action(action: str) -> Response:
     return login_redirect(url_for("users.profile"), kc_action=action)
 
 
+@oidc_bp.route("/account")
+@login_required
+def account_console() -> Response:
+    """Keycloak's account console, where people see and remove their second
+    factors and passkeys and end sessions on other devices."""
+    return redirect(f"{_public_realm_url()}/account/account-security/signing-in")
+
+
 @oidc_bp.route("/backchannel-logout", methods=["POST"])
 @csrf.exempt
 def backchannel_logout() -> tuple[str, int]:

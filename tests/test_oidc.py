@@ -310,6 +310,7 @@ def test_profile_offers_keycloak_account_actions(oidc_app: Flask, client: Any, m
     assert "Zabezpečení účtu" in page and "current_password" not in page
     for action in oidc.KC_ACTIONS:
         assert f"/auth/account/{action}" in page
+    assert 'href="/auth/account"' in page
 
 
 def test_profile_ignores_local_password_change(oidc_app: Flask, client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -334,6 +335,15 @@ def test_account_action_starts_keycloak_action(
     with client.session_transaction() as sess:
         assert sess["oidc_next"] == "/users/profile"
     assert client.get("/auth/account/delete_account").status_code == 404
+
+
+def test_account_console_opens_keycloak_signing_in(
+    oidc_app: Flask, client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _logged_in(oidc_app, client, monkeypatch)
+    resp = client.get("/auth/account")
+    assert resp.status_code == 302
+    assert resp.location == f"{ISSUER}/account/account-security/signing-in"
 
 
 # ── Back-channel logout ──────────────────────────────────────────────────────
