@@ -63,6 +63,10 @@ class Role(db.Model):  # type: ignore[misc]
     )
 
     @property
+    def label(self) -> str:
+        return ROLE_LABELS.get(self.name, self.name)
+
+    @property
     def slug(self) -> str:
         """Directory name of the role, e.g. "Debriefing Manager" → "debriefing-manager"."""
         return str(self.name).lower().replace(" ", "-")
@@ -164,6 +168,10 @@ ALL_PERMISSIONS: list[dict] = [
     {"code": "backup.restore", "description": "Restore the application from a backup file"},
     {"code": "backup.delete", "description": "Delete a stored backup file"},
 ]
+
+# Names shown in the UI where they differ from the role name (which the
+# directory sync matches by slug); the other roles keep their English names.
+ROLE_LABELS: dict[str, str] = {Role.EXTERNAL: "Externí"}
 
 # Permissions per role (from RBAC table in architecture.md)
 ROLE_PERMISSIONS: dict[str, list[str]] = {
