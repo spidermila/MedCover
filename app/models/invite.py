@@ -3,6 +3,12 @@ from datetime import datetime, timezone
 
 from app.extensions import db
 
+invite_qualifications = db.Table(
+    "invite_qualifications",
+    db.Column("invite_id", db.Integer, db.ForeignKey("registration_invite.id"), primary_key=True),
+    db.Column("qualification_id", db.Integer, db.ForeignKey("qualification.id"), primary_key=True),
+)
+
 
 class RegistrationInvite(db.Model):  # type: ignore[misc]
     __tablename__ = "registration_invite"
@@ -30,6 +36,8 @@ class RegistrationInvite(db.Model):  # type: ignore[misc]
     # Admin-customisable email content
     custom_subject = db.Column(db.String(255), nullable=True)
     custom_message = db.Column(db.Text, nullable=True)
+
+    qualifications = db.relationship("Qualification", secondary=invite_qualifications)
 
     created_by = db.relationship("UserAccount", foreign_keys=[created_by_id], back_populates="created_invites")
 

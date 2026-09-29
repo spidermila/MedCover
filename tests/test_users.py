@@ -15,7 +15,7 @@ from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
-from app.models.role import Role
+from app.models.role import ROLE_PERMISSIONS, Role
 from app.models.user import EventTimeFormat, UserAccount
 from app.queries import active_users_list
 
@@ -634,6 +634,102 @@ class TestInvites:
         with app.app_context():
             assert db.session.scalar(db.select(sa.func.count()).select_from(RegistrationInvite)) == 0
             assert db.session.scalar(db.select(sa.func.count()).select_from(OutboxEmail)) == 0
+
+    def test_invite_qualifications_are_granted_on_registration(
+        self, app: object, admin_client: object, client: object
+    ) -> None:
+        with app.app_context():
+            active = Qualification(name="Driver")
+            removed = Qualification(name="First aider")
+            db.session.add_all([active, removed])
+            db.session.commit()
+            active_id, removed_id = active.id, removed.id
+        admin_client.post(
+            "/users/invites/create",
+            data={
+                "email": "one@example.com;two@example.com",
+                "qualification_ids": [str(active_id), str(removed_id)],
+            },
+        )
+        with app.app_context():
+            invites = db.session.scalars(db.select(RegistrationInvite)).all()
+            assert len(invites) == 2
+            assert all({q.id for q in invite.qualifications} == {active_id, removed_id} for invite in invites)
+            tokens = [invite.token for invite in invites]
+            db.session.get(Qualification, removed_id).is_deleted = True
+            db.session.commit()
+        # Resending must preserve the original selection.
+        with app.app_context():
+            invite_id = db.session.scalar(db.select(RegistrationInvite.id))
+        admin_client.post(f"/users/invites/{invite_id}/resend")
+        for token in tokens:
+            response = client.post(
+                f"/auth/register/{token}",
+                data={
+                    "full_name": "Invited user",
+                    "password": "securepass123",
+                    "password2": "securepass123",
+                    "qualification_ids": [str(removed_id)],
+                },
+            )
+            assert response.status_code == 302
+        with app.app_context():
+            users = db.session.scalars(
+                db.select(UserAccount).where(UserAccount.email.in_(["one@example.com", "two@example.com"]))
+            ).all()
+            assert len(users) == 2
+            assert all([q.id for q in user.qualifications] == [active_id] for user in users)
+
+    @pytest.mark.parametrize("value", ["invalid", "999999999999999999999999", "999999", "-1"])
+    def test_invalid_invite_qualifications_create_nothing(self, app: object, admin_client: object, value: str) -> None:
+        response = admin_client.post(
+            "/users/invites/create", data={"email": "valid@example.com", "qualification_ids": [value]}
+        )
+        assert response.status_code == 200
+        assert b"valid@example.com" in response.data
+        with app.app_context():
+            assert db.session.scalar(db.select(sa.func.count()).select_from(RegistrationInvite)) == 0
+
+    def test_deleted_invite_qualification_is_rejected(self, app: object, admin_client: object) -> None:
+        with app.app_context():
+            qualification = Qualification(name="Deleted", is_deleted=True)
+            db.session.add(qualification)
+            db.session.commit()
+            qualification_id = qualification.id
+        response = admin_client.post(
+            "/users/invites/create",
+            data={
+                "email": "valid@example.com",
+                "qualification_ids": [str(qualification_id)],
+            },
+        )
+        assert "již není dostupná".encode() in response.data
+        with app.app_context():
+            assert db.session.scalar(db.select(sa.func.count()).select_from(RegistrationInvite)) == 0
+
+    def test_invitation_qualification_selection_requires_permission(
+        self, app: object, member_client: object, monkeypatch: object
+    ) -> None:
+        monkeypatch.setitem(ROLE_PERMISSIONS, Role.MEMBER, [*ROLE_PERMISSIONS[Role.MEMBER], "invite.create"])
+        response = member_client.get("/users/invites")
+        assert b'name="qualification_ids"' not in response.data
+        response = member_client.post(
+            "/users/invites/create", data={"email": "forged@example.com", "qualification_ids": ["1"]}
+        )
+        assert response.status_code == 403
+        with app.app_context():
+            assert db.session.scalar(db.select(sa.func.count()).select_from(RegistrationInvite)) == 0
+
+    def test_invalid_email_preserves_selected_qualification(self, app: object, admin_client: object) -> None:
+        with app.app_context():
+            qualification = Qualification(name="Driver")
+            db.session.add(qualification)
+            db.session.commit()
+            qualification_id = qualification.id
+        response = admin_client.post(
+            "/users/invites/create", data={"email": "invalid", "qualification_ids": [str(qualification_id)]}
+        )
+        assert re.search(rb'id="qualification_' + str(qualification_id).encode() + rb'"[^>]+checked', response.data)
 
     def test_create_invite_invalid_email(self, admin_client: object) -> None:
         resp = admin_client.post(

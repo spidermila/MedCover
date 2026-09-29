@@ -13,7 +13,9 @@ from app.backup import _container, downloaded_backup, export_to_zip, list_backup
 from app.extensions import db as _db
 from app.models.audit import AuditLogEntry
 from app.models.event import Event
+from app.models.invite import RegistrationInvite
 from app.models.master_event import MasterEvent
+from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.settings import get_settings
 from app.models.user import UserAccount
@@ -87,6 +89,24 @@ class TestExportToZip:
 
 
 class TestRestoreFromZip:
+    def test_restore_preserves_invitation_qualifications(self, app):
+        with app.app_context():
+            creator = _make_user("inviter@example.com", "Inviter", Role.ADMIN)
+            qualification = Qualification(name="Invitation qualification")
+            invite = RegistrationInvite(
+                email="invited@example.com", created_by_id=creator.id, qualifications=[qualification]
+            )
+            _db.session.add(invite)
+            _db.session.commit()
+            invite_id = invite.id
+            name = export_to_zip()
+            invite.qualifications = []
+            _db.session.commit()
+            _restore(name)
+            _db.session.expire_all()
+            restored = _db.session.get(RegistrationInvite, invite_id)
+            assert [q.name for q in restored.qualifications] == ["Invitation qualification"]
+
     def test_restore_reloads_user(self, app):
         with app.app_context():
             _make_user("restore_target@example.com", "Restore Target", Role.MEMBER)

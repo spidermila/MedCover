@@ -817,7 +817,10 @@ def invites() -> str:
     require_permission("invite.create")
     items = db.session.scalars(
         db.select(RegistrationInvite)
-        .options(selectinload(RegistrationInvite.outbox_email))  # type: ignore[arg-type]
+        .options(
+            selectinload(RegistrationInvite.outbox_email),  # type: ignore[arg-type]
+            selectinload(RegistrationInvite.qualifications),  # type: ignore[arg-type]
+        )
         .order_by(RegistrationInvite.created_at.desc())
     ).all()
     # Pre-fill form with last invite's subject/message so admin doesn't retype
@@ -827,7 +830,16 @@ def invites() -> str:
         .order_by(RegistrationInvite.created_at.desc())
         .limit(1)
     )
-    return render_template("users/invites.html", invites=items, last_invite=last)
+    qualifications = (
+        db.session.scalars(
+            db.select(Qualification)
+            .where(Qualification.is_deleted == sa.false())
+            .order_by(collate(Qualification.name, CS_COLLATION))
+        ).all()
+        if current_user.has_permission("user.assign_qualification")
+        else []
+    )
+    return render_template("users/invites.html", invites=items, last_invite=last, all_qualifications=qualifications)
 
 
 @users_bp.route("/invites/create", methods=["POST"])
@@ -852,6 +864,30 @@ def create_invite() -> str | Response:
     if custom_subject and len(custom_subject) > 255:
         flash("Předmět e-mailu může mít nejvýše 255 znaků.", "danger")
         return invites()
+
+    qualifications = []
+    qualification_values = request.form.getlist("qualification_ids")
+    if qualification_values:
+        require_permission("user.assign_qualification")
+        try:
+            qualification_ids = {int(value) for value in qualification_values}
+        except ValueError:
+            flash("Vyberte platné kvalifikace.", "danger")
+            return invites()
+        if any(qualification_id <= 0 or qualification_id > 2147483647 for qualification_id in qualification_ids):
+            flash("Vyberte platné kvalifikace.", "danger")
+            return invites()
+        qualifications = list(
+            db.session.scalars(
+                db.select(Qualification).where(
+                    Qualification.id.in_(qualification_ids),
+                    Qualification.is_deleted == sa.false(),
+                )
+            )
+        )
+        if len(qualifications) != len(qualification_ids):
+            flash("Některá z vybraných kvalifikací již není dostupná. Zkontrolujte výběr.", "danger")
+            return invites()
 
     existing_users = set(db.session.scalars(db.select(UserAccount.email).where(UserAccount.email.in_(emails))))
     existing_invites = {
@@ -878,6 +914,7 @@ def create_invite() -> str | Response:
             expires_at=datetime.now(timezone.utc) + timedelta(hours=INVITE_TOKEN_HOURS),
             custom_subject=custom_subject,
             custom_message=custom_message,
+            qualifications=qualifications,
         )
         db.session.add(invite)
         db.session.flush()
