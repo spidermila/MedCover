@@ -10,22 +10,23 @@
 </div>
 
 <div class="card mb-4">
-  <div class="card-header fw-semibold">Nová pozvánka</div>
+  <div class="card-header fw-semibold">Nové pozvánky</div>
   <div class="card-body">
     <form method="POST" action="{{ url_for('users.create_invite') }}" class="row g-3" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-12 col-md-6">
-        <label for="email" class="form-label">E-mail pozvaného
-          {{ help_icon("Zadejte e-mailovou adresu osoby, které chcete vytvořit účet. Na tuto adresu bude odeslán registrační odkaz.") }}
+        <label for="email" class="form-label">E-maily pozvaných
+          {{ help_icon("Zadejte jednu nebo více e-mailových adres. Na každou adresu bude odeslán vlastní registrační odkaz.") }}
         </label>
-        <input type="email" class="form-control" id="email" name="email" required placeholder="jan.novak@example.com">
+        <textarea class="form-control" id="email" name="email" rows="3" required aria-describedby="email-help" placeholder="jan.novak@example.com">{{ request.form.get('email', '') }}</textarea>
+        <div id="email-help" class="form-text">Adresy oddělte novým řádkem, čárkou nebo středníkem. Opakované adresy se odešlou jen jednou.</div>
       </div>
       <div class="col-12 col-md-6">
         <label for="custom_subject" class="form-label">Předmět e-mailu <span class="text-muted fw-normal">(volitelné)</span>
           {{ help_icon("Předmět odeslaného e-mailu. Pokud necháte prázdné, použije se výchozí: 'MedCover — pozvánka k registraci'.") }}
         </label>
         <input type="text" class="form-control" id="custom_subject" name="custom_subject"
-               value="{{ last_invite.custom_subject if last_invite and last_invite.custom_subject else '' }}"
+               value="{{ request.form.get('custom_subject', last_invite.custom_subject if last_invite and last_invite.custom_subject else '') }}"
                placeholder="MedCover — pozvánka k registraci">
         <div class="form-text">Výchozí předmět je z poslední odeslané pozvánky.</div>
       </div>
@@ -34,7 +35,7 @@
           {{ help_icon("Napište celý text e-mailu včetně pozdravu a podpisu. Registrační odkaz bude připojen automaticky na konec. Pokud necháte prázdné, použije se výchozí text.") }}
         </label>
         <textarea class="form-control font-monospace" id="custom_message" name="custom_message" rows="7"
-                  placeholder="Dobrý den,&#10;&#10;zveme Vás do systému MedCover pro plánování zdravotního zabezpečení.&#10;&#10;S pozdravem,&#10;Tým MedCover">{{ last_invite.custom_message if last_invite and last_invite.custom_message else '' }}</textarea>
+                  placeholder="Dobrý den,&#10;&#10;zveme Vás do systému MedCover pro plánování zdravotního zabezpečení.&#10;&#10;S pozdravem,&#10;Tým MedCover">{{ request.form.get('custom_message', last_invite.custom_message if last_invite and last_invite.custom_message else '') }}</textarea>
         <div class="form-text">
           Napište celý text e-mailu včetně pozdravu a podpisu.
           Na konec bude automaticky připojen pouze registrační odkaz.
@@ -42,7 +43,7 @@
         </div>
       </div>
       <div class="col-12 d-flex align-items-end">
-        <button type="submit" class="btn btn-danger">Odeslat pozvánku</button>
+        <button type="submit" class="btn btn-danger">Odeslat pozvánky</button>
       </div>
     </form>
   </div>
