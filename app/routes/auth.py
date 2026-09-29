@@ -15,7 +15,7 @@ from app.models.audit import AuditLogEntry
 from app.models.invite import RegistrationInvite
 from app.models.role import Role
 from app.models.user import UserAccount
-from app.utils import commit_or_stale, external_url_for, safe_next
+from app.utils import commit_or_stale, diff_changes, external_url_for, safe_next
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -225,6 +225,9 @@ def register(token: str) -> str | Response:
         else:
             user = UserAccount(email=invite.email, name=full_name, is_active=True)
             user.set_password(password)
+            user.qualifications = [
+                qualification for qualification in invite.qualifications if not qualification.is_deleted
+            ]
             member_role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
             if member_role:
                 user.roles.append(member_role)
@@ -238,7 +241,10 @@ def register(token: str) -> str | Response:
                     entity_type="RegistrationInvite",
                     entity_id=str(invite.id),
                     summary=f"Registrace dokončena pro {invite.email} jako '{full_name}'",
-                    changes_json={},
+                    changes_json=diff_changes(
+                        {"qualifications": []},
+                        {"qualifications": [qualification.name for qualification in user.qualifications]},
+                    ),
                 )
             )
             db.session.commit()

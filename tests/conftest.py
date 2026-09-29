@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 # All mutable tables — reference data (role, permission, role_permissions,
 # app_settings, alembic_version) is preserved across the suite.
 _MUTABLE_TABLES_LIST = [
+    "invite_qualifications",
     "event_qualification_requirement",
     "event_template_qualification_requirement",
     "event_equipment_plan",

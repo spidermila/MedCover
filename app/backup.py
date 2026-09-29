@@ -84,6 +84,7 @@ _RESTORE_ORDER: list[str] = [
     "assignment",
     "outbox_email",
     "registration_invite",
+    "invite_qualifications",
     "audit_log_entry",
     "user_feedback",
     "debriefing_record",
