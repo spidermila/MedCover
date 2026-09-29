@@ -586,6 +586,55 @@ class TestInvites:
             assert inv is not None
             assert inv.is_valid
 
+    def test_batch_invites_normalize_deduplicate_and_skip_existing(self, app: object, admin_client: object) -> None:
+        admin_client.post("/users/invites/create", data={"email": "pending@example.com"})
+        with app.app_context():
+            user = UserAccount(email="existing@example.com", name="Existing", is_active=True)
+            user.set_password("pass1234")
+            db.session.add(user)
+            db.session.commit()
+        response = admin_client.post(
+            "/users/invites/create",
+            data={
+                "email": (
+                    " FIRST@example.com,second@example.com;first@example.com\r\n"
+                    "pending@example.com\nexisting@example.com"
+                ),
+                "custom_subject": "Shared subject",
+                "custom_message": "Shared message",
+            },
+            follow_redirects=True,
+        )
+        assert "již má účet".encode() in response.data
+        assert "již existuje".encode() in response.data
+        with app.app_context():
+            invites = db.session.scalars(db.select(RegistrationInvite)).all()
+            assert {inv.email for inv in invites} == {"pending@example.com", "first@example.com", "second@example.com"}
+            assert len(invites) == 3
+            for invite in invites:
+                if invite.email != "pending@example.com":
+                    assert invite.custom_subject == "Shared subject"
+                    assert invite.custom_message == "Shared message"
+                    assert invite.outbox_email.to_email == invite.email
+                    assert invite.token in invite.outbox_email.html_body
+
+    def test_invalid_batch_creates_nothing_and_preserves_form(self, app: object, admin_client: object) -> None:
+        response = admin_client.post(
+            "/users/invites/create",
+            data={
+                "email": "valid@example.com;invalid",
+                "custom_subject": "Keep subject",
+                "custom_message": "Keep message",
+            },
+            follow_redirects=True,
+        )
+        assert b"valid@example.com;invalid" in response.data
+        assert b"Keep subject" in response.data
+        assert b"Keep message" in response.data
+        with app.app_context():
+            assert db.session.scalar(db.select(sa.func.count()).select_from(RegistrationInvite)) == 0
+            assert db.session.scalar(db.select(sa.func.count()).select_from(OutboxEmail)) == 0
+
     def test_create_invite_invalid_email(self, admin_client: object) -> None:
         resp = admin_client.post(
             "/users/invites/create",

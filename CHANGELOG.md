@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Send registration invitations to multiple email addresses at once, separated by newlines, commas or semicolons. Duplicate addresses are sent once, existing users and valid invitations are skipped, and invalid batches preserve the form without sending any invitations. (#548)
 - „Formát zobrazení času akce“ setting in the profile: each user picks whether event times show as start + duration (`čt 20:00 (5,5 h)`, the default) or start–end (`čt 20:00–01:30`). The choice applies to the „Akce“ list, whose „Začátek“ column is now „Čas“, and to the event header in notification emails, which previously always showed start–end. The calendar view, dashboard horizon and dark mode settings moved with it into a new „Nastavení“ card below „Osobní údaje“. (#275)
 
 ### Changed

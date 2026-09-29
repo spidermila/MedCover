@@ -832,49 +832,59 @@ def invites() -> str:
 
 @users_bp.route("/invites/create", methods=["POST"])
 @login_required
-def create_invite() -> Response:
+def create_invite() -> str | Response:
     require_permission("invite.create")
-    email = request.form.get("email", "").strip().lower()
-    if not email or not _EMAIL_RE.match(email):
-        flash("Zadejte platnou e-mailovou adresu.", "danger")
-        return redirect(url_for("users.invites"))
-
-    # Block if a user account with this email already exists
-    if db.session.scalar(db.select(UserAccount).where(UserAccount.email == email)):
-        flash(f"Uživatel s e-mailem {email} již má účet v systému.", "warning")
-        return redirect(url_for("users.invites"))
-
-    # Block if a valid (non-cancelled) invite already exists for this email
-    existing = db.session.scalar(
-        db.select(RegistrationInvite).where(
-            RegistrationInvite.email == email,
-            RegistrationInvite.used_at.is_(None),
-            RegistrationInvite.cancelled_at.is_(None),
+    emails = list(
+        dict.fromkeys(
+            part.strip().lower() for part in re.split(r"[,;\r\n]+", request.form.get("email", "")) if part.strip()
         )
     )
-    if existing and existing.is_valid:
-        flash(f"Platná pozvánka pro {email} již existuje.", "warning")
-        return redirect(url_for("users.invites"))
+    invalid = [email for email in emails if len(email) > 255 or not _EMAIL_RE.fullmatch(email)]
+    if not emails or invalid:
+        flash(
+            "Zadejte platnou e-mailovou adresu." + (f" Neplatné adresy: {', '.join(invalid)}" if invalid else ""),
+            "danger",
+        )
+        return invites()
 
     custom_subject = request.form.get("custom_subject", "").strip() or None
     custom_message = request.form.get("custom_message", "").strip() or None
+    if custom_subject and len(custom_subject) > 255:
+        flash("Předmět e-mailu může mít nejvýše 255 znaků.", "danger")
+        return invites()
 
-    invite = RegistrationInvite(
-        email=email,
-        created_by_id=current_user.id,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=INVITE_TOKEN_HOURS),
-        custom_subject=custom_subject,
-        custom_message=custom_message,
-    )
-    db.session.add(invite)
-    db.session.flush()  # get invite.id before _queue_invite_email
-
-    _queue_invite_email(invite)
-
-    audit("create", "RegistrationInvite", invite.id, f"Pozvánka vytvořena a zařazena do fronty pro {email}", {})
+    existing_users = set(db.session.scalars(db.select(UserAccount.email).where(UserAccount.email.in_(emails))))
+    existing_invites = {
+        invite.email
+        for invite in db.session.scalars(
+            db.select(RegistrationInvite).where(
+                RegistrationInvite.email.in_(emails),
+                RegistrationInvite.used_at.is_(None),
+                RegistrationInvite.cancelled_at.is_(None),
+            )
+        )
+        if invite.is_valid
+    }
+    for email in emails:
+        if email in existing_users:
+            flash(f"Uživatel s e-mailem {email} již má účet v systému. Pozvánka přeskočena.", "warning")
+            continue
+        if email in existing_invites:
+            flash(f"Platná pozvánka pro {email} již existuje. Pozvánka přeskočena.", "warning")
+            continue
+        invite = RegistrationInvite(
+            email=email,
+            created_by_id=current_user.id,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=INVITE_TOKEN_HOURS),
+            custom_subject=custom_subject,
+            custom_message=custom_message,
+        )
+        db.session.add(invite)
+        db.session.flush()
+        _queue_invite_email(invite)
+        audit("create", "RegistrationInvite", invite.id, f"Pozvánka vytvořena a zařazena do fronty pro {email}", {})
+        flash(f"Pozvánka zařazena do fronty odchozích zpráv pro {email}.", "success")
     db.session.commit()
-
-    flash(f"Pozvánka zařazena do fronty odchozích zpráv pro {email}.", "success")
     return redirect(url_for("users.invites"))
 
 
