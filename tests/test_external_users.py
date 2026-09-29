@@ -205,3 +205,18 @@ def test_external_with_admin_role_gets_no_admin_digest(app, world):
         ext.roles = [db.session.scalar(db.select(Role).where(Role.name == Role.ADMIN))]
         db.session.commit()
         assert run_admin_digest(db.session, now=now) is False
+
+
+def test_external_role_is_shown_as_externi(app, admin_client, world):
+    assert "Externí" in admin_client.get(f"/users/{world['ext']}").get_data(as_text=True)
+    assert "Externí" in admin_client.get("/users/").get_data(as_text=True)
+    assert "Externí" in admin_client.get("/admin/permissions").get_data(as_text=True)
+    with app.app_context():
+        role = db.session.scalar(db.select(Role).where(Role.name == Role.EXTERNAL))
+        assert (role.label, role.slug) == ("Externí", "external")  # the directory sync matches the slug
+
+
+def test_event_navigation_list_belongs_to_the_person_logged_in(ext_client, world):
+    user_id = str(world["ext"])
+    assert f'"userId": "{user_id}"' in ext_client.get("/events/").get_data(as_text=True)
+    assert f'data-user-id="{user_id}"' in ext_client.get(f"/events/{world['assigned']}").get_data(as_text=True)

@@ -135,14 +135,14 @@
               <input class="form-check-input" type="checkbox" name="role_ids"
                      value="{{ role.id }}" id="role_{{ role.id }}"
                      {{ 'checked' if role in user.roles }}>
-              <label class="form-check-label" for="role_{{ role.id }}">{{ role.name }}</label>
+              <label class="form-check-label" for="role_{{ role.id }}">{{ role.label }}</label>
             </div>
             {% endfor %}
           </div>
           {% else %}
           <div class="d-flex flex-wrap gap-1">
             {% for role in user.roles %}
-              {{ badge_secondary(role.name) }}
+              {{ badge_secondary(role.label) }}
             {% else %}
               <span class="text-muted">—</span>
             {% endfor %}

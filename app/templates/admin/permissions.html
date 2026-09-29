@@ -32,7 +32,7 @@
       <tr>
         <th class="minw-260">Oprávnění</th>
         {% for role in role_names %}
-          <th class="text-center minw-110">{{ role }}</th>
+          <th class="text-center minw-110">{{ role_labels.get(role, role) }}</th>
         {% endfor %}
       </tr>
     </thead>
@@ -55,7 +55,7 @@
           {% for role in role_names %}
             <td class="text-center">
               {% if perm.code in role_permissions[role] %}
-                <span class="text-success" title="{{ role }} má toto oprávnění">✔</span>
+                <span class="text-success" title="{{ role_labels.get(role, role) }} má toto oprávnění">✔</span>
               {% else %}
                 <span class="text-danger opacity-50">✘</span>
               {% endif %}

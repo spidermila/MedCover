@@ -36,7 +36,7 @@
        class="btn btn-sm {{ 'btn-secondary' if not role_filter else 'btn-outline-secondary' }}">Všechny role</a>
     {% for r in roles %}
     <a href="{{ url_for('users.index', q=q, sort=sort, dir=sort_dir, role=r.name) }}"
-       class="btn btn-sm {{ 'btn-secondary' if role_filter == r.name else 'btn-outline-secondary' }}">{{ r.name }}</a>
+       class="btn btn-sm {{ 'btn-secondary' if role_filter == r.name else 'btn-outline-secondary' }}">{{ r.label }}</a>
     {% endfor %}
   </div>
 
@@ -59,7 +59,7 @@
     <select name="role_id" class="form-select form-select-sm maxw-160" required>
       <option value="" disabled selected>— Vyber roli —</option>
       {% for r in roles %}
-      <option value="{{ r.id }}">{{ r.name }}</option>
+      <option value="{{ r.id }}">{{ r.label }}</option>
       {% endfor %}
     </select>
     <button type="submit" name="action" value="add_role" class="btn btn-sm btn-success">
@@ -129,7 +129,7 @@
         </td>
         <td>
           {% for r in u.roles %}
-            {{ badge_secondary(r.name) }}
+            {{ badge_secondary(r.label) }}
           {% else %}
             <span class="text-muted">—</span>
           {% endfor %}

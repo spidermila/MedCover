@@ -56,7 +56,7 @@
       });
       // Strip path down to "/events/" as the base for building detail URLs
       var base = window.location.pathname.replace(/\/events\/.*$/, "/events/");
-      sessionStorage.setItem("medcover_event_nav", JSON.stringify({ids: ids, base: base}));
+      sessionStorage.setItem("medcover_event_nav", JSON.stringify({user: cfg.userId, ids: ids, base: base}));
     } catch(e) {}
   }
 
