@@ -94,14 +94,17 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-primary btn-sm">Vzít s sebou</button>
               </form>
+              {% if not current_user.sees_own_events_only %}
               <button class="btn btn-outline-success btn-sm btn-open-issue" type="button"
                       data-item-id="{{ item.id }}"
                       data-item-name="{{ item.name }}"
                       title="Vydat položku „{{ item.name }}“">
                 Vydat
               </button>
+              {% endif %}
             {% endif %}
-            {% if current_user.has_permission('equipment_item.issue_personal') and item.issued_to %}
+            {% if current_user.has_permission('equipment_item.issue_personal') and item.issued_to
+                  and (item.issued_to_id == current_user.id or not current_user.sees_own_events_only) %}
               <form method="POST" action="{{ url_for('equipment.item_return', item_id=item.id) }}"
                     data-confirm="Vrátit položku „{{ item.name }}“?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -176,7 +179,7 @@
 
 {# Shared „Vydat“ modal — one instance for the whole page instead of a hidden
    collapse block per row. The user <select> is inlined once here. #}
-{% if current_user.has_permission('equipment_item.issue_personal') %}
+{% if current_user.has_permission('equipment_item.issue_personal') and not current_user.sees_own_events_only %}
 <div class="modal fade" id="issueItemModal" tabindex="-1" aria-labelledby="issueItemModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">

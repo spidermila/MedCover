@@ -1044,11 +1044,11 @@ Pre-defined roles (see AD01):
 | event_template.view | ✓ | ✓ | ✓ | ✓ | — | — |
 | event_template.create / edit / delete | ✓ | ✓ | — | — | — | — |
 | **Equipment** | | | | | | |
-| equipment.view | ✓ | ✓ | ✓ | ✓ | — | — |
+| equipment.view | ✓ | ✓ | ✓ | ✓ | — | ✓ |
 | equipment_type.create / edit / delete | ✓ | — | — | — | — | — |
 | equipment_item.create / edit / delete | ✓ | — | — | — | — | — |
-| equipment_item.issue_personal | ✓ | ✓ | ✓ | — | — | — |
-| equipment_item.report_own | ✓ | ✓ | ✓ | — | — | — |
+| equipment_item.issue_personal | ✓ | ✓ | ✓ | — | — | ✓¹ |
+| equipment_item.report_own | ✓ | ✓ | ✓ | — | — | ✓ |
 | event.equipment.plan | ✓ | ✓ | — | — | — | — |
 | event.equipment.assign | ✓ | ✓ | — | — | — | — |
 | **Debriefing** | | | | | | |
@@ -1070,6 +1070,8 @@ Pre-defined roles (see AD01):
 | backup.download | ✓ | — | — | — | — | — |
 | backup.restore | ✓ | — | — | — | — | — |
 | backup.delete | ✓ | — | — | — | — | — |
+
+¹ External users only take items themselves and return their own; they cannot issue items to others.
 
 **External** users (the MemberBase directory's external users) see only the events they are assigned to or responsible for, and the profiles of the people on those events. They may be the RP but gain nothing from it beyond their own debriefing. A user whose directory kind is external gets these permissions whatever roles they hold.
 

@@ -10,6 +10,7 @@ from app.extensions import db
 from app.mail import user_can_receive_notification
 from app.models.assignment import Assignment
 from app.models.digest import get_digest_schedule
+from app.models.equipment import EquipmentItem, EquipmentType
 from app.models.event import Event, EventStatus
 from app.models.qualification import Qualification
 from app.models.role import Role
@@ -220,3 +221,26 @@ def test_event_navigation_list_belongs_to_the_person_logged_in(ext_client, world
     user_id = str(world["ext"])
     assert f'"userId": "{user_id}"' in ext_client.get("/events/").get_data(as_text=True)
     assert f'data-user-id="{user_id}"' in ext_client.get(f"/events/{world['assigned']}").get_data(as_text=True)
+
+
+def test_external_takes_and_returns_only_own_equipment(app, ext_client, world):
+    with app.app_context():
+        kind = EquipmentType(name="Batoh")
+        db.session.add(kind)
+        db.session.flush()
+        mine = EquipmentItem(name="Batoh 1", type_id=kind.id)
+        theirs = EquipmentItem(name="Batoh 2", type_id=kind.id, issued_to_id=world["member"])
+        free = EquipmentItem(name="Batoh 3", type_id=kind.id)
+        db.session.add_all([mine, theirs, free])
+        db.session.commit()
+        ids = {"mine": mine.id, "theirs": theirs.id, "free": free.id}
+    page = ext_client.get("/equipment/items/").get_data(as_text=True)
+    assert "Batoh 1" in page and "Vzít s sebou" in page
+    assert "issueItemModal" not in page and "stranger@test.com" not in page and "Cizí Petr" not in page
+    assert ext_client.post(f"/equipment/items/{ids['mine']}/take").status_code == 302
+    assert ext_client.post(f"/equipment/items/{ids['free']}/issue", data={"user_id": world["ext"]}).status_code == 403
+    assert ext_client.post(f"/equipment/items/{ids['theirs']}/return").status_code == 403
+    assert ext_client.post(f"/equipment/items/{ids['mine']}/return").status_code == 302
+    with app.app_context():
+        assert db.session.get(EquipmentItem, ids["mine"]).issued_to_id is None
+        assert db.session.get(EquipmentItem, ids["theirs"]).issued_to_id == world["member"]
