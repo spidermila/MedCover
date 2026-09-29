@@ -250,6 +250,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     Role.EXTERNAL: [
         "user.edit_own",
         "event.view_assigned",
+        # Personal equipment, but only for themselves (see equipment routes).
+        "equipment.view",
+        "equipment_item.issue_personal",
+        "equipment_item.report_own",
         "debriefing.submit_own",
         "debriefing.view_own",
         "work_report.generate",
