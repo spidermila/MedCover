@@ -25,6 +25,7 @@ from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import CalendarView, UserAccount
 from app.models.user import user_roles as user_roles_table
+from app.queries import share_an_event
 from app.responsible_person import refresh_responsible_person
 from app.routes.assignments import lock_condition_event
 from app.signature import (
@@ -425,7 +426,11 @@ def create_user() -> str | Response:
 @users_bp.route("/<uuid:user_id>")
 @login_required
 def detail(user_id: uuid.UUID) -> str:
-    require_permission("user.view")
+    # External users see the people of the events they take part in.
+    if not current_user.has_permission("user.view") and not (
+        current_user.has_permission("event.view_assigned") and share_an_event(current_user.id, user_id)
+    ):
+        abort(403)
     user = get_or_404(UserAccount, user_id)
     roles = db.session.scalars(db.select(Role).order_by(collate(Role.name, CS_COLLATION))).all()
     qualifications = db.session.scalars(

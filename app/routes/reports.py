@@ -374,6 +374,8 @@ def user_report(user_id: uuid.UUID) -> str | Response:
         query = query.where(Event.start_datetime >= from_dt)
     if to_dt:
         query = query.where(Event.start_datetime < to_dt)
+    if not current_user.has_permission("event.view_draft"):
+        query = query.where(Event.status != EventStatus.DRAFT)
 
     assignments = list(db.session.scalars(query).unique().all())
 

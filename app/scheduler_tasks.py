@@ -165,9 +165,10 @@ def run_admin_digest(db_session: Any, now: datetime | None = None) -> bool:
                 )
                 return False
 
-    eligible = db_session.scalars(
+    admins = db_session.scalars(
         sa.select(UserAccount).join(UserAccount.roles).where(UserAccount.is_active == sa.true(), Role.name == "Admin")
     ).all()
+    eligible = [u for u in admins if Role.ADMIN in u.effective_role_names]
 
     if not eligible:
         log.info("Admin digest: no eligible recipients, skipping.")

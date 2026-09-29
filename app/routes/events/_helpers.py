@@ -78,10 +78,13 @@ PER_PAGE = 75
 
 
 def can_view(event: Event) -> bool:
-    """Check whether current_user can see *event* based on its status."""
+    """Check whether current_user can see *event* based on its status; external
+    users see only the published events they take part in."""
     if event.status == EventStatus.DRAFT:
         return current_user.has_permission("event.view_draft")
-    return current_user.has_permission("event.view")
+    if current_user.has_permission("event.view"):
+        return True
+    return current_user.has_permission("event.view_assigned") and event.takes_part(current_user)
 
 
 def _parse_form_fields(form: dict) -> dict:
@@ -145,8 +148,7 @@ def _validate_event_fields(
     if fields["responsible_person_id"]:
         rp_user = db.session.get(UserAccount, fields["responsible_person_id"])
         if rp_user:
-            rp_role_names = {r.name for r in rp_user.roles}
-            if rp_role_names <= {Role.VIEWER}:
+            if rp_user.effective_role_names <= {Role.VIEWER}:
                 return (
                     (
                         f"Uživatel {rp_user.name} má pouze roli Pozorovatel a nemůže být "

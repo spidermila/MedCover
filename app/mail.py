@@ -268,12 +268,13 @@ _NOTIFICATION_ALLOWED_ROLES: dict[str, set[str]] = {
     "admin_digest": {"Admin"},
     "event_published": {"Coordinator", "Member"},
     "assignments_opened": {"Coordinator", "Member"},
-    "assignment": {"Member"},  # confirmed, released
-    "unfilled_reminder": {"Coordinator", "Member"},  # reminder to coordinator / RP
-    "event_cancelled": {"Member"},  # cancelled → notify assigned users
-    "event_archived": {"Member"},  # archived → notify assigned + queued users
-    "event_unarchived": {"Member"},  # unarchived → notify assigned users
-    "event_changed": {"Member"},  # event details changed → notify assigned users
+    # External users get only what concerns the events they take part in.
+    "assignment": {"Member", "External"},  # confirmed, released
+    "unfilled_reminder": {"Coordinator", "Member"},  # reminder to coordinator / RP (an external RP cannot fill spots)
+    "event_cancelled": {"Member", "External"},  # cancelled → notify assigned users
+    "event_archived": {"Member", "External"},  # archived → notify assigned + queued users
+    "event_unarchived": {"Member", "External"},  # unarchived → notify assigned users
+    "event_changed": {"Member", "External"},  # event details changed → notify assigned users
 }
 
 
@@ -292,7 +293,8 @@ def user_can_receive_notification(user: UserAccount, notification_type: str) -> 
     if notification_type == "auth":
         return True
 
-    user_role_names: set[str] = {r.name for r in user.roles}
+    # External users are limited to their own events whatever roles they hold.
+    user_role_names = user.effective_role_names
 
     # Viewer-only → no operational emails
     if user_role_names <= {"Viewer"}:

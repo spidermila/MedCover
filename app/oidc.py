@@ -145,8 +145,8 @@ def callback() -> Response | tuple[str, int]:
         return render_template("auth/login_refused.html", failed=True), 400
     claims = token["userinfo"]
     member_id = _uuid_or_none(claims.get("crc_member_id"))
-    synced = bool(member_id) and directory_sync.enabled()
-    if synced:
+    synced = directory_sync.enabled()
+    if synced and member_id is not None:
         _sync_person(member_id)
     user = db.session.get(UserAccount, member_id) if member_id else None
     wanted = set(claims.get("medcover_roles") or [])
@@ -154,7 +154,7 @@ def callback() -> Response | tuple[str, int]:
     if synced and user is not None and roles and not user.is_active and not user.is_archived:
         # Only the status stands in the way: activate the person if they are
         # still invited (their first login), and copy them again.
-        _sync_person(member_id, activate=True)
+        _sync_person(user.id, activate=True)
         db.session.refresh(user)
     if user is None or user.is_archived or not user.is_active or not roles:
         current_app.logger.info("OIDC login refused for crc_member_id=%s", claims.get("crc_member_id"))

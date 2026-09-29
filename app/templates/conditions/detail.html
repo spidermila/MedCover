@@ -22,8 +22,8 @@
 <ul class="list-group mb-4">
 {% for assignment in event.assignments %}
 <li class="list-group-item d-flex justify-content-between align-items-center">
-  <span>{{ assignment.user.name }}</span>
-  {% if not event.archived and event.status not in [EventStatus.COMPLETED, EventStatus.CANCELLED] and (can_assign or (assignment.user_id == current_user.id and not me_coordinated)) %}
+  <a href="{{ url_for('users.detail', user_id=assignment.user_id) }}" class="text-decoration-none">{{ assignment.user.name }}</a>
+  {% if not event.archived and event.status not in [EventStatus.COMPLETED, EventStatus.CANCELLED] and (can_assign or (assignment.user_id == current_user.id and not me_coordinated and not current_user.sees_own_events_only)) %}
   <form method="POST" action="{{ url_for('assignments.release', assignment_id=assignment.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn btn-outline-danger btn-sm">Odhlásit</button>
