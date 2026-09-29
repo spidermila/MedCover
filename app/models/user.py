@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, deferred
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
-from app.models.role import DIRECTORY_OWNED_PERMISSIONS, ROLE_PERMISSIONS, directory_synced
+from app.models.role import DIRECTORY_OWNED_PERMISSIONS, ROLE_PERMISSIONS, Role, directory_synced
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment, DebriefingRecord
@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from app.models.invite import RegistrationInvite
     from app.models.master_event import MasterEvent
     from app.models.qualification import Qualification
-    from app.models.role import Role
 
 
 class CalendarView(str, enum.Enum):
@@ -196,8 +195,15 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
+    @property
+    def effective_role_names(self) -> set[str]:
+        """Names of the roles that count: an external user (directory kind)
+        counts as External whatever roles they were given."""
+        names = {r.name for r in self.roles}
+        return {Role.EXTERNAL} if self.kind == "external" and names else names
+
     def _permissions(self) -> set[str]:
-        owned = {c for role in self.roles for c in ROLE_PERMISSIONS.get(role.name, [])}
+        owned = {c for name in self.effective_role_names for c in ROLE_PERMISSIONS.get(name, [])}
         return owned - DIRECTORY_OWNED_PERMISSIONS if directory_synced() else owned
 
     def has_permission(self, code: str) -> bool:
@@ -206,16 +212,24 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
     def has_any_permission(self, *codes: str) -> bool:
         return bool(self._permissions() & set(codes))
 
+    @property
+    def sees_own_events_only(self) -> bool:
+        """External users: only the events they are assigned to or responsible for."""
+        return self.has_permission("event.view_assigned") and not self.has_any_permission(
+            "event.view", "event.view_draft"
+        )
+
     def is_rp_eligible(self) -> bool:
         """Return True if the user can be a responsible person.
 
-        Requires both a qualification with can_be_rp=True and the
-        event.assign_own permission (excludes Viewers and inactive roles).
+        Requires both a qualification with can_be_rp=True and taking part in
+        events (event.assign_own, or event.view_assigned for external users;
+        excludes Viewers and inactive roles).
         """
         return (
             self.is_active
             and not self.is_archived
-            and self.has_permission("event.assign_own")
+            and self.has_any_permission("event.assign_own", "event.view_assigned")
             and any(q.can_be_rp and not q.is_deleted for q in self.qualifications)
         )
 

@@ -39,6 +39,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 | Člen | Member | Regular member; can join events and submit debriefings |
 | Divák | Viewer | Read-only access |
 | Vedoucí debriefingu | Debriefing Manager | Exclusive access to confidential debriefing records |
+| Externí uživatel | External | Only the events they are assigned to or responsible for, and the people on them |
 | Zodpovědná osoba (ZO) | Responsible Person (RP) / `responsible_person` | The person leading an event on site; field: `Event.responsible_person_id` |
 | Zelenáč | Trainee | Informal Czech term for a junior/trainee-level qualification used in the event import logic |
 
@@ -1009,65 +1010,68 @@ Pre-defined roles (see AD01):
 
 ### Permissions
 
-| Permission | Admin | Coordinator | Member | Viewer | Debriefing Manager |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Users** | | | | | |
-| user.view | ✓ | ✓ | ✓ | ✓ | — |
-| user.edit_own | ✓ | ✓ | ✓ | — | — |
-| user.edit_any | ✓ | — | — | — | — |
-| user.activate / deactivate | ✓ | — | — | — | — |
-| user.assign_role | ✓ | — | — | — | — |
-| user.assign_qualification | ✓ | — | — | — | — |
-| invite.create | ✓ | — | — | — | — |
-| **Qualifications** | | | | | |
-| qualification.view | ✓ | ✓ | ✓ | ✓ | — |
-| qualification.create / edit / delete | ✓ | — | — | — | — |
-| **Master Events** | | | | | |
-| master_event.view | ✓ | ✓ | ✓ | ✓ | — |
-| master_event.create / edit | ✓ | ✓ | — | — | — |
-| master_event.archive / unarchive | ✓ | — | — | — | — |
-| **Events** | | | | | |
-| event.view (Published and later) | ✓ | ✓ | ✓ | ✓ | — |
-| event.view_draft | ✓ | ✓ | — | — | — |
-| event.create / edit | ✓ | ✓ | — | — | — |
-| event.publish | ✓ | ✓ | — | — | — |
-| event.assignments.open / close | ✓ | ✓ | RP* | — | — |
-| event.cancel / restore | ✓ | ✓ | — | — | — |
-| event.delete (archived, permanent) | ✓ | — | — | — | — |
-| event.assign_own (join / leave) | ✓ | ✓ | ✓ | — | — |
-| event.assign_other | ✓ | ✓ | — | — | — |
-| event.set_responsible_person | ✓ | ✓ | — | — | — |
-| event.notification.send (manual) | ✓ | ✓ | RP* | — | — |
-| **Event Templates** | | | | | |
-| event_template.view | ✓ | ✓ | ✓ | ✓ | — |
-| event_template.create / edit / delete | ✓ | ✓ | — | — | — |
-| **Equipment** | | | | | |
-| equipment.view | ✓ | ✓ | ✓ | ✓ | — |
-| equipment_type.create / edit / delete | ✓ | — | — | — | — |
-| equipment_item.create / edit / delete | ✓ | — | — | — | — |
-| equipment_item.issue_personal | ✓ | ✓ | ✓ | — | — |
-| equipment_item.report_own | ✓ | ✓ | ✓ | — | — |
-| event.equipment.plan | ✓ | ✓ | — | — | — |
-| event.equipment.assign | ✓ | ✓ | — | — | — |
-| **Debriefing** | | | | | |
-| debriefing.submit_own | ✓ | ✓ | ✓ | — | ✓ |
-| debriefing.view_own | ✓ | ✓ | ✓ | — | ✓ |
-| debriefing.view_all (confidential) | — | — | — | — | ✓ |
-| debriefing.manage | — | — | — | — | ✓ |
-| **Reports** | | | | | |
-| report.view | ✓ | ✓ | ✓ | ✓ | — |
-| work_report.generate | ✓ | ✓ | ✓ | — | — |
-| **Audit** | | | | | |
-| audit.view | ✓ | — | — | — | — |
-| **Admin / System** | | | | | |
-| admin.view | ✓ | — | — | — | — |
-| admin.manage_settings | ✓ | — | — | — | — |
-| admin.manage_digest | ✓ | — | — | — | — |
-| **Backup** | | | | | |
-| backup.run | ✓ | — | — | — | — |
-| backup.download | ✓ | — | — | — | — |
-| backup.restore | ✓ | — | — | — | — |
-| backup.delete | ✓ | — | — | — | — |
+| Permission | Admin | Coordinator | Member | Viewer | Debriefing Manager | External |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Users** | | | | | | |
+| user.view | ✓ | ✓ | ✓ | ✓ | — | — |
+| user.edit_own | ✓ | ✓ | ✓ | — | — | ✓ |
+| user.edit_any | ✓ | — | — | — | — | — |
+| user.activate / deactivate | ✓ | — | — | — | — | — |
+| user.assign_role | ✓ | — | — | — | — | — |
+| user.assign_qualification | ✓ | — | — | — | — | — |
+| invite.create | ✓ | — | — | — | — | — |
+| **Qualifications** | | | | | | |
+| qualification.view | ✓ | ✓ | ✓ | ✓ | — | — |
+| qualification.create / edit / delete | ✓ | — | — | — | — | — |
+| **Master Events** | | | | | | |
+| master_event.view | ✓ | ✓ | ✓ | ✓ | — | — |
+| master_event.create / edit | ✓ | ✓ | — | — | — | — |
+| master_event.archive / unarchive | ✓ | — | — | — | — | — |
+| **Events** | | | | | | |
+| event.view (Published and later) | ✓ | ✓ | ✓ | ✓ | — | — |
+| event.view_draft | ✓ | ✓ | — | — | — | — |
+| event.view_assigned (only own events, not drafts) | ✓ | — | — | — | — | ✓ |
+| event.create / edit | ✓ | ✓ | — | — | — | — |
+| event.publish | ✓ | ✓ | — | — | — | — |
+| event.assignments.open / close | ✓ | ✓ | RP* | — | — | — |
+| event.cancel / restore | ✓ | ✓ | — | — | — | — |
+| event.delete (archived, permanent) | ✓ | — | — | — | — | — |
+| event.assign_own (join / leave) | ✓ | ✓ | ✓ | — | — | — |
+| event.assign_other | ✓ | ✓ | — | — | — | — |
+| event.set_responsible_person | ✓ | ✓ | — | — | — | — |
+| event.notification.send (manual) | ✓ | ✓ | RP* | — | — | — |
+| **Event Templates** | | | | | | |
+| event_template.view | ✓ | ✓ | ✓ | ✓ | — | — |
+| event_template.create / edit / delete | ✓ | ✓ | — | — | — | — |
+| **Equipment** | | | | | | |
+| equipment.view | ✓ | ✓ | ✓ | ✓ | — | — |
+| equipment_type.create / edit / delete | ✓ | — | — | — | — | — |
+| equipment_item.create / edit / delete | ✓ | — | — | — | — | — |
+| equipment_item.issue_personal | ✓ | ✓ | ✓ | — | — | — |
+| equipment_item.report_own | ✓ | ✓ | ✓ | — | — | — |
+| event.equipment.plan | ✓ | ✓ | — | — | — | — |
+| event.equipment.assign | ✓ | ✓ | — | — | — | — |
+| **Debriefing** | | | | | | |
+| debriefing.submit_own | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| debriefing.view_own | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| debriefing.view_all (confidential) | — | — | — | — | ✓ | — |
+| debriefing.manage | — | — | — | — | ✓ | — |
+| **Reports** | | | | | | |
+| report.view | ✓ | ✓ | ✓ | ✓ | — | — |
+| work_report.generate | ✓ | ✓ | ✓ | — | — | ✓ |
+| **Audit** | | | | | | |
+| audit.view | ✓ | — | — | — | — | — |
+| **Admin / System** | | | | | | |
+| admin.view | ✓ | — | — | — | — | — |
+| admin.manage_settings | ✓ | — | — | — | — | — |
+| admin.manage_digest | ✓ | — | — | — | — | — |
+| **Backup** | | | | | | |
+| backup.run | ✓ | — | — | — | — | — |
+| backup.download | ✓ | — | — | — | — | — |
+| backup.restore | ✓ | — | — | — | — | — |
+| backup.delete | ✓ | — | — | — | — | — |
+
+**External** users (the MemberBase directory's external users) see only the events they are assigned to or responsible for, and the profiles of the people on those events. They may be the RP but gain nothing from it beyond their own debriefing. A user whose directory kind is external gets these permissions whatever roles they hold.
 
 *\*RP (Responsible Person)* — a Member who is the RP of an Event gains `event.assignments.open`, `event.assignments.close`, and `event.notification.send` scoped to that specific Event only.
 

@@ -5,7 +5,9 @@
 
 {% block content %}
 <div class="mb-3 d-flex justify-content-between align-items-center">
+  {% if current_user.has_permission('user.view') %}
   <a href="{{ url_for('users.index', archived=1 if user.is_archived else None) }}" class="btn btn-sm btn-outline-secondary">← Zpět na uživatele</a>
+  {% else %}<span></span>{% endif %}
   <div class="d-flex gap-2">
     {% if current_user.has_permission('report.view') %}
     <a href="{{ url_for('reports.user_report', user_id=user.id) }}" class="btn btn-sm btn-outline-primary">Přehled akcí</a>
@@ -117,7 +119,8 @@
 
     </div>
 
-    {# ── Right column: roles + qualifications ── #}
+    {# ── Right column: roles + qualifications (not for external users) ── #}
+    {% if not current_user.sees_own_events_only %}
     <div class="col-12 col-lg-7">
 
       <div class="card mb-4">
@@ -179,6 +182,7 @@
       </div>
 
     </div>
+    {% endif %}
   </div>
 
   {% if current_user.has_permission('user.edit_any') %}

@@ -9,7 +9,9 @@
     <span class="text-muted fw-normal">{{ report_user.name }}</span>
   </h2>
   <div>
+    {% if current_user.has_permission('report.view') %}
     <a href="{{ url_for('reports.index') }}" class="btn btn-outline-secondary btn-sm">← Zpět na přehledy</a>
+    {% endif %}
     <a href="{{ url_for('reports.user_report', user_id=report_user.id, from_date=from_date, to_date=to_date, format='csv') }}"
        class="btn btn-outline-success btn-sm ms-1">⬇ Stáhnout CSV</a>
   </div>

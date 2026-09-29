@@ -264,6 +264,7 @@
     </div>
 
     <!-- ── iCal all events subscription ── -->
+    {% if not current_user.sees_own_events_only %}
     <div class="card mb-4" id="ical-all">
       <div class="card-header fw-semibold d-flex align-items-center gap-2">
         Kalendářový odkaz – všechny akce
@@ -299,6 +300,7 @@
         </form>
       </div>
     </div>
+    {% endif %}
 
   </div>
 </div>
