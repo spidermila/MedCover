@@ -79,7 +79,9 @@
         <ul class="navbar-nav me-auto">
           {% if current_user.is_authenticated %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('events.index') }}">Akce</a></li>
+          {% if current_user.has_permission('master_event.view') %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('master_events.index') }}">Nadřazené akce</a></li>
+          {% endif %}
           {% if current_user.has_permission('event_template.view') %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('templates.index') }}">Šablony akcí</a></li>
           {% endif %}

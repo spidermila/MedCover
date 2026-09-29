@@ -43,6 +43,22 @@ def active_users_query():  # type: ignore[no-untyped-def]
     )
 
 
+def takes_part_clause(user_id: UUID) -> sa.ColumnElement[bool]:
+    """Events *user_id* is assigned to or is the responsible person of."""
+    return sa.or_(
+        Event.id.in_(db.select(Assignment.event_id).where(Assignment.user_id == user_id)),
+        Event.responsible_person_id == user_id,
+    )
+
+
+def share_an_event(user_id: UUID, other_id: UUID) -> bool:
+    """Both take part in the same event that is not a draft."""
+    shared = db.select(Event.id).where(
+        Event.status != EventStatus.DRAFT, takes_part_clause(user_id), takes_part_clause(other_id)
+    )
+    return db.session.scalar(shared.limit(1)) is not None
+
+
 def active_users_list() -> Sequence[UserAccount]:
     """Return all active :class:`UserAccount` rows ordered by name."""
     return db.session.scalars(active_users_query()).all()

@@ -37,6 +37,9 @@ class Role(db.Model):  # type: ignore[misc]
     MEMBER = "Member"
     VIEWER = "Viewer"
     DEBRIEFING_MANAGER = "Debriefing Manager"
+    # People from outside the organisation: they see only the events they are
+    # assigned to or responsible for, never the event plan or other users.
+    EXTERNAL = "External"
 
     # Permissions that are intentionally withheld from Admin.
     # These are reserved for the Debriefing Manager role only — even
@@ -97,6 +100,7 @@ ALL_PERMISSIONS: list[dict] = [
     # Events
     {"code": "event.view", "description": "View published events"},
     {"code": "event.view_draft", "description": "View draft events"},
+    {"code": "event.view_assigned", "description": "View only the events one is assigned to or responsible for"},
     {"code": "event.create", "description": "Create events"},
     {"code": "event.edit", "description": "Edit events"},
     {"code": "event.publish", "description": "Publish events"},
@@ -234,5 +238,12 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "debriefing.view_own",
         "debriefing.view_all",
         "debriefing.manage",
+    ],
+    Role.EXTERNAL: [
+        "user.edit_own",
+        "event.view_assigned",
+        "debriefing.submit_own",
+        "debriefing.view_own",
+        "work_report.generate",
     ],
 }

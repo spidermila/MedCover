@@ -30,9 +30,11 @@
       <span class="badge bg-{{ 'success' if event.is_sufficiently_staffed else 'warning' }} ms-1 fs-6">{{ event.staffing_status }}</span>
     </h2>
     <p class="text-muted mb-0">
+      {% if current_user.has_permission('master_event.view') %}
       <a href="{{ url_for('master_events.detail', me_id=event.master_event_id) }}" class="text-decoration-none">
         {{ event.master_event.name }}
       </a>
+      {% else %}{{ event.master_event.name }}{% endif %}
     </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
@@ -370,7 +372,7 @@
             {% endif %}
 
             {# Release own assignment — blocked when ME is centrally coordinated #}
-            {% if not me_coordinated and spot.assignment and spot.assignment.user_id == current_user.id and event.status != EventStatus.COMPLETED %}
+            {% if not me_coordinated and spot.assignment and spot.assignment.user_id == current_user.id and event.status != EventStatus.COMPLETED and not current_user.sees_own_events_only %}
               <form method="POST" action="{{ url_for('assignments.release', assignment_id=spot.assignment.id) }}"
                     data-confirm="Odhlásit se z této pozice?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

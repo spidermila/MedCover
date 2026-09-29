@@ -20,6 +20,7 @@ from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.user import UserAccount
+from app.queries import takes_part_clause
 from app.utils import audit, external_url_for, get_app_tz, require_permission
 
 log = logging.getLogger(__name__)
@@ -61,29 +62,30 @@ def _ical_response(cal: Calendar) -> Response:
 def feed(token: str) -> Response:
     """Return an iCal feed for the user identified by *token*.
 
-    Contains only events the user is assigned to (excluding cancelled,
-    completed, and archived events).
+    Contains only events the user is assigned to or responsible for
+    (excluding cancelled, completed, and archived events).
     """
     user: UserAccount | None = db.session.scalar(sa.select(UserAccount).where(UserAccount.ical_token == token))
     if user is None or not user.is_active or user.is_archived:
         abort(404)
 
-    assignments = db.session.scalars(
-        sa.select(Assignment)
-        .join(Assignment.event)
+    excluded = set(_PERSONAL_EXCLUDED_STATUSES)
+    if not user.has_permission("event.view_draft"):
+        excluded.add(EventStatus.DRAFT)  # external users do not see drafts
+    events = db.session.scalars(
+        sa.select(Event)
         .where(
-            Assignment.user_id == user.id,
-            Event.status.notin_(_PERSONAL_EXCLUDED_STATUSES),
+            takes_part_clause(user.id),
+            Event.status.notin_(excluded),
             Event.archived == sa.false(),
         )
-        .options(selectinload(Assignment.event))  # type: ignore[arg-type]
+        .options(selectinload(Event.assignments))  # type: ignore[arg-type]
     ).all()
 
     cal = _make_calendar(f"MedCover – {user.name}", "Vaše akce v systému MedCover")
 
-    for assignment in assignments:
-        spot = assignment.spot
-        event = assignment.event
+    for event in events:
+        spot = next((a.spot for a in event.assignments if a.user_id == user.id), None)
 
         vevent = ICalEvent()
         vevent.add("uid", f"event-{event.id}@medcover")
@@ -118,7 +120,7 @@ def feed_all(token: str) -> Response:
     qualifications and assigned users, and the responsible person.
     """
     user: UserAccount | None = db.session.scalar(sa.select(UserAccount).where(UserAccount.ical_all_token == token))
-    if user is None or not user.is_active or user.is_archived:
+    if user is None or not user.is_active or user.is_archived or user.sees_own_events_only:
         abort(404)
 
     events = db.session.scalars(

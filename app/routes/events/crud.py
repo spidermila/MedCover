@@ -32,6 +32,7 @@ from app.queries import (
     in_maintenance_during,
     rp_eligible_users_list,
     serialize_conflicts_for_template,
+    takes_part_clause,
     user_fillable_qual_ids,
 )
 from app.routes.assignments import lock_condition_event
@@ -99,7 +100,7 @@ def _parse_index_filters() -> dict:
 
     me_id_param = request.args.get("me_id", "").strip()
     active_me: MasterEvent | None = None
-    if me_id_param:
+    if me_id_param and current_user.has_permission("master_event.view"):
         active_me = db.session.get(MasterEvent, me_id_param)
         if active_me and active_me.archived:
             active_me = None
@@ -224,7 +225,7 @@ def _eligible_event_ids_for_user(user: UserAccount) -> list[int]:
 @events_bp.get("/")
 @login_required
 def index() -> str | Response:
-    require_permission("event.view", "event.view_draft")
+    require_permission("event.view", "event.view_draft", "event.view_assigned")
 
     f = _parse_index_filters()
     # Assignment.user is lazy="selectin" (see models/assignment.py), and UserAccount.roles
@@ -241,6 +242,8 @@ def index() -> str | Response:
 
     if not current_user.has_permission("event.view_draft"):
         query = query.where(Event.status != EventStatus.DRAFT)
+    if current_user.sees_own_events_only:
+        query = query.where(takes_part_clause(current_user.id))
     if not f["show_archived"]:
         query = query.where(Event.archived == sa.false())
     if f["active_me"]:
@@ -274,11 +277,15 @@ def index() -> str | Response:
         return redirect_resp
     events = pagination.items
 
-    active_named_mes = db.session.scalars(
-        db.select(MasterEvent)
-        .where(MasterEvent.archived == sa.false())
-        .order_by(collate(MasterEvent.name, CS_COLLATION))
-    ).all()
+    active_named_mes = (
+        db.session.scalars(
+            db.select(MasterEvent)
+            .where(MasterEvent.archived == sa.false())
+            .order_by(collate(MasterEvent.name, CS_COLLATION))
+        ).all()
+        if current_user.has_permission("master_event.view")
+        else []
+    )
 
     event_templates: list[EventTemplate] = []
     if current_user.has_permission("event.create"):
@@ -348,13 +355,15 @@ def index() -> str | Response:
 @login_required
 def feed() -> Response:
     """Return events as FullCalendar-compatible JSON."""
-    require_permission("event.view", "event.view_draft")
+    require_permission("event.view", "event.view_draft", "event.view_assigned")
 
     show_archived = request.args.get("archived") == "1"
 
     query = db.select(Event)
     if not current_user.has_permission("event.view_draft"):
         query = query.where(Event.status != EventStatus.DRAFT)
+    if current_user.sees_own_events_only:
+        query = query.where(takes_part_clause(current_user.id))
     if not show_archived:
         query = query.where(Event.archived == sa.false())
 
