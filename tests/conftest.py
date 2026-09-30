@@ -24,6 +24,11 @@ from app.models.user import UserAccount
 if TYPE_CHECKING:
     pass
 
+# SQLAlchemy owns connection pooling. With ODBC driver-manager pooling on,
+# engine.dispose() leaves physical sessions open; ALTER DATABASE ... WITH
+# ROLLBACK IMMEDIATE then kills them and the next connect() gets a dead one.
+pyodbc.pooling = False
+
 # All mutable tables — reference data (role, permission, role_permissions,
 # app_settings, alembic_version) is preserved across the suite.
 _MUTABLE_TABLES_LIST = [
@@ -306,7 +311,7 @@ def _drop_db(db_url: str) -> None:
             DECLARE @kill NVARCHAR(MAX) = N''
             SELECT @kill += N'KILL ' + CAST(session_id AS NVARCHAR(10)) + N'; '
             FROM sys.dm_exec_sessions
-            WHERE database_id = DB_ID(N'{db_name}')
+            WHERE database_id = DB_ID(N'{db_name}') AND is_user_process = 1
             IF LEN(@kill) > 0
                 EXEC sp_executesql @kill
         END
@@ -327,7 +332,7 @@ def _drop_db(db_url: str) -> None:
                     DECLARE @kill2 NVARCHAR(MAX) = N''
                     SELECT @kill2 += N'KILL ' + CAST(session_id AS NVARCHAR(10)) + N'; '
                     FROM sys.dm_exec_sessions
-                    WHERE database_id = DB_ID(N'{db_name}')
+                    WHERE database_id = DB_ID(N'{db_name}') AND is_user_process = 1
                     IF LEN(@kill2) > 0
                         EXEC sp_executesql @kill2
                 END
