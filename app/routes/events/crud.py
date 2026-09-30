@@ -37,6 +37,7 @@ from app.routes.assignments import lock_condition_event
 from app.staffing import can_join_event, condition_plan_from_form
 from app.utils import (
     CS_COLLATION,
+    SEARCH_COLLATION,
     audit,
     bind_form_version,
     check_version_conflict,
@@ -109,6 +110,7 @@ def _parse_index_filters() -> dict:
         active_types = [t for t in raw_types.split(",") if t in _ALL_EVENT_TYPES]
 
     for_me = request.args.get("for_me") == "1" and current_user.has_permission("event.assign_own")
+    search = request.args.get("q", "").strip()[:255]
 
     return {
         "show_archived": show_archived,
@@ -119,6 +121,7 @@ def _parse_index_filters() -> dict:
         "active_me": active_me,
         "active_types": active_types,
         "for_me": for_me,
+        "search": search,
     }
 
 
@@ -260,6 +263,10 @@ def index() -> str | Response:
         eligible_ids = _eligible_event_ids_for_user(current_user)
         query = query.where(Event.id.in_(eligible_ids))
 
+    if f["search"]:
+        # CHARINDEX, not LIKE: user input needs no wildcard escaping
+        query = query.where(func.charindex(f["search"], collate(Event.name, SEARCH_COLLATION)) > 0)
+
     query = _apply_index_order(query, f["sort_col"], f["sort_dir"])
     pagination = db.paginate(query, page=f["page"], per_page=PER_PAGE, error_out=False)
     if redirect_resp := last_page_redirect(pagination.page, pagination.pages):
@@ -328,6 +335,7 @@ def index() -> str | Response:
         active_named_mes=active_named_mes,
         status_colors=STATUS_BADGE_COLORS,
         for_me=f["for_me"],
+        search=f["search"],
         spot_counts=spot_counts,
     )
 

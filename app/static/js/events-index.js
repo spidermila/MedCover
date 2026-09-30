@@ -73,6 +73,40 @@
     window.location.href = window.location.pathname + "?" + params.toString();
   }
 
+  // ── Name search (server-side; ?q=, reload on submit) ─────────────────────
+
+  function navigateToSearch(q) {
+    var params = new URLSearchParams(window.location.search);
+    if (q) {
+      params.set("q", q);
+    } else {
+      params.delete("q");
+    }
+    params.delete("page");
+    window.location.href = window.location.pathname + "?" + params.toString();
+  }
+
+  function initNameSearch() {
+    var btn = document.getElementById("btn-name-search");
+    var form = document.getElementById("name-search-form");
+    var input = document.getElementById("name-search-input");
+    if (!btn || !form || !input) return;
+    // defaultValue = the applied (stripped) search the server rendered; value may be browser-restored
+    var active = input.defaultValue !== "";
+    btn.addEventListener("click", function () {
+      // Second click closes: drop an applied filter, or just hide an unused field
+      if (active) { navigateToSearch(""); return; }
+      var open = form.classList.toggle("d-none") === false;
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) input.focus(); else input.value = "";
+    });
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var q = input.value.trim();
+      if (q || active) navigateToSearch(q);
+    });
+  }
+
   // ── View toggle ───────────────────────────────────────────────────────────
 
   function setView(view) {
@@ -266,6 +300,7 @@
     // ME filter select (replaces inline onchange in template)
     var meSelect = document.getElementById("me-filter-select");
     if (meSelect) meSelect.addEventListener("change", function () { navigateToMe(meSelect.value); });
+    initNameSearch();
 
     // Bulk action buttons (replaces inline onclick in template)
     document.querySelectorAll("[data-bulk-action]").forEach(function (btn) {
