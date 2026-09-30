@@ -230,7 +230,7 @@
                       {{ help_icon("Omezí výpis pouze na vybrané typy objektů. Podržte Ctrl (nebo Cmd) pro výběr více položek. Prázdný výběr zobrazí vše.") }}
                     </label>
                     <select class="form-select form-select-sm" name="entity_types" id="block_{{ block.id }}_entity_types" multiple size="4">
-                      {% for et in ['Event','EventSpot','Assignment','UserAccount','MasterEvent',
+                      {% for et in ['Event','EventSpot','UserAccount','MasterEvent',
                                     'EventTemplate','EquipmentItem','AppSettings','RegistrationInvite','OutboxEmail'] %}
                       <option value="{{ et }}" {{ 'selected' if et in cfg.get('entity_types', []) }}>{{ et }}</option>
                       {% endfor %}

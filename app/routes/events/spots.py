@@ -221,9 +221,9 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
         unassigned_user = assignment.user
         audit(
             "delete",
-            "Assignment",
-            assignment.id,
-            f"Uživatel '{unassigned_user.name}' automaticky odhlášen — nesplňuje nové požadavky pozice",
+            "Event",
+            event.id,
+            f"Uživatel „{unassigned_user.name}“ automaticky odhlášen — nesplňuje nové požadavky pozice",
         )
         db.session.delete(assignment)
         db.session.flush()

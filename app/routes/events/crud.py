@@ -12,6 +12,7 @@ from sqlalchemy.orm import noload, raiseload, selectinload
 
 import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
+from app.event_log import event_log
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.equipment import (
@@ -688,6 +689,7 @@ def detail(event_id: int) -> str | Response:
         all_qualifications=all_qualifications,
         fillers_map=fillers_map,
         rp_eligible_attendees=rp_eligible_attendees,
+        event_log=event_log(event),
         condition_can_join=(
             can_join_event(event, current_user) if event.staffing_mode == StaffingMode.CONDITIONS else False
         ),

@@ -11,7 +11,6 @@ from app.models.audit import AuditLogEntry
 _ALL_ENTITY_TYPES = [
     "Event",
     "EventSpot",
-    "Assignment",
     "UserAccount",
     "MasterEvent",
     "EventTemplate",

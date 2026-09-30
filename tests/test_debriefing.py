@@ -280,8 +280,9 @@ class TestDebriefingSubmit:
         with app.app_context():
             entry = db.session.scalar(
                 db.select(AuditLogEntry)
-                .where(AuditLogEntry.entity_type == "DebriefingRecord")
+                .where(AuditLogEntry.entity_type == "Event")
                 .where(AuditLogEntry.action_type == "create")
+                .where(AuditLogEntry.summary.startswith("Debriefing odevzdán"))
             )
             assert entry is not None
 
