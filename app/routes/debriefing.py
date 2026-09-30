@@ -227,7 +227,7 @@ def submit(assignment_id: int) -> str | Response:
     )
     db.session.add(record)
     db.session.flush()
-    audit("create", "DebriefingRecord", str(record.id), f"Debriefing odevzdán pro akci '{event.name}'")
+    audit("create", "DebriefingRecord", record.id, f"Debriefing odevzdán pro akci „{event.name}“", event_id=event.id)
 
     # Apply RP actuals when at least start/end are set (all optional for TRAINING)
     if has_rp_section and (actual_start or actual_end or post_event_count is not None):

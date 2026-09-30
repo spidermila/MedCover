@@ -274,7 +274,7 @@ class TestDebriefingSubmit:
             assert record.event_note_status == 2  # still the original response
 
     def test_submit_creates_audit_entry(self, app):
-        _, _, assignment_id = _setup_completed_assignment(app)
+        event_id, _, assignment_id = _setup_completed_assignment(app)
         c = _assigned_client(app)
         c.post(f"/debriefing/{assignment_id}", data=_VALID_FORM, follow_redirects=True)
         with app.app_context():
@@ -284,6 +284,7 @@ class TestDebriefingSubmit:
                 .where(AuditLogEntry.action_type == "create")
             )
             assert entry is not None
+            assert entry.event_id == event_id
 
 
 # ── RP section ────────────────────────────────────────────────────────────────

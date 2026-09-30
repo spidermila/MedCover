@@ -12,6 +12,7 @@ from sqlalchemy.orm import noload, raiseload, selectinload
 
 import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
+from app.event_log import event_log, event_snapshot
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.equipment import (
@@ -696,6 +697,7 @@ def detail(event_id: int) -> str | Response:
         all_qualifications=all_qualifications,
         fillers_map=fillers_map,
         rp_eligible_attendees=rp_eligible_attendees,
+        event_log=event_log(event),
         condition_can_join=(
             can_join_event(event, current_user) if event.staffing_mode == StaffingMode.CONDITIONS else False
         ),
@@ -766,25 +768,7 @@ def edit(event_id: int) -> str | Response:
                 flash(str(exc), "danger")
                 return _render_edit()
         # Snapshot before mutation
-        before = {
-            "name": event.name,
-            "master_event_id": event.master_event_id,
-            "event_type": event.event_type.name,
-            "start_datetime": str(event.start_datetime),
-            "end_datetime": str(event.end_datetime),
-            "address": event.address,
-            "contact_person": event.contact_person,
-            "description": event.description,
-            "paid": event.paid,
-            "responsible_person_id": str(event.responsible_person_id),
-            "assignments_open_datetime": str(event.assignments_open_datetime),
-            "planned_participants_count": event.planned_participants_count,
-            "minimum_participants": event.minimum_participants,
-            "maximum_participants": event.maximum_participants,
-            "qualification_requirements": sorted(
-                (r.qualification.name, r.minimum_count) for r in event.qualification_requirements
-            ),
-        }
+        before = event_snapshot(event)
 
         updated, error = parse_event_form(request.form, existing=event)
         if error:
@@ -794,25 +778,7 @@ def edit(event_id: int) -> str | Response:
 
         if event.staffing_mode == StaffingMode.CONDITIONS:
             apply_condition_plan(event, plan)
-        after = {
-            "name": event.name,
-            "master_event_id": event.master_event_id,
-            "event_type": event.event_type.name,
-            "start_datetime": str(event.start_datetime),
-            "end_datetime": str(event.end_datetime),
-            "address": event.address,
-            "contact_person": event.contact_person,
-            "description": event.description,
-            "paid": event.paid,
-            "responsible_person_id": str(event.responsible_person_id),
-            "assignments_open_datetime": str(event.assignments_open_datetime),
-            "planned_participants_count": event.planned_participants_count,
-            "minimum_participants": event.minimum_participants,
-            "maximum_participants": event.maximum_participants,
-            "qualification_requirements": sorted(
-                (r.qualification.name, r.minimum_count) for r in event.qualification_requirements
-            ),
-        }
+        after = event_snapshot(event)
 
         # Validate and apply equipment plans.
         eq_plans = parse_equipment_plans_from_form(request.form)

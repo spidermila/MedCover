@@ -48,13 +48,14 @@ from flask import g, render_template
 from flask_mail import Message
 from sqlalchemy.exc import IntegrityError
 
+from app.event_log import change_pairs, labelled_changes, lookup_names
 from app.extensions import db, mail
 from app.models.audit import AuditLogEntry
 from app.models.event import Event
 from app.models.outbox import OutboxEmail
 from app.models.settings import AppSettings, get_settings
 from app.models.user import EventTimeFormat, UserAccount
-from app.utils import external_url_for, format_event_time, get_app_tz, to_local
+from app.utils import external_url_for, format_event_time, to_local
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment
@@ -781,49 +782,6 @@ def notify_unarchived(event: Event) -> None:
         send_event_unarchived(user, event)
 
 
-# Human-readable Czech labels for event fields shown in change notifications.
-_EVENT_FIELD_LABELS: dict[str, str] = {
-    "minimum_participants": "Minimum účastníků",
-    "maximum_participants": "Maximum účastníků",
-    "qualification_requirements": "Kvalifikační minima",
-    "name": "Název akce",
-    "master_event_id": "Nadřazená akce",
-    "start_datetime": "Začátek",
-    "end_datetime": "Konec",
-    "address": "Místo konání",
-    "contact_person": "Kontaktní osoba",
-    "description": "Popis",
-    "paid": "Placená akce",
-    "responsible_person_id": "Zodpovědná osoba",
-    "assignments_open_datetime": "Otevření přihlášek",
-}
-
-
-def _format_event_change_value(field: str, raw: object) -> str:
-    """Return a human-readable Czech string for a single change value."""
-    if raw is None or str(raw) in ("None", ""):
-        return "—"
-    if field == "qualification_requirements" and isinstance(raw, (list, tuple)):
-        return (
-            "; ".join(f"{item[0]}: {item[1]}" for item in raw if isinstance(item, (list, tuple)) and len(item) == 2)
-            or "—"
-        )
-    val = str(raw)
-    # Format ISO datetime strings to Czech local time.
-    if "datetime" in field:
-        try:
-
-            parsed = datetime.fromisoformat(val)
-            local = parsed.astimezone(get_app_tz())
-            return local.strftime("%d.%m.%Y %H:%M")
-        except Exception:
-            return val
-    # Boolean fields
-    if field == "paid":
-        return "Ano" if val in ("True", "1", "true") else "Ne"
-    return val
-
-
 def send_event_changed(
     user: UserAccount,
     event: Event,
@@ -1094,15 +1052,8 @@ def _row_to_entry(row: OutboxEmail) -> dict:
         except ValueError, TypeError:
             log.warning("Bad event_changed payload on outbox row id=%s", row.id)
             payload = {}
-        changes = [
-            (
-                _EVENT_FIELD_LABELS.get(field, field),
-                _format_event_change_value(field, pair[0]),
-                _format_event_change_value(field, pair[1]),
-            )
-            for field, pair in payload.items()
-        ]
-        return {"type": "event_changed", "changes": changes}
+        pairs = change_pairs(payload)
+        return {"type": "event_changed", "changes": labelled_changes(pairs, lookup_names([pairs]))}
 
     if ntype in ("assignment_confirmed", "assignment_released"):
         try:

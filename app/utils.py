@@ -248,22 +248,27 @@ def audit(
     entity_id: str | int,
     summary: str,
     changes: dict | None = None,
+    event_id: int | None = None,
 ) -> None:
     """Append an ``AuditLogEntry`` for the current user to the active DB session.
+
+    *event_id* puts an entry on another entity in that event's change log;
+    entries on an ``Event`` itself get it automatically.
 
     The caller is responsible for committing. Use within a transaction so that
     the audit row is rolled back together with the business change on failure.
     """
-    db.session.add(
-        AuditLogEntry(
-            actor_id=current_user.id,
-            action_type=action,
-            entity_type=entity_type,
-            entity_id=str(entity_id),
-            summary=summary,
-            changes_json=changes,
-        )
+    entry = AuditLogEntry(
+        actor_id=current_user.id,
+        action_type=action,
+        entity_type=entity_type,
+        entity_id=str(entity_id),
+        summary=summary,
+        changes_json=changes,
     )
+    if event_id is not None:  # an explicit None would bypass the column default
+        entry.event_id = event_id
+    db.session.add(entry)
 
 
 def get_or_404(model: type[T], pk: object) -> T:

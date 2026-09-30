@@ -92,7 +92,7 @@ class TestAuditLogBlock:
                 actor_id=None,
                 action_type="create",
                 entity_type="Event",
-                entity_id="test-id",
+                entity_id="1",
                 summary="Test event created",
                 timestamp=datetime.now(timezone.utc),
             )

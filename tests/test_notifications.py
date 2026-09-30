@@ -5,11 +5,11 @@ import inspect
 import json
 from datetime import datetime, timezone
 
+from app.event_log import format_change
 from app.extensions import db
 from app.mail import (
     _EVENT_CHANGED_CHANGE_TYPE,
     NOTIFICATION_CATALOG,
-    _format_event_change_value,
     _is_notify_enabled,
     send_event_changed,
 )
@@ -361,7 +361,7 @@ class TestEventChangedNotification:
     def test_format_change_value_datetime(self, app):
 
         with app.app_context():
-            result = _format_event_change_value("start_datetime", "2026-06-01 08:00:00+00:00")
+            result = format_change("start_datetime", "2026-06-01 08:00:00+00:00", {})
             # Should display in Prague time (UTC+2 in summer)
             assert "01.06.2026" in result
             assert "10:00" in result  # UTC+2
@@ -369,14 +369,14 @@ class TestEventChangedNotification:
     def test_format_change_value_bool_paid(self, app):
 
         with app.app_context():
-            assert _format_event_change_value("paid", "True") == "Ano"
-            assert _format_event_change_value("paid", "False") == "Ne"
+            assert format_change("paid", True, {}) == "ano"
+            assert format_change("paid", False, {}) == "ne"
 
     def test_format_change_value_none(self, app):
 
         with app.app_context():
-            assert _format_event_change_value("name", None) == "—"
-            assert _format_event_change_value("name", "None") == "—"
+            assert format_change("name", None, {}) == "—"
+            assert format_change("name", "None", {}) == "—"
 
 
 # ── Test notification route ───────────────────────────────────────────────────

@@ -242,10 +242,12 @@ def do_assign_user(
     db.session.flush()
 
     if user.id == assigned_by.id:
-        summary = f"Uživatel '{user.name}' se přihlásil na akci '{event.name}'"
+        summary = f"Uživatel „{user.name}“ se přihlásil na akci „{event.name}“"
     else:
-        summary = f"'{assigned_by.name}' přiřadil '{user.name}' na akci '{event.name}'"
-    audit("create", "Assignment", spot.assignment.id, summary)
+        summary = f"„{assigned_by.name}“ přiřadil „{user.name}“ na akci „{event.name}“"
+    if spot.description:
+        summary += f" (pozice „{spot.description}“)"
+    audit("create", "Assignment", spot.assignment.id, summary, event_id=event.id)
     _auto_assign_rp(event, user)
     auto_close_if_full(event)
 
@@ -310,9 +312,11 @@ def do_unassign_user(
     user = assignment.user
     spot_description = assignment.spot.description if assignment.spot else None
     if unassigned_by is not None and unassigned_by.id != user.id:
-        summary = f"'{unassigned_by.name}' odhlásil '{user.name}' z akce '{event.name}'"
+        summary = f"„{unassigned_by.name}“ odhlásil „{user.name}“ z akce „{event.name}“"
     else:
-        summary = f"Uživatel '{user.name}' se odhlásil z akce '{event.name}'"
+        summary = f"Uživatel „{user.name}“ se odhlásil z akce „{event.name}“"
+    if spot_description:
+        summary += f" (pozice „{spot_description}“)"
     audit("delete", "Event", event.id, summary)
     _auto_clear_rp(event, user)
     db.session.delete(assignment)
@@ -479,9 +483,10 @@ def refresh_responsible_person(event: Event) -> None:
         return
     person_id = eligible[0].id if eligible else None
     if event.responsible_person_id != person_id:
+        changes = {"responsible_person_id": [str(event.responsible_person_id), str(person_id)]}
         event.responsible_person_id = person_id
         event.version += 1
-        audit("edit", "Event", event.id, "Zodpovědná osoba přepočtena podle účasti a aktivních kvalifikací")
+        audit("edit", "Event", event.id, "Zodpovědná osoba přepočtena podle účasti a aktivních kvalifikací", changes)
 
 
 def do_assign_event(
@@ -524,7 +529,7 @@ def do_assign_event(
         db.session.flush()
         refresh_responsible_person(event)
         auto_close_if_full(event)
-        audit("create", "Event", event.id, f"'{assigned_by.name}' přihlásil/a '{user.name}' na akci '{event.name}'")
+        audit("create", "Event", event.id, f"„{assigned_by.name}“ přihlásil/a „{user.name}“ na akci „{event.name}“")
         db.session.commit()
     except IntegrityError:
         db.session.rollback()

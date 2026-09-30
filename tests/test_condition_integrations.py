@@ -4,8 +4,9 @@ from flask import render_template
 from icalendar import Calendar
 
 from app.digest.blocks.upcoming_events import UpcomingEventsBlock
+from app.event_log import format_change
 from app.extensions import db
-from app.mail import _build_event_section, _format_event_change_value
+from app.mail import _build_event_section
 from app.models.assignment import Assignment
 from app.models.event import Event, EventQualificationRequirement, EventStatus
 from app.models.outbox import OutboxEmail
@@ -72,4 +73,4 @@ def test_condition_notification_language_and_live_deficit(app):
         assert "na pozici" not in html
         assert "nesplněné podmínky" in html
         assert "Chybí způsobilá zodpovědná osoba" in html
-        assert _format_event_change_value("qualification_requirements", [["Doctor", 2]]) == "Doctor: 2"
+        assert format_change("qualification_requirements", [["Doctor", 2]], {}) == "Doctor ×2"
