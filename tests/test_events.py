@@ -757,6 +757,41 @@ class TestCalendarFeed:
         assert b'"allEventTypes":' in resp.data
 
 
+class TestNameSearch:
+    """Events list ?q= filter on the event name."""
+
+    def test_name_search_ignores_case_and_accents(self, app, admin_client):
+        me_id = _make_master_event(app, name="Sezóna")
+        for name in ("Školení první pomoci", "Hasičská soutěž"):
+            _make_event_in_status(app, EventStatus.PUBLISHED, name=name, me_id=me_id)
+
+        html = admin_client.get("/events/?q=SKOLENI%20prvni").get_data(as_text=True)
+        assert "Školení první pomoci" in html
+        assert "Hasičská soutěž" not in html
+        # sort links and the bulk return_url keep the search
+        assert re.search(r'href="/events/\?[^"]*sort=name[^"]*q=SKOLENI\+prvni', html)
+        assert re.search(r'name="return_url" value="/events/\?[^"]*q=SKOLENI\+prvni', html)
+
+    def test_name_search_ignores_master_event_name(self, app, admin_client):
+        me_id = _make_master_event(app, name="Sezóna")
+        _make_event_in_status(app, EventStatus.PUBLISHED, name="Koncert", me_id=me_id)
+        html = admin_client.get("/events/?q=Sez%C3%B3na").get_data(as_text=True)
+        assert "Koncert" not in html
+
+    def test_name_search_no_match_keeps_table_header(self, app, admin_client):
+        me_id = _make_master_event(app, name="Sezóna")
+        _make_event_in_status(app, EventStatus.PUBLISHED, name="Koncert", me_id=me_id)
+        html = admin_client.get("/events/?q=%25").get_data(as_text=True)
+        assert "Koncert" not in html
+        assert 'id="name-search-input"' in html
+        assert "Žádné akce neodpovídají hledání „%“." in html
+
+    def test_name_search_is_escaped(self, admin_client):
+        html = admin_client.get("/events/?q=%3Cb%3Ex").get_data(as_text=True)
+        assert "<b>x" not in html
+        assert 'value="&lt;b&gt;x"' in html
+
+
 class TestAuditChangeTracking:
     """Verify audit log captures before/after changes in {field: [old, new]} format."""
 

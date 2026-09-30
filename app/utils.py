@@ -96,6 +96,10 @@ def format_event_time(event: Event, fmt: int) -> str:
 # Collation name for ORDER BY on user-visible text columns (MSSQL Czech sort order).
 CS_COLLATION: str = "Czech_100_CI_AS_SC_UTF8"
 
+# Collation for case- and accent-insensitive text search ("skoleni" finds "Školení").
+# Not Czech_100_CI_AI: it treats š/ř/č/ž as distinct letters, not accented s/r/c/z.
+SEARCH_COLLATION: str = "Latin1_General_100_CI_AI_SC_UTF8"
+
 
 def order_by_nulls_last(expr: Any, *, descending: bool = False) -> tuple[Any, Any]:
     # T-SQL has no NULLS LAST; SQLAlchemy's mssql dialect emits .nulls_last()
