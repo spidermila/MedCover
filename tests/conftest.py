@@ -8,12 +8,17 @@ from urllib.parse import urlsplit, urlunsplit
 
 import pyodbc
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
+from sqlalchemy import event as sa_event
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 from app import create_app
 from app.backup import _container
+from app.event_log import FIELD_LABELS, change_pairs
 from app.extensions import db as _db
+from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
@@ -200,6 +205,28 @@ def backup_container(monkeypatch: pytest.MonkeyPatch):
     if _container.cache_info().currsize:
         _container().delete_container()
         _container.cache_clear()
+
+
+_unlabelled_event_fields: set[str] = set()
+
+
+@sa_event.listens_for(Session, "before_flush")
+def _collect_unlabelled_event_fields(session, flush_context, instances) -> None:
+    for obj in session.new:
+        if isinstance(obj, AuditLogEntry) and obj.entity_type == "Event":
+            _unlabelled_event_fields.update(set(change_pairs(obj.changes_json)) - set(FIELD_LABELS))
+
+
+@pytest.fixture(autouse=True)
+def event_changes_are_labelled():
+    """Fail a test that records an event change the change log and e-mails have no label for.
+
+    Checked after the test rather than inside the flush, so app code catching
+    broad exceptions around a commit cannot swallow the failure.
+    """
+    _unlabelled_event_fields.clear()
+    yield
+    assert not _unlabelled_event_fields, f"Add to FIELD_LABELS in app/event_log.py: {sorted(_unlabelled_event_fields)}"
 
 
 # ── DB URL helpers ─────────────────────────────────────────────────────────────

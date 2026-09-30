@@ -223,7 +223,8 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
             "delete",
             "Assignment",
             assignment.id,
-            f"Uživatel '{unassigned_user.name}' automaticky odhlášen — nesplňuje nové požadavky pozice",
+            f"Uživatel „{unassigned_user.name}“ automaticky odhlášen — nesplňuje nové požadavky pozice",
+            event_id=event.id,
         )
         db.session.delete(assignment)
         db.session.flush()

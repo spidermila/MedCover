@@ -1497,7 +1497,7 @@ class TestDrainBatchedOutbox:
             with patch("flask_mail.Mail.send", side_effect=capture_send):
                 drain_batched_outbox()
         assert len(html_captured) == 1
-        assert "Název akce" in html_captured[0] or "name" in html_captured[0]
+        assert "Název" in html_captured[0]
         assert "Stará akce" in html_captured[0]
         assert "Nová akce" in html_captured[0]
 
