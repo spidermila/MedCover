@@ -889,7 +889,12 @@ def create_invite() -> str | Response:
             flash("Některá z vybraných kvalifikací již není dostupná. Zkontrolujte výběr.", "danger")
             return invites()
 
-    existing_users = set(db.session.scalars(db.select(UserAccount.email).where(UserAccount.email.in_(emails))))
+    existing_users = {
+        email.lower()
+        for email in db.session.scalars(
+            db.select(UserAccount.email).where(sa.func.lower(UserAccount.email).in_(emails))
+        )
+    }
     existing_invites = {
         invite.email
         for invite in db.session.scalars(

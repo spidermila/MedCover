@@ -768,6 +768,19 @@ class TestInvites:
             )
             assert inv is None
 
+    def test_invite_blocked_for_existing_user_with_mixed_case_email(self, app: object, admin_client: object) -> None:
+        with app.app_context():
+            existing = UserAccount(email="Mixed.Case@Example.com", name="Mixed", is_active=True)
+            existing.set_password("pass1234")
+            db.session.add(existing)
+            db.session.commit()
+        resp = admin_client.post(
+            "/users/invites/create", data={"email": "mixed.case@example.com"}, follow_redirects=True
+        )
+        assert "již má účet".encode() in resp.data
+        with app.app_context():
+            assert db.session.scalar(db.select(RegistrationInvite)) is None
+
     def test_create_invite_with_custom_subject_and_message(self, app: object, admin_client: object) -> None:
         admin_client.post(
             "/users/invites/create",
