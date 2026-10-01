@@ -88,7 +88,7 @@ def generate() -> object:
         flash("Neplatné hodnoty formuláře.", "danger")
         return redirect(url_for("work_report.index"))
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=get_app_tz())
     if not (2020 <= year <= now.year):
         flash("Rok je mimo povolený rozsah.", "danger")
         return redirect(url_for("work_report.index"))

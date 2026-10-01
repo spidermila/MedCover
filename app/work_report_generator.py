@@ -15,7 +15,7 @@ the file and scheduling cleanup (files older than 1 day should be removed).
 
 import calendar
 import io
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -35,6 +35,7 @@ from PIL import Image as PILImage
 
 from app.extensions import db
 from app.models import Assignment, Event, EventStatus
+from app.utils import get_app_tz, to_local
 from app.xlsx import cell
 
 if TYPE_CHECKING:
@@ -263,10 +264,13 @@ def _round_up_to_half_hour(duration: timedelta) -> Decimal:
 
 
 def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tuple[Decimal, list[str]]]:
-    """Return {day: (total_hours, [event_names])} for the user's paid completed events."""
-    period_start = datetime(year, month, 1, tzinfo=timezone.utc)
-    last_day = calendar.monthrange(year, month)[1]
-    period_end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+    """Return {day: (total_hours, [event_names])} for the user's paid completed events.
+
+    Month boundaries and day buckets follow the app timezone, as shown in the UI.
+    """
+    tz = get_app_tz()
+    period_start = datetime(year, month, 1, tzinfo=tz)
+    period_end = datetime(year + month // 12, month % 12 + 1, 1, tzinfo=tz)
 
     rows = (
         db.session.execute(
@@ -277,7 +281,7 @@ def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tu
                 Event.status == EventStatus.COMPLETED,
                 Event.paid == sa.true(),
                 Event.start_datetime >= period_start,
-                Event.start_datetime <= period_end,
+                Event.start_datetime < period_end,
             )
         )
         .scalars()
@@ -287,7 +291,7 @@ def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tu
     result: dict[int, tuple[Decimal, list[str]]] = {}
     for ev in rows:
         hours = _round_up_to_half_hour(ev.billable_duration)
-        day = ev.start_datetime.day
+        day = to_local(ev.start_datetime).day
         if day in result:
             prev_hours, prev_names = result[day]
             result[day] = (prev_hours + hours, prev_names + [ev.name])
