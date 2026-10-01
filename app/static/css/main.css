@@ -463,3 +463,6 @@
 .dark-toggle  { width: 3em; height: 1.5em; cursor: pointer; }
 .dark-toggle:checked  { background-color: var(--color-dark-mode); border-color: var(--color-dark-mode); }
 .dark-label.is-dark   { color: var(--color-dark-mode); }
+
+/* Event detail change log: compact, small print */
+.event-log { font-size: .75rem; line-height: 1.2; }

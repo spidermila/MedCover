@@ -558,6 +558,21 @@
   {% endif %}
 </div>
 
+<section class="mt-4 event-log">
+  <h6 class="text-muted mb-1">Historie změn</h6>
+  {% for line in event_log %}
+  <div>
+    <span class="text-muted">{{ line.timestamp | localdt }}</span>
+    <strong>{{ line.actor }}</strong>: {{ line.summary }}
+    {% for label, before, after in line.changes %}
+    <div class="ms-3 text-muted">{{ label }}: {{ before }} → {{ after }}</div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-muted">Žádné záznamy.</div>
+  {% endfor %}
+</section>
+
 <div id="fillers-map-data" data-fillers-map='{{ fillers_map | tojson }}' hidden></div>
 
 {% endblock %}

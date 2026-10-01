@@ -11,7 +11,7 @@ from app.extensions import db
 from app.models.event import Event, EventStatus, StaffingMode
 from app.models.user import UserAccount
 from app.routes.assignments import auto_close_if_full, lock_condition_event
-from app.utils import audit, get_app_tz, get_or_404, require_permission
+from app.utils import audit, get_app_tz, get_or_404, require_permission, to_local
 
 from . import events_bp
 from ._helpers import TRANSITIONS, copy_equipment, copy_spots_with_assignments
@@ -180,7 +180,7 @@ def split_event(event_id: int) -> Response:
         "edit",
         "Event",
         event.id,
-        f"Akce rozdělena — konec zkrácen na {split_dt.isoformat()} (část 1/2)",
+        f"Akce rozdělena — konec zkrácen na {to_local(split_dt):%d.%m.%Y %H:%M} (část 1/2)",
         {
             "end_datetime": {"before": original_end.isoformat(), "after": split_dt.isoformat()},
             "name": {"before": original_name, "after": event.name},
