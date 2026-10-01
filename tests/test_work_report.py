@@ -1,7 +1,9 @@
 """Tests for the výkaz práce (employee work report) feature."""
 
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import openpyxl
 import pytest
@@ -14,7 +16,7 @@ from app.models.role import Role
 from app.models.user import UserAccount
 from app.routes.work_report import _last_completed_month
 from app.scheduler_tasks import cleanup_work_report_files
-from app.work_report_generator import generate_work_report
+from app.work_report_generator import _col_width_to_pixels, _round_up_to_half_hour, generate_work_report
 from tests.conftest import _login, _make_user
 
 
@@ -26,7 +28,7 @@ def _make_paid_event(
     name: str = "Testovací akce",
 ) -> Event:
     """Create a COMPLETED paid event with an assignment for *user*."""
-    me = MasterEvent(name="Testovací ME")
+    me = MasterEvent(name=f"{name} {uuid.uuid4().hex[:8]}")
     db.session.add(me)
     db.session.flush()
 
@@ -172,6 +174,7 @@ class TestVykazGenerator:
         assert ws.cell(row=10, column=1).value == 1
         assert ws.cell(row=37, column=1).value == 28
         assert ws.cell(row=38, column=1).value == "Celkem hodin"
+        assert ws.cell(row=38, column=3).value == "=SUM(C10:C37)"
 
     def test_generator_fills_paid_events(self, app, tmp_path, monkeypatch):
         """Events attended by the user appear in the correct day row."""
@@ -191,6 +194,47 @@ class TestVykazGenerator:
         day_row = 10 + 15 - 1
         assert ws.cell(row=day_row, column=3).value == pytest.approx(4.0)
         assert "Hasiči 2026" in (ws.cell(row=day_row, column=4).value or "")
+
+    @pytest.mark.parametrize(
+        ("minutes", "expected"),
+        [
+            (0, "0"),
+            (1, "0.5"),
+            (30, "0.5"),
+            (31, "1"),
+            (600, "10"),
+            (601, "10.5"),
+            (606, "10.5"),  # 10.1 h
+            (516, "9"),  # 8.6 h
+        ],
+    )
+    def test_round_up_to_half_hour(self, minutes, expected):
+        assert _round_up_to_half_hour(timedelta(minutes=minutes)) == Decimal(expected)
+
+    def test_col_width_to_pixels(self):
+        assert _col_width_to_pixels(0.5) == 6
+        assert _col_width_to_pixels(10) == 75
+
+    def test_generator_rounds_each_event_up_to_half_hour(self, app, tmp_path, monkeypatch):
+        """Each event is rounded up on its own; the day cell sums the rounded values."""
+
+        day_start = datetime(2026, 3, 15, 8, 0, tzinfo=timezone.utc)
+        with app.app_context():
+            monkeypatch.setattr(app, "instance_path", str(tmp_path))
+            u = _make_user("vykaz_round@test.com", "Vykaz User", Role.MEMBER)
+            # Debriefed: actual 1 h 12 min (planned 4 h) → 1.5
+            _make_paid_event(u, day_start, day_start + timedelta(hours=4), actual_hours=1.2, name="A")
+            # Not debriefed: scheduled 1 h 12 min → 1.5
+            _make_paid_event(u, day_start, day_start + timedelta(minutes=72), name="B")
+            # Another day: scheduled 8 h 36 min → 9
+            other = datetime(2026, 3, 16, 8, 0, tzinfo=timezone.utc)
+            _make_paid_event(u, other, other + timedelta(minutes=516), name="C")
+            path = generate_work_report(u, 2026, 3)
+
+        ws = openpyxl.load_workbook(str(path)).active
+        assert ws.cell(row=10 + 15 - 1, column=3).value == pytest.approx(3.0)
+        assert ws.cell(row=10 + 16 - 1, column=3).value == pytest.approx(9.0)
+        assert ws.cell(row=10 + 31, column=3).value == "=SUM(C10:C40)"
 
     def test_generator_escapes_formula_starters_in_event_names(self, app, tmp_path, monkeypatch):
         """An event named like a formula must land in the sheet as inert text."""
