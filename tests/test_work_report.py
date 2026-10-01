@@ -4,6 +4,7 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import openpyxl
 import pytest
@@ -235,6 +236,39 @@ class TestVykazGenerator:
         assert ws.cell(row=10 + 15 - 1, column=3).value == pytest.approx(3.0)
         assert ws.cell(row=10 + 16 - 1, column=3).value == pytest.approx(9.0)
         assert ws.cell(row=10 + 31, column=3).value == "=SUM(C10:C40)"
+
+    def test_generator_buckets_days_and_month_in_app_timezone(self, app, tmp_path, monkeypatch):
+        """Days and month boundaries follow the app timezone (half-open month window), not UTC."""
+
+        prague = ZoneInfo("Europe/Prague")
+        monkeypatch.setattr("app.work_report_generator.get_app_tz", lambda: prague)
+        monkeypatch.setattr("app.utils.get_app_tz", lambda: prague)  # used by to_local()
+        hour = timedelta(hours=1)
+        with app.app_context():
+            monkeypatch.setattr(app, "instance_path", str(tmp_path))
+            u = _make_user("vykaz_tz@test.com", "Vykaz User", Role.MEMBER)
+            # 28 Feb 23:00 UTC = 1 Mar 00:00 CET → March, day 1 (inclusive start)
+            feb = datetime(2026, 2, 28, 23, 0, tzinfo=timezone.utc)
+            _make_paid_event(u, feb, feb + hour, name="Únor")
+            # 14 Mar 23:30 UTC = 15 Mar 00:30 CET → day 15
+            mid = datetime(2026, 3, 14, 23, 30, tzinfo=timezone.utc)
+            _make_paid_event(u, mid, mid + hour, name="Půlnoc")
+            # 31 Mar 22:00 UTC = 1 Apr 00:00 CEST → April, not March (exclusive end)
+            apr = datetime(2026, 3, 31, 22, 0, tzinfo=timezone.utc)
+            _make_paid_event(u, apr, apr + hour, name="Duben")
+            # 31 Dec 22:30 UTC = 31 Dec 23:30 CET → December, day 31 (year wrap)
+            dec = datetime(2026, 12, 31, 22, 30, tzinfo=timezone.utc)
+            _make_paid_event(u, dec, dec + hour, name="Silvestr")
+            march = generate_work_report(u, 2026, 3)
+            ws = openpyxl.load_workbook(str(march)).active
+            assert ws.cell(row=10, column=4).value == "Únor"
+            assert ws.cell(row=10 + 14, column=4).value == "Půlnoc"
+            assert ws.cell(row=10 + 13, column=4).value is None
+            assert ws.cell(row=10 + 30, column=4).value is None
+
+            december = generate_work_report(u, 2026, 12)
+            ws = openpyxl.load_workbook(str(december)).active
+            assert ws.cell(row=10 + 30, column=4).value == "Silvestr"
 
     def test_generator_escapes_formula_starters_in_event_names(self, app, tmp_path, monkeypatch):
         """An event named like a formula must land in the sheet as inert text."""
