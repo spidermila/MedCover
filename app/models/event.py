@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -290,9 +290,16 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         return None
 
     @property
+    def billable_duration(self) -> timedelta:
+        """Duration to use for reporting: actual if debriefed, otherwise scheduled."""
+        if self.actual_start_datetime and self.actual_end_datetime:
+            return self.actual_end_datetime - self.actual_start_datetime
+        return self.end_datetime - self.start_datetime
+
+    @property
     def billable_hours(self) -> Decimal:
         """Hours to use for reporting: actual if debriefed, otherwise scheduled."""
-        return self.actual_hours if self.actual_hours is not None else self.scheduled_hours
+        return Decimal(str(round(self.billable_duration.total_seconds() / 3600, 1)))
 
     @property
     def is_unfilled(self) -> bool:

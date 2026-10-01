@@ -15,7 +15,7 @@ the file and scheduling cleanup (files older than 1 day should be removed).
 
 import calendar
 import io
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -257,6 +257,11 @@ def _apply_row_height(ws: Worksheet, row: int, height: float = _ROW_HEIGHT) -> N
     ws.row_dimensions[row].height = height
 
 
+def _round_up_to_half_hour(duration: timedelta) -> Decimal:
+    """Hours in *duration*, counting every started half-hour as a full one (10.1 h → 10.5 h)."""
+    return Decimal(-(-duration // timedelta(minutes=30))) / 2
+
+
 def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tuple[Decimal, list[str]]]:
     """Return {day: (total_hours, [event_names])} for the user's paid completed events."""
     period_start = datetime(year, month, 1, tzinfo=timezone.utc)
@@ -281,7 +286,7 @@ def _fetch_events_for_month(user_id: str, year: int, month: int) -> dict[int, tu
 
     result: dict[int, tuple[Decimal, list[str]]] = {}
     for ev in rows:
-        hours = ev.billable_hours
+        hours = _round_up_to_half_hour(ev.billable_duration)
         day = ev.start_datetime.day
         if day in result:
             prev_hours, prev_names = result[day]
@@ -460,7 +465,6 @@ def _build_totals_and_signatures(
     year: int,
     month: int,
     days_in_month: int,
-    events_by_day: dict[int, tuple[Decimal, list[str]]],
     signature_image: bytes | None = None,
 ) -> int:
     """Write the totals row and signature rows below the day grid.
@@ -469,13 +473,13 @@ def _build_totals_and_signatures(
     """
     total_row = _FIRST_DATA_ROW + days_in_month
     _apply_row_height(ws, total_row)
-    total_hours = float(sum(h for h, _ in events_by_day.values())) if events_by_day else 0.0
     ws.merge_cells(f"D{total_row}:E{total_row}")
     cell(ws, total_row, 1, "Celkem hodin", font=_BOLD_FONT, border=_TOTAL_BORDER_A)
     cell(ws, total_row, 2, None, font=_BOLD_FONT, border=_TOTAL_BORDER_B)
-    cell(
-        ws, total_row, 3, total_hours, font=_BOLD_FONT, alignment=Alignment(horizontal="center"), border=_TOTAL_BORDER_C
-    )
+    cell(ws, total_row, 3, font=_BOLD_FONT, alignment=Alignment(horizontal="center"), border=_TOTAL_BORDER_C)
+    # Formula so the total follows manual edits of the day rows; set directly
+    # because cell() would escape it into inert text.
+    ws.cell(row=total_row, column=3).value = f"=SUM(C{_FIRST_DATA_ROW}:C{total_row - 1})"
     cell(ws, total_row, 4, None, border=_TOTAL_BORDER_D)
     cell(ws, total_row, 5, None, border=_TOTAL_BORDER_E)
 
@@ -593,9 +597,7 @@ def generate_work_report(user: UserAccount, year: int, month: int) -> Path:
     _build_header_block(ws, user, month_name, year)
     _build_column_headers(ws)
     _build_day_rows(ws, year, month, days_in_month, cz_holidays, events_by_day)
-    last_row = _build_totals_and_signatures(
-        ws, year, month, days_in_month, events_by_day, signature_image=user.signature_image
-    )
+    last_row = _build_totals_and_signatures(ws, year, month, days_in_month, signature_image=user.signature_image)
 
     # Scope fit-to-page to the report block; without this Excel would try to
     # fit any incidentally-referenced empty rows too, shrinking the output.
