@@ -2,8 +2,9 @@
 {% block title %}Výkaz práce — MedCover{% endblock %}
 
 {% block content %}
+{% set other_user_id = target_user.id if target_user.id != current_user.id else None %}
 <div class="container py-4 maxw-640">
-  <h2 class="mb-4">Výkaz práce</h2>
+  <h2 class="mb-4">Výkaz práce{% if other_user_id %} — {{ target_user.name }}{% endif %}</h2>
 
   {# ── Generator form ──────────────────────────────────────────────────────── #}
   <div class="card mb-4">
@@ -15,6 +16,7 @@
       </p>
       <form method="POST" action="{{ url_for('work_report.generate') }}" class="row g-3 align-items-end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if other_user_id %}<input type="hidden" name="user_id" value="{{ other_user_id }}">{% endif %}
 
         <div class="col">
           <label for="month" class="form-label fw-semibold">Měsíc</label>
@@ -67,7 +69,7 @@
             Vyprší: {{ r.expires_at | localdt }}
           </small>
         </div>
-        <a href="{{ url_for('work_report.download', year=r.year, month=r.month) }}"
+        <a href="{{ url_for('work_report.download', year=r.year, month=r.month, user_id=other_user_id) }}"
            class="btn btn-outline-success btn-sm">
           <i class="bi bi-file-earmark-excel me-1"></i>Stáhnout
         </a>
@@ -80,7 +82,7 @@
   {% endif %}
 
   <div class="mt-3">
-    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Zpět</a>
+    <a href="{{ url_for('users.detail', user_id=other_user_id) if other_user_id else url_for('main.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Zpět</a>
   </div>
 </div>
 {% endblock %}

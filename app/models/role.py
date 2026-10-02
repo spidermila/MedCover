@@ -114,6 +114,7 @@ ALL_PERMISSIONS: list[dict] = [
     # Reports
     {"code": "report.view", "description": "View reports"},
     {"code": "work_report.generate", "description": "Generate own monthly work report (výkaz práce)"},
+    {"code": "work_report.generate_any", "description": "Generate the monthly work report for any user"},
     # Audit
     {"code": "audit.view", "description": "View audit log"},
     # System / Admin
@@ -169,6 +170,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "debriefing.view_own",
         "report.view",
         "work_report.generate",
+        "work_report.generate_any",
     ],
     Role.MEMBER: [
         "user.view",

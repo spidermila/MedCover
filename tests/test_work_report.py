@@ -11,14 +11,17 @@ import pytest
 
 from app.extensions import db
 from app.models.assignment import Assignment
+from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
 from app.models.role import Role
 from app.models.user import UserAccount
 from app.routes.work_report import _last_completed_month
 from app.scheduler_tasks import cleanup_work_report_files
+from app.signature import process_signature_upload
 from app.work_report_generator import _col_width_to_pixels, _round_up_to_half_hour, generate_work_report
 from tests.conftest import _login, _make_user
+from tests.test_profile_signature import _png_bytes
 
 
 def _make_paid_event(
@@ -66,6 +69,12 @@ def _make_paid_event(
     return ev
 
 
+class _FixedNow(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 6, 15, 12, 0, tzinfo=tz)
+
+
 # ── Route smoke tests ──────────────────────────────────────────────────────────
 
 
@@ -107,6 +116,25 @@ class TestVykazGenerate:
         assert resp.status_code == 200
         assert "Měsíc musí být" in resp.data.decode()
 
+    @pytest.mark.parametrize(
+        ("form", "message"),
+        [
+            ({"year": "abc", "month": "1"}, "Neplatné hodnoty formuláře"),
+            ({"year": "2019", "month": "1"}, "Rok je mimo povolený rozsah"),
+            ({"year": "2099", "month": "1"}, "Rok je mimo povolený rozsah"),
+        ],
+    )
+    def test_invalid_form_rejected(self, member_client, form, message):
+        resp = member_client.post("/work-report/generate", data={**form, "csrf_token": "x"}, follow_redirects=True)
+        assert message in resp.data.decode()
+
+    def test_future_month_rejected(self, member_client, monkeypatch):
+        monkeypatch.setattr("app.routes.work_report.datetime", _FixedNow)
+        resp = member_client.post(
+            "/work-report/generate", data={"year": "2026", "month": "7", "csrf_token": "x"}, follow_redirects=True
+        )
+        assert "budoucí měsíc" in resp.data.decode()
+
     def test_generate_creates_file_and_shows_list(self, app, client, tmp_path, monkeypatch):
         """POST /work-report/generate creates an xlsx and shows it in the report list."""
         with app.app_context():
@@ -136,6 +164,10 @@ class TestVykazGenerate:
 
 
 class TestVykazDownload:
+    def test_download_invalid_params_redirects(self, member_client):
+        resp = member_client.get("/work-report/download?year=abc", follow_redirects=True)
+        assert "Neplatné parametry" in resp.data.decode()
+
     def test_download_missing_file_redirects(self, app, client):
         with app.app_context():
             _make_user("vykaz_dl@test.com", "Vykaz User", Role.MEMBER)
@@ -143,6 +175,88 @@ class TestVykazDownload:
         resp = client.get("/work-report/download?year=2026&month=1", follow_redirects=True)
         assert resp.status_code == 200
         assert "nenalezen" in resp.data.decode()
+
+
+class TestVykazForOtherUser:
+    def _target_id(self, app, email: str) -> str:
+        with app.app_context():
+            return str(_make_user(email, "Karel Cizí", Role.MEMBER).id)
+
+    def test_coordinator_generates_and_downloads_for_other(self, app, coordinator_client, tmp_path, monkeypatch):
+        target_id = self._target_id(app, "vykaz_other@test.com")
+        monkeypatch.setattr(app, "instance_path", str(tmp_path))
+
+        resp = coordinator_client.post(
+            "/work-report/generate",
+            data={"year": "2026", "month": "1", "user_id": target_id, "csrf_token": "x"},
+            follow_redirects=True,
+        )
+        body = resp.data.decode()
+        assert "Karel Cizí" in body
+        assert f"user_id={target_id}" in body
+        assert (tmp_path / "work_report" / target_id / "2026-01.xlsx").exists()
+
+        resp = coordinator_client.get(f"/work-report/download?year=2026&month=1&user_id={target_id}")
+        assert resp.status_code == 200
+        assert "Karel" in resp.headers["Content-Disposition"]
+
+    def test_other_user_report_omits_signature_and_is_audited(self, app, coordinator_client, tmp_path, monkeypatch):
+        with app.app_context():
+            u = _make_user("vykaz_other_sig@test.com", "Karel Cizí", Role.MEMBER)
+            u.signature_image = process_signature_upload(_png_bytes())
+            u.signature_mimetype = "image/png"
+            db.session.commit()
+            target_id = str(u.id)
+        monkeypatch.setattr(app, "instance_path", str(tmp_path))
+
+        coordinator_client.post(
+            "/work-report/generate",
+            data={"year": "2026", "month": "1", "user_id": target_id, "csrf_token": "x"},
+        )
+
+        wb = openpyxl.load_workbook(str(tmp_path / "work_report" / target_id / "2026-01.xlsx"))
+        assert len(wb.active._images) == 0
+        with app.app_context():
+            entry = db.session.scalar(db.select(AuditLogEntry).where(AuditLogEntry.entity_id == target_id))
+            assert entry is not None
+            assert entry.action_type == "export"
+            assert "Karel Cizí" in entry.summary
+
+    def test_validation_error_keeps_target_user(self, app, coordinator_client):
+        target_id = self._target_id(app, "vykaz_other_val@test.com")
+        resp = coordinator_client.post(
+            "/work-report/generate",
+            data={"year": "2026", "month": "99", "user_id": target_id, "csrf_token": "x"},
+        )
+        assert resp.status_code == 302
+        assert f"user_id={target_id}" in resp.headers["Location"]
+
+    def test_invalid_or_unknown_user_id_is_404(self, coordinator_client):
+        assert coordinator_client.get("/work-report/?user_id=not-a-uuid").status_code == 404
+        assert coordinator_client.get(f"/work-report/?user_id={uuid.uuid4()}").status_code == 404
+
+    def test_own_id_in_any_case_counts_as_own(self, app, client):
+        with app.app_context():
+            own_id = str(_make_user("vykaz_own_case@test.com", "Vykaz User", Role.MEMBER).id)
+        _login(client, "vykaz_own_case@test.com")
+        assert client.get(f"/work-report/?user_id={own_id.upper()}").status_code == 200
+
+    def test_member_cannot_act_for_other(self, app, member_client):
+        target_id = self._target_id(app, "vykaz_other_m@test.com")
+        assert member_client.get(f"/work-report/?user_id={target_id}").status_code == 403
+        resp = member_client.post(
+            "/work-report/generate",
+            data={"year": "2026", "month": "1", "user_id": target_id, "csrf_token": "x"},
+        )
+        assert resp.status_code == 403
+
+    def test_detail_button_shown_to_coordinator(self, app, coordinator_client):
+        target_id = self._target_id(app, "vykaz_other_btn@test.com")
+        assert f"/work-report/?user_id={target_id}" in coordinator_client.get(f"/users/{target_id}").data.decode()
+
+    def test_detail_button_hidden_from_member(self, app, member_client):
+        target_id = self._target_id(app, "vykaz_other_btn_m@test.com")
+        assert "/work-report/?user_id=" not in member_client.get(f"/users/{target_id}").data.decode()
 
 
 # ── Generator unit tests ───────────────────────────────────────────────────────

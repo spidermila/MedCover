@@ -581,7 +581,7 @@ def _embed_signature(ws: Worksheet, signature_image: bytes, sig_row: int) -> Non
 # ── Core generator ────────────────────────────────────────────────────────────
 
 
-def generate_work_report(user: UserAccount, year: int, month: int) -> Path:
+def generate_work_report(user: UserAccount, year: int, month: int, *, with_signature: bool = True) -> Path:
     """
     Build the výkaz práce xlsx for *user* for the given *year*/*month*.
 
@@ -601,7 +601,8 @@ def generate_work_report(user: UserAccount, year: int, month: int) -> Path:
     _build_header_block(ws, user, month_name, year)
     _build_column_headers(ws)
     _build_day_rows(ws, year, month, days_in_month, cz_holidays, events_by_day)
-    last_row = _build_totals_and_signatures(ws, year, month, days_in_month, signature_image=user.signature_image)
+    signature = user.signature_image if with_signature else None
+    last_row = _build_totals_and_signatures(ws, year, month, days_in_month, signature_image=signature)
 
     # Scope fit-to-page to the report block; without this Excel would try to
     # fit any incidentally-referenced empty rows too, shrinking the output.
