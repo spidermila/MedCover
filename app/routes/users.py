@@ -69,7 +69,7 @@ def _validate_phone(raw: str) -> bool:
 @users_bp.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile() -> str | Response:
-    user: UserAccount = current_user  # type: ignore[assignment]
+    user: UserAccount = current_user
 
     if request.method == "POST":
         action = request.form.get("action", "profile")
@@ -265,7 +265,7 @@ def _remove_signature(user: UserAccount) -> Response:
 @users_bp.route("/profile/signature")
 @login_required
 def signature_preview() -> Response:
-    user: UserAccount = current_user  # type: ignore[assignment]
+    user: UserAccount = current_user
     if user.signature_image is None:
         abort(404)
     resp = send_file(
