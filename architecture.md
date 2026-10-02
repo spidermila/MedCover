@@ -1074,6 +1074,7 @@ Pre-defined roles (see AD01):
 | **Reports** | | | | | |
 | report.view | ✓ | ✓ | ✓ | ✓ | — |
 | work_report.generate | ✓ | ✓ | ✓ | — | — |
+| work_report.generate_any | ✓ | ✓ | — | — | — |
 | **Audit** | | | | | |
 | audit.view | ✓ | — | — | — | — |
 | **Admin / System** | | | | | |
