@@ -10,6 +10,11 @@
     {% if current_user.has_permission('report.view') %}
     <a href="{{ url_for('reports.user_report', user_id=user.id) }}" class="btn btn-sm btn-outline-primary">Přehled akcí</a>
     {% endif %}
+    {% if current_user.has_permission('work_report.generate_any') %}
+    <a href="{{ url_for('work_report.index', user_id=user.id) }}" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-file-earmark-excel me-1"></i>Výkaz práce
+    </a>
+    {% endif %}
     {% if not user.is_archived %}
       {% if not user.is_active and current_user.has_permission('user.activate') %}
       <form method="POST" action="{{ url_for('users.activate', user_id=user.id) }}">
