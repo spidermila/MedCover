@@ -323,7 +323,7 @@ def run_scheduled_backup(db_session: Any, now: datetime | None = None) -> bool:
 def cleanup_work_report_files(instance_path: str, now: datetime | None = None) -> int:
     """Delete generated employee work report xlsx files older than 1 day.
 
-    Files are stored under  <instance_path>/work_report/<user_id>/<year>-<MM>.xlsx.
+    Files are stored anywhere under  <instance_path>/work_report/  (see ``report_dir``).
     Returns the number of files removed.
     """
     if now is None:

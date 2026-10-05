@@ -277,7 +277,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
     - **Per-user report**: planned hours, actual worked hours, nearest upcoming Event, last attended Event, full Event history; CSV export
     - **Per Master Event report**: total planned and worked hours, number of Events (completed / cancelled / open), total patients treated, attendance summary; CSV export
     - **Date-range report**: all Events within a configurable date range (e.g. a calendar year), aggregated across all MEs; CSV export
-    - **Monthly work report (Výkaz práce)**: generates a pre-filled `.xlsx` payroll document per user per month, listing all paid Events the user attended with actual worked hours. Uses Czech public holidays to colour cells correctly. Generated on demand; file stored in `instance/work_report/<user-uuid>/<year>-<MM>.xlsx` and automatically deleted after 1 day by the scheduler.
+    - **Monthly work report (Výkaz práce)**: generates a pre-filled `.xlsx` payroll document per user per month, listing all paid Events the user attended with actual worked hours. Uses Czech public holidays to colour cells correctly. Generated on demand; file stored in `instance/work_report/<user-uuid>/<year>-<MM>.xlsx` (reports generated for someone else go to `<generator-uuid>/<user-uuid>/`, so each person sees only the reports they generated) and automatically deleted after 1 day by the scheduler.
 - Email notifications — **email only for MVP** (in-app notifications are on the wish list)
 - Notifications should be customisable to prevent unnecessary spamming (configurable per Event and at the user level)
 - Audit capability

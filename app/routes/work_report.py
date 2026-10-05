@@ -8,20 +8,22 @@ POST /work-report/generate   — build xlsx, redirect back to index
 GET  /work-report/download   — stream the generated file to the browser
 
 All three accept an optional ``user_id`` to act on another person's report
-(requires ``work_report.generate_any``).
+(requires ``work_report.generate_any``).  Reports are kept per generating
+user: a coordinator's report for someone is invisible to that person and
+vice versa, so neither can overwrite or mistake the other's file.
 """
 
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_from_directory, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, send_from_directory, url_for
 from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.models.user import UserAccount
 from app.utils import audit, get_app_tz, get_or_404, require_permission
-from app.work_report_generator import CZ_MONTH_NAMES, generate_work_report
+from app.work_report_generator import CZ_MONTH_NAMES, generate_work_report, report_dir
 
 work_report_bp = Blueprint("work_report", __name__, url_prefix="/work-report")
 
@@ -52,9 +54,8 @@ def _index_url(target: UserAccount) -> str:
     return url_for("work_report.index", user_id=None if target.id == current_user.id else target.id)
 
 
-def _list_reports(user_id: str) -> list[dict]:
-    """Return metadata for all non-expired xlsx files belonging to *user_id*."""
-    user_dir = Path(current_app.instance_path) / "work_report" / user_id
+def _list_reports(user_dir: Path) -> list[dict]:
+    """Return metadata for all non-expired xlsx files in *user_dir*."""
     if not user_dir.exists():
         return []
 
@@ -89,7 +90,7 @@ def index() -> str:
     target = _target_user()
     now = datetime.now(tz=get_app_tz())
     default_year, default_month = _last_completed_month(now)
-    reports = _list_reports(str(target.id))
+    reports = _list_reports(report_dir(target, current_user))
     return render_template(
         "work_report/index.html",
         target_user=target,
@@ -124,16 +125,13 @@ def generate() -> object:
         flash("Výkaz nelze vygenerovat pro budoucí měsíc.", "danger")
         return redirect(_index_url(target))
 
-    is_own = target.id == current_user.id
     try:
-        # The stored signature attests the person's own hours, so it is only
-        # embedded when they generate the report themselves.
-        generate_work_report(target, year, month, with_signature=is_own)
+        generate_work_report(target, year, month, generated_by=current_user)
     except Exception as exc:  # pragma: no cover
         flash(f"Chyba při generování souboru: {exc}", "danger")
         return redirect(_index_url(target))
 
-    if not is_own:
+    if target.id != current_user.id:
         audit(
             "export",
             "UserAccount",
@@ -158,7 +156,7 @@ def download() -> object:
         return redirect(_index_url(target))
 
     filename = f"{year}-{month:02d}.xlsx"
-    user_dir = Path(current_app.instance_path) / "work_report" / str(target.id)
+    user_dir = report_dir(target, current_user)
 
     if not (user_dir / filename).exists():
         flash("Soubor nenalezen. Vygenerujte výkaz znovu.", "warning")
