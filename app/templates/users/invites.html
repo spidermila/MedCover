@@ -112,7 +112,7 @@
         {# ── Link clicked + copy URL ── #}
         <td>
           {% if not inv.is_cancelled and not inv.is_used %}
-            {% set reg_url = url_for('auth.register', token=inv.token, _external=True) %}
+            {% set reg_url = external_url_for('auth.register', token=inv.token) %}
             <button type="button"
                     class="btn btn-sm btn-outline-secondary copy-invite-btn"
                     data-invite-url="{{ reg_url }}"

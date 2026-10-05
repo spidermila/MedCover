@@ -7,7 +7,7 @@ import time as _time
 from datetime import datetime, timedelta, timezone
 from itertools import groupby as itertools_groupby
 from operator import attrgetter
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import click
 from flask import Flask, flash, g, jsonify, redirect, render_template, request, url_for
@@ -17,7 +17,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm.exc import StaleDataError
 from werkzeug.wrappers import Response as WerkzeugResponse
 
-from .config import check_backup_storage_env, config_by_name
+from .config import check_backup_storage_env, config_by_name, normalize_base_url
 from .constants import RECORD_MODIFIED_MSG
 from .db_auth import attach_msi_token_auth, prepare_msi_auth
 from .extensions import csrf, db, login_manager
@@ -27,7 +27,7 @@ from .models.assignment import Assignment
 from .models.event import Event
 from .models.settings import get_settings
 from .models.user import EventTimeFormat
-from .utils import CZECH_DAY_ABBR, cznum, format_event_time, get_app_tz, safe_next, to_local
+from .utils import CZECH_DAY_ABBR, cznum, external_url_for, format_event_time, get_app_tz, safe_next, to_local
 
 # Computed once at import/startup; used as a cache-busting version for static files.
 _STARTUP_TS: str = str(int(_time.time()))
@@ -116,6 +116,10 @@ def create_app(
 
     app = Flask(__name__)
     app.config.from_object(config_by_name[config_name])
+    app.config["APP_BASE_URL"] = normalize_base_url(app.config["APP_BASE_URL"])
+    if config_name == "production" and not app.config["APP_BASE_URL"]:
+        # Without it the scheduler's e-mail links would point to http://localhost.
+        raise RuntimeError("APP_BASE_URL environment variable is required.")
 
     # Allow callers (e.g. pytest-xdist workers) to override the DB URL before
     # the extension engines are initialised.
@@ -171,7 +175,12 @@ def create_app(
         # process start time in dev (changes on every container/server restart).
         _git = app.config.get("GIT_COMMIT", "dev")
         static_ver: str = _git if (_git and _git != "dev") else _STARTUP_TS
-        return {"config": app.config, "feedback_enabled": feedback_enabled, "static_ver": static_ver}
+        return {
+            "config": app.config,
+            "feedback_enabled": feedback_enabled,
+            "static_ver": static_ver,
+            "external_url_for": external_url_for,
+        }
 
     @app.template_filter("localdt")
     def localdt_filter(dt: datetime | None, fmt: str = "%d.%m.%Y %H:%M") -> str:
@@ -286,6 +295,26 @@ def create_app(
         }
         idx = 0 if kind == "table" else 1
         return mapping.get(getattr(event_type, "name", ""), ("", ""))[idx]
+
+    @app.before_request
+    def _canonical_host() -> WerkzeugResponse | None:
+        """Send requests arriving on any other host to ``APP_BASE_URL``.
+
+        One host means one session cookie and one set of login callback addresses.
+        302, not 301: browsers cache a 301 for good, so a mistyped APP_BASE_URL would
+        outlive its fix.  The health probe arrives on the container's own address.
+        """
+        base = app.config["APP_BASE_URL"]
+        # Behind the TLS-terminating ingress the request looks like plain HTTP, so werkzeug
+        # keeps an explicit :443 that some clients send.
+        host = request.host.lower().removesuffix(":443").removesuffix(":80")
+        if not base or request.endpoint == "main.health" or host == urlsplit(base).netloc:
+            return None
+        # request.path is percent-decoded; quote it again so an encoded ? or # stays in the path.
+        target = base + quote(request.path)
+        if request.query_string:
+            target += "?" + quote(request.query_string, safe="=&+%;/?:@!$'()*,~")
+        return redirect(target, 302)
 
     @app.before_request
     def _set_csp_nonce() -> None:

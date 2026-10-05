@@ -2,8 +2,6 @@
 
 import re
 
-from app.extensions import db
-from app.models.settings import get_settings
 from app.utils import external_url_for
 
 
@@ -34,52 +32,36 @@ def test_403_page_renders_czech_message(member_client, app):
     assert "Nemáte oprávnění".encode() in response.data
 
 
-# ── external_url_for ─────────────────────────────────────────────────────────
+# ── external_url_for / canonical host ────────────────────────────────────────
 
 
-class TestExternalUrlFor:
-    """Test the external_url_for utility honours app_base_url from AppSettings."""
-
-    def test_falls_back_to_flask_external_when_no_base_url(self, app):
-        """Without app_base_url configured, must return a valid absolute URL."""
-
+class TestAppBaseUrl:
+    def test_external_url_falls_back_to_request_host(self, app):
         with app.test_request_context("/"):
-            settings = get_settings()
-            settings.app_base_url = None
+            assert external_url_for("auth.login") == "http://localhost/auth/login"
 
-            url = external_url_for("auth.login")
-            assert url.startswith("http")
-            assert "/auth/login" in url
-
-    def test_uses_configured_base_url(self, app):
-        """When app_base_url is set, it must be used as the URL base."""
-
+    def test_external_url_uses_app_base_url(self, app, monkeypatch):
+        monkeypatch.setitem(app.config, "APP_BASE_URL", "https://medcover.example.com")
         with app.test_request_context("/"):
-            settings = get_settings()
-            settings.app_base_url = "https://medcoverdev.example.com"
-            db.session.flush()
+            assert external_url_for("auth.login") == "https://medcover.example.com/auth/login"
 
-            url = external_url_for("auth.login")
-            assert url == "https://medcoverdev.example.com/auth/login"
+    def test_other_host_redirected_with_path_and_query(self, app, client, monkeypatch):
+        monkeypatch.setitem(app.config, "APP_BASE_URL", "https://medcover.example.com")
+        rv = client.get("/auth/login?next=/events", base_url="http://dozory.example.com")
+        assert rv.status_code == 302
+        assert rv.headers["Location"] == "https://medcover.example.com/auth/login?next=/events"
 
-            # Restore
-            settings.app_base_url = None
-            db.session.flush()
+    def test_redirect_keeps_encoded_path_characters(self, app, client, monkeypatch):
+        monkeypatch.setitem(app.config, "APP_BASE_URL", "https://medcover.example.com")
+        rv = client.get("/a%3Fb%23c", base_url="http://dozory.example.com")
+        assert rv.headers["Location"] == "https://medcover.example.com/a%3Fb%23c"
 
-    def test_base_url_trailing_slash_stripped(self, app):
-        """Trailing slash on base URL must not produce double slashes."""
-
-        with app.test_request_context("/"):
-            settings = get_settings()
-            settings.app_base_url = "https://medcoverdev.example.com/"
-            db.session.flush()
-
-            url = external_url_for("auth.login")
-            assert "//auth" not in url
-            assert url == "https://medcoverdev.example.com/auth/login"
-
-            settings.app_base_url = None
-            db.session.flush()
+    def test_canonical_host_and_health_not_redirected(self, app, client, monkeypatch):
+        monkeypatch.setitem(app.config, "APP_BASE_URL", "https://medcover.example.com")
+        assert client.get("/auth/login", base_url="https://medcover.example.com").status_code == 200
+        assert client.get("/auth/login", base_url="https://MedCover.example.com").status_code == 200
+        assert client.get("/auth/login", base_url="http://medcover.example.com:443").status_code == 200
+        assert client.get("/health", base_url="http://10.0.0.5:5000").status_code == 200
 
 
 # ── Changelog route ───────────────────────────────────────────────────────────

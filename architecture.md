@@ -25,7 +25,7 @@ When in doubt about the correct Czech UI label or English code name for a concep
 | Pozvánka | Invite / `RegistrationInvite` model | One-time invite link for a new user to register |
 | Audit log | Audit Log / `AuditLogEntry` model | Immutable record of every create/edit/delete/status-change action |
 | Záloha | Backup | Database backup file; route module `backup` |
-| Nastavení | App Settings / `AppSettings` model | Global application configuration (SMTP, base URL, etc.) |
+| Nastavení | App Settings / `AppSettings` model | Global application configuration (SMTP, notifications, etc.) |
 | Zpětná vazba | User Feedback / `UserFeedback` model | In-app feedback form submitted by users; viewable by Admin |
 | E-mailová fronta | Email Outbox / `OutboxEmail` model | DB-backed outbox queue for all outbound emails; drained by scheduler |
 

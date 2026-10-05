@@ -16,7 +16,6 @@ def _form(csrf: str, **overrides) -> dict:
         "csrf_token": csrf,
         "org_name": "Testovací Org",
         "timezone": "Europe/Prague",
-        "app_base_url": "https://example.com",
         "smtp_port": "587",
     }
     data.update(overrides)

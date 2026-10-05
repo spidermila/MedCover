@@ -27,8 +27,7 @@ class AppSettings(db.Model):  # type: ignore[misc]
     # --- Organisation ---
     org_name = db.Column(db.String(255), nullable=True)
     timezone = db.Column(db.String(64), default="Europe/Prague", nullable=False)
-    # External base URL used when building absolute links in e-mails.
-    # Example: "https://medcoverdev.spidermila.site"  (no trailing slash)
+    # Unused: the public address now comes from the APP_BASE_URL environment variable.
     app_base_url = db.Column(db.String(512), nullable=True)
 
     # --- SMTP ---
