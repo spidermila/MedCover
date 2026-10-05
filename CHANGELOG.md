@@ -7,21 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-05
+
 ### Added
+- Condition-based staffing for events and event templates. Instead of a fixed list of spots, a new event has a maximum capacity and „Podmínky obsazení“: minimum counts of holders of given qualifications (matched through the qualification substitution hierarchy) and an eligible responsible person. Members sign up to the event directly without picking a spot; only the maximum capacity limits sign-ups, sign-ups close automatically when it is reached and reopen when someone leaves. A full event with unmet conditions stays flagged as a problem. Staffing summaries appear on the event detail, dashboard, calendar, reports, printouts, digest and notification emails. Existing events keep their spots and work as before; cloning and splitting keep the source event's mode. Spot-based templates remain as read-only „původní šablony“ that can be viewed but no longer edited or used to create events. Qualifications used by events or templates cannot be deleted. The migrations add `event.staffing_mode` and `assignment.event_id` (backfilled), make `assignment.spot_id` nullable and fail with diagnostics on duplicate assignments of the same user to one event; follow `CONDITIONS_DEPLOYMENT.md` before upgrading. (#531)
+- „Historie změn“ at the bottom of the event detail page lists who changed what and when, with before and after values, built from the audit log. Audit entries carry an `event_id`, so sign-ups and debriefings show up in their event's history; a migration backfills it for older entries where the event can be determined. (#430)
+- Search the „Akce“ list by name from a 🔍 toggle in the „Název“ column header. Matching ignores case and diacritics, so „skoleni“ finds „Školení“. (#143)
+- Coordinators and admins can generate and download a member's work report from the „Výkaz práce“ button on the user detail page (new `work_report.generate_any` permission). Such a report omits the member's stored signature, is recorded in the audit log, and is kept private to whoever generated it, so it never replaces or exposes the member's own report. (#576)
 - Select qualifications for registration invitations; each recipient receives the selected active qualifications when registering. Selection requires qualification-assignment permission. (#550)
 - Send registration invitations to multiple email addresses at once, separated by newlines, commas or semicolons. Duplicate addresses are sent once, existing users and valid invitations are skipped, and invalid batches preserve the form without sending any invitations. (#548)
 - „Formát zobrazení času akce“ setting in the profile: each user picks whether event times show as start + duration (`čt 20:00 (5,5 h)`, the default) or start–end (`čt 20:00–01:30`). The choice applies to the „Akce“ list, whose „Začátek“ column is now „Čas“, and to the event header in notification emails, which previously always showed start–end. The calendar view, dashboard horizon and dark mode settings moved with it into a new „Nastavení“ card below „Osobní údaje“. (#275)
 
 ### Changed
+- Work report hours: each event is rounded up to the next started half-hour, and the monthly total is an Excel `SUM` formula over the day rows. Other reports keep hours with one decimal place. Viewers that do not calculate formulas (e.g. iOS Quick Look) show the total blank. (#575)
+- Dependency updates: azure-identity 1.26.0, azure-storage-blob 12.31.0, cryptography 50.0.2, pillow-heif 1.8.0, holidays 0.105, pytz 2026.4; dev tooling flake8 7.4.1, tox 4.64.6. (#561, #562, #563, #564, #565, #578, #579, #580, #581)
 - Backups are stored in Azure Blob Storage instead of a local `backup_dir`, so backups made by the scheduler show up in the web admin (and vice versa) and survive container restarts. Production authenticates with the managed identity (`BACKUP_CONTAINER_URL` + `AZURE_CLIENT_ID`, no key); local development, e2e and CI use the Azurite emulator (`BACKUP_STORAGE_CONNECTION_STRING`). The shared `backups` volume and the „Adresář zálohy“ setting are gone. Existing archives on the old `/backups` share are not migrated; copy them into the container before upgrading if they are still needed (see DEVOPS.md → Backup storage). Production refuses to start without `BACKUP_CONTAINER_URL`, so apply the `medcover-infra` storage changes before deploying this release. (#538)
 
 ### Removed
-
 - The „Čekající aktivace účtů“ panel on the dashboard. Pending accounts are still activated from the user list. (#566)
 
 ### Fixed
+- Login returns the user to the page they originally requested, also after a wrong password or a rejected inactive or archived account. Unsafe or malformed `next` destinations lead to the dashboard. (#537)
+- Editing an event's spots no longer deletes and recreates them, which dropped assignments and their debriefings. Spots are updated in place, so renaming or reordering keeps assignments; removing an occupied spot or changing its qualifications so its participant becomes ineligible is rejected. (#552)
+- The work report puts events into days and months in the app timezone instead of UTC; events just after local midnight landed on the previous day or month. (#575)
+- Two simultaneous submits of the same password-reset link no longer both succeed with the later one silently overwriting the first; the second gets the stale-record message and the now-used link is invalid. (#465)
 - The „Uživatelé“ list and the „Audit log“ no longer fail with a server error on a `?page=` value of zero, a negative number or a very large number. On those two lists and on „Akce“, a page number past the last page now redirects to the last page and keeps the active filters, the same way the debriefing view already did. Before this, „Akce“ showed an empty list with no pager. (#529)
 - Two people saving the same record at once (user, event, master event, event template, equipment type or item, digest settings) no longer silently overwrite each other: the second save is rejected with „Záznam byl mezitím změněn, načtěte stránku znovu.“ and the form reloads with the current data. Other actions that hit the same race (the master-event table view, status changes, spot edits, equipment issue/return) show the same message instead of a server error, and scheduler auto-transitions and unfilled-spot reminders retry instead of failing. (#461)
+
+### Security
+- oauthlib 3.3.1 → 4.0.0 (CVE-2026-49265), pulled in by the Azure Monitor telemetry extra; all pinned requirement files were recompiled.
 
 ## [1.2.2] - 2026-09-22
 
@@ -490,7 +504,8 @@ První stabilní vydání MedCoveru. Aplikace nahrazuje původní tabulku v Goog
 - `sslmode=require` enforced for production `DATABASE_URL`
 - Feedback deletion blocked when `DEV_LOGIN_ENABLED=True` (test environment guard)
 
-[Unreleased]: https://github.com/spidermila/MedCover/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/spidermila/MedCover/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/spidermila/MedCover/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/spidermila/MedCover/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/spidermila/MedCover/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/spidermila/MedCover/compare/v1.1.0...v1.2.0
