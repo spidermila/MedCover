@@ -1,5 +1,6 @@
 """Tests for the výkaz práce (employee work report) feature."""
 
+import io
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -194,11 +195,45 @@ class TestVykazForOtherUser:
         body = resp.data.decode()
         assert "Karel Cizí" in body
         assert f"user_id={target_id}" in body
-        assert (tmp_path / "work_report" / target_id / "2026-01.xlsx").exists()
+        assert not (tmp_path / "work_report" / target_id / "2026-01.xlsx").exists()
 
         resp = coordinator_client.get(f"/work-report/download?year=2026&month=1&user_id={target_id}")
         assert resp.status_code == 200
         assert "Karel" in resp.headers["Content-Disposition"]
+
+    def test_reports_are_private_to_whoever_generated_them(self, app, coordinator_client, tmp_path, monkeypatch):
+        with app.app_context():
+            u = _make_user("vykaz_private@test.com", "Vykaz User", Role.MEMBER)
+            u.signature_image = process_signature_upload(_png_bytes())
+            u.signature_mimetype = "image/png"
+            db.session.commit()
+            target_id = str(u.id)
+        client = app.test_client()
+        _login(client, "vykaz_private@test.com")
+        monkeypatch.setattr(app, "instance_path", str(tmp_path))
+
+        coordinator_client.post(
+            "/work-report/generate",
+            data={"year": "2026", "month": "1", "user_id": target_id, "csrf_token": "x"},
+        )
+        assert "Stáhnout" not in client.get("/work-report/").data.decode()
+        assert client.get("/work-report/download?year=2026&month=1").status_code == 302
+
+        # the member's own signed copy is not overwritten by the coordinator's unsigned one
+        client.post("/work-report/generate", data={"year": "2026", "month": "1", "csrf_token": "x"})
+        coordinator_client.post(
+            "/work-report/generate",
+            data={"year": "2026", "month": "1", "user_id": target_id, "csrf_token": "x"},
+        )
+        own = client.get("/work-report/download?year=2026&month=1").data
+        assert len(openpyxl.load_workbook(io.BytesIO(own)).active._images) == 1
+
+        client.post("/work-report/generate", data={"year": "2026", "month": "2", "csrf_token": "x"})
+        body = coordinator_client.get(f"/work-report/?user_id={target_id}").data.decode()
+        assert "month=1" in body
+        assert "month=2" not in body
+        resp = coordinator_client.get(f"/work-report/download?year=2026&month=2&user_id={target_id}")
+        assert resp.status_code == 302
 
     def test_other_user_report_omits_signature_and_is_audited(self, app, coordinator_client, tmp_path, monkeypatch):
         with app.app_context():
@@ -214,7 +249,8 @@ class TestVykazForOtherUser:
             data={"year": "2026", "month": "1", "user_id": target_id, "csrf_token": "x"},
         )
 
-        wb = openpyxl.load_workbook(str(tmp_path / "work_report" / target_id / "2026-01.xlsx"))
+        coordinator_dir = next(p for p in (tmp_path / "work_report").iterdir() if p.name != target_id)
+        wb = openpyxl.load_workbook(str(coordinator_dir / target_id / "2026-01.xlsx"))
         assert len(wb.active._images) == 0
         with app.app_context():
             entry = db.session.scalar(db.select(AuditLogEntry).where(AuditLogEntry.entity_id == target_id))
@@ -468,7 +504,14 @@ class TestCleanupVykazFiles:
         new_file = work_report_dir / "2026-01.xlsx"
         new_file.write_bytes(b"x")  # fresh mtime
 
+        # report generated for someone else lives one level deeper
+        nested_old = work_report_dir / "user2" / "2025-01.xlsx"
+        nested_old.parent.mkdir()
+        nested_old.write_bytes(b"x")
+        os.utime(nested_old, (two_days_ago.timestamp(), two_days_ago.timestamp()))
+
         removed = cleanup_work_report_files(str(tmp_path))
-        assert removed == 1
+        assert removed == 2
         assert not old_file.exists()
+        assert not nested_old.exists()
         assert new_file.exists()

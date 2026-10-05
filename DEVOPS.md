@@ -1170,10 +1170,12 @@ Generated monthly work-report files are stored in the Flask `instance/` director
 instance/
   work_report/
     <user-uuid>/
-      <year>-<MM>.xlsx   (e.g. 2026-05.xlsx)
+      <year>-<MM>.xlsx   (e.g. 2026-05.xlsx)        — the user's own reports
+      <other-user-uuid>/
+        <year>-<MM>.xlsx                             — reports the user generated for someone else
 ```
 
-- Each user has their own subdirectory; generating a new report for the same month overwrites the previous file.
+- Reports are private to whoever generated them: a coordinator's report for a member lives under the coordinator's directory, so neither sees (or overwrites) the other's file. Generating the same month again overwrites only your own copy.
 - Files are **automatically deleted after 1 day** by the `cleanup_work_report` scheduler task (runs hourly in the `scheduler` container).
 - **Do not commit these files** — the `instance/` directory is gitignored.
 - The `holidays` Python package (Czech locale) is used to detect Czech public holidays for correct cell colouring. It is declared in `requirements.txt`.

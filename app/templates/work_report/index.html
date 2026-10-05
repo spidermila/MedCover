@@ -13,6 +13,7 @@
       <p class="text-muted small mb-3">
         Vygenerujte předvyplněný výkaz odpracovaných hodin za vybraný měsíc.
         Soubor je k dispozici ke stažení po dobu 24 hodin.
+        {% if other_user_id %}Výkazy, které zde vygenerujete, vidíte pouze vy – uživatel je neuvidí. Výkazy, které si uživatel vytvoří sám, zde zase neuvidíte vy. Výkaz neobsahuje podpis uživatele.{% endif %}
       </p>
       <form method="POST" action="{{ url_for('work_report.generate') }}" class="row g-3 align-items-end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
