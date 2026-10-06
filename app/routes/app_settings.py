@@ -20,7 +20,6 @@ _ALL_TIMEZONES = pytz.common_timezones
 _SETTINGS_FIELDS = [
     "org_name",
     "timezone",
-    "app_base_url",
     "feedback_enabled",
     "dev_email_block",
     "dev_email_allowlist",
@@ -38,7 +37,6 @@ def _parse_settings_form(form: dict) -> dict:
     return {
         "org_name": form.get("org_name", "").strip() or None,
         "timezone": form.get("timezone", "Europe/Prague"),
-        "app_base_url": form.get("app_base_url", "").strip().rstrip("/") or None,
         "feedback_enabled": "feedback_enabled" in form,
         "dev_email_block": "dev_email_block" in form,
         "dev_email_allowlist": form.get("dev_email_allowlist", "").strip() or None,
@@ -71,12 +69,6 @@ def index() -> str | Response:
     # --- Validate ---
     if vals["timezone"] not in pytz.all_timezones_set:
         flash("Neplatná časová zóna.", "warning")
-        return render_template("admin/app_settings.html", settings=settings, timezones=_ALL_TIMEZONES)
-
-    if vals["app_base_url"] and not (
-        vals["app_base_url"].startswith("http://") or vals["app_base_url"].startswith("https://")
-    ):
-        flash("Základní URL aplikace musí začínat http:// nebo https://.", "warning")
         return render_template("admin/app_settings.html", settings=settings, timezones=_ALL_TIMEZONES)
 
     if vals["session_timeout_hours"] < 1 or vals["session_timeout_hours"] > 8760:

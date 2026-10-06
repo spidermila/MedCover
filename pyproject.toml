@@ -32,6 +32,8 @@ addopts = "--cov=app --cov-report=term-missing --cov-report=html:htmlcov -v -n a
 env = [
     "FLASK_ENV=testing",
     "SECRET_KEY=test-secret-key-not-for-production",
+    # Production apps (scheduler.main) refuse to start without it; TestingConfig blanks it.
+    "APP_BASE_URL=https://medcover.test",
 ]
 
 [tool.coverage.run]

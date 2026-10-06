@@ -21,18 +21,6 @@
                value="{{ settings.org_name or '' }}">
       </div>
       <div class="mb-3">
-        <label for="app_base_url" class="form-label">Veřejná adresa aplikace</label>
-        <input type="url" class="form-control" id="app_base_url" name="app_base_url"
-               value="{{ settings.app_base_url or '' }}"
-               placeholder="https://medcoverdev.example.com">
-        <div class="form-text">
-          Pokud aplikace běží za reverzní proxy, zadejte zde veřejnou adresu
-          (bez lomítka na konci). Tato adresa se použije v odkazech v e-mailech
-          (obnova hesla, pozvánky, aktivace účtu).
-          Ponechte prázdné pro automatické zjišťování z požadavku.
-        </div>
-      </div>
-      <div class="mb-3">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" id="feedback_enabled" name="feedback_enabled"
                  {% if settings.feedback_enabled %}checked{% endif %}>

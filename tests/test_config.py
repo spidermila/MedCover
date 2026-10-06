@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from app import create_app
-from app.config import Config, DevelopmentConfig, ProductionConfig, check_backup_storage_env
+from app.config import Config, DevelopmentConfig, ProductionConfig, check_backup_storage_env, normalize_base_url
 
 
 def test_database_pool_liveness_options():
@@ -103,4 +103,33 @@ class TestBackupStorageEnv:
         env = {k: v for k, v in os.environ.items() if not k.startswith("BACKUP_")}
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(RuntimeError, match="BACKUP_CONTAINER_URL"):
+                create_app("production")
+
+
+class TestAppBaseUrl:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("", ""),
+            (" https://MedCover.example.com/ ", "https://medcover.example.com"),
+            ("https://medcover.example.com:443", "https://medcover.example.com"),
+            ("http://localhost:5000", "http://localhost:5000"),
+            ("https://čk.cz", "https://xn--k-cia.cz"),
+            ("http://[::1]:5000", "http://[::1]:5000"),
+        ],
+    )
+    def test_normalized(self, raw, expected):
+        assert normalize_base_url(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        ["medcover.example.com", "ftp://x.com", "https://x.com/medcover", "https://x.com?a=1", "https://x.com:abc"],
+    )
+    def test_rejected(self, raw):
+        with pytest.raises(RuntimeError, match="APP_BASE_URL"):
+            normalize_base_url(raw)
+
+    def test_production_app_refuses_to_start_without_it(self):
+        with patch.object(ProductionConfig, "APP_BASE_URL", ""):
+            with pytest.raises(RuntimeError, match="APP_BASE_URL"):
                 create_app("production")

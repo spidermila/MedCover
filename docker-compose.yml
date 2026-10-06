@@ -59,6 +59,8 @@ services:
     environment:
       # Azurite's public development key — not a secret.
       BACKUP_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      # The scheduler runs the production config, which requires a public address.
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5000}
     dns:
       - 8.8.8.8
       - 1.1.1.1

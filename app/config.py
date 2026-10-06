@@ -1,5 +1,6 @@
 import os
 import pathlib
+from urllib.parse import urlsplit
 
 RESET_TOKEN_MINUTES = 10
 INVITE_TOKEN_HOURS = 72
@@ -42,6 +43,9 @@ class Config:
     GIT_COMMIT: str = os.environ.get("GIT_COMMIT", "dev")
     # Application version read from the VERSION file at the repo root.
     APP_VERSION: str = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"
+    # Public address (e.g. https://medcover.example.com). Links in e-mails and calendar
+    # feeds use it, and requests arriving on any other host are redirected to it.
+    APP_BASE_URL: str = os.environ.get("APP_BASE_URL", "")
 
 
 class DevelopmentConfig(Config):
@@ -74,6 +78,7 @@ class TestingConfig(Config):
     # Required so url_for() works outside an active request context (e.g. in
     # unit tests that call send_* functions directly with app_context only).
     SERVER_NAME = "localhost"
+    APP_BASE_URL = ""
 
 
 class ProductionConfig(Config):
@@ -100,6 +105,37 @@ def check_backup_storage_env() -> None:
             "Set exactly one of BACKUP_CONTAINER_URL (Azure, managed identity) "
             "or BACKUP_STORAGE_CONNECTION_STRING (Azurite)."
         )
+
+
+def normalize_base_url(raw: str) -> str:
+    """Return *raw* as ``scheme://host[:port]``, lower-cased and without a default port.
+
+    Browsers send the Host header lower-cased and without :443/:80, and the canonical-host
+    redirect compares against it, so anything else would redirect forever.
+    """
+    raw = raw.strip()
+    if not raw:
+        return ""
+    parts = urlsplit(raw)
+    try:
+        port = parts.port
+    except ValueError:
+        port = -1
+    if (
+        parts.scheme not in ("http", "https")
+        or not parts.hostname
+        or port == -1
+        or parts.path not in ("", "/")
+        or parts.query
+    ):
+        raise RuntimeError(f"APP_BASE_URL must look like https://medcover.example.com, got {raw!r}.")
+    # Browsers send internationalised hosts in punycode.
+    host = parts.hostname.encode("idna").decode()
+    if ":" in host:
+        host = f"[{host}]"
+    if port is not None and port != {"http": 80, "https": 443}[parts.scheme]:
+        host += f":{port}"
+    return f"{parts.scheme}://{host}"
 
 
 config_by_name = {
