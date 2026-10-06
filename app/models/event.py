@@ -350,20 +350,25 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
         Grants this ability when:
         1. The user holds the ``event.assign_other`` permission (admins/coordinators), OR
         2. ALL of the following:
-           a) the user is RP-eligible (holds a qualification with can_be_rp),
+           a) the user is RP-eligible (holds a qualification with can_be_rp)
+              and may join events themselves (not an external user),
            b) the user is currently assigned to a spot on this event,
            c) the event's master event has NO coordinator assigned
               (coordinated master events are managed centrally from SPOT).
         """
         if user.has_permission("event.assign_other"):
             return True
-        if not user.is_rp_eligible():
+        if not user.has_permission("event.assign_own") or not user.is_rp_eligible():
             return False
         # Check: ME has no coordinator (exception rule from issue #255)
         if self.is_centrally_coordinated:
             return False
         # Check: user is assigned to this event
         return any(a.user_id == user.id for a in self.assignments)
+
+    def takes_part(self, user: UserAccount) -> bool:
+        """The user is assigned to this event or is its responsible person."""
+        return self.responsible_person_id == user.id or any(a.user_id == user.id for a in self.assignments)
 
     def __repr__(self) -> str:
         return f"<Event {self.id}: {self.name} [{self.status}]>"

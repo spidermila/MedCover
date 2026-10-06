@@ -2,7 +2,7 @@
  * Event detail — prev/next navigation from sessionStorage event list.
  *
  * Expects a config element:
- *   <div id="event-nav-config" data-event-id="…"></div>
+ *   <div id="event-nav-config" data-event-id="…" data-user-id="…"></div>
  */
 (function () {
   "use strict";
@@ -14,6 +14,9 @@
     var raw = sessionStorage.getItem("medcover_event_nav");
     if (!raw) return;
     var nav = JSON.parse(raw);
+    // The list survives logout in this tab: use only one saved by the same
+    // person, whose list shows only the events they may see.
+    if (nav.user !== cfg.dataset.userId) return;
     var ids = nav.ids;
     var base = nav.base;
     var idx = ids.indexOf(CURRENT_ID);

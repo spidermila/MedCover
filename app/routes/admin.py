@@ -12,7 +12,7 @@ from app.models.audit import AuditLogEntry
 from app.models.event import Event, EventStatus
 from app.models.feedback import UserFeedback
 from app.models.outbox import OutboxEmail
-from app.models.role import ALL_PERMISSIONS, ROLE_PERMISSIONS
+from app.models.role import ALL_PERMISSIONS, ROLE_LABELS, ROLE_PERMISSIONS
 from app.models.settings import get_settings
 from app.models.user import UserAccount
 from app.utils import CS_COLLATION, get_or_404, last_page_redirect, page_arg, require_permission
@@ -181,6 +181,7 @@ def permissions() -> str:
         "admin/permissions.html",
         all_permissions=ALL_PERMISSIONS,
         role_names=role_names,
+        role_labels=ROLE_LABELS,
         role_permissions=ROLE_PERMISSIONS,
     )
 

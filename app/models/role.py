@@ -37,6 +37,9 @@ class Role(db.Model):  # type: ignore[misc]
     MEMBER = "Member"
     VIEWER = "Viewer"
     DEBRIEFING_MANAGER = "Debriefing Manager"
+    # People from outside the organisation: they see only the events they are
+    # assigned to or responsible for, never the event plan or other users.
+    EXTERNAL = "External"
 
     # Permissions that are intentionally withheld from Admin.
     # These are reserved for the Debriefing Manager role only — even
@@ -58,6 +61,10 @@ class Role(db.Model):  # type: ignore[misc]
         back_populates="roles",
         lazy="dynamic",
     )
+
+    @property
+    def label(self) -> str:
+        return ROLE_LABELS.get(self.name, self.name)
 
     @property
     def slug(self) -> str:
@@ -97,6 +104,7 @@ ALL_PERMISSIONS: list[dict] = [
     # Events
     {"code": "event.view", "description": "View published events"},
     {"code": "event.view_draft", "description": "View draft events"},
+    {"code": "event.view_assigned", "description": "View only the events one is assigned to or responsible for"},
     {"code": "event.create", "description": "Create events"},
     {"code": "event.edit", "description": "Edit events"},
     {"code": "event.publish", "description": "Publish events"},
@@ -160,6 +168,10 @@ ALL_PERMISSIONS: list[dict] = [
     {"code": "backup.restore", "description": "Restore the application from a backup file"},
     {"code": "backup.delete", "description": "Delete a stored backup file"},
 ]
+
+# Names shown in the UI where they differ from the role name (which the
+# directory sync matches by slug); the other roles keep their English names.
+ROLE_LABELS: dict[str, str] = {Role.EXTERNAL: "Externí"}
 
 # Permissions per role (from RBAC table in architecture.md)
 ROLE_PERMISSIONS: dict[str, list[str]] = {
@@ -234,5 +246,16 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "debriefing.view_own",
         "debriefing.view_all",
         "debriefing.manage",
+    ],
+    Role.EXTERNAL: [
+        "user.edit_own",
+        "event.view_assigned",
+        # Personal equipment, but only for themselves (see equipment routes).
+        "equipment.view",
+        "equipment_item.issue_personal",
+        "equipment_item.report_own",
+        "debriefing.submit_own",
+        "debriefing.view_own",
+        "work_report.generate",
     ],
 }

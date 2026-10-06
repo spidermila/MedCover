@@ -30,9 +30,11 @@
       <span class="badge bg-{{ 'success' if event.is_sufficiently_staffed else 'warning' }} ms-1 fs-6">{{ event.staffing_status }}</span>
     </h2>
     <p class="text-muted mb-0">
+      {% if current_user.has_permission('master_event.view') %}
       <a href="{{ url_for('master_events.detail', me_id=event.master_event_id) }}" class="text-decoration-none">
         {{ event.master_event.name }}
       </a>
+      {% else %}{{ event.master_event.name }}{% endif %}
     </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
@@ -370,7 +372,7 @@
             {% endif %}
 
             {# Release own assignment — blocked when ME is centrally coordinated #}
-            {% if not me_coordinated and spot.assignment and spot.assignment.user_id == current_user.id and event.status != EventStatus.COMPLETED %}
+            {% if not me_coordinated and spot.assignment and spot.assignment.user_id == current_user.id and event.status != EventStatus.COMPLETED and not current_user.sees_own_events_only %}
               <form method="POST" action="{{ url_for('assignments.release', assignment_id=spot.assignment.id) }}"
                     data-confirm="Odhlásit se z této pozice?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -585,7 +587,7 @@ document.querySelectorAll('select.rp-select').forEach(function (sel) {
 });
 </script>
 <script src="{{ url_for('static', filename='js/events-detail.js') }}?v={{ static_ver }}"></script>
-<div id="event-nav-config" class="d-none" data-event-id="{{ event.id }}"></div>
+<div id="event-nav-config" class="d-none" data-event-id="{{ event.id }}" data-user-id="{{ current_user.get_id() }}"></div>
 <script src="{{ url_for('static', filename='js/events-detail-nav.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
 <script src="{{ url_for('static', filename='js/user-conflict-warning.js') }}?v={{ static_ver }}" nonce="{{ g.csp_nonce }}"></script>
 
