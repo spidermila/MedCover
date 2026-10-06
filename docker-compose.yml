@@ -10,6 +10,8 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app:z
+      # CA of the MemberBase directory (compose profile memberbase), for LDAP_CA_CERT.
+      - ldap_certs:/certs:ro
     env_file: .env
     environment:
       # Azurite's public development key — not a secret.
@@ -51,6 +53,8 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app:z
+      # CA of the MemberBase directory (compose profile memberbase), for LDAP_CA_CERT.
+      - ldap_certs:/certs:ro
     env_file: .env
     environment:
       # Azurite's public development key — not a secret.
@@ -137,3 +141,5 @@ volumes:
   # Azurite blob data (DB backups). Survives `compose down`; wiped only by
   # `compose down -v`.
   azurite_data:
+  # Written by the MemberBase directory (openldap); empty without it.
+  ldap_certs:

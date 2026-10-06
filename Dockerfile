@@ -13,8 +13,14 @@ RUN apt-get update \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-telemetry.txt ./
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
-    && pip install --no-cache-dir --require-hashes -r requirements-telemetry.txt
+# python-ldap ships no wheels: compile it against the OpenLDAP client library,
+# then drop the compiler and headers but keep the libraries.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libldap2-dev libsasl2-dev libldap2 libsasl2-2 \
+    && pip install --no-cache-dir --require-hashes -r requirements.txt \
+    && pip install --no-cache-dir --require-hashes -r requirements-telemetry.txt \
+    && apt-get purge -y --auto-remove gcc libldap2-dev libsasl2-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 

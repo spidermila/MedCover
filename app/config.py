@@ -31,6 +31,12 @@ class Config:
     # from the current request, so one dev instance works under any host name.
     KEYCLOAK_PUBLIC_URL = os.environ.get("KEYCLOAK_PUBLIC_URL", "") or "{scheme}://{hostname}:8180"
     KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "crc")
+    # The MemberBase directory (LDAPS). With AUTH_MODE=oidc and LDAP_URI set,
+    # MedCover's users are copied from it (scheduler, and each login).
+    LDAP_URI = os.environ.get("LDAP_URI", "")
+    LDAP_CA_CERT = os.environ.get("LDAP_CA_CERT", "")
+    LDAP_BASE_DN = os.environ.get("LDAP_BASE_DN", "")
+    LDAP_SYNC_PASSWORD = os.environ.get("LDAP_SYNC_PASSWORD", "")
     # Short git commit hash injected at Docker build time via ARG GIT_COMMIT.
     # Falls back to "dev" when running outside of Docker (local dev, tests).
     GIT_COMMIT: str = os.environ.get("GIT_COMMIT", "dev")

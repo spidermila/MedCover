@@ -66,6 +66,8 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update -q
           sudo ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 unixodbc-dev
+          # python-ldap is compiled against the OpenLDAP client library.
+          sudo apt-get install -y --no-install-recommends libldap-dev libsasl2-dev
 
       - name: Create test databases
         run: |
@@ -80,8 +82,8 @@ jobs:
       - name: Run tests with coverage
         run: pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=xml
 
-      - name: Require full coverage of the Keycloak login
-        run: coverage report --include=app/oidc.py --fail-under=100
+      - name: Require full coverage of the Keycloak login and the directory sync
+        run: coverage report --include=app/oidc.py,app/directory_sync.py --fail-under=100
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v7

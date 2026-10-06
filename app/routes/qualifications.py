@@ -26,7 +26,7 @@ from app.models.event import (
     spot_qualifications,
 )
 from app.models.qualification import Qualification, user_qualifications
-from app.routes.assignments import refresh_responsible_person
+from app.responsible_person import refresh_responsible_people
 from app.staffing import qualification_graph
 from app.utils import CS_COLLATION, audit, diff_changes, get_or_404, require_permission
 
@@ -79,19 +79,6 @@ def _condition_references(cred_id: int) -> tuple[list[Event], list[EventTemplate
         .all()
     )
     return list(events), list(templates)
-
-
-def _refresh_responsible_people() -> None:
-    # Batch-load participants and their current qualifications, including after bulk unlinking.
-    db.session.flush()
-    for event in db.session.scalars(
-        db.select(Event)
-        .where(Event.status.not_in((EventStatus.COMPLETED, EventStatus.CANCELLED)))
-        .order_by(Event.id)
-        .with_hint(Event, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
-        .execution_options(populate_existing=True)
-    ).all():
-        refresh_responsible_person(event)
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
@@ -204,7 +191,7 @@ def edit(cred_id: int) -> str | Response:
             flash(str(exc), "danger")
             return render_template("qualifications/edit.html", cred=cred, all_qualifications=all_qualifications)
         if before["can_be_rp"] != cred.can_be_rp:
-            _refresh_responsible_people()
+            refresh_responsible_people()
 
         audit(
             "edit",
@@ -352,7 +339,7 @@ def delete(cred_id: int) -> Response:
 
     # ── Soft-delete (fixed spots keep the FK as tombstone) ────────────────────
     cred.soft_delete()
-    _refresh_responsible_people()
+    refresh_responsible_people()
     audit(
         "delete",
         "Qualification",
