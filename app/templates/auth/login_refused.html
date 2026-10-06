@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Přihlášení se nezdařilo" if failed else "Přihlášení odmítnuto" }} — MedCover{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-8 col-lg-6">
+    <div class="card shadow-sm mt-4">
+      <div class="card-body p-4">
+        {% if failed %}
+        <h4 class="card-title mb-3">Přihlášení se nezdařilo</h4>
+        <p>Přihlášení se nepodařilo dokončit. Zkuste to prosím znovu.</p>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-danger">Přihlásit se znovu</a>
+        {% else %}
+        <h4 class="card-title mb-3">Přihlášení odmítnuto</h4>
+        <p>Do MedCoveru nemáte přístup: nemáte přidělenou roli nebo váš účet není aktivní. Obraťte se na administrátora.</p>
+        <a href="{{ logout_url }}" class="btn btn-outline-secondary">Odhlásit se</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
