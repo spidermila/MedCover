@@ -268,6 +268,21 @@ class TestOptionalFilledSpotsProperty:
 class TestEventMiscProperties:
     """Coverage for small helper properties/methods on Event / EventSpot / templates."""
 
+    def test_unfilled_spots_returns_only_unassigned_mandatory_spots(self):
+        first_unfilled = EventSpot(is_optional=False)
+        second_unfilled = EventSpot(is_optional=False)
+        event = Event(
+            spots=[
+                EventSpot(is_optional=True),
+                first_unfilled,
+                EventSpot(is_optional=False, assignment=Assignment()),
+                second_unfilled,
+                EventSpot(is_optional=True, assignment=Assignment()),
+            ]
+        )
+
+        assert event.unfilled_spots == [first_unfilled, second_unfilled]
+
     def test_is_unfilled_true_when_mandatory_spot_missing(self, app):
         with app.app_context():
             me = MasterEvent(name="Unfilled ME")
@@ -359,6 +374,27 @@ class TestEventMiscProperties:
             db.session.commit()
             r = repr(spot_tpl)
             assert "EventSpotTemplate" in r and str(spot_tpl.id) in r
+
+    def test_is_eligible_accepts_user_when_no_qualifications_required(self):
+        spot = EventSpot()
+        user = UserAccount()
+
+        assert spot.is_eligible(user) is True
+
+    def test_is_eligible_accepts_direct_qualification_match(self):
+        required = Qualification(id=1, name="Required", is_deleted=False)
+        spot = EventSpot(required_qualifications=[required])
+        user = UserAccount(qualifications=[required])
+
+        assert spot.is_eligible(user) is True
+
+    def test_is_eligible_rejects_user_satisfying_only_one_requirement(self):
+        first = Qualification(id=1, name="First", is_deleted=False)
+        second = Qualification(id=2, name="Second", is_deleted=False)
+        spot = EventSpot(required_qualifications=[first, second])
+        user = UserAccount(qualifications=[first])
+
+        assert spot.is_eligible(user) is False
 
     def test_is_eligible_rejects_user_missing_qualification(self, app):
         """EventSpot.is_eligible returns False when the user lacks any required qualification."""

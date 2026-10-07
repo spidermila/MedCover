@@ -469,17 +469,14 @@ class TestCanBeFilledBy:
             assert not a.can_be_filled_by(b)
             assert not b.can_be_filled_by(a)
 
-    def test_cycle_does_not_crash(self, app):
-        """Cyclic parent relationships must not cause infinite recursion."""
-        with app.app_context():
-            a = _make_qual("CycleA")
-            b = _make_qual("CycleB")
-            a.parents.append(b)
-            b.parents.append(a)
-            db.session.commit()
-            # Should complete without RecursionError
-            result = a.can_be_filled_by(b)
-            assert isinstance(result, bool)
+    def test_cycle_rejects_unrelated_qualification_without_recursing_forever(self):
+        a = Qualification(id=1, name="CycleA")
+        b = Qualification(id=2, name="CycleB")
+        unrelated = Qualification(id=3, name="Unrelated")
+        a.parents.append(b)
+        b.parents.append(a)
+
+        assert a.can_be_filled_by(unrelated) is False
 
 
 # ── Batched hierarchy walk: user_fillable_qual_ids ────────────────────────────
