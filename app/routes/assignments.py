@@ -258,6 +258,7 @@ def do_assign_user(
         return AssignResult(ok=False, error="Tato pozice byla právě obsazena někým jiným.", event=event)
 
     mailer.send_assignment_confirmed(user, event, spot_description=spot.description)
+    db.session.commit()
     return AssignResult(
         ok=True,
         assignment=spot.assignment,
