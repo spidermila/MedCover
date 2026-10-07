@@ -1388,6 +1388,115 @@ class TestEditSpot:
             spot = db.session.get(EventSpot, spot_id)
             assert spot.description == "New Desc"
 
+    @pytest.fixture
+    def rp_spot_edit(self, app):
+        """An assigned RP, a remaining non-RP participant, and a new unmet requirement."""
+        event_id, spot_id = self._create_event_with_spot(app)
+        with app.app_context():
+            member = _make_user("edited-rp@test.com", "Edited participant", Role.MEMBER)
+            remaining = _make_user("remaining-rp@test.com", "Remaining participant", Role.MEMBER)
+            event = db.session.get(Event, event_id)
+            anchor = next(s for s in event.spots if s.id != spot_id)
+            member.qualifications = list(anchor.required_qualifications)
+            remaining_spot = EventSpot(event=event, description="Remaining spot")
+            db.session.add(remaining_spot)
+            remaining_spot.assignment = Assignment(user=remaining, assigned_by=remaining)
+            spot = db.session.get(EventSpot, spot_id)
+            spot.assignment = Assignment(user=member, assigned_by=member)
+            required = Qualification(name="New spot requirement")
+            db.session.add(required)
+            event.responsible_person_id = member.id
+            db.session.commit()
+            yield event, spot, remaining, required
+
+    def _edit_rp_spot(self, client, event, spot, required, *, confirm="1"):
+        response = client.post(
+            f"/events/{event.id}/spots/{spot.id}/edit",
+            data={"qualification_ids": [str(required.id)], "confirm_unassign": confirm},
+        )
+        assert response.status_code == 302
+        db.session.expire_all()
+
+    def _rp_audit_entries(self, event):
+        return db.session.scalars(
+            db.select(AuditLogEntry).where(
+                AuditLogEntry.event_id == event.id,
+                AuditLogEntry.summary.startswith("Zodpovědná osoba"),
+            )
+        ).all()
+
+    def test_spot_auto_unassign_clears_rp_without_eligible_replacement(self, admin_client, rp_spot_edit):
+        event, spot, remaining, required = rp_spot_edit
+        assignment_id = spot.assignment.id
+
+        self._edit_rp_spot(admin_client, event, spot, required)
+
+        assert spot.assignment is None
+        assert db.session.get(Assignment, assignment_id) is None
+        assert event.responsible_person_id is None
+        assert [a.user_id for a in event.assignments] == [remaining.id]
+        assert spot.required_qualifications == [required]
+        (entry,) = self._rp_audit_entries(event)
+        assert (entry.entity_type, entry.action_type) == ("Event", "edit")
+        assert "odstraněna" in entry.summary
+        assert "Edited participant" in entry.summary
+
+    def test_spot_auto_unassign_reassigns_rp_to_eligible_participant(self, admin_client, rp_spot_edit):
+        event, spot, remaining, required = rp_spot_edit
+        remaining.qualifications = list(spot.assignment.user.qualifications)
+        db.session.commit()
+
+        self._edit_rp_spot(admin_client, event, spot, required)
+
+        assert spot.assignment is None
+        assert event.responsible_person_id == remaining.id
+        assert [a.user_id for a in event.assignments] == [remaining.id]
+        assert spot.required_qualifications == [required]
+        (entry,) = self._rp_audit_entries(event)
+        assert (entry.entity_type, entry.action_type) == ("Event", "edit")
+        assert "přeřazena" in entry.summary
+        assert "Edited participant" in entry.summary
+        assert "Remaining participant" in entry.summary
+
+    def test_spot_auto_unassign_preserves_another_participants_rp(self, admin_client, rp_spot_edit):
+        event, spot, remaining, required = rp_spot_edit
+        remaining.qualifications = list(spot.assignment.user.qualifications)
+        event.responsible_person_id = remaining.id
+        db.session.commit()
+
+        self._edit_rp_spot(admin_client, event, spot, required)
+
+        assert spot.assignment is None
+        assert event.responsible_person_id == remaining.id
+        assert [a.user_id for a in event.assignments] == [remaining.id]
+        assert self._rp_audit_entries(event) == []
+
+    def test_unconfirmed_spot_edit_preserves_rp_and_assignment(self, admin_client, rp_spot_edit):
+        event, spot, remaining, required = rp_spot_edit
+        assignment_id, member_id = spot.assignment.id, spot.assignment.user_id
+
+        self._edit_rp_spot(admin_client, event, spot, required, confirm="0")
+
+        assert spot.assignment.id == assignment_id
+        assert event.responsible_person_id == member_id
+        assert {a.user_id for a in event.assignments} == {member_id, remaining.id}
+        assert spot.required_qualifications == []
+        assert self._rp_audit_entries(event) == []
+
+    def test_spot_edit_preserves_rp_when_participant_still_qualifies(self, admin_client, rp_spot_edit):
+        event, spot, remaining, required = rp_spot_edit
+        assignment_id, member_id = spot.assignment.id, spot.assignment.user_id
+        spot.assignment.user.qualifications.append(required)
+        db.session.commit()
+
+        self._edit_rp_spot(admin_client, event, spot, required)
+
+        assert spot.assignment.id == assignment_id
+        assert event.responsible_person_id == member_id
+        assert {a.user_id for a in event.assignments} == {member_id, remaining.id}
+        assert spot.required_qualifications == [required]
+        assert self._rp_audit_entries(event) == []
+
 
 # ── Delete spot ───────────────────────────────────────────────────────────────
 

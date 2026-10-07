@@ -12,7 +12,7 @@ from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus, StaffingMode
 from app.models.qualification import Qualification
 from app.models.user import UserAccount
-from app.routes.assignments import lock_condition_event
+from app.routes.assignments import _auto_clear_rp, lock_condition_event
 from app.utils import audit, get_or_404, require_permission, safe_next
 
 from . import events_bp
@@ -219,6 +219,7 @@ def edit_spot(event_id: int, spot_id: int) -> Response:
     if unassign_needed:
         assignment = spot.assignment
         unassigned_user = assignment.user
+        _auto_clear_rp(event, unassigned_user)
         audit(
             "delete",
             "Assignment",
