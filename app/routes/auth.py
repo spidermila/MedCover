@@ -225,6 +225,7 @@ def register(token: str) -> str | Response:
         else:
             user = UserAccount(email=invite.email, name=full_name, is_active=True)
             user.set_password(password)
+            db.session.add(user)
             user.qualifications = [
                 qualification for qualification in invite.qualifications if not qualification.is_deleted
             ]
@@ -232,7 +233,6 @@ def register(token: str) -> str | Response:
             if member_role:
                 user.roles.append(member_role)
             invite.used_at = datetime.now(timezone.utc)
-            db.session.add(user)
             db.session.flush()
             db.session.add(
                 AuditLogEntry(

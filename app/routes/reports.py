@@ -29,7 +29,7 @@ from flask import Blueprint, Response, abort, flash, make_response, redirect, re
 from flask_login import current_user, login_required
 from openpyxl import Workbook
 from sqlalchemy import func
-from sqlalchemy.orm import noload, selectinload
+from sqlalchemy.orm import raiseload, selectinload
 
 from app.extensions import db
 from app.models.assignment import Assignment
@@ -766,12 +766,14 @@ def _work_summary_data(from_dt: datetime, to_dt: datetime) -> list[WorkSummaryGr
         Event.archived == sa.false(),
     )
 
-    # noload: this report reads only scalar columns off the event, so the
+    # raiseload: this report reads only scalar columns off the event, so the
     # spots -> qualifications / assignment -> user selectin cascade would be
     # four extra queries and a full hydration of every spot for nothing.
     events = {
         ev.id: ev
-        for ev in db.session.scalars(db.select(Event).where(*date_filter).options(noload(Event.spots))).unique().all()
+        for ev in db.session.scalars(db.select(Event).where(*date_filter).options(raiseload(Event.spots)))
+        .unique()
+        .all()
     }
 
     # One row per assigned person per event. Someone holding two spots on the

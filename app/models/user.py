@@ -122,61 +122,61 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         "Assignment",
         foreign_keys="Assignment.user_id",
         back_populates="user",
-        lazy="noload",
+        lazy="select",
     )
     assignments_made: Mapped[list[Assignment]] = db.relationship(
         "Assignment",
         foreign_keys="Assignment.assigned_by_id",
         back_populates="assigned_by",
-        lazy="noload",
+        lazy="select",
     )
     submitted_debriefings: Mapped[list[DebriefingRecord]] = db.relationship(
         "DebriefingRecord",
         foreign_keys="DebriefingRecord.submitted_by_id",
         back_populates="submitted_by",
-        lazy="noload",
+        lazy="select",
     )
     audit_entries: Mapped[list[AuditLogEntry]] = db.relationship(
         "AuditLogEntry",
         foreign_keys="AuditLogEntry.actor_id",
         back_populates="actor",
-        lazy="noload",
+        lazy="select",
     )
     issued_equipment: Mapped[list[EquipmentItem]] = db.relationship(
         "EquipmentItem",
         foreign_keys="EquipmentItem.issued_to_id",
         back_populates="issued_to",
-        lazy="noload",
+        lazy="select",
     )
     feedback_entries: Mapped[list[UserFeedback]] = db.relationship(
         "UserFeedback",
         foreign_keys="UserFeedback.user_id",
         back_populates="user",
-        lazy="noload",
+        lazy="select",
     )
     created_invites: Mapped[list[RegistrationInvite]] = db.relationship(
         "RegistrationInvite",
         foreign_keys="RegistrationInvite.created_by_id",
         back_populates="created_by",
-        lazy="noload",
+        lazy="select",
     )
     rp_events: Mapped[list[Event]] = db.relationship(
         "Event",
         foreign_keys="Event.responsible_person_id",
         back_populates="responsible_person",
-        lazy="noload",
+        lazy="select",
     )
     created_events: Mapped[list[Event]] = db.relationship(
         "Event",
         foreign_keys="Event.created_by_id",
         back_populates="created_by",
-        lazy="noload",
+        lazy="select",
     )
     coordinated_master_events: Mapped[list[MasterEvent]] = db.relationship(
         "MasterEvent",
         foreign_keys="MasterEvent.coordinator_id",
         back_populates="coordinator",
-        lazy="noload",
+        lazy="select",
     )
 
     def regenerate_ical_token(self) -> str:
