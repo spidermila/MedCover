@@ -13,6 +13,7 @@ from app.models.audit import AuditLogEntry
 from app.models.equipment import EquipmentItem, EquipmentType
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
+from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
@@ -120,6 +121,28 @@ class TestAssignmentRelease:
 
 
 class TestAdminAssignment:
+    def test_assign_other_persists_confirmation_after_request(self, app, admin_client):
+        event_id, spot_id = _make_event_with_spot(app)
+        with app.app_context():
+            target = _make_user("notification-target@test.com", "Target", Role.MEMBER)
+            target_id = target.id
+
+        response = admin_client.post(f"/assignments/assign/{spot_id}", data={"user_id": str(target_id)})
+        assert response.status_code == 302
+
+        # A fresh session after request teardown must see the committed outbox row.
+        with app.app_context():
+            notification = db.session.scalars(
+                db.select(OutboxEmail).where(
+                    OutboxEmail.event_id == event_id,
+                    OutboxEmail.user_id == target_id,
+                    OutboxEmail.notification_type == "assignment_confirmed",
+                )
+            ).one()
+            assert notification.to_email == "notification-target@test.com"
+            assert notification.status == "pending"
+            assert notification.change_type == "assignment"
+
     def test_admin_can_assign_other_user(self, app, admin_client):
         event_id, spot_id = _make_event_with_spot(app)
         with app.app_context():
