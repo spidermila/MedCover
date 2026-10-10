@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from flask import Response, abort, flash, jsonify, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import collate, func
-from sqlalchemy.orm import noload, raiseload, selectinload
+from sqlalchemy.orm import raiseload, selectinload
 
 import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
@@ -236,7 +236,7 @@ def index() -> str | Response:
         selectinload(Event.spots)  # type: ignore[arg-type]
         .selectinload(EventSpot.assignment)
         .selectinload(Assignment.user)
-        .options(noload(UserAccount.roles), noload(UserAccount.qualifications)),
+        .options(raiseload(UserAccount.roles), raiseload(UserAccount.qualifications)),
     )
 
     if not current_user.has_permission("event.view_draft"):

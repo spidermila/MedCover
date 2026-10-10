@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+from sqlalchemy import inspect
+
 from app.extensions import db
 from app.models.assignment import Assignment
 from app.models.event import (
@@ -16,7 +18,7 @@ from app.models.master_event import MasterEvent
 from app.models.qualification import Qualification
 from app.models.role import Role
 from app.models.user import UserAccount
-from tests.conftest import _make_user
+from tests.conftest import _make_event_with_spot, _make_user
 
 
 class TestEventStatusValues:
@@ -109,6 +111,23 @@ class TestUserGetId:
             assert isinstance(result, str)
             # Must be UUID-like (non-empty string representation of the PK)
             assert len(result) > 0
+
+
+class TestUserAssignments:
+    def test_assignments_load_only_when_accessed(self, app):
+        _, spot_id = _make_event_with_spot(app)
+        with app.app_context():
+            user = _make_user("assigned@test.com", "Assigned", Role.MEMBER)
+            user_id = user.id
+            assignment = Assignment(spot_id=spot_id, user_id=user_id)
+            db.session.add(assignment)
+            db.session.commit()
+            assignment_id = assignment.id
+            db.session.remove()
+
+            user = db.session.get(UserAccount, user_id)
+            assert "assignments" in inspect(user).unloaded
+            assert [item.id for item in user.assignments] == [assignment_id]
 
 
 class TestEventStaffingStatus:
@@ -268,6 +287,21 @@ class TestOptionalFilledSpotsProperty:
 class TestEventMiscProperties:
     """Coverage for small helper properties/methods on Event / EventSpot / templates."""
 
+    def test_unfilled_spots_returns_only_unassigned_mandatory_spots(self):
+        first_unfilled = EventSpot(is_optional=False)
+        second_unfilled = EventSpot(is_optional=False)
+        event = Event(
+            spots=[
+                EventSpot(is_optional=True),
+                first_unfilled,
+                EventSpot(is_optional=False, assignment=Assignment()),
+                second_unfilled,
+                EventSpot(is_optional=True, assignment=Assignment()),
+            ]
+        )
+
+        assert event.unfilled_spots == [first_unfilled, second_unfilled]
+
     def test_is_unfilled_true_when_mandatory_spot_missing(self, app):
         with app.app_context():
             me = MasterEvent(name="Unfilled ME")
@@ -359,6 +393,27 @@ class TestEventMiscProperties:
             db.session.commit()
             r = repr(spot_tpl)
             assert "EventSpotTemplate" in r and str(spot_tpl.id) in r
+
+    def test_is_eligible_accepts_user_when_no_qualifications_required(self):
+        spot = EventSpot()
+        user = UserAccount()
+
+        assert spot.is_eligible(user) is True
+
+    def test_is_eligible_accepts_direct_qualification_match(self):
+        required = Qualification(id=1, name="Required", is_deleted=False)
+        spot = EventSpot(required_qualifications=[required])
+        user = UserAccount(qualifications=[required])
+
+        assert spot.is_eligible(user) is True
+
+    def test_is_eligible_rejects_user_satisfying_only_one_requirement(self):
+        first = Qualification(id=1, name="First", is_deleted=False)
+        second = Qualification(id=2, name="Second", is_deleted=False)
+        spot = EventSpot(required_qualifications=[first, second])
+        user = UserAccount(qualifications=[first])
+
+        assert spot.is_eligible(user) is False
 
     def test_is_eligible_rejects_user_missing_qualification(self, app):
         """EventSpot.is_eligible returns False when the user lacks any required qualification."""

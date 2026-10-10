@@ -635,6 +635,7 @@ class TestInvites:
             assert db.session.scalar(db.select(sa.func.count()).select_from(RegistrationInvite)) == 0
             assert db.session.scalar(db.select(sa.func.count()).select_from(OutboxEmail)) == 0
 
+    @pytest.mark.filterwarnings("error::sqlalchemy.exc.SAWarning")
     def test_invite_qualifications_are_granted_on_registration(
         self, app: object, admin_client: object, client: object
     ) -> None:
@@ -679,6 +680,7 @@ class TestInvites:
             ).all()
             assert len(users) == 2
             assert all([q.id for q in user.qualifications] == [active_id] for user in users)
+            assert all([role.name for role in user.roles] == [Role.MEMBER] for user in users)
 
     @pytest.mark.parametrize("value", ["invalid", "999999999999999999999999", "999999", "-1"])
     def test_invalid_invite_qualifications_create_nothing(self, app: object, admin_client: object, value: str) -> None:

@@ -11,6 +11,7 @@ from app.models.role import Role
 from app.printout_generator import generate_printout
 from app.queries import conflicting_events_for_users
 from app.routes.reports import _spot_and_assignment_data, _work_summary_data
+from app.utils import to_local
 from app.work_report_generator import _fetch_events_for_month
 from tests.conftest import _login, _make_event_with_spot, _make_user
 
@@ -54,8 +55,9 @@ def test_shared_participation_reads(app, client, mode):
         db.session.commit()
         groups = _work_summary_data(now - timedelta(days=3), now)
         assert any(g.total.user_name == "Condition Participant" for g in groups)
-        day_data = _fetch_events_for_month(str(user_id), event.start_datetime.year, event.start_datetime.month)
-        assert event.name in day_data[event.start_datetime.day][1]
+        local_start = to_local(event.start_datetime)
+        day_data = _fetch_events_for_month(str(user_id), local_start.year, local_start.month)
+        assert event.name in day_data[local_start.day][1]
     response = client.get(f"/debriefing/{assignment_id}")
     assert response.status_code == 200
     assert b"Shared participation" in response.data
