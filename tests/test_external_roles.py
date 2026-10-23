@@ -4,7 +4,7 @@ import pytest
 
 from app.extensions import db
 from app.models.audit import AuditLogEntry
-from app.models.role import ROLE_PERMISSIONS, Role
+from app.models.role import ROLE_PERMISSIONS, Role, exclusive_roles
 from app.models.user import UserAccount
 from app.routes.users import _apply_role_update
 from tests.conftest import _make_user
@@ -12,6 +12,22 @@ from tests.conftest import _make_user
 
 def role_ids(*names):
     return list(db.session.scalars(db.select(Role.id).where(Role.name.in_(names))))
+
+
+@pytest.mark.parametrize(
+    ("names", "kept", "dropped"),
+    [
+        ([], [], []),
+        ([Role.MEMBER], [Role.MEMBER], []),
+        ([Role.EXTERNAL], [Role.EXTERNAL], []),
+        ([Role.MEMBER, Role.COORDINATOR], [Role.MEMBER, Role.COORDINATOR], []),
+        ([Role.COORDINATOR, Role.EXTERNAL, Role.ADMIN], [Role.EXTERNAL], [Role.ADMIN, Role.COORDINATOR]),
+    ],
+)
+def test_exclusive_roles_keeps_external_alone(names, kept, dropped):
+    roles, left_out = exclusive_roles([Role(name=name) for name in names])
+    assert [role.name for role in roles] == kept
+    assert left_out == dropped
 
 
 def user_audits():

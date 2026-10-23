@@ -44,6 +44,17 @@ def validate_role_combination(roles: Sequence[Role]) -> None:
         raise ValueError("Role External nesmí být kombinována s jinými rolemi.")
 
 
+def exclusive_roles(roles: Sequence[Role]) -> tuple[list[Role], list[str]]:
+    """The roles to store when they come from outside MedCover (login token,
+    directory), and the names left out. External cannot be combined with any
+    other role (see validate_role_combination), so with others only External
+    is kept: the least access wins."""
+    external = [role for role in roles if role.name == Role.EXTERNAL]
+    if not external or len(external) == len(roles):
+        return list(roles), []
+    return external, sorted(role.name for role in roles if role.name != Role.EXTERNAL)
+
+
 # All permission codes defined in the RBAC table in architecture.md
 ALL_PERMISSIONS: list[dict] = [
     # Users

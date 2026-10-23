@@ -1,5 +1,7 @@
 from flask import Flask, Response, redirect, url_for
 
+from app import oidc
+
 from .admin import admin_bp
 from .admin_digest import bp as admin_digest_bp
 from .app_settings import app_settings_bp
@@ -26,6 +28,7 @@ from .work_report import work_report_bp
 def register_blueprints(app: Flask) -> None:
     app.register_blueprint(setup_bp)
     app.register_blueprint(auth_bp)
+    oidc.init_app(app)
     app.register_blueprint(main_bp)
     app.register_blueprint(events_bp)
     app.register_blueprint(master_events_bp)
