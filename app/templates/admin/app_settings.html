@@ -46,6 +46,12 @@
                min="1" max="8760" value="{{ settings.session_timeout_hours }}" required>
         <div class="form-text">Po uplynutí této doby bude uživatel automaticky odhlášen. Výchozí hodnota je 24 hodin.</div>
       </div>
+      <div class="mb-3">
+        <label for="external_opportunity_days" class="form-label">Předstih pro externí spolupracovníky (dny)</label>
+        <input type="number" class="form-control" id="external_opportunity_days" name="external_opportunity_days"
+               min="1" max="365" step="1" value="{{ settings.external_opportunity_days }}" required>
+        <div class="form-text">Neobsazené akce se nabídnou externím, když do začátku zbývá méně než tento počet dní. Zadejte celé číslo od 1 do 365, výchozí hodnota je 10. Změna platí také pro e-mailové nabídky.</div>
+      </div>
       <div class="mb-0">
         <label for="timezone" class="form-label">Časová zóna</label>
         <select class="form-select" id="timezone" name="timezone">

@@ -8,6 +8,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
+from app.external_collaborators import external_opportunity, filter_external_events
 from app.models.assignment import Assignment, DebriefingRecord
 from app.models.equipment import (
     EquipmentItem,
@@ -61,7 +62,7 @@ def _my_events_section(now: datetime, horizon: datetime) -> tuple[list[tuple[Eve
         my_events_query = my_events_query.where(Event.status != EventStatus.DRAFT)
 
     my_events_raw = sorted(
-        db.session.scalars(my_events_query).all(),
+        db.session.scalars(filter_external_events(my_events_query, current_user, now)).all(),
         key=lambda e: e.start_datetime,
     )
 
@@ -100,7 +101,8 @@ def _open_events_section(
     all_open = [
         e
         for e in candidates
-        if (
+        if (not current_user.is_external or external_opportunity(e, now))
+        and (
             can_join_event(e, current_user)
             if e.staffing_mode == "CONDITIONS"
             else any(s.assignment is None for s in e.spots)

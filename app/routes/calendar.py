@@ -17,6 +17,7 @@ from icalendar import Event as ICalEvent
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
+from app.external_collaborators import external_visible_event_ids
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.user import UserAccount
@@ -73,7 +74,9 @@ def feed(token: str) -> Response:
         .join(Assignment.event)
         .where(
             Assignment.user_id == user.id,
-            Event.status.notin_(_PERSONAL_EXCLUDED_STATUSES),
+            Event.status.notin_(
+                _PERSONAL_EXCLUDED_STATUSES | {EventStatus.DRAFT} if user.is_external else _PERSONAL_EXCLUDED_STATUSES
+            ),
             Event.archived == sa.false(),
         )
         .options(selectinload(Assignment.event))  # type: ignore[arg-type]
@@ -136,6 +139,10 @@ def feed_all(token: str) -> Response:
         )
         .order_by(Event.start_datetime)
     ).all()
+
+    if user.is_external:
+        visible_ids = external_visible_event_ids(user)
+        events = [event for event in events if event.id in visible_ids]
 
     cal = _make_calendar(f"MedCover – všechny akce ({user.name})", "Všechny akce v systému MedCover")
 

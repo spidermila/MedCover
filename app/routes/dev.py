@@ -42,6 +42,13 @@ DEV_ACCOUNTS: list[dict] = [
         "description": "Join events, submit debriefings",
     },
     {
+        "role": "external",
+        "label": "External",
+        "name": "Veselá Eva",
+        "email": "dev.external@medcover.local",
+        "description": "Join eligible events as an external collaborator",
+    },
+    {
         "role": "viewer",
         "label": "Viewer",
         "name": "Horáková Marie",

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, deferred
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
-from app.models.role import ROLE_PERMISSIONS
+from app.models.role import ROLE_PERMISSIONS, Role
 
 if TYPE_CHECKING:
     from app.models.assignment import Assignment, DebriefingRecord
@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from app.models.invite import RegistrationInvite
     from app.models.master_event import MasterEvent
     from app.models.qualification import Qualification
-    from app.models.role import Role
 
 
 class CalendarView(str, enum.Enum):
@@ -199,8 +198,12 @@ class UserAccount(UserMixin, db.Model):  # type: ignore[misc]
         return any(code in ROLE_PERMISSIONS.get(role.name, []) for role in self.roles)
 
     def has_any_permission(self, *codes: str) -> bool:
-        owned = {c for role in self.roles for c in ROLE_PERMISSIONS.get(role.name, [])}
-        return bool(owned & set(codes))
+        return any(self.has_permission(code) for code in codes)
+
+    @property
+    def is_external(self) -> bool:
+        """Whether the account has the exclusive External role."""
+        return any(role.name == Role.EXTERNAL for role in self.roles)
 
     def is_rp_eligible(self) -> bool:
         """Return True if the user can be a responsible person.

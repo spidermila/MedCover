@@ -14,6 +14,7 @@ import app.mail as mailer
 from app.constants import RECORD_MODIFIED_MSG
 from app.event_log import event_log, event_snapshot
 from app.extensions import db
+from app.external_collaborators import external_visible_event_ids, filter_external_events
 from app.models.assignment import Assignment
 from app.models.equipment import (
     EquipmentItem,
@@ -103,6 +104,17 @@ def _parse_index_filters() -> dict:
         active_me = db.session.get(MasterEvent, me_id_param)
         if active_me and active_me.archived:
             active_me = None
+        if active_me and current_user.is_external:
+            visible_me = db.session.scalar(
+                db.select(Event.id)
+                .where(
+                    Event.master_event_id == active_me.id,
+                    Event.id.in_(external_visible_event_ids(current_user)),
+                )
+                .limit(1)
+            )
+            if visible_me is None:
+                active_me = None
 
     if "types" not in request.args:
         active_types = list(_ALL_EVENT_TYPES)
@@ -266,6 +278,7 @@ def index() -> str | Response:
         # CHARINDEX, not LIKE: user input needs no wildcard escaping
         query = query.where(func.charindex(f["search"], collate(Event.name, SEARCH_COLLATION)) > 0)
 
+    query = filter_external_events(query, current_user)
     query = _apply_index_order(query, f["sort_col"], f["sort_dir"])
     pagination = db.paginate(query, page=f["page"], per_page=PER_PAGE, error_out=False)
     if redirect_resp := last_page_redirect(pagination.page, pagination.pages):
@@ -277,6 +290,10 @@ def index() -> str | Response:
         .where(MasterEvent.archived == sa.false())
         .order_by(collate(MasterEvent.name, CS_COLLATION))
     ).all()
+
+    if current_user.is_external:
+        visible_me_ids = set(db.session.scalars(filter_external_events(db.select(Event.master_event_id), current_user)))
+        active_named_mes = [me for me in active_named_mes if me.id in visible_me_ids]
 
     event_templates: list[EventTemplate] = []
     if current_user.has_permission("event.create"):
@@ -356,7 +373,7 @@ def feed() -> Response:
     if not show_archived:
         query = query.where(Event.archived == sa.false())
 
-    events = db.session.scalars(query).all()
+    events = db.session.scalars(filter_external_events(query, current_user)).all()
 
     # Build eligible spot set for current user (same logic as index view)
     user_assigned_event_ids: set[int] = set()
@@ -876,7 +893,7 @@ def events_printout() -> Response:
 
     events = (
         db.session.scalars(
-            db.select(Event)
+            filter_external_events(db.select(Event), current_user)
             .where(Event.id.in_(event_ids))
             .where(Event.status != EventStatus.DRAFT)
             .where(Event.archived == sa.false())

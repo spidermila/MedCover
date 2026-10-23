@@ -9,6 +9,7 @@ from markupsafe import Markup
 from sqlalchemy import collate
 
 from app.extensions import db
+from app.external_collaborators import external_visible_event_ids
 from app.models.assignment import Assignment
 from app.models.equipment import EquipmentType, EventEquipmentPlan
 from app.models.event import (
@@ -79,6 +80,8 @@ PER_PAGE = 75
 
 def can_view(event: Event) -> bool:
     """Check whether current_user can see *event* based on its status."""
+    if current_user.is_external:
+        return event.id in external_visible_event_ids(current_user)
     if event.status == EventStatus.DRAFT:
         return current_user.has_permission("event.view_draft")
     return current_user.has_permission("event.view")

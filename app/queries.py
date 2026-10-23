@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 from app.extensions import db
+from app.external_collaborators import external_visible_event_ids
 from app.models.assignment import Assignment
 from app.models.equipment import (
     EquipmentItem,
@@ -71,12 +72,15 @@ def rp_eligible_users_list() -> list[UserAccount]:
     return list(rows)
 
 
-def active_master_events_list() -> Sequence[MasterEvent]:
+def active_master_events_list(user: UserAccount | None = None) -> Sequence[MasterEvent]:
     """Return non-archived master events ordered (general first, then by name)."""
+    query = db.select(MasterEvent).where(MasterEvent.archived == sa.false())
+    if user is not None and user.is_external:
+        query = query.where(
+            MasterEvent.id.in_(db.select(Event.master_event_id).where(Event.id.in_(external_visible_event_ids(user))))
+        )
     return db.session.scalars(
-        db.select(MasterEvent)
-        .where(MasterEvent.archived == sa.false())
-        .order_by(MasterEvent.is_general.desc(), collate(MasterEvent.name, CS_COLLATION))
+        query.order_by(MasterEvent.is_general.desc(), collate(MasterEvent.name, CS_COLLATION))
     ).all()
 
 

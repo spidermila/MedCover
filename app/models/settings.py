@@ -71,6 +71,9 @@ class AppSettings(db.Model):  # type: ignore[misc]
     # How long a login session lasts (hours). Flask sets a cookie with this lifetime.
     session_timeout_hours = db.Column(db.Integer, default=24, nullable=False, server_default="24")
 
+    # Days before scheduled start when unfilled events become external opportunities.
+    external_opportunity_days = db.Column(db.Integer, default=10, nullable=False, server_default="10")
+
     # --- Notification toggles ---
     # Auth emails (invite, password reset, account activation) are always sent
     # and cannot be toggled.  The flags below control operational notifications.
@@ -82,6 +85,7 @@ class AppSettings(db.Model):  # type: ignore[misc]
     notify_event_unarchived = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_event_changed = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_unfilled_reminder = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
+    notify_external_opportunities = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
     notify_debriefing = db.Column(db.Boolean, default=True, nullable=False, server_default="true")
 
     # --- Notification delay tiers (issue #268) ---

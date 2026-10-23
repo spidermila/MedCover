@@ -17,7 +17,8 @@ from sqlalchemy.orm.exc import StaleDataError
 
 from app.backup import export_to_zip, prune_old_backups
 from app.digest.renderer import render_digest
-from app.mail import send_admin_digest, send_unfilled_spots_reminder
+from app.external_collaborators import external_can_participate, external_opportunities
+from app.mail import send_admin_digest, send_external_opportunity, send_unfilled_spots_reminder
 from app.models.audit import AuditLogEntry
 from app.models.digest import DigestMetricSnapshot, get_digest_schedule
 from app.models.event import Event, EventStatus
@@ -102,6 +103,57 @@ def run_send_reminders(db_session: Any, now: datetime | None = None) -> int:
             total_sent += event_sent
 
     return total_sent
+
+
+def run_send_external_opportunities(db_session: Any, now: datetime | None = None) -> int:
+    """Queue each useful opportunity once per external recipient; the outbox batches events."""
+    now = now or datetime.now(timezone.utc)
+    settings = get_settings()
+    if not settings.notify_external_opportunities:
+        return 0
+    events = external_opportunities(now)
+    if not events:
+        return 0
+    users = (
+        db_session.scalars(
+            sa.select(UserAccount)
+            .join(UserAccount.roles)
+            .where(
+                Role.name == Role.EXTERNAL,
+                UserAccount.is_active == sa.true(),
+                UserAccount.is_archived == sa.false(),
+            )
+        )
+        .unique()
+        .all()
+    )
+    enqueued = 0
+    for user in users:
+        if not user.is_external or not settings.is_email_allowed(user.email):
+            continue
+        # Serialize overlapping scheduler ticks for this recipient, including history lookup.
+        db_session.scalar(
+            sa.select(UserAccount.id)
+            .where(UserAccount.id == user.id)
+            .with_hint(UserAccount, "WITH (UPDLOCK, HOLDLOCK, ROWLOCK)")
+        )
+        known = set(
+            db_session.scalars(
+                sa.select(OutboxEmail.event_id).where(
+                    OutboxEmail.user_id == user.id,
+                    OutboxEmail.notification_type == "external_opportunity",
+                    OutboxEmail.status.in_(["pending", "sent"]),
+                )
+            )
+        )
+        for event in events:
+            if event.id not in known and external_can_participate(event, user, now):
+                send_external_opportunity(user, event, now)
+                enqueued += 1
+        db_session.commit()
+    if enqueued:
+        log.info("External opportunities: enqueued %d invitation(s)", enqueued)
+    return enqueued
 
 
 def run_record_metrics(db_session: Any, now: datetime | None = None) -> None:

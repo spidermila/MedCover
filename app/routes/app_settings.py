@@ -30,6 +30,7 @@ _SETTINGS_FIELDS = [
     "smtp_username",
     "smtp_default_sender",
     "session_timeout_hours",
+    "external_opportunity_days",
 ]
 
 
@@ -66,7 +67,15 @@ def index() -> str | Response:
         return render_template("admin/app_settings.html", settings=settings, timezones=_ALL_TIMEZONES)
 
     action = request.form.get("action", "save")
+    try:
+        external_days = int(request.form.get("external_opportunity_days", ""))
+        if not 1 <= external_days <= 365:
+            raise ValueError
+    except ValueError:
+        flash("Předstih pro externí spolupracovníky musí být celé číslo od 1 do 365 dní.", "warning")
+        return render_template("admin/app_settings.html", settings=settings, timezones=_ALL_TIMEZONES)
     vals = _parse_settings_form(request.form)
+    vals["external_opportunity_days"] = external_days
 
     # --- Validate ---
     if vals["timezone"] not in pytz.all_timezones_set:
@@ -94,6 +103,7 @@ def index() -> str | Response:
     db.session.flush()
 
     after = _settings_snapshot(settings)
+    audit("edit", "AppSettings", 1, "Nastavení aplikace bylo upraveno.", diff_changes(before, after))
 
     if action == "test":
         db.session.commit()
@@ -113,7 +123,6 @@ def index() -> str | Response:
                 flash(f"Odeslání se nezdařilo: {exc}", "danger")
         return render_template("admin/app_settings.html", settings=settings, timezones=_ALL_TIMEZONES)
 
-    audit("edit", "AppSettings", 1, "Nastavení aplikace bylo upraveno.", diff_changes(before, after))
     db.session.commit()
     settings.apply_to_app(current_app._get_current_object())
     flash("Nastavení bylo uloženo.", "success")

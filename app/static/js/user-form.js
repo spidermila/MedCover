@@ -62,6 +62,18 @@
 
   var pwInput    = attach('new_password', validatePassword);
 
+  var roleInputs = document.querySelectorAll('input[name="role_ids"]');
+  roleInputs.forEach(function (input) {
+    input.addEventListener('change', function () {
+      if (!input.checked) return;
+      roleInputs.forEach(function (other) {
+        if (other !== input && (input.dataset.roleName === 'External' || other.dataset.roleName === 'External')) {
+          other.checked = false;
+        }
+      });
+    });
+  });
+
   // Attach submit guard to detail (/save), create (/create) and profile forms
   var form = document.querySelector('form[action*="/save"]') ||
              document.querySelector('form[action*="/create"]') ||

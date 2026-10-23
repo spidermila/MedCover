@@ -64,6 +64,12 @@
               <strong>Člen</strong> — přihlašování na akce, zpětné vazby
             </button>
           </form>
+          <form method="POST" action="{{ url_for('dev.login_as', role='external') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline-info btn-sm w-100 text-start">
+              <strong>Externí spolupracovník</strong> — přihlašování na dostupné akce
+            </button>
+          </form>
           <form method="POST" action="{{ url_for('dev.login_as', role='viewer') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-outline-secondary btn-sm w-100 text-start">

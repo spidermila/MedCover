@@ -13,6 +13,7 @@ from app.utils import to_local
 
 # Every key an event change can record needs a label here; tests/test_event_log.py checks it.
 FIELD_LABELS = {
+    "open_to_externals": "Předčasné otevření externím spolupracovníkům",
     "name": "Název",
     "master_event_id": "Nadřazená akce",
     "event_type": "Typ akce",

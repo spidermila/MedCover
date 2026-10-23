@@ -25,13 +25,25 @@ from decimal import Decimal
 from typing import cast
 
 import sqlalchemy as sa
-from flask import Blueprint, Response, abort, flash, make_response, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    flash,
+    has_request_context,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
 from openpyxl import Workbook
 from sqlalchemy import func
 from sqlalchemy.orm import raiseload, selectinload
 
 from app.extensions import db
+from app.external_collaborators import external_visible_event_ids, filter_external_events
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus
 from app.models.master_event import MasterEvent
@@ -124,10 +136,13 @@ def _build_user_stat_rows(pairs: list[tuple[Assignment, Event]], now: datetime) 
 def _resolve_next_shifts(rows: list[tuple[UserAccount, UserStats]], now: datetime) -> None:
     """Set ``next_shift`` on each UserStats via a single global query.
 
-    ``next_shift`` always reflects the user's true next future assignment,
-    regardless of whatever date-range or ME filter the report applies.
+    ``next_shift`` reflects the next future assignment regardless of the report's
+    date-range or ME filter, while retaining external event visibility limits.
     Used by all three report types (user, ME, date-range).
     """
+    visible_ids = (
+        external_visible_event_ids(current_user) if has_request_context() and current_user.is_external else None
+    )
     user_ids = [u.id for u, _ in rows]
     if not user_ids:
         return
@@ -141,6 +156,7 @@ def _resolve_next_shifts(rows: list[tuple[UserAccount, UserStats]], now: datetim
                 Assignment.user_id.in_(user_ids),
                 Event.status.in_(_FUTURE_STATUSES),
                 Event.start_datetime > now,
+                Event.id.in_(visible_ids) if visible_ids is not None else sa.true(),
             )
             .group_by(Assignment.user_id)
         ).all()
@@ -311,8 +327,8 @@ def _user_stat_csv_rows(user_stat_rows: list[tuple[UserAccount, UserStats]]) -> 
 @login_required
 def index() -> str:
     require_permission("report.view")
-    master_events = active_master_events_list()
-    all_users = active_users_list() if current_user.has_permission("report.view") else []
+    master_events = active_master_events_list(current_user)
+    all_users = [] if current_user.is_external else active_users_list()
     return render_template("reports/index.html", master_events=master_events, all_users=all_users)
 
 
@@ -329,7 +345,7 @@ def own_report() -> Response:
 @login_required
 def user_report(user_id: uuid.UUID) -> str | Response:
     is_own = str(user_id) == str(current_user.id)
-    if not is_own and not current_user.has_permission("report.view"):
+    if not is_own and (current_user.is_external or not current_user.has_permission("report.view")):
         abort(403)
 
     user: UserAccount | None = db.session.get(UserAccount, user_id)
@@ -370,6 +386,7 @@ def user_report(user_id: uuid.UUID) -> str | Response:
         )
         .order_by(Event.start_datetime)
     )
+    query = filter_external_events(query, current_user)
     if from_dt:
         query = query.where(Event.start_datetime >= from_dt)
     if to_dt:
@@ -453,12 +470,14 @@ def me_report(me_id: int) -> str | Response:
     master_event: MasterEvent | None = db.session.get(MasterEvent, me_id)
     if master_event is None:
         abort(404)
+    if current_user.is_external and master_event.id not in {me.id for me in active_master_events_list(current_user)}:
+        abort(403)
 
     now = datetime.now(timezone.utc)
 
     events: list[Event] = list(
         db.session.scalars(
-            db.select(Event)
+            filter_external_events(db.select(Event), current_user)
             .where(Event.master_event_id == me_id)
             .where(Event.archived == sa.false())
             .order_by(Event.start_datetime)
@@ -643,7 +662,7 @@ def date_range_report() -> str | Response:
 
     events: list[Event] = list(
         db.session.scalars(
-            db.select(Event)
+            filter_external_events(db.select(Event), current_user)
             .where(Event.start_datetime >= from_dt)
             .where(Event.start_datetime < to_dt)
             .where(Event.archived == sa.false())
@@ -759,12 +778,15 @@ def _work_summary_row(user_name: str, ev: Event, now: datetime) -> WorkSummaryRo
 
 def _work_summary_data(from_dt: datetime, to_dt: datetime) -> list[WorkSummaryGroup]:
     """Collect the work-summary rows for the given range, grouped by person."""
-    date_filter = (
+    date_filter: tuple[sa.sql.ClauseElement, ...] = (
         Event.start_datetime >= from_dt,
         Event.start_datetime < to_dt,
         Event.status.notin_(_WORK_SUMMARY_EXCLUDED_STATUSES),
         Event.archived == sa.false(),
     )
+
+    if has_request_context() and current_user.is_external:
+        date_filter += (Event.id.in_(external_visible_event_ids(current_user)),)
 
     # raiseload: this report reads only scalar columns off the event, so the
     # spots -> qualifications / assignment -> user selectin cascade would be
@@ -778,13 +800,16 @@ def _work_summary_data(from_dt: datetime, to_dt: datetime) -> list[WorkSummaryGr
 
     # One row per assigned person per event. Someone holding two spots on the
     # same event must not have their hours counted twice, hence the DISTINCT.
-    assignments = db.session.execute(
+    assignment_query = (
         db.select(Assignment.user_id, UserAccount.name, Assignment.event_id)
         .join(Event, Assignment.event_id == Event.id)
         .join(UserAccount, Assignment.user_id == UserAccount.id)
         .where(*date_filter)
         .distinct()
-    ).all()
+    )
+    if has_request_context() and current_user.is_external:
+        assignment_query = assignment_query.where(Assignment.user_id == current_user.id)
+    assignments = db.session.execute(assignment_query).all()
 
     now = datetime.now(timezone.utc)
     groups: dict[uuid.UUID, WorkSummaryGroup] = {}
@@ -929,7 +954,7 @@ def work_summary_report() -> str | Response:
 def printout() -> str | Response:
     require_permission("report.view")
 
-    master_events = active_master_events_list()
+    master_events = active_master_events_list(current_user)
 
     if request.method == "GET":
         return render_template("reports/printout.html", master_events=master_events)
@@ -985,7 +1010,7 @@ def printout() -> str | Response:
     if selected_me is not None:
         query = query.where(Event.master_event_id == selected_me.id)
 
-    events = db.session.scalars(query).unique().all()
+    events = db.session.scalars(filter_external_events(query, current_user)).unique().all()
 
     if not events:
         flash("Žádné akce nevyhovovaly zadaným filtrům.", "warning")

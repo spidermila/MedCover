@@ -1,17 +1,27 @@
 """Event lifecycle transition routes: transition, cancel, restore, split."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import sqlalchemy as sa
 from flask import Response, abort, flash, redirect, request, url_for
 from flask_login import current_user, login_required
 
 import app.mail as mailer
+from app.constants import RECORD_MODIFIED_MSG
 from app.extensions import db
 from app.models.event import Event, EventStatus, StaffingMode
 from app.models.user import UserAccount
 from app.routes.assignments import auto_close_if_full, lock_condition_event
-from app.utils import audit, get_app_tz, get_or_404, require_permission, to_local
+from app.utils import (
+    audit,
+    bind_form_version,
+    check_version_conflict,
+    commit_or_stale,
+    get_app_tz,
+    get_or_404,
+    require_permission,
+    to_local,
+)
 
 from . import events_bp
 from ._helpers import TRANSITIONS, copy_equipment, copy_spots_with_assignments
@@ -221,3 +231,38 @@ def split_event(event_id: int) -> Response:
 
     flash(f"Akce byla rozdělena. Vznikla nová akce '{part2.name}' se zkopírovanými účastníky.", "success")
     return redirect(url_for("events.detail", event_id=part2.id))
+
+
+@events_bp.post("/<int:event_id>/external-opening")
+@login_required
+def external_opening(event_id: int) -> Response:
+    require_permission("event.edit")
+    event = get_or_404(Event, event_id)
+    destination = url_for("events.detail", event_id=event_id)
+    if check_version_conflict(event, request.form.get("version")):
+        flash(RECORD_MODIFIED_MSG, "danger")
+        return redirect(destination)
+    if (
+        event.archived
+        or event.status != EventStatus.ASSIGNMENTS_OPEN
+        or event.start_datetime <= datetime.now(timezone.utc)
+    ):
+        flash("Předčasné otevření lze nastavit pouze pro budoucí akce s otevřenými přihláškami.", "warning")
+        return redirect(destination)
+    enabled = request.form.get("open_to_externals") == "1"
+    if enabled != event.open_to_externals:
+        bind_form_version(event, request.form.get("version"))
+        before = event.open_to_externals
+        event.open_to_externals = enabled
+        event.version += 1
+        audit(
+            "edit",
+            "Event",
+            event.id,
+            "Změněno předčasné otevření externím spolupracovníkům",
+            {"open_to_externals": [before, enabled]},
+        )
+        if response := commit_or_stale(destination):
+            return response
+    flash("Předčasné otevření externím spolupracovníkům bylo uloženo.", "success")
+    return redirect(destination)

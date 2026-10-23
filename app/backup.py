@@ -51,6 +51,7 @@ from azure.storage.blob import ContainerClient, StorageStreamDownloader
 
 from app.config import check_backup_storage_env
 from app.extensions import db
+from app.models.role import ROLE_PERMISSIONS
 
 log = logging.getLogger(__name__)
 
@@ -439,6 +440,12 @@ def restore_from_zip(zip_path: str | Path) -> None:
                     conn.execute(sa_table.insert().values(filtered))
             if has_identity:
                 conn.execute(sa.text(f"SET IDENTITY_INSERT {qt} OFF"))
+
+        # Older backups predate newly introduced builtin roles; keep them assignable.
+        role_table = sa_metadata.tables["role"]
+        restored_role_names = set(conn.scalars(sa.select(role_table.c.name)))
+        for name in ROLE_PERMISSIONS.keys() - restored_role_names:
+            conn.execute(role_table.insert().values(name=name))
 
         conn.commit()
 

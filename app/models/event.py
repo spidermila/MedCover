@@ -152,6 +152,7 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
     staffing_mode = db.Column(
         db.Enum(StaffingMode, name="staffing_mode_enum"), nullable=False, default=StaffingMode.SPOTS
     )
+    open_to_externals = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
     capacity_closed = db.Column(db.Boolean, nullable=False, default=False, server_default="0")
     minimum_participants = db.Column(db.Integer, nullable=True)
     maximum_participants = db.Column(db.Integer, nullable=True)
@@ -355,6 +356,8 @@ class Event(ReminderScheduleMixin, db.Model):  # type: ignore[misc]
            c) the event's master event has NO coordinator assigned
               (coordinated master events are managed centrally from SPOT).
         """
+        if user.is_external:
+            return False
         if user.has_permission("event.assign_other"):
             return True
         if not user.is_rp_eligible():

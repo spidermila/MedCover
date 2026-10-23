@@ -50,6 +50,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.event_log import change_pairs, labelled_changes, lookup_names
 from app.extensions import db, mail
+from app.external_collaborators import external_can_participate
 from app.models.audit import AuditLogEntry
 from app.models.event import Event
 from app.models.outbox import OutboxEmail
@@ -123,12 +124,25 @@ def _compute_send_after(event_start: datetime, now: datetime, settings: AppSetti
 # ---------------------------------------------------------------------------
 NOTIFICATION_CATALOG: list[dict] = [
     {
+        "code": "external_opportunity",
+        "settings_field": "notify_external_opportunities",
+        "name_cs": "Akce pro externí spolupracovníky",
+        "description_cs": (
+            "Souhrn nově dostupných akcí pro aktivní externí spolupracovníky s odpovídající kvalifikací. "
+            "Každá akce nejvýše jednou po doručení."
+        ),
+        "trigger_cs": "Plánovač každých 5 minut; automatické nebo předčasné otevření externím",
+        "recipient_cs": "Externí spolupracovníci, kteří se mohou přihlásit",
+        "templates": ["email/event_batched.html"],
+        "always_on": False,
+    },
+    {
         "code": "assignment_confirmed",
         "settings_field": "notify_assignment",
         "name_cs": "Přihlášení na službu",
         "description_cs": ("Odesílán uživateli při přihlášení na místo ve službě (jím samotným nebo koordinátorem)."),
         "trigger_cs": "Přihlášení na místo ve službě",
-        "recipient_cs": "Přihlášený uživatel (role: Člen)",
+        "recipient_cs": "Přihlášený uživatel (role: Člen, External)",
         "templates": ["email/event_batched.html"],
         "always_on": False,
     },
@@ -138,7 +152,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "name_cs": "Odhlášení ze služby",
         "description_cs": "Odesílán uživateli při odhlášení z místa ve službě (jím samotným nebo koordinátorem).",
         "trigger_cs": "Odhlášení z místa ve službě",
-        "recipient_cs": "Odhlášený uživatel (role: Člen)",
+        "recipient_cs": "Odhlášený uživatel (role: Člen, External)",
         "templates": ["email/event_batched.html"],
         "always_on": False,
     },
@@ -168,7 +182,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "name_cs": "Akce zrušena",
         "description_cs": "Odesílán přihlášeným uživatelům při zrušení akce.",
         "trigger_cs": "Akce je zrušena",
-        "recipient_cs": "Přihlášení uživatelé (role: Člen)",
+        "recipient_cs": "Přihlášení uživatelé (role: Člen, External)",
         "templates": ["email/event_batched.html"],
         "always_on": False,
     },
@@ -181,7 +195,7 @@ NOTIFICATION_CATALOG: list[dict] = [
             "oznámeními k akci při jejím archivování — spolu s případnými dříve odloženými změnami."
         ),
         "trigger_cs": "Akce je archivována nebo zrušena",
-        "recipient_cs": "Přihlášení uživatelé a uživatelé s čekajícím oznámením (role: Člen)",
+        "recipient_cs": "Přihlášení členové a externí spolupracovníci; členové s čekajícím oznámením",
         "templates": ["email/event_batched.html"],
         "always_on": False,
     },
@@ -191,7 +205,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "name_cs": "Akce obnovena z archivu",
         "description_cs": "Odesílán přihlášeným uživatelům při obnovení akce z archivu.",
         "trigger_cs": "Akce je obnovena z archivu",
-        "recipient_cs": "Přihlášení uživatelé (role: Člen)",
+        "recipient_cs": "Přihlášení uživatelé (role: Člen, External)",
         "templates": ["email/event_batched.html"],
         "always_on": False,
     },
@@ -201,7 +215,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "name_cs": "Změna údajů akce",
         "description_cs": "Odesílán přihlášeným uživatelům při změně údajů akce (název, čas, místo, popis apod.).",
         "trigger_cs": "Uložení změny akce (editace existující akce)",
-        "recipient_cs": "Přihlášení uživatelé (role: Člen)",
+        "recipient_cs": "Přihlášení uživatelé (role: Člen, External)",
         "templates": ["email/event_batched.html"],
         "always_on": False,
     },
@@ -223,7 +237,7 @@ NOTIFICATION_CATALOG: list[dict] = [
         "name_cs": "Pozvánka k debriefingu",
         "description_cs": "Odesílán přihlášeným uživatelům po skončení akce s odkazem na formulář debriefingu.",
         "trigger_cs": "Akce přejde do stavu Dokončeno",
-        "recipient_cs": "Přihlášení uživatelé (role: Člen)",
+        "recipient_cs": "Přihlášení uživatelé (role: Člen, External)",
         "templates": ["email/event_batched.html"],
         "always_on": False,
     },
@@ -266,15 +280,16 @@ NOTIFICATION_CATALOG: list[dict] = [
 # Roles whose members may receive each notification category.
 # "auth" (invite / password-reset / activation) is exempt — always allowed.
 _NOTIFICATION_ALLOWED_ROLES: dict[str, set[str]] = {
+    "external_opportunity": {"External"},
     "admin_digest": {"Admin"},
     "event_published": {"Coordinator", "Member"},
     "assignments_opened": {"Coordinator", "Member"},
-    "assignment": {"Member"},  # confirmed, released
+    "assignment": {"Member", "External"},  # confirmed, released
     "unfilled_reminder": {"Coordinator", "Member"},  # reminder to coordinator / RP
-    "event_cancelled": {"Member"},  # cancelled → notify assigned users
-    "event_archived": {"Member"},  # archived → notify assigned + queued users
-    "event_unarchived": {"Member"},  # unarchived → notify assigned users
-    "event_changed": {"Member"},  # event details changed → notify assigned users
+    "event_cancelled": {"Member", "External"},  # cancelled → notify assigned users
+    "event_archived": {"Member", "External"},  # archived → notify assigned + queued users
+    "event_unarchived": {"Member", "External"},  # unarchived → notify assigned users
+    "event_changed": {"Member", "External"},  # event details changed → notify assigned users
 }
 
 
@@ -293,7 +308,9 @@ def user_can_receive_notification(user: UserAccount, notification_type: str) -> 
     if notification_type == "auth":
         return True
 
-    user_role_names: set[str] = {r.name for r in user.roles}
+    if notification_type == "external_opportunity":
+        return user.is_external
+    user_role_names: set[str] = {"External"} if user.is_external else {r.name for r in user.roles}
 
     # Viewer-only → no operational emails
     if user_role_names <= {"Viewer"}:
@@ -589,6 +606,23 @@ def enqueue_deferred(
 # ── Assignment notifications ──────────────────────────────────────────────────
 
 
+def send_external_opportunity(user: UserAccount, event: Event, now: datetime | None = None) -> None:
+    if not _is_notify_enabled("notify_external_opportunities"):
+        return
+    if not user_can_receive_notification(user, "external_opportunity"):
+        return
+    if not _is_test_notification() and not external_can_participate(event, user, now):
+        return
+    enqueue_deferred(
+        user=user,
+        event=event,
+        notification_type="external_opportunity",
+        subject="MedCover — Akce pro externí spolupracovníky",
+        body=_PLAIN_FALLBACK,
+        change_type="external_opportunity_preview" if _is_test_notification() else None,
+    )
+
+
 def send_assignment_confirmed(user: UserAccount, event: Event, spot_description: str | None = None) -> None:
     """Notify a user that their spot assignment was confirmed."""
     if not _is_notify_enabled("notify_assignment"):
@@ -758,7 +792,10 @@ def _flush_and_notify(event: Event, send_fn: Callable[[UserAccount, Event], None
         for u in extra_users:
             recipients[u.id] = u
 
+    assigned_ids = {u.id for u in assigned_users}
     for user in recipients.values():
+        if user.is_external and user.id not in assigned_ids:
+            continue
         send_fn(user, event)
 
 
@@ -1065,6 +1102,7 @@ def _row_to_entry(row: OutboxEmail) -> dict:
         return {"type": ntype, "spot_description": spot_description}
 
     if ntype in (
+        "external_opportunity",
         "event_published",
         "assignments_opened",
         "event_cancelled",
@@ -1110,7 +1148,7 @@ def _row_to_entry(row: OutboxEmail) -> dict:
     return {"type": "legacy", "legacy_html": row.html_body or ""}
 
 
-_ALL_SPOTS_ENTRY_TYPES = frozenset({"event_published", "assignments_opened"})
+_ALL_SPOTS_ENTRY_TYPES = frozenset({"event_published", "assignments_opened", "external_opportunity"})
 _UNFILLED_SPOTS_ENTRY_TYPES = frozenset({"unfilled_reminder"})
 _SPOT_INFO_ENTRY_TYPES = _ALL_SPOTS_ENTRY_TYPES | _UNFILLED_SPOTS_ENTRY_TYPES
 
@@ -1272,6 +1310,24 @@ def drain_batched_outbox() -> bool:
     events = db.session.scalars(db.select(Event).where(Event.id.in_(event_ids))).all()
     events_by_id = {e.id: e for e in events}
 
+    # An invitation must still be useful when its delayed batch is delivered.
+    eligible_rows = []
+    for row in live_rows:
+        if row.notification_type == "external_opportunity" and row.change_type != "external_opportunity_preview":
+            event = events_by_id.get(row.event_id)
+            if (
+                not settings.notify_external_opportunities
+                or user_obj is None
+                or row.to_email != user_obj.email
+                or event is None
+                or not external_can_participate(event, user_obj, now_utc)
+            ):
+                row.status = "skipped"
+                row.last_error = "external_opportunity_no_longer_available"
+                continue
+        eligible_rows.append(row)
+    live_rows = eligible_rows
+
     # Group live_rows by event_id; handle rows whose event vanished between load and now.
     grouped: dict = {}
     orphan_rows: list[OutboxEmail] = []
@@ -1288,11 +1344,13 @@ def drain_batched_outbox() -> bool:
         return True
 
     # Sort event sections by event.start_datetime ASC.
-    ordered_events = sorted(events_by_id.values(), key=lambda e: e.start_datetime)
+    ordered_events = sorted((events_by_id[eid] for eid in grouped), key=lambda e: e.start_datetime)
     event_sections = [_build_event_section(e, grouped[e.id], time_format) for e in ordered_events if e.id in grouped]
 
     # Subject line.
-    if len(event_sections) == 1:
+    if all(row.notification_type == "external_opportunity" for row in active_rows):
+        subject = f"MedCover — Akce pro externí spolupracovníky ({len(event_sections)})"
+    elif len(event_sections) == 1:
         subject = f"MedCover — Změny v akci: {ordered_events[0].name}"
     else:
         subject = f"MedCover — Souhrn změn ({len(event_sections)} akcí)"

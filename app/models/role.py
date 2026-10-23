@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from app.extensions import db
 
 
@@ -7,6 +9,7 @@ class Role(db.Model):  # type: ignore[misc]
     ADMIN = "Admin"
     COORDINATOR = "Coordinator"
     MEMBER = "Member"
+    EXTERNAL = "External"
     VIEWER = "Viewer"
     DEBRIEFING_MANAGER = "Debriefing Manager"
 
@@ -33,6 +36,12 @@ class Role(db.Model):  # type: ignore[misc]
 
     def __repr__(self) -> str:
         return f"<Role {self.name}>"
+
+
+def validate_role_combination(roles: Sequence[Role]) -> None:
+    names = {role.name for role in roles}
+    if Role.EXTERNAL in names and len(names) > 1:
+        raise ValueError("Role External nesmí být kombinována s jinými rolemi.")
 
 
 # All permission codes defined in the RBAC table in architecture.md
@@ -187,6 +196,18 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "debriefing.view_own",
         "report.view",
         "work_report.generate",
+    ],
+    Role.EXTERNAL: [
+        "user.edit_own",
+        "event.view",
+        "event.assign_own",
+        "debriefing.submit_own",
+        "debriefing.view_own",
+        "report.view",
+        "work_report.generate",
+        "equipment.view",
+        "equipment_item.issue_personal",
+        "equipment_item.report_own",
     ],
     Role.VIEWER: [
         "user.view",

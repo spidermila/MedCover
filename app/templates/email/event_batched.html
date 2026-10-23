@@ -58,6 +58,9 @@
       {% if section.conditions %}<p>Byli jste přihlášeni na akci.</p>{% else %}<p>Byli jste přihlášeni na pozici <strong>{{ entry.spot_description }}</strong>.</p>{% endif %}
     {% elif entry.type == "assignment_released" %}
       {% if section.conditions %}<p>Byli jste odhlášeni z akce.</p>{% else %}<p>Byli jste odhlášeni z pozice <strong>{{ entry.spot_description }}</strong>.</p>{% endif %}
+    {% elif entry.type == "external_opportunity" %}
+      <p>Akce je otevřena externím spolupracovníkům a potřebuje doplnit obsazení. Pokud se můžete zapojit, <a href="{{ section.event_url }}">přihlaste se na akci</a>.</p>
+      {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}
     {% elif entry.type == "event_published" %}
       <p>Akce byla zveřejněna.</p>
       {% if entry.show_spots and entry.spots %}{{ spot_table(entry.spots) }}{% endif %}

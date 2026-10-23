@@ -22,7 +22,7 @@ from app.models.event import Event, EventStatus
 from app.models.invite import RegistrationInvite
 from app.models.outbox import OutboxEmail
 from app.models.qualification import Qualification
-from app.models.role import Role
+from app.models.role import Role, validate_role_combination
 from app.models.user import CalendarView, EventTimeFormat, UserAccount
 from app.models.user import user_roles as user_roles_table
 from app.routes.assignments import lock_condition_event, refresh_responsible_person
@@ -93,7 +93,9 @@ def profile() -> str | Response:
         .where(
             Assignment.user_id == user.id,
             Event.start_datetime >= now,
-            Event.status != EventStatus.CANCELLED,
+            Event.status.not_in(
+                [EventStatus.CANCELLED, EventStatus.DRAFT] if user.is_external else [EventStatus.CANCELLED]
+            ),
         )
         .order_by(Event.start_datetime)
         .options(selectinload(Assignment.event))  # type: ignore[arg-type]
@@ -436,7 +438,12 @@ def create_user() -> str | Response:
 
     if current_user.has_permission("user.assign_role"):
         role_ids = [int(r) for r in request.form.getlist("role_ids")]
-        _apply_role_update(user, role_ids)
+        try:
+            _apply_role_update(user, role_ids)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return render_template("users/create.html", all_roles=all_roles, all_qualifications=all_qualifications)
 
     if current_user.has_permission("user.assign_qualification"):
         cred_ids = [int(c) for c in request.form.getlist("qualification_ids")]
@@ -476,6 +483,7 @@ def _apply_role_update(user: UserAccount, role_ids: list[int]) -> bool:
     """
     before_roles = sorted(r.name for r in user.roles)
     new_roles = db.session.scalars(db.select(Role).where(Role.id.in_(role_ids))).all() if role_ids else []
+    validate_role_combination(new_roles)
     user.roles = list(new_roles)
     after_roles = sorted(r.name for r in user.roles)
     if before_roles == after_roles:
@@ -585,7 +593,12 @@ def save_user(user_id: uuid.UUID) -> Response:
     roles_changed = False
     if current_user.has_permission("user.assign_role"):
         role_ids = [int(r) for r in request.form.getlist("role_ids")]
-        roles_changed = _apply_role_update(user, role_ids)
+        try:
+            roles_changed = _apply_role_update(user, role_ids)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return redirect(url_for("users.detail", user_id=user_id))
 
     # ── Qualifications ──────────────────────────────────────────────────────
     quals_changed = False
@@ -767,6 +780,14 @@ def batch_action() -> Response:
 
     users_list = db.session.scalars(db.select(UserAccount).where(UserAccount.id.in_(user_uuids))).all()
 
+    if action == "add_role":
+        try:
+            for user in users_list:
+                validate_role_combination([*user.roles, role])
+        except ValueError as exc:
+            flash(f"{exc} Nebyl upraven žádný uživatel.", "danger")
+            return redirect(url_for("users.index"))
+
     # --- Apply action ---
     changed = 0
     for user in users_list:
@@ -859,6 +880,10 @@ def create_invite() -> str | Response:
         )
         return invites()
 
+    is_external = request.form.get("is_external") == "on"
+    if is_external:
+        require_permission("user.assign_role")
+
     custom_subject = request.form.get("custom_subject", "").strip() or None
     custom_message = request.form.get("custom_message", "").strip() or None
     if custom_subject and len(custom_subject) > 255:
@@ -920,6 +945,7 @@ def create_invite() -> str | Response:
             custom_subject=custom_subject,
             custom_message=custom_message,
             qualifications=qualifications,
+            is_external=is_external,
         )
         db.session.add(invite)
         db.session.flush()

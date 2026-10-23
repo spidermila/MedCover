@@ -22,6 +22,7 @@ class RegistrationInvite(db.Model):  # type: ignore[misc]
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    is_external = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
     used_at = db.Column(db.DateTime(timezone=True), nullable=True)
     expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
 

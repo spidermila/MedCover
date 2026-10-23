@@ -11,7 +11,7 @@ Permissions:
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from markupsafe import Markup
 from sqlalchemy import collate
@@ -214,7 +214,7 @@ def items() -> str:
     types = db.session.scalars(db.select(EquipmentType).order_by(collate(EquipmentType.name, CS_COLLATION))).all()
 
     active_users: list[UserAccount] = []
-    if current_user.has_permission("equipment_item.issue_personal"):
+    if current_user.has_permission("equipment_item.issue_personal") and not current_user.is_external:
         active_users = list(active_users_list())
 
     return render_template(
@@ -656,6 +656,9 @@ def item_issue(item_id: int) -> Response:
         flash("Uživatel nebyl nalezen.", "danger")
         return redirect(url_for("equipment.items"))
 
+    if current_user.is_external and user.id != current_user.id:
+        abort(403)
+
     item.issued_to_id = user.id
     item.issued_at = datetime.now(timezone.utc)
     item.version += 1
@@ -678,6 +681,9 @@ def item_return(item_id: int) -> Response:
     require_permission("equipment_item.issue_personal")
 
     item = get_or_404(EquipmentItem, item_id)
+
+    if current_user.is_external and item.issued_to_id != current_user.id:
+        abort(403)
 
     if item.issued_to_id is None:
         flash("Položka není vydána.", "danger")

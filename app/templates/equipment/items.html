@@ -94,14 +94,16 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-primary btn-sm">Vzít s sebou</button>
               </form>
+              {% if not current_user.is_external %}
               <button class="btn btn-outline-success btn-sm btn-open-issue" type="button"
                       data-item-id="{{ item.id }}"
                       data-item-name="{{ item.name }}"
                       title="Vydat položku „{{ item.name }}“">
                 Vydat
               </button>
+              {% endif %}
             {% endif %}
-            {% if current_user.has_permission('equipment_item.issue_personal') and item.issued_to %}
+            {% if current_user.has_permission('equipment_item.issue_personal') and item.issued_to and (not current_user.is_external or item.issued_to_id == current_user.id) %}
               <form method="POST" action="{{ url_for('equipment.item_return', item_id=item.id) }}"
                     data-confirm="Vrátit položku „{{ item.name }}“?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -176,7 +178,7 @@
 
 {# Shared „Vydat“ modal — one instance for the whole page instead of a hidden
    collapse block per row. The user <select> is inlined once here. #}
-{% if current_user.has_permission('equipment_item.issue_personal') %}
+{% if current_user.has_permission('equipment_item.issue_personal') and not current_user.is_external %}
 <div class="modal fade" id="issueItemModal" tabindex="-1" aria-labelledby="issueItemModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
@@ -209,7 +211,7 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/table-sort.js') }}?v={{ static_ver }}"></script>
-{% if current_user.has_permission('equipment_item.issue_personal') %}
+{% if current_user.has_permission('equipment_item.issue_personal') and not current_user.is_external %}
 <script src="{{ url_for('static', filename='js/equipment-items.js') }}?v={{ static_ver }}"></script>
 {% endif %}
 {% endblock %}

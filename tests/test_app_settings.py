@@ -18,6 +18,7 @@ def _form(csrf: str, **overrides) -> dict:
         "timezone": "Europe/Prague",
         "app_base_url": "https://example.com",
         "smtp_port": "587",
+        "external_opportunity_days": "10",
     }
     data.update(overrides)
     return data

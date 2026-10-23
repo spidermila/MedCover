@@ -512,6 +512,15 @@ def member_client(app, client):
 
 
 @pytest.fixture
+def external_client(app, client):
+    """Activated external collaborator with no internal role."""
+    with app.app_context():
+        _make_user("external@test.com", "External User", Role.EXTERNAL)
+    _login(client, "external@test.com")
+    return client
+
+
+@pytest.fixture
 def viewer_client(app, client):
     """Test client pre-logged in as an activated viewer user."""
     with app.app_context():

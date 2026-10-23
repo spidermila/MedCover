@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError
 
 import app.mail as mailer
 from app.extensions import db
+from app.external_collaborators import external_can_participate
 from app.models.assignment import Assignment
 from app.models.event import Event, EventSpot, EventStatus, StaffingMode
 from app.models.user import UserAccount
@@ -189,6 +190,9 @@ def do_assign_user(
     event = db.session.get(Event, spot.event_id)
     if event is None:
         return AssignResult(ok=False, error="Akce nenalezena.")
+
+    if assigned_by.is_external and (assigned_by.id != user.id or not external_can_participate(event, user)):
+        return AssignResult(ok=False, error="Akce není otevřena externím spolupracovníkům.", event=event)
 
     # Validate event state
     if event.status not in allowed_statuses:
@@ -502,6 +506,8 @@ def do_assign_event(
         return AssignResult(False, "Akce nenalezena.")
     if event.staffing_mode != StaffingMode.CONDITIONS:
         return AssignResult(False, "Tato akce používá pozice.", event=event)
+    if assigned_by.is_external and (not self_claim or not external_can_participate(event, user)):
+        return AssignResult(False, "Akce není otevřena externím spolupracovníkům.", event=event)
     if self_claim:
         permitted = (
             user.id == assigned_by.id

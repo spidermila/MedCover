@@ -407,7 +407,7 @@ def _compute_eligible_users(rows: list[dict], all_users: list) -> None:
 @master_events_bp.get("/<int:me_id>/table")
 @login_required
 def table_manager(me_id: int) -> str:
-    require_permission("event.view")
+    require_permission("master_event.view")
 
     me = get_or_404(MasterEvent, me_id)
 

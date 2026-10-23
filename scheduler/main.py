@@ -22,6 +22,7 @@ from app.scheduler_tasks import (
     run_admin_digest,
     run_record_metrics,
     run_scheduled_backup,
+    run_send_external_opportunities,
     run_send_reminders,
 )
 
@@ -241,6 +242,11 @@ def send_reminders() -> None:
         run_send_reminders(db.session)
 
 
+def send_external_opportunities() -> None:
+    with app.app_context():
+        run_send_external_opportunities(db.session)
+
+
 def send_admin_digest_task() -> None:
     """Send admin digest if it is due per DigestSchedule."""
     with app.app_context():
@@ -270,6 +276,7 @@ if __name__ == "__main__":
     schedule.every(1).minutes.do(_logged_task("open_assignments", open_assignments))
     schedule.every(1).minutes.do(_logged_task("close_completed_events", close_completed_events))
     schedule.every(5).minutes.do(_logged_task("send_reminders", send_reminders))
+    schedule.every(5).minutes.do(_logged_task("send_external_opportunities", send_external_opportunities))
     schedule.every(1).hours.do(_logged_task("send_admin_digest", send_admin_digest_task))
     # Poll every minute so an HH:MM schedule can fire on the configured minute.
     # The task itself short-circuits cheaply when the time isn't due yet.

@@ -229,7 +229,8 @@ def register(token: str) -> str | Response:
             user.qualifications = [
                 qualification for qualification in invite.qualifications if not qualification.is_deleted
             ]
-            member_role = db.session.scalar(db.select(Role).where(Role.name == Role.MEMBER))
+            role_name = Role.EXTERNAL if invite.is_external else Role.MEMBER
+            member_role = db.session.scalar(db.select(Role).where(Role.name == role_name))
             if member_role:
                 user.roles.append(member_role)
             invite.used_at = datetime.now(timezone.utc)

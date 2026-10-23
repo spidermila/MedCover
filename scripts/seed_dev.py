@@ -115,6 +115,7 @@ def seed() -> None:
             "admin": Role.ADMIN,
             "coordinator": Role.COORDINATOR,
             "member": Role.MEMBER,
+            "external": Role.EXTERNAL,
             "viewer": Role.VIEWER,
             "debrief_manager": Role.DEBRIEFING_MANAGER,
             "inactive": Role.MEMBER,
@@ -143,6 +144,7 @@ def seed() -> None:
         admin_user = _get_or_create_user("admin@medcover.dev")
         coordinator_user = _get_or_create_user("coordinator@medcover.dev")
         member_user = _get_or_create_user("member@medcover.dev")
+        external_user = _get_or_create_user("dev.external@medcover.local")
 
         # ── Credentials ───────────────────────────────────────────────────────
         print("Seeding qualifications...")
@@ -170,6 +172,8 @@ def seed() -> None:
             member_user.qualifications.append(c_zdravotnik)
         if member_user and c_ridic not in member_user.qualifications:
             member_user.qualifications.append(c_ridic)
+        if external_user and c_zdravotnik not in external_user.qualifications:
+            external_user.qualifications.append(c_zdravotnik)
         db.session.commit()
 
         # ── Master events ─────────────────────────────────────────────────────

@@ -30,9 +30,9 @@
       <span class="badge bg-{{ 'success' if event.is_sufficiently_staffed else 'warning' }} ms-1 fs-6">{{ event.staffing_status }}</span>
     </h2>
     <p class="text-muted mb-0">
-      <a href="{{ url_for('master_events.detail', me_id=event.master_event_id) }}" class="text-decoration-none">
-        {{ event.master_event.name }}
-      </a>
+      {% if current_user.has_permission('master_event.view') %}
+      <a href="{{ url_for('master_events.detail', me_id=event.master_event_id) }}" class="text-decoration-none">{{ event.master_event.name }}</a>
+      {% else %}{{ event.master_event.name }}{% endif %}
     </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
@@ -40,6 +40,14 @@
       <a href="{{ url_for('events.edit', event_id=event.id) }}" class="btn btn-outline-secondary btn-sm">Upravit</a>
     {% endif %}
 
+    {% if current_user.has_permission('event.edit') and event.status == EventStatus.ASSIGNMENTS_OPEN and not event.archived and event.start_datetime > now %}
+      <form method="POST" action="{{ url_for('events.external_opening', event_id=event.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="version" value="{{ event.version }}">
+        <input type="hidden" name="open_to_externals" value="{{ '0' if event.open_to_externals else '1' }}">
+        <button class="btn btn-outline-primary btn-sm">{{ 'Zrušit předčasné otevření externistům' if event.open_to_externals else 'Otevřít externistům předčasně' }}</button>
+      </form>
+    {% endif %}
     {# Lifecycle transition buttons #}
     {% if event.status == EventStatus.DRAFT and current_user.has_permission('event.publish') %}
       <form method="POST" action="{{ url_for('events.transition', event_id=event.id) }}">
@@ -70,7 +78,7 @@
       </form>
     {% endif %}
     {% if event.status == EventStatus.COMPLETED %}
-      {% set my_assignment = event.spots | selectattr('assignment') | selectattr('assignment.user_id', 'equalto', current_user.id) | map(attribute='assignment') | first | default(none) %}
+      {% set my_assignment = event.assignments | selectattr('user_id', 'equalto', current_user.id) | first | default(none) %}
       {% if my_assignment %}
         {% if my_assignment.debriefing %}
           <a href="{{ url_for('debriefing.submit', assignment_id=my_assignment.id) }}"
@@ -340,7 +348,7 @@
         </td>
         <td>
           {% if spot.assignment %}
-            <a href="{{ url_for('users.detail', user_id=spot.assignment.user_id) }}" class="text-decoration-none">{{ spot.assignment.user.name }}</a>
+            {% if current_user.has_permission('user.view') %}<a href="{{ url_for('users.detail', user_id=spot.assignment.user_id) }}" class="text-decoration-none">{{ spot.assignment.user.name }}</a>{% else %}{{ spot.assignment.user.name }}{% endif %}
           {% else %}
             Volné
           {% endif %}

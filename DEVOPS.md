@@ -564,7 +564,7 @@ CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} \"app:create_app()\""]
 
 ## Dependency Management
 
-Dependencies are managed with **pip-tools** (`.in` → `.txt` compilation with hashes).
+Dependencies are compiled with **uv pip compile** (`.in` → `.txt` compilation with hashes).
 
 ### Files
 
@@ -586,11 +586,11 @@ Dependencies are managed with **pip-tools** (`.in` → `.txt` compilation with h
    ```bash
    ./scripts/compile_requirements.sh
    ```
-   This uses Podman (or Docker) to compile inside a `python:3.14-slim` Linux/amd64 container — ensuring the generated hashes match CI and production.
+   This uses Podman (or Docker) to compile inside a `python:3.14-slim` Linux/amd64 container. Production and E2E compile in parallel; dev and telemetry compile in parallel after production finishes. The cache is discarded when the container exits.
 3. Review the diff: `git diff requirements*.txt`
 4. Commit both the `.in` and `.txt` files together.
 
-> **Why a container?** pip-compile on macOS ARM produces hashes for macOS-only wheels. Some packages ship different wheels for Linux, causing hash mismatches in CI. The container guarantees Linux-compatible hashes.
+> **Why a container?** Dependency resolution can vary by platform and Python version. The container keeps compilation aligned with CI and production.
 
 ### Dependabot
 
@@ -920,7 +920,7 @@ Both the English `CHANGELOG.md` and the Czech `changelog.html` must be updated t
 
 ## Notification Catalog
 
-The app sends 13 types of email notifications.  The **authoritative source of truth** is
+The **authoritative source of truth** for email notification types is
 `NOTIFICATION_CATALOG` in `app/mail.py`.  The admin UI at `/admin/notifications/` renders
 this list and exposes per-type toggles stored in `AppSettings`.
 
@@ -942,7 +942,7 @@ behaviour of the application.
 
 ### Notification toggles
 
-Nine toggle fields are stored in `AppSettings` (one per togglable catalog entry; each
+Toggle fields are stored in `AppSettings` (each
 maps 1:1 to a `notify_<code>` column, per the rule above):
 
 | Field | Controls |
@@ -956,6 +956,9 @@ maps 1:1 to a `notify_<code>` column, per the rule above):
 | `notify_event_changed` | `send_event_changed` |
 | `notify_unfilled_reminder` | `send_unfilled_spots_reminder` (scheduler) |
 | `notify_debriefing` | `send_debriefing_invitation` |
+| `notify_external_opportunities` | `send_external_opportunity` (scheduler, every 5 minutes) |
+
+External opportunity mail uses the existing outbox to batch newly available events per recipient.
 
 Auth-related notifications (`account_activated`, invite/password reset (`auth`), `admin_digest`)
 are always-on and cannot be toggled.

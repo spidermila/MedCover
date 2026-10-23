@@ -221,7 +221,9 @@ def test_notification(code: str) -> Response:
         g._test_notification_immediate = True
 
     try:
-        if code == "assignment_confirmed":
+        if code == "external_opportunity":
+            mailer.send_external_opportunity(current_user, event)
+        elif code == "assignment_confirmed":
             mailer.send_assignment_confirmed(current_user, event, spot_description="Testovací pozice")
         elif code == "assignment_released":
             mailer.send_assignment_released(current_user, event, spot_description="Testovací pozice")
